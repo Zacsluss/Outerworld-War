@@ -11,13 +11,15 @@ const Sprites = {
   light(c, S, strength = 1) { // fixed-direction lighting over painted pixels
     c.globalCompositeOperation = 'source-atop'; const g = c.createLinearGradient(-S / 2, -S / 2, S / 2, S / 2); g.addColorStop(0, `rgba(255,255,255,${0.26 * strength})`); g.addColorStop(0.45, 'rgba(255,255,255,0)'); g.addColorStop(0.6, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${0.42 * strength})`); c.fillStyle = g; c.fillRect(-S / 2, -S / 2, S, S); c.globalCompositeOperation = 'source-over';
   },
-  unit(u, dir) {
-    const id = u.def.id, color = G.players[u.owner].color, v = this.variant(u); const key = 'u|' + id + '|' + color + '|' + dir + '|' + v;
+  WALK_FRAMES: 8, ATK_FRAMES: 5,
+  unit(u, dir, anim = 'i') {
+    const id = u.def.id, color = G.players[u.owner].color, v = this.variant(u); const key = 'u|' + id + '|' + color + '|' + dir + '|' + v + '|' + anim;
     let s = this.cache.get(key); if (s) return s;
     const r = u.r; const S = Math.ceil(r * 4.2) + 12; const cv = document.createElement('canvas'); cv.width = S; cv.height = S; const c = cv.getContext('2d');
     c.translate(S / 2, S / 2); c.rotate(dir * Math.PI * 2 / this.DIRS);
     const painter = UNIT_PAINTERS[id] || UNIT_PAINTERS.marine; const h = PaintHelpers(c);
-    c.lineJoin = 'round'; painter(h, r, color, shade(color, 0.6), { sieged: v === 's' });
+    const st = { sieged: v === 's', walk: null, atk: null }; if (anim[0] === 'w') st.walk = parseInt(anim.slice(1)) / this.WALK_FRAMES; else if (anim[0] === 'a') st.atk = (parseInt(anim.slice(1)) + 0.5) / this.ATK_FRAMES;
+    c.lineJoin = 'round'; painter(h, r, color, shade(color, 0.6), st);
     c.setTransform(1, 0, 0, 1, S / 2, S / 2); this.light(c, S, 1);
     s = { cv, S, ox: S / 2, oy: S / 2 }; this.cache.set(key, s); return s;
   },
@@ -36,7 +38,7 @@ const Sprites = {
     const cv = document.createElement('canvas'); cv.width = sz; cv.height = sz; const c = cv.getContext('2d'); const def = DATA.all[defId]; if (!def) return cv;
     const h = PaintHelpers(c); c.lineJoin = 'round';
     if (def.isBuilding) { const W = def.w * TILE, H = def.h * TILE; const k = (sz - 6) / Math.max(W, H); c.translate(sz / 2 - W * k / 2, sz / 2 - H * k / 2); c.scale(k, k); (BUILDING_PAINTERS[defId] || BUILDING_PAINTERS.supply_depot)(h, c, W, H, color, shade(color, .6)); }
-    else { const r = def.r || 10; const k = (sz / 2 - 3) / (r * 1.5); c.translate(sz / 2, sz / 2); c.scale(k, k); c.rotate(-Math.PI / 2 + 0.6); (UNIT_PAINTERS[defId] || UNIT_PAINTERS.marine)(h, r, color, shade(color, .6), {}); }
+    else { const r = def.r || 10; const k = (sz / 2 - 3) / (r * 1.5); c.translate(sz / 2, sz / 2); c.scale(k, k); c.rotate(-Math.PI / 2 + 0.6); (UNIT_PAINTERS[defId] || UNIT_PAINTERS.marine)(h, r, color, shade(color, .6), { walk: null, atk: null }); }
     c.setTransform(1, 0, 0, 1, sz / 2, sz / 2); this.light(c, sz, 0.8);
     this.cache.set(key, cv); return cv;
   },

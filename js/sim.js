@@ -275,7 +275,7 @@ class Unit {
   fireAt(t) {
     const w = this.weaponFor(t); if (!w) return;
     if (this.fx.dweb > 0 && !this.fly) return;
-    this.cooldown = this.wCd(w); this.facing = Math.atan2(t.y - this.y, t.x - this.x);
+    this.cooldown = this.wCd(w); this.facing = Math.atan2(t.y - this.y, t.x - this.x); this.lastFire = G.frame;
     if (this.def.worker && !this.isBuilding) this.cooldown = 22;
     Combat.fire(this, t, w);
   }
@@ -311,7 +311,7 @@ class Unit {
       }
     } else { nx = clamp(nx, 8, G.map.w * TILE - 8); ny = clamp(ny, 8, G.map.h * TILE - 8); }
     const moved = distPt(nx, ny, this.x, this.y);
-    this.vx = nx - this.x; this.vy = ny - this.y; this.x = nx; this.y = ny; this.moving = true;
+    this.vx = nx - this.x; this.vy = ny - this.y; this.x = nx; this.y = ny; this.moving = true; this.walkDist = (this.walkDist || 0) + moved;
     if (moved < spd * 0.3) this.stuck++; else this.stuck = Math.max(0, this.stuck - 1);
     return false;
   }

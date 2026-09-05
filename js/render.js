@@ -93,7 +93,7 @@ const Render = {
     ctx.save(); ctx.globalAlpha = u._alpha * (u.fx.stasis > 0 ? 0.6 : 1);
     if (u.burrowed && !u.def.mine) { ctx.fillStyle = 'rgba(60,30,70,0.7)'; ctx.beginPath(); ctx.ellipse(x, y, u.r, u.r * .55, 0, 0, 7); ctx.fill(); ctx.fillStyle = G.players[u.owner].color; ctx.fillRect(x - 3, y - 2, 6, 4); ctx.restore(); return; }
     if (u.def.mine) { ctx.globalAlpha *= u.burrowed ? 0.5 : 1; ctx.fillStyle = '#4a5058'; ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill(); ctx.fillStyle = (G.frame % 20 < 10) ? '#ff3030' : '#802020'; ctx.fillRect(x - 1.5, y - 1.5, 3, 3); ctx.restore(); return; }
-    const s = Sprites.unit(u, Sprites.dirOf(u.facing));
+    const s = Sprites.unit(u, Sprites.dirOf(u.facing), this.animOf(u));
     let bob = 0, sc = 1; if (u.moving && !u.fly && u.def.bio) bob = Math.sin(G.frame * 0.7 + u.id) * 1.2; if (u.fly) bob = Math.sin(G.frame * 0.08 + u.id) * 2; if (u.def.id === 'zergling' && u.moving) sc = 1 + Math.sin(G.frame * 0.9 + u.id) * 0.06;
     if (u.morphT > 0) { ctx.globalAlpha *= 0.5 + 0.5 * Math.sin(G.frame * 0.3); }
     ctx.translate(x, y + bob); if (sc !== 1) ctx.scale(sc, 1 / sc);
@@ -102,6 +102,15 @@ const Render = {
     if (u.halluc) { ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = 'rgba(100,180,255,0.25)'; ctx.beginPath(); ctx.arc(0, 0, u.r + 2, 0, 7); ctx.fill(); }
     ctx.restore();
     this.drawStatus(ctx, u, x, y);
+  },
+  animOf(u) {
+    const id = u.def.id; const ATK_LEN = 10;
+    if (u.lastFire !== undefined && G.frame - u.lastFire < ATK_LEN && !u.def.worker) return 'a' + Math.min(Sprites.ATK_FRAMES - 1, Math.floor((G.frame - u.lastFire) / ATK_LEN * Sprites.ATK_FRAMES));
+    if (u.lastFire !== undefined && G.frame - u.lastFire < 6 && u.def.worker) return 'a' + Math.floor((G.frame - u.lastFire) / 6 * Sprites.ATK_FRAMES);
+    if (ANIM_KIND.winged.has(id)) { const rate = id === 'overlord' ? 0.12 : id === 'cocoon' ? 0.08 : id === 'scourge' ? 0.9 : 0.45; return 'w' + (Math.floor(G.frame * rate + u.id) % Sprites.WALK_FRAMES); }
+    if (ANIM_KIND.engine.has(id)) return 'w' + (Math.floor(G.frame * 0.3 + u.id) % Sprites.WALK_FRAMES);
+    if (u.moving || (u.def.larva && (G.frame + u.id) % 90 < 30)) { const cycle = u.def.larva ? 30 : Math.max(20, u.r * 2.2); const d = u.def.larva ? G.frame : (u.walkDist || 0); return 'w' + (Math.floor((d / cycle) * Sprites.WALK_FRAMES) % Sprites.WALK_FRAMES); }
+    return 'i';
   },
   drawStatus(ctx, u, x, y) {
     const r = u.r;
