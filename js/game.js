@@ -245,7 +245,7 @@ const G = {
     if (u.hatch) { const i = u.hatch.larvae.indexOf(u); if (i >= 0) u.hatch.larvae.splice(i, 1); }
     if (killer && killer.owner !== u.owner && !silent) { killer.kills++; const kp = this.players[killer.owner]; if (u.isBuilding) kp.stats.buildingsKilled++; else kp.stats.unitsKilled++; }
     if (!silent) { if (u.isBuilding) p.stats.buildingsLost++; else p.stats.unitsLost++; }
-    if (!silent && !u.halluc) { this.effects.push({ kind: u.isBuilding ? 'bigboom' : (u.def.race === 'Z' ? 'blood' : 'boom'), x: u.x, y: u.y, t: u.isBuilding ? 40 : 18, r: u.r }); if (typeof Sound !== 'undefined' && this.visibleAt(this.human, u.x, u.y)) Sound.death(u); }
+    if (!silent && !u.halluc) { this.effects.push({ kind: u.isBuilding ? 'bigboom' : (u.def.race === 'Z' ? 'blood' : 'boom'), x: u.x, y: u.y, t: u.isBuilding ? 40 : 18, r: u.r, def: u.isBuilding ? null : u.def.id, owner: u.owner, facing: u.facing, fly: u.fly }); if (typeof Sound !== 'undefined' && this.visibleAt(this.human, u.x, u.y)) Sound.death(u); }
     if (u.def.id === 'nuke_ghost') { }
     if (typeof UI !== 'undefined') UI.onUnitDied(u);
     this.recomputeSupply();

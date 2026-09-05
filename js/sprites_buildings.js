@@ -1,0 +1,106 @@
+'use strict';
+// ============================================================================
+// Building sprite painters (static) + animated overlays. Origin = footprint
+// top-left; W/H in px. Painted flat, lit afterwards by Sprites.
+// ============================================================================
+const BP = {
+  tBase(h, c, W, H, TC, opts = {}) {
+    const M = TCOL.M, Md = TCOL.Md, Ml = TCOL.Ml; const inset = opts.inset || 4, depth = opts.depth || 10;
+    h.R(inset, inset + depth, W - inset * 2, H - inset * 2 - depth + 2, 4, '#3d444c');               // lower wall
+    h.R(inset, inset, W - inset * 2, H - inset * 2 - depth, 4, M);                                    // roof
+    // panel seams
+    c.strokeStyle = 'rgba(0,0,0,0.25)'; c.lineWidth = 1; const cols = Math.max(2, Math.round(W / 40)), rows = Math.max(1, Math.round((H - depth) / 40));
+    for (let i = 1; i < cols; i++) { c.beginPath(); c.moveTo(inset + i * (W - inset * 2) / cols, inset + 2); c.lineTo(inset + i * (W - inset * 2) / cols, H - inset - depth - 2); c.stroke(); }
+    for (let j = 1; j < rows; j++) { c.beginPath(); c.moveTo(inset + 2, inset + j * (H - inset * 2 - depth) / rows); c.lineTo(W - inset - 2, inset + j * (H - inset * 2 - depth) / rows); c.stroke(); }
+    // rivets
+    c.fillStyle = 'rgba(255,255,255,0.35)'; for (let i = 0; i < cols; i++) for (let j = 0; j <= rows; j++) c.fillRect(inset + 6 + i * (W - inset * 2) / cols, inset + 5 + j * Math.max(1, (H - inset * 2 - depth - 10)) / Math.max(1, rows), 2, 2);
+    // vents on the wall
+    for (let i = 0; i < Math.max(1, Math.floor(W / 28)); i++) h.R(inset + 8 + i * 28, H - inset - depth + 2, 14, depth - 5, 1, '#20252a', null);
+    // team colour stripe + lights
+    h.R(inset + 4, inset + 4, Math.min(28, W / 4), 6, 2, TC, null); c.fillStyle = TC; for (let i = 0; i < Math.floor(W / 24); i++) c.fillRect(inset + 6 + i * 24, H - inset - depth - 5, 3, 3);
+  },
+  zBase(h, c, W, H, TC, opts = {}) {
+    const cx = W / 2, cy = H / 2, rx = W / 2 - 3, ry = H / 2 - 3;
+    h.E(cx, cy + 3, rx, ry, '#4a2f3a', OUT, 1.5); h.E(cx, cy, rx * .92, ry * .88, '#7a5a5e', null); h.E(cx - rx * .12, cy - ry * .15, rx * .6, ry * .5, '#8f6f6a', null);
+    for (let k = 0; k < 7; k++) { const a = k * 0.9 + 0.3; const bx = cx + Math.cos(a) * rx * .7, by = cy + Math.sin(a) * ry * .7; h.C(bx, by, 3 + (k % 3) * 2, '#5b3d48', 'rgba(0,0,0,0.4)', 1); h.C(bx - 1, by - 1, 1.5 + (k % 3), '#9a7a8a', null); }
+    for (let k = 0; k < 6; k++) { const a = k * 1.05 + 0.2; h.Q(cx + Math.cos(a) * rx * .85, cy + Math.sin(a) * ry * .85, cx + Math.cos(a) * rx * 1.05, cy + Math.sin(a) * ry * 1.05 + 4, cx + Math.cos(a + .35) * rx * 1.15, cy + Math.sin(a + .35) * ry * 1.15 + 2, '#5a3a48', 3); }
+    h.E(cx, cy, rx * .35, ry * .3, TC, 'rgba(0,0,0,0.5)', 1);
+  },
+  pBase(h, c, W, H, TC, opts = {}) {
+    const ch = 10; h.P([[ch, 0], [W - ch, 0], [W, ch], [W, H - ch], [W - ch, H], [ch, H], [0, H - ch], [0, ch]], '#8b6c20', OUT, 1.5);
+    h.P([[ch + 4, 4], [W - ch - 4, 4], [W - 4, ch + 4], [W - 4, H - ch - 8], [W - ch - 4, H - 8], [ch + 4, H - 8], [4, H - ch - 8], [4, ch + 4]], TCOL.Au, null);
+    c.strokeStyle = 'rgba(255,240,200,0.35)'; c.lineWidth = 1; c.strokeRect(10, 10, W - 20, H - 26);
+    h.R(8, H - 12, W - 16, 6, 2, TC, null);
+    for (let i = 0; i < Math.floor(W / 30); i++) { h.P([[16 + i * 30, 12], [22 + i * 30, 6], [28 + i * 30, 12]], TCOL.psi, null); }
+  },
+  dome(h, x, y, r, col) { h.C(x, y, r, col); h.E(x - r * .3, y - r * .3, r * .4, r * .25, 'rgba(255,255,255,0.35)', null); },
+  crystal(h, x, y, s, col = TCOL.psi) { h.P([[x, y - s], [x + s * .5, y], [x, y + s * .6], [x - s * .5, y]], col, 'rgba(0,40,80,0.6)', 1); h.P([[x, y - s], [x + s * .2, y - s * .2], [x, y]], 'rgba(255,255,255,0.5)', null); },
+};
+const BUILDING_PAINTERS = {
+  command_center(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 14 }); h.R(8, 20, 30, 40, 4, TCOL.Md); h.R(W - 38, 20, 30, 40, 4, TCOL.Md); BP.dome(h, W / 2, H / 2 - 8, 26, TCOL.Ml); h.C(W / 2, H / 2 - 8, 12, TCOL.Md); h.R(W / 2 - 22, H - 26, 44, 8, 2, '#2a2f35'); },
+  supply_depot(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 10 }); for (let k = 0; k < 3; k++) { h.E(18 + k * 30, H / 2 - 6, 12, 9, TCOL.Ml); h.E(18 + k * 30, H / 2 - 6, 12, 9, null, 'rgba(0,0,0,0.3)', 1); h.R(6 + k * 30, H / 2 - 6, 24, 12, 2, TCOL.M, null); h.E(18 + k * 30, H / 2 + 6, 12, 5, TCOL.Md, OUT, 1); } },
+  refinery(h, c, W, H, TC) { h.E(W / 2, H / 2, W / 2 - 4, H / 2 - 4, '#2f3a2c', OUT, 1.5); BP.tBase(h, c, W * .55, H, TC, { depth: 10 }); h.C(W - 30, H / 2, 16, TCOL.Md); h.C(W - 30, H / 2, 10, '#5ad06a', null); h.L(W * .5, H / 2 - 8, W - 40, H / 2 - 8, TCOL.Ml, 5); h.L(W * .5, H / 2 + 8, W - 40, H / 2 + 8, TCOL.Ml, 5); },
+  barracks(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 14 }); h.R(W / 2 - 22, H - 34, 44, 20, 2, '#1e2226'); c.fillStyle = TC; c.fillRect(W / 2 - 22, H - 34, 44, 3); h.R(W - 36, 8, 24, 30, 3, TCOL.Md); h.C(W - 24, 22, 7, TC, OUT, 1); h.R(10, 10, 40, 22, 3, TCOL.Ml, OUT, 1); },
+  engineering_bay(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 12 }); h.C(W / 2 + 10, H / 2 - 6, 22, TCOL.Md); h.E(W / 2 + 10, H / 2 - 6, 16, 8, TCOL.Ml, OUT, 1); h.L(W / 2 + 10, H / 2 - 6, W / 2 + 26, H / 2 - 24, TCOL.Ml, 3); h.R(12, 12, 26, 40, 3, TCOL.Md); },
+  academy(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 10 }); for (let k = 0; k < 3; k++) h.L(16 + k * 26, H / 2 + 4, 16 + k * 26, 8, TCOL.Ml, 2.5); h.R(W - 34, 12, 22, 22, 3, TCOL.Md); h.C(W - 23, 23, 6, TCOL.visor, OUT, 1); },
+  missile_turret(h, c, W, H, TC) { h.C(W / 2, H / 2 + 4, 22, '#3d444c', OUT, 1.5); h.C(W / 2, H / 2, 18, TCOL.M); h.C(W / 2, H / 2, 8, TC, OUT, 1); },
+  bunker(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 12, inset: 3 }); for (let k = 0; k < 3; k++) h.R(12 + k * 28, H - 24, 16, 5, 1, '#0f1214', null); h.R(W / 2 - 12, 10, 24, 14, 2, TCOL.Md); },
+  factory(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 14 }); h.R(W / 2 - 30, H - 36, 60, 22, 2, '#1e2226'); c.fillStyle = 'rgba(255,200,80,0.6)'; for (let k = 0; k < 5; k++) c.fillRect(W / 2 - 26 + k * 12, H - 34, 6, 2); h.R(W - 30, 6, 16, 16, 2, TCOL.Md); h.C(W - 22, 14, 5, '#2a2f35', null); h.L(12, 14, 60, 14, TCOL.Ml, 4); h.L(36, 14, 36, 40, TCOL.Ml, 3); },
+  starport(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 12 }); h.C(W * .6, H / 2 - 6, 30, '#4a525b', OUT, 1.2); h.C(W * .6, H / 2 - 6, 24, '#5b646d', null); c.strokeStyle = 'rgba(255,220,120,0.7)'; c.setLineDash([4, 4]); c.lineWidth = 1.5; c.beginPath(); c.arc(W * .6, H / 2 - 6, 27, 0, 7); c.stroke(); c.setLineDash([]); h.R(10, 10, 30, 44, 3, TCOL.Md); },
+  science_facility(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 12 }); h.C(W / 2, H / 2 - 6, 20, TCOL.Md); for (const [dx, dy] of [[-32, -14], [32, -14], [-32, 18], [32, 18]]) BP.dome(h, W / 2 + dx, H / 2 - 6 + dy, 11, TCOL.Ml); h.C(W / 2, H / 2 - 6, 9, TCOL.visor, OUT, 1); },
+  armory(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 10 }); h.L(20, H / 2, 50, H / 2 - 20, TCOL.Ml, 4); h.L(50, H / 2 - 20, 66, H / 2 - 6, TCOL.Ml, 4); h.C(66, H / 2 - 6, 5, TCOL.Md); h.R(W - 32, 10, 20, 26, 2, TCOL.Md); },
+  comsat_station(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 8, inset: 3 }); h.E(W / 2, H / 2 - 4, 18, 9, TCOL.Ml); h.L(W / 2, H / 2 - 4, W / 2 + 10, H / 2 - 18, TCOL.Md, 2.5); },
+  nuclear_silo(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 8, inset: 3 }); BP.dome(h, W / 2, H / 2 - 4, 18, TCOL.Md); h.L(W / 2 - 14, H / 2 - 4, W / 2 + 14, H / 2 - 4, '#d33', 3); },
+  machine_shop(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 8, inset: 3 }); h.C(W / 2 - 8, H / 2 - 4, 10, TCOL.Md); h.C(W / 2 + 10, H / 2 - 8, 7, TCOL.Md); },
+  control_tower(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 8, inset: 3 }); h.R(W / 2 - 8, 6, 16, 30, 2, TCOL.Md); h.C(W / 2, 10, 4, '#ff5050', null); },
+  physics_lab(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 8, inset: 3 }); BP.dome(h, W / 2, H / 2 - 4, 16, TCOL.visor); },
+  covert_ops(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 8, inset: 3 }); h.R(10, 8, W - 20, 20, 2, '#1e2226'); h.C(W / 2, 18, 4, '#ff3030', null); },
+  hatchery(h, c, W, H, TC) { BP.zBase(h, c, W, H, TC); h.E(W / 2, H * .68, 22, 12, '#2a1420', OUT, 1.5); h.E(W / 2, H * .66, 14, 6, '#5a2a44', null); h.E(W / 2 - 6, H * .36, 22, 16, '#a3857e', null); },
+  lair(h, c, W, H, TC) { BP.zBase(h, c, W, H, TC); h.E(W / 2, H * .68, 24, 13, '#2a1420', OUT, 1.5); for (let k = 0; k < 5; k++) h.L(W / 2 - 40 + k * 20, H * .35, W / 2 - 44 + k * 22, H * .12 + (k % 2) * 8, TCOL.bone, 3); h.E(W / 2, H * .4, 26, 18, '#9a7a78', null); },
+  hive(h, c, W, H, TC) { BP.zBase(h, c, W, H, TC); h.E(W / 2, H * .7, 28, 14, '#2a1420', OUT, 1.5); for (let k = 0; k < 7; k++) h.L(W / 2 - 54 + k * 18, H * .38, W / 2 - 60 + k * 20, H * .06 + (k % 2) * 10, TCOL.bone, 3.5); h.E(W / 2, H * .42, 30, 20, '#a98a86', null); h.E(W / 2, H * .42, 12, 8, TC, null); },
+  creep_colony(h, c, W, H, TC) { BP.zBase(h, c, W, H, TC); },
+  sunken_colony(h, c, W, H, TC) { BP.zBase(h, c, W, H, TC); h.E(W / 2, H / 2, 16, 11, '#2a1420', OUT, 1.5); },
+  spore_colony(h, c, W, H, TC) { BP.zBase(h, c, W, H, TC); for (const [dx, dy] of [[-14, -8], [12, -12], [0, 12]]) { h.C(W / 2 + dx, H / 2 + dy, 9, '#4c8a4a', OUT, 1); h.C(W / 2 + dx - 3, H / 2 + dy - 3, 3, '#9ad08a', null); } },
+  extractor(h, c, W, H, TC) { h.E(W / 2, H / 2, W / 2 - 4, H / 2 - 4, '#2f3a2c', OUT, 1.5); BP.zBase(h, c, W, H, TC); h.E(W / 2, H / 2 - 4, 18, 10, '#2a1420', OUT, 1.5); h.E(W / 2, H / 2 - 4, 10, 5, '#5ad06a', null); },
+  spawning_pool(h, c, W, H, TC) { BP.zBase(h, c, W, H, TC); h.E(W / 2, H / 2 + 2, W * .34, H * .3, '#3f7a3a', OUT, 1.5); h.E(W / 2 - 8, H / 2 - 2, W * .18, H * .14, '#6ab05a', null); h.L(W / 2 + 12, H / 2 - 8, W / 2 + 26, H / 2 - 18, TCOL.bone, 2); },
+  evolution_chamber(h, c, W, H, TC) { BP.zBase(h, c, W, H, TC); for (const dx of [-16, 0, 16]) { h.C(W / 2 + dx, H / 2 - 4, 6, '#2a1420', OUT, 1); h.C(W / 2 + dx, H / 2 - 4, 2.5, TCOL.eye, null); } },
+  hydralisk_den(h, c, W, H, TC) { BP.zBase(h, c, W, H, TC); for (let k = 0; k < 5; k++) h.L(W / 2 - 24 + k * 12, H / 2 + 4, W / 2 - 28 + k * 14, H / 2 - 20 - (k % 2) * 6, TCOL.bone, 2.5); },
+  spire(h, c, W, H, TC) { BP.zBase(h, c, W, H, TC); h.P([[W / 2 - 14, H - 12], [W / 2, 4], [W / 2 + 14, H - 12]], '#6b4a5a', OUT, 1.5); h.P([[W / 2 - 6, H - 14], [W / 2, 14], [W / 2 + 4, H - 14]], '#8f6a7a', null); },
+  greater_spire(h, c, W, H, TC) { BP.zBase(h, c, W, H, TC); h.P([[W / 2 - 18, H - 10], [W / 2, 0], [W / 2 + 18, H - 10]], '#5c3f52', OUT, 1.5); h.P([[W / 2 - 8, H - 12], [W / 2, 10], [W / 2 + 6, H - 12]], '#9a7a8a', null); h.C(W / 2, 8, 4, TC, null); },
+  queens_nest(h, c, W, H, TC) { BP.zBase(h, c, W, H, TC); h.E(W / 2, H / 2, 20, 12, '#6a4a5e', OUT, 1); h.E(W / 2, H / 2, 10, 6, '#c8a0b8', null); },
+  ultralisk_cavern(h, c, W, H, TC) { BP.zBase(h, c, W, H, TC); h.E(W / 2, H / 2 + 4, 26, 14, '#1e1018', OUT, 1.5); h.L(W / 2 - 20, H / 2 - 4, W / 2 - 30, H / 2 - 18, TCOL.bone, 3); h.L(W / 2 + 20, H / 2 - 4, W / 2 + 30, H / 2 - 18, TCOL.bone, 3); },
+  defiler_mound(h, c, W, H, TC) { BP.zBase(h, c, W, H, TC); for (const dx of [-30, 0, 30]) h.E(W / 2 + dx, H / 2, 10, 7, '#3a2a48', OUT, 1); h.E(W / 2, H / 2 - 10, 14, 6, '#8a5a9a', null); },
+  nydus_canal(h, c, W, H, TC) { BP.zBase(h, c, W, H, TC); h.E(W / 2, H / 2, 16, 12, '#1e1018', OUT, 1.5); for (let k = 0; k < 6; k++) { const a = k * 1.05; h.L(W / 2 + Math.cos(a) * 14, H / 2 + Math.sin(a) * 10, W / 2 + Math.cos(a) * 22, H / 2 + Math.sin(a) * 16, TCOL.bone, 2); } },
+  infested_command_center(h, c, W, H, TC) { BUILDING_PAINTERS.command_center(h, c, W, H, TC); h.E(W / 2, H / 2, 40, 26, 'rgba(120,60,110,0.55)', null); },
+  nexus(h, c, W, H, TC) { BP.pBase(h, c, W, H, TC); for (const [dx, dy] of [[18, 18], [W - 18, 18], [18, H - 24], [W - 18, H - 24]]) { h.C(dx, dy, 8, TCOL.Aud); BP.crystal(h, dx, dy - 4, 8); } h.C(W / 2, H / 2 - 6, 24, TCOL.Aud); h.C(W / 2, H / 2 - 6, 18, '#2c3b70'); BP.crystal(h, W / 2, H / 2 - 12, 22); },
+  pylon(h, c, W, H, TC) { h.E(W / 2, H / 2 + 8, 24, 12, '#8b6c20', OUT, 1.5); h.E(W / 2, H / 2 + 8, 16, 7, TCOL.Au, null); h.P([[W / 2, 6], [W / 2 + 14, H / 2 + 4], [W / 2, H / 2 + 14], [W / 2 - 14, H / 2 + 4]], TCOL.psi, '#1a4a80', 1.5); h.P([[W / 2, 6], [W / 2 + 5, H / 2 - 2], [W / 2, H / 2 + 4]], 'rgba(255,255,255,0.55)', null); h.R(W / 2 - 8, H / 2 + 12, 16, 4, 1, TC, null); },
+  assimilator(h, c, W, H, TC) { h.E(W / 2, H / 2, W / 2 - 4, H / 2 - 4, '#2f3a2c', OUT, 1.5); BP.pBase(h, c, W * .55, H, TC); h.C(W - 30, H / 2, 16, TCOL.Aud); h.C(W - 30, H / 2, 10, '#5ad06a', null); h.L(W * .5, H / 2, W - 44, H / 2, TCOL.Au, 6); },
+  gateway(h, c, W, H, TC) { BP.pBase(h, c, W, H, TC); h.R(W / 2 - 34, 10, 68, H - 34, 6, TCOL.Aud); h.R(W / 2 - 26, 16, 52, H - 44, 4, '#1c2a55', null); BP.crystal(h, 22, 30, 10); BP.crystal(h, W - 22, 30, 10); },
+  forge(h, c, W, H, TC) { BP.pBase(h, c, W, H, TC); h.C(W / 2, H / 2 - 6, 18, TCOL.Aud); h.C(W / 2, H / 2 - 6, 10, '#ff9a3c', null); h.C(W / 2, H / 2 - 6, 5, '#ffe08a', null); BP.crystal(h, 16, H / 2 - 4, 8); BP.crystal(h, W - 16, H / 2 - 4, 8); },
+  photon_cannon(h, c, W, H, TC) { h.C(W / 2, H / 2 + 6, 22, TCOL.Aud, OUT, 1.5); h.C(W / 2, H / 2 + 2, 16, TCOL.Au); BP.crystal(h, W / 2, H / 2 - 6, 14); h.R(W / 2 - 8, H / 2 + 14, 16, 4, 1, TC, null); },
+  cybernetics_core(h, c, W, H, TC) { BP.pBase(h, c, W, H, TC); h.C(W / 2, H / 2 - 6, 20, TCOL.Aud); h.C(W / 2, H / 2 - 6, 12, '#2c3b70'); h.C(W / 2, H / 2 - 6, 6, TCOL.psi, null); for (let k = 0; k < 4; k++) { const a = k * 1.57 + .78; h.L(W / 2 + Math.cos(a) * 14, H / 2 - 6 + Math.sin(a) * 14, W / 2 + Math.cos(a) * 28, H / 2 - 6 + Math.sin(a) * 26, TCOL.Aul, 3); } },
+  shield_battery(h, c, W, H, TC) { BP.pBase(h, c, W, H, TC); h.E(W / 2, H / 2 - 6, 26, 12, TCOL.Aud); h.E(W / 2, H / 2 - 6, 18, 8, '#2c3b70'); h.E(W / 2, H / 2 - 6, 10, 4, TCOL.psi, null); },
+  robotics_facility(h, c, W, H, TC) { BP.pBase(h, c, W, H, TC); h.R(12, 12, W - 24, H - 34, 4, TCOL.Aud); h.C(W / 2, H / 2 - 6, 12, '#2c3b70'); h.L(20, H / 2 - 6, W - 20, H / 2 - 6, TCOL.Aul, 3); },
+  stargate(h, c, W, H, TC) { BP.pBase(h, c, W, H, TC); h.E(W / 2, H / 2 - 6, 40, 30, null, TCOL.Aud, 8); h.E(W / 2, H / 2 - 6, 40, 30, null, TCOL.Aul, 2); h.E(W / 2, H / 2 - 6, 30, 22, '#1c2a55', null); BP.crystal(h, W / 2, 12, 8); },
+  citadel_of_adun(h, c, W, H, TC) { BP.pBase(h, c, W, H, TC); h.P([[W / 2 - 20, H - 16], [W / 2, 6], [W / 2 + 20, H - 16]], TCOL.Aud, OUT, 1.2); BP.crystal(h, W / 2, 16, 8); },
+  robotics_support_bay(h, c, W, H, TC) { BP.pBase(h, c, W, H, TC); h.R(14, 14, W - 28, H - 36, 4, TCOL.Aud); h.C(W / 2 - 14, H / 2 - 6, 8, '#2c3b70'); h.C(W / 2 + 14, H / 2 - 6, 8, '#2c3b70'); },
+  fleet_beacon(h, c, W, H, TC) { BP.pBase(h, c, W, H, TC); h.C(W / 2, H / 2 - 6, 22, TCOL.Aud); BP.crystal(h, W / 2, H / 2 - 10, 18); for (let k = 0; k < 3; k++) BP.crystal(h, 16 + k * ((W - 32) / 2), H - 22, 6); },
+  templar_archives(h, c, W, H, TC) { BP.pBase(h, c, W, H, TC); h.R(W / 2 - 24, 10, 48, H - 32, 4, TCOL.Aud); BP.crystal(h, W / 2, H / 2 - 8, 14, '#b48cff'); BP.crystal(h, 14, H / 2 - 4, 7, '#b48cff'); BP.crystal(h, W - 14, H / 2 - 4, 7, '#b48cff'); },
+  observatory(h, c, W, H, TC) { BP.pBase(h, c, W, H, TC); h.C(W / 2, H / 2 - 6, 16, TCOL.Aud); h.C(W / 2, H / 2 - 6, 9, '#2c3b70'); h.L(W / 2, H / 2 - 6, W / 2 + 22, H / 2 - 26, TCOL.Aul, 3); },
+  arbiter_tribunal(h, c, W, H, TC) { BP.pBase(h, c, W, H, TC); h.P([[W / 2, 8], [W / 2 + 26, H / 2 - 6], [W / 2, H - 22], [W / 2 - 26, H / 2 - 6]], TCOL.Aud, OUT, 1.2); BP.crystal(h, W / 2, H / 2 - 10, 12); },
+};
+// Animated overlays drawn on top of static sprites each frame (world coords, x0/y0 = footprint top-left)
+const BUILDING_ANIM = {
+  command_center(ctx, u, x0, y0, W, H, f) { const cx = x0 + W / 2, cy = y0 + H / 2 - 8; const a = f * 0.05; ctx.strokeStyle = '#e8eef4'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * 16, cy + Math.sin(a) * 10); ctx.stroke(); },
+  missile_turret(ctx, u, x0, y0, W, H, f) { const cx = x0 + W / 2, cy = y0 + H / 2; const a = u.facing; ctx.fillStyle = '#5a636c'; ctx.strokeStyle = OUT; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(-6, -7, 20, 14, 2); ctx.save(); ctx.translate(cx, cy); ctx.rotate(a); ctx.beginPath(); ctx.roundRect(-6, -7, 22, 14, 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#c33'; ctx.fillRect(10, -5, 4, 3); ctx.fillRect(10, 2, 4, 3); ctx.restore(); },
+  sunken_colony(ctx, u, x0, y0, W, H, f) { if (u.cooldown > 24) { const cx = x0 + W / 2, cy = y0 + H / 2, a = u.facing, len = 40 + (u.cooldown - 24) * 6; ctx.strokeStyle = '#6a3a48'; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.quadraticCurveTo(cx + Math.cos(a) * len * .5, cy + Math.sin(a) * len * .5 - 16, cx + Math.cos(a) * len, cy + Math.sin(a) * len); ctx.stroke(); ctx.strokeStyle = TCOL.bone; ctx.lineWidth = 2; ctx.stroke(); } },
+  spawning_pool(ctx, u, x0, y0, W, H, f) { const cx = x0 + W / 2, cy = y0 + H / 2 + 2; ctx.fillStyle = 'rgba(160,230,120,0.35)'; for (let k = 0; k < 3; k++) { const t = ((f / 40) + k / 3) % 1; ctx.beginPath(); ctx.arc(cx + Math.cos(k * 2.1) * 14, cy + Math.sin(k * 2.1) * 7, 2 + t * 6, 0, 7); ctx.fill(); } },
+  gateway(ctx, u, x0, y0, W, H, f) { if (u.unpowered) return; const cx = x0 + W / 2, cy = y0 + H / 2 - 8; ctx.save(); ctx.globalCompositeOperation = 'lighter'; for (let k = 0; k < 3; k++) { ctx.strokeStyle = 'rgba(90,180,255,0.35)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, 8 + k * 6, f * 0.06 + k, f * 0.06 + k + 2.2); ctx.stroke(); } ctx.restore(); },
+  stargate(ctx, u, x0, y0, W, H, f) { if (u.unpowered) return; const cx = x0 + W / 2, cy = y0 + H / 2 - 6; ctx.save(); ctx.globalCompositeOperation = 'lighter'; for (let k = 0; k < 3; k++) { ctx.strokeStyle = 'rgba(90,180,255,0.3)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(cx, cy, 10 + k * 7, 7 + k * 5, 0, f * 0.05 + k, f * 0.05 + k + 2.5); ctx.stroke(); } ctx.restore(); },
+  pylon(ctx, u, x0, y0, W, H, f) { if (!u.done) return; const cx = x0 + W / 2, cy = y0 + H / 2; const a = 0.35 + Math.sin(f * 0.1) * 0.15; ctx.save(); ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, 26); g.addColorStop(0, `rgba(120,200,255,${a})`); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 26, 0, 7); ctx.fill(); ctx.restore(); },
+  nexus(ctx, u, x0, y0, W, H, f) { const cx = x0 + W / 2, cy = y0 + H / 2 - 12; const a = 0.3 + Math.sin(f * 0.08) * 0.12; ctx.save(); ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, 34); g.addColorStop(0, `rgba(120,200,255,${a})`); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 34, 0, 7); ctx.fill(); ctx.restore(); },
+  photon_cannon(ctx, u, x0, y0, W, H, f) { if (u.unpowered) return; const cx = x0 + W / 2, cy = y0 + H / 2 - 6; ctx.save(); ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(cx, cy, 1, cx, cy, 16); g.addColorStop(0, 'rgba(140,220,255,0.5)'); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 16, 0, 7); ctx.fill(); ctx.restore(); },
+  hatchery(ctx, u, x0, y0, W, H, f) { const cx = x0 + W / 2, cy = y0 + H * .36; const s = 1 + Math.sin(f * 0.07 + u.id) * 0.06; ctx.fillStyle = 'rgba(190,150,150,0.25)'; ctx.beginPath(); ctx.ellipse(cx - 6, cy, 22 * s, 16 * s, 0, 0, 7); ctx.fill(); },
+  extractor(ctx, u, x0, y0, W, H, f) { if ((f + u.id) % 20 < 10) { ctx.fillStyle = 'rgba(120,255,140,0.25)'; ctx.beginPath(); ctx.arc(x0 + W / 2 + ((f + u.id) % 20) - 5, y0 + H / 2 - 10 - ((f + u.id) % 20), 5, 0, 7); ctx.fill(); } },
+};
+BUILDING_ANIM.lair = BUILDING_ANIM.hatchery; BUILDING_ANIM.hive = BUILDING_ANIM.hatchery; BUILDING_ANIM.refinery = BUILDING_ANIM.extractor; BUILDING_ANIM.assimilator = BUILDING_ANIM.extractor;

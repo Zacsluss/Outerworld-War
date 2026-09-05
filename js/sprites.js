@@ -1,0 +1,50 @@
+'use strict';
+// ============================================================================
+// Sprite cache: pre-renders unit painters per facing (16 dirs) and building
+// painters per type/colour, applies consistent top-left lighting + outline.
+// ============================================================================
+const Sprites = {
+  DIRS: 16, cache: new Map(),
+  clear() { this.cache.clear(); },
+  dirOf(facing) { const d = Math.round(facing / (Math.PI * 2 / this.DIRS)); return ((d % this.DIRS) + this.DIRS) % this.DIRS; },
+  variant(u) { return u.sieged ? 's' : ''; },
+  light(c, S, strength = 1) { // fixed-direction lighting over painted pixels
+    c.globalCompositeOperation = 'source-atop'; const g = c.createLinearGradient(-S / 2, -S / 2, S / 2, S / 2); g.addColorStop(0, `rgba(255,255,255,${0.26 * strength})`); g.addColorStop(0.45, 'rgba(255,255,255,0)'); g.addColorStop(0.6, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${0.42 * strength})`); c.fillStyle = g; c.fillRect(-S / 2, -S / 2, S, S); c.globalCompositeOperation = 'source-over';
+  },
+  unit(u, dir) {
+    const id = u.def.id, color = G.players[u.owner].color, v = this.variant(u); const key = 'u|' + id + '|' + color + '|' + dir + '|' + v;
+    let s = this.cache.get(key); if (s) return s;
+    const r = u.r; const S = Math.ceil(r * 4.2) + 12; const cv = document.createElement('canvas'); cv.width = S; cv.height = S; const c = cv.getContext('2d');
+    c.translate(S / 2, S / 2); c.rotate(dir * Math.PI * 2 / this.DIRS);
+    const painter = UNIT_PAINTERS[id] || UNIT_PAINTERS.marine; const h = PaintHelpers(c);
+    c.lineJoin = 'round'; painter(h, r, color, shade(color, 0.6), { sieged: v === 's' });
+    c.setTransform(1, 0, 0, 1, S / 2, S / 2); this.light(c, S, 1);
+    s = { cv, S, ox: S / 2, oy: S / 2 }; this.cache.set(key, s); return s;
+  },
+  building(u) {
+    const id = u.def.id, color = G.players[u.owner].color; const key = 'b|' + id + '|' + color;
+    let s = this.cache.get(key); if (s) return s;
+    const M = 18, W = u.def.w * TILE, H = u.def.h * TILE; const cv = document.createElement('canvas'); cv.width = W + M * 2; cv.height = H + M * 2; const c = cv.getContext('2d');
+    c.translate(M, M); const h = PaintHelpers(c); c.lineJoin = 'round';
+    (BUILDING_PAINTERS[id] || BUILDING_PAINTERS.supply_depot)(h, c, W, H, color, shade(color, 0.6));
+    c.setTransform(1, 0, 0, 1, M + W / 2, M + H / 2); this.light(c, Math.max(W, H) + M * 2, 0.8);
+    s = { cv, M, W, H }; this.cache.set(key, s); return s;
+  },
+  // Icon rendering for HUD (unit or building), returns canvas of size sz
+  icon(defId, color, sz) {
+    const key = 'i|' + defId + '|' + color + '|' + sz; let s = this.cache.get(key); if (s) return s;
+    const cv = document.createElement('canvas'); cv.width = sz; cv.height = sz; const c = cv.getContext('2d'); const def = DATA.all[defId]; if (!def) return cv;
+    const h = PaintHelpers(c); c.lineJoin = 'round';
+    if (def.isBuilding) { const W = def.w * TILE, H = def.h * TILE; const k = (sz - 6) / Math.max(W, H); c.translate(sz / 2 - W * k / 2, sz / 2 - H * k / 2); c.scale(k, k); (BUILDING_PAINTERS[defId] || BUILDING_PAINTERS.supply_depot)(h, c, W, H, color, shade(color, .6)); }
+    else { const r = def.r || 10; const k = (sz / 2 - 3) / (r * 1.5); c.translate(sz / 2, sz / 2); c.scale(k, k); c.rotate(-Math.PI / 2 + 0.6); (UNIT_PAINTERS[defId] || UNIT_PAINTERS.marine)(h, r, color, shade(color, .6), {}); }
+    c.setTransform(1, 0, 0, 1, sz / 2, sz / 2); this.light(c, sz, 0.8);
+    this.cache.set(key, cv); return cv;
+  },
+  // Tinted silhouette (wireframe panel)
+  tinted(defId, color, sz, tint) {
+    const key = 't|' + defId + '|' + sz + '|' + tint; let s = this.cache.get(key); if (s) return s;
+    const base = this.icon(defId, color, sz); const cv = document.createElement('canvas'); cv.width = sz; cv.height = sz; const c = cv.getContext('2d');
+    c.drawImage(base, 0, 0); c.globalCompositeOperation = 'source-atop'; c.fillStyle = tint; c.fillRect(0, 0, sz, sz); c.globalCompositeOperation = 'source-over';
+    this.cache.set(key, cv); return cv;
+  },
+};

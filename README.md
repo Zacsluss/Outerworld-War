@@ -1,6 +1,6 @@
 # Brood War Remake
 
-A from-scratch browser remake of StarCraft: Brood War's gameplay. Plain HTML5 canvas + JavaScript, no build step, no dependencies, no Blizzard assets (all art is procedural vector drawing, all audio is synthesized).
+A from-scratch browser remake of StarCraft: Brood War's gameplay. Plain HTML5 canvas + JavaScript, no build step, no dependencies, no Blizzard assets. All art is generated at runtime: a noise-based Badlands-style tileset with cliff faces and doodads, pre-rendered unit and building sprites (16 facings, consistent lighting, team colours, animated parts), additive particle effects with blood/scorch decals and corpses, and a bevelled BW-style console with icon buttons and a custom cursor. Audio is synthesized.
 
 ## Run
 
@@ -47,6 +47,6 @@ node broodwar/test/features.js
 ## Known gaps vs. the original
 
 - No campaign, no multiplayer, no replays or saves, one map layout (seeded variations only).
-- Art is symbolic vector shapes; sound is synthesized beeps rather than voice lines.
+- Art is procedural (no hand-painted sprites or animations frames); sound is synthesized beeps rather than voice lines.
 - Zerg AI is the weakest of the three computer players.
 - Not implemented: Infest Command Center, Nydus Canal transit (the canal builds but does not teleport), unit-level attack animations/turn rates, BW's exact pathing quirks, interceptors/scarabs as killable units (they are projectiles), tank/lurker splash shapes are circles.
