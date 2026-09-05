@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Brood War Remake</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #000; overflow: hidden; font-family: sans-serif; color: #ddd; }
+  #game { display: none; cursor: crosshair; }
+  #menu { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 50% 30%, #1a2233, #05070a 70%); }
+  .panel { background: #151a22; border: 1px solid #3a4452; padding: 28px 36px; width: 420px; box-shadow: 0 0 40px #000; }
+  h1 { margin: 0 0 4px; font-size: 30px; letter-spacing: 3px; color: #e8d890; }
+  .sub { color: #778; font-size: 12px; margin-bottom: 22px; }
+  .row { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+  label { width: 110px; color: #aab; font-size: 14px; }
+  select, input { background: #0e1117; color: #eee; border: 1px solid #3a4452; padding: 6px 8px; font-size: 14px; }
+  button { margin-top: 18px; width: 100%; padding: 12px; font-size: 18px; background: #2c3a4c; color: #fff; border: 1px solid #5a6a7c; cursor: pointer; letter-spacing: 2px; }
+  button:hover { background: #3c4c60; }
+  .help { margin-top: 16px; font-size: 11px; color: #667; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div id="menu">
+  <div class="panel">
+    <h1>BROOD WAR</h1>
+    <div class="sub">Fan remake. Three races, full tech trees, fog of war, AI opponents. No original assets.</div>
+    <div class="row"><label>Your race</label><select id="race"><option value="T">Terran</option><option value="Z">Zerg</option><option value="P">Protoss</option><option value="R">Random</option></select></div>
+    <div class="row"><label>Opponents</label><select id="nopp"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option></select></div>
+    <div id="opps"></div>
+    <div class="row"><label>Map seed</label><input id="seed" type="number" value="1" style="width:100px"></div>
+    <button id="start">START GAME</button>
+    <div class="help">Left click select, right click command. A attack-move, M move, S stop, H hold, P patrol, B build, V advanced build. Ctrl+1-9 control groups. F1 in-game help, F10 menu, +/- speed.</div>
+  </div>
+</div>
+<canvas id="game"></canvas>
+<script src="js/data.js"></script>
+<script src="js/map.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/game.js"></script>
+<script src="js/combat.js"></script>
+<script src="js/abilities.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/render.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>

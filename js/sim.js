@@ -1,0 +1,382 @@
+'use strict';
+// ============================================================================
+// Simulation core: Game state, Player, Unit, orders, movement, combat,
+// economy, production. Deterministic fixed-step at TPS.
+// ============================================================================
+const SIEGE_W = { dmg: 70, type: 'explosive', range: 12, minRange: 2, cd: 75, hits: 1, upgDmg: 5, upgKey: 'vehW', targets: 'ground', splash: [0.3, 0.8, 1.25], ff: true };
+const EQUIV = { hatchery: ['lair', 'hive'], lair: ['hive'], spire: ['greater_spire'], command_center: [], nexus: [] };
+const MINE_TIME = 75, GAS_TIME = 37, LARVA_TIME = 342, MAX_QUEUE = 5;
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const distPt = (x1, y1, x2, y2) => Math.hypot(x1 - x2, y1 - y2);
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+
+class Player {
+  constructor(id, race, human, name) {
+    this.id = id; this.race = race; this.human = human; this.name = name;
+    this.minerals = 50; this.gas = 0; this.supUsed = 0; this.supMax = 0;
+    this.upg = {}; this.tech = new Set(); this.researching = new Set();
+    this.color = PLAYER_COLORS[id]; this.alive = true; this.defeated = false;
+    this.vis = null; this.msgs = []; this.lastAlert = {}; this.nukes = 0;
+    this.stats = { unitsKilled: 0, unitsLost: 0, buildingsKilled: 0, buildingsLost: 0, mined: 0, gassed: 0 };
+  }
+  upgLevel(k) { return k ? (this.upg[k] || 0) : 0; }
+  hasTech(t) { return this.tech.has(t); }
+  msg(text, kind = 'info') { if (!this.human) return; const last = this.lastAlert[text] || -9999; if (G.frame - last < 72) return; this.lastAlert[text] = G.frame; this.msgs.push({ text, t: G.frame, kind }); if (this.msgs.length > 6) this.msgs.shift(); if (typeof Sound !== 'undefined') Sound.alert(kind); }
+  canAfford(min, gas, quiet) { if (this.minerals < min) { if (!quiet) this.msg('Not enough minerals.', 'error'); return false; } if (this.gas < gas) { if (!quiet) this.msg('Not enough vespene gas.', 'error'); return false; } return true; }
+  hasBuilding(id) {
+    for (const u of G.units) { if (u.alive && u.owner === this.id && u.isBuilding && u.done && (u.def.id === id || (EQUIV[id] || []).includes(u.def.id))) return true; }
+    return false;
+  }
+  hasReq(def) { if (!def.req) return true; for (const r of def.req) { if (DATA.techs[r]) { if (!this.tech.has(r)) return false; } else if (!this.hasBuilding(r)) return false; } return true; }
+  missingReq(def) { if (!def.req) return null; for (const r of def.req) { if (DATA.techs[r]) { if (!this.tech.has(r)) return DATA.techs[r].name; } else if (!this.hasBuilding(r)) return DATA.buildings[r].name; } return null; }
+}
+
+let UNIT_ID = 1;
+class Unit {
+  constructor(defId, owner, x, y) {
+    const def = DATA.all[defId];
+    this.id = UNIT_ID++; this.def = def; this.owner = owner; this.x = x; this.y = y; this.px = x; this.py = y;
+    this.r = def.r || 12; this.isBuilding = !!def.isBuilding; this.alive = true;
+    this.maxHp = def.hp; this.hp = def.hp; this.maxSh = def.sh || 0; this.sh = this.maxSh;
+    this.maxEnergy = def.energy || 0; this.energy = def.energy ? 50 : 0;
+    this.facing = Math.random() * Math.PI * 2; this.fly = !!def.fly; this.done = !this.isBuilding;
+    this.order = { type: 'idle' }; this.queue = []; this.path = null; this.pathI = 0; this.stuck = 0; this.repathT = 0;
+    this.cooldown = 0; this.cargo = []; this.inside = null; this.carrying = null; this.lastRes = null;
+    this.prod = []; this.rally = null; this.addon = null; this.parent = null; this.sieged = false; this.transT = 0;
+    this.cloaked = !!def.cloaked; this.burrowed = !!def.burrowed; this.stim = 0; this.fx = {}; this.kills = 0; this.detBy = {};
+    this.lifetime = def.lifetime || 0; this.mines = def.mines || 0; this.scarabs = def.scarabs || 0; this.interceptors = def.interceptors || 0;
+    this.larvae = []; this.larvaT = LARVA_TIME; this.hatch = null; this.morphT = 0; this.progress = 0; this.builder = null; this.lifted = false;
+    this.lastHit = -9999; this.lastHitBy = null; this.arbCloak = -9999; this.halluc = false; this.idleT = 0; this.acidSpores = 0;
+    this.waitT = 0; this.moving = false; this.vx = 0; this.vy = 0; this.spawnT = G.frame; this.cloakT = 0; this.unpowered = false;
+    if (this.isBuilding) { this.tx = Math.round(x / TILE - def.w / 2); this.ty = Math.round(y / TILE - def.h / 2); this.x = (this.tx + def.w / 2) * TILE; this.y = (this.ty + def.h / 2) * TILE; this.px = this.x; this.py = this.y; this.r = Math.max(def.w, def.h) * TILE / 2; }
+  }
+  get player() { return G.players[this.owner]; }
+  get name() { return this.def.name; }
+  get speed() {
+    let s = this.def.speed || 0; const p = this.player;
+    if (this.def.speedTech && p.hasTech(this.def.speedTech[0])) s = this.def.speedTech[1];
+    if (this.def.id === 'vulture' && p.hasTech('ion_thrusters')) s = 8.53;
+    if (this.stim > 0) s *= 1.5; if (this.fx.ensnare > 0) s *= 0.5; if (this.lifted) s = 1;
+    return s;
+  }
+  get sight() { let s = this.def.sight || 7; const p = this.player; if (this.def.sightTech && p.hasTech(this.def.sightTech[0])) s = this.def.sightTech[1]; if (this.def.id === 'ghost' && p.hasTech('ocular')) s = 11; if (this.fx.blind > 0) s = 2; if (this.isBuilding && !this.done) s = 4; return s; }
+  get armor() { let a = this.def.armor || 0; const p = this.player; if (this.def.upgA) a += p.upgLevel(this.def.upgA); if (this.def.armorTech && p.hasTech(this.def.armorTech[0])) a += this.def.armorTech[1]; a -= this.acidSpores; return Math.max(0, a); }
+  get isCloaked() { return this.cloaked || this.burrowed || (G.frame - this.arbCloak < 12); }
+  get isDetector() { return this.def.det && this.done && !this.lifted && !(this.fx.blind > 0); }
+  get canMove() { return !this.isBuilding || this.lifted; }
+  get disabled() { return this.fx.lockdown > 0 || this.fx.stasis > 0 || this.fx.maelstrom > 0 || this.morphT > 0 || this.unpowered; }
+  get idle() { return this.order.type === 'idle'; }
+  get supCost() { return this.def.sup || 0; }
+  tile() { return [Math.floor(this.x / TILE), Math.floor(this.y / TILE)]; }
+  heightLevel() { return this.fly ? 2 : G.map.heightAtPx(this.x, this.y); }
+
+  // ---------------- weapons ----------------
+  weaponFor(t) {
+    const d = this.def;
+    if (d.id === 'siege_tank' && this.sieged) return t.fly ? null : SIEGE_W;
+    if (d.id === 'siege_tank' && this.transT > 0) return null;
+    if (d.gw && d.gw.burrowOnly && !this.burrowed) return null;
+    if (t.fly) { if (d.aw) return d.aw; if (d.gw && d.gw.targets === 'both') return d.gw; return null; }
+    if (d.gw && d.gw.targets !== 'air') return d.gw;
+    return null;
+  }
+  hasWeapon() { return !!(this.def.gw || this.def.aw) && !this.def.worker; }
+  wRange(w) { let r = w.range; const p = this.player; if (w.rangeTech && p.hasTech(w.rangeTech[0])) r = w.rangeTech[1]; if (this.def.id === 'marine' && p.hasTech('u238')) r = 5; if (this.inside && this.inside.def.bunker) r += 1; return r; }
+  wDmg(w) { let d = w.dmg + this.player.upgLevel(w.upgKey) * (w.upgDmg || 1); if (w.dmgTech && this.player.hasTech(w.dmgTech[0])) d += w.dmgTech[1]; return d; }
+  wCd(w) { let c = w.cd; if (w.cdTech && this.player.hasTech(w.cdTech[0])) c = w.cdTech[1]; if (this.stim > 0) c = Math.ceil(c / 2); c += this.acidSpores * 3; return c; }
+  maxRange() { let m = 0; for (const w of [this.def.gw, this.def.aw]) if (w) m = Math.max(m, this.wRange(w)); if (this.def.id === 'siege_tank' && this.sieged) m = 12; return m; }
+
+  // ---------------- orders ----------------
+  setOrder(o, shift) {
+    if (this.isBuilding && !this.lifted && o.type !== 'idle' && o.type !== 'rally' && o.type !== 'land') return;
+    if (shift && this.order.type !== 'idle') { if (this.queue.length < 8) this.queue.push(o); return; }
+    this.queue = []; this.applyOrder(o);
+  }
+  applyOrder(o) {
+    if (this.order.type === 'gather' && this.order.target && this.order.target.miner === this) this.order.target.miner = null;
+    if (this.order.type === 'construct' && this.order.target && this.order.target.builder === this) this.order.target.builder = null;
+    this.order = o; this.path = null; this.pathI = 0; this.stuck = 0; this.waitT = 0;
+    if (o.type === 'patrol') { o.ox = this.x; o.oy = this.y; }
+    if (o.type === 'attackmove' || o.type === 'move' || o.type === 'patrol') o.hx = o.x, o.hy = o.y;
+  }
+  nextOrder() { if (this.queue.length) this.applyOrder(this.queue.shift()); else this.applyOrder({ type: 'idle' }); }
+  stop() { this.queue = []; this.applyOrder({ type: 'idle' }); }
+
+  // ---------------- per-tick ----------------
+  tick() {
+    const d = this.def, p = this.player;
+    if (this.lifetime) { if (--this.lifetime <= 0) { G.kill(this, null, true); return; } }
+    // regen
+    if (this.maxSh && this.sh < this.maxSh) this.sh = Math.min(this.maxSh, this.sh + 0.045);
+    if (this.maxEnergy && this.energy < this.maxEnergy && !(this.fx.stasis > 0)) this.energy = Math.min(this.maxEnergy, this.energy + 0.03125);
+    if (d.race === 'Z' && this.hp < this.maxHp && !(this.isBuilding && !this.done)) this.hp = Math.min(this.maxHp, this.hp + 0.025);
+    if (this.stim > 0) this.stim--;
+    if (this.cooldown > 0) this.cooldown--;
+    if (this.transT > 0) this.transT--;
+    if (this.morphT > 0) { this.morphT--; return; }
+    // status effects
+    const fx = this.fx;
+    for (const k of ['lockdown', 'stasis', 'ensnare', 'maelstrom', 'blind', 'irradiate', 'plague', 'dweb']) if (fx[k] > 0) fx[k]--;
+    if (fx.matrix && --fx.matrix.t <= 0) fx.matrix = null;
+    if (fx.irradiate > 0 && d.bio && !this.isBuilding) { G.damageRaw(this, 250 / 720, null); for (const o of G.near(this.x, this.y, 48)) if (o !== this && o.def.bio && !o.isBuilding && !o.fly === !this.fly) G.damageRaw(o, 250 / 720, null); }
+    if (fx.plague > 0) { if (this.hp > 1) this.hp = Math.max(1, this.hp - 300 / 600); }
+    if (fx.stasis > 0) return;
+    if (fx.lockdown > 0 || fx.maelstrom > 0) return;
+    if (this.cloaked && !d.permaCloak && this.maxEnergy) { this.energy -= 0.15; if (this.energy <= 0) { this.energy = 0; this.cloaked = false; } }
+    if (d.cloakField && this.done) { if ((G.frame & 7) === 0) for (const o of G.near(this.x, this.y, d.cloakField * TILE)) if (o.owner === this.owner && !o.isBuilding && !o.def.cloakField && o.alive) o.arbCloak = G.frame; }
+    if (this.isBuilding) { this.tickBuilding(); return; }
+    if (this.inside && !(this.order.type === 'gather' && this.order.phase === 'inside')) return;
+    if (d.larva) { this.tickLarva(); return; }
+    if (d.egg) { this.tickProduction(); return; }
+    if (this.prod.length) this.tickProduction();
+    this.tickOrder();
+    if (d.id === 'medic' && this.order.type !== 'ability' && (G.frame + this.id) % 8 === 0) Abilities.medicAuto(this);
+    if (d.id === 'science_vessel' && this.order.type === 'idle') { /* nothing auto */ }
+  }
+
+  // ---------------- buildings ----------------
+  tickBuilding() {
+    const d = this.def, p = this.player;
+    if (!this.done) {
+      // construction
+      let adv = false;
+      if (d.race === 'T' && !d.tier.startsWith('addon')) { const b = this.builder; adv = !!(b && b.alive && b.order.type === 'construct' && b.order.target === this && distPt(b.x, b.y, this.x, this.y) < this.r + 40); }
+      else adv = true;
+      if (adv) {
+        this.progress++;
+        const tot = d.time; this.hp = Math.min(this.maxHp, this.hp + this.maxHp * 0.9 / tot);
+        if (this.maxSh) this.sh = Math.min(this.maxSh, this.sh + this.maxSh / tot);
+        if (this.progress >= tot) G.completeBuilding(this);
+      }
+      return;
+    }
+    if (this.lifted) { this.tickOrder(); return; }
+    if (d.race === 'P' && d.needsPsi) { const cx = this.tx + Math.floor(d.w / 2), cy = this.ty + Math.floor(d.h / 2); this.unpowered = !(G.map.hasPsi(this.owner, cx, cy) || G.map.hasPsi(this.owner, cx - 1, cy)); if (this.unpowered) return; }
+    if (d.spawnsLarva) { if (this.larvae.length < 3) { if (--this.larvaT <= 0) { this.larvaT = LARVA_TIME; G.spawnLarva(this); } } else this.larvaT = LARVA_TIME; }
+    if (this.addon && !this.addon.alive) this.addon = null;
+    if (this.addon && !this.addon.done) return; // building addon
+    this.tickProduction();
+    if (this.order.type === 'land') this.tickOrder();
+    // defensive weapons
+    if ((d.gw || d.aw) && !(this.fx.dweb > 0)) this.tickCombatBuilding();
+    if (d.bunker) { for (const c of this.cargo) { if (c.cooldown > 0) c.cooldown--; c.x = this.x; c.y = this.y; this.acquireFor(c); } }
+    if (d.battery && this.energy >= 1) Abilities.batteryAuto(this);
+  }
+  tickCombatBuilding() {
+    if (!this.target || !this.target.alive || !G.targetable(this, this.target) || !this.inRange(this.target)) this.target = this.findTarget(this.maxRange() * TILE, true);
+    if (this.target && this.cooldown <= 0) this.fireAt(this.target);
+  }
+  acquireFor(c) { // bunker cargo unit attack
+    if (!c.target || !c.target.alive || !G.targetable(c, c.target) || !c.inRange(c.target)) c.target = c.findTarget((c.maxRange() + 1) * TILE, true);
+    if (c.target && c.cooldown <= 0) c.fireAt(c.target);
+  }
+  tickProduction() {
+    if (!this.prod.length) return;
+    const it = this.prod[0]; const d = this.def;
+    if (it.kind === 'unit' && !d.egg && !it.started) { const ud = DATA.units[it.id]; if (ud.sup && this.player.supUsed + ud.sup * (ud.pair ? 2 : 1) > this.player.supMax && !it.reserved) { this.player.msg(RACE_INFO[this.player.race].supplyMsg, 'error'); return; } it.started = true; }
+    it.progress++;
+    if (it.progress >= it.total) { this.prod.shift(); G.finishProduction(this, it); }
+  }
+
+  // ---------------- larva ----------------
+  tickLarva() {
+    if (!this.hatch || !this.hatch.alive) { G.kill(this, null, true); return; }
+    if ((G.frame + this.id) % 60 === 0) { const a = Math.random() * Math.PI * 2; this.wx = this.hatch.x + Math.cos(a) * 60; this.wy = this.hatch.y + (this.hatch.def.h / 2) * TILE + 14 + Math.random() * 18; }
+    if (this.wx !== undefined) { const dx = this.wx - this.x, dy = this.wy - this.y, dd = Math.hypot(dx, dy); if (dd > 2) { this.x += dx / dd * 0.3; this.y += dy / dd * 0.3; } }
+  }
+
+  // ---------------- unit order state machine ----------------
+  tickOrder() {
+    const o = this.order, d = this.def;
+    this.moving = false;
+    if (this.burrowed && !d.mine && o.type !== 'idle' && o.type !== 'hold' && o.type !== 'ability') { if (o.type === 'move' || o.type === 'attackmove' || o.type === 'attack' || o.type === 'gather' || o.type === 'build') { this.burrowed = false; this.transT = 20; } }
+    if (this.sieged && (o.type === 'move' || o.type === 'attackmove' || o.type === 'patrol')) { /* sieged tanks can't move; ignore */ this.nextOrder(); return; }
+    if (d.mine) { Abilities.mineTick(this); return; }
+    switch (o.type) {
+      case 'idle': this.tickIdle(); break;
+      case 'hold': { const t = this.autoTarget(true); if (t) this.fireAt(t); break; }
+      case 'move': if (this.moveTo(o.x, o.y, o.target)) this.nextOrder(); break;
+      case 'follow': if (!o.target.alive) { this.nextOrder(); break; } if (dist(this, o.target) > this.r + o.target.r + 24) this.moveTo(o.target.x, o.target.y, o.target); break;
+      case 'attackmove': {
+        if (!o.target || !o.target.alive || !G.targetable(this, o.target)) o.target = this.autoTarget(false);
+        if (o.target) { this.engage(o.target); } else if (this.moveTo(o.x, o.y)) this.nextOrder();
+        break;
+      }
+      case 'patrol': {
+        if (!o.target || !o.target.alive || !G.targetable(this, o.target)) o.target = this.autoTarget(false);
+        if (o.target) this.engage(o.target); else if (this.moveTo(o.x, o.y)) { const t = o.x, u = o.y; o.x = o.ox; o.y = o.oy; o.ox = t; o.oy = u; this.path = null; }
+        break;
+      }
+      case 'attack': {
+        if (!o.target || !o.target.alive || (o.target.inside) || (!G.targetable(this, o.target) && !o.target.isBuilding)) { this.nextOrder(); break; }
+        if (!this.weaponFor(o.target)) { if (this.hasWeapon() || d.worker) { if (dist(this, o.target) > 48) this.moveTo(o.target.x, o.target.y, o.target); else this.nextOrder(); } else this.nextOrder(); break; }
+        this.engage(o.target); break;
+      }
+      case 'gather': this.tickGather(); break;
+      case 'return': this.tickReturn(); break;
+      case 'build': this.tickBuild(); break;
+      case 'construct': { const b = o.target; if (!b || !b.alive || b.done) { this.nextOrder(); break; } if (b.builder && b.builder !== this && b.builder.alive && b.builder.order.target === b) { this.nextOrder(); break; } b.builder = this; if (this.moveToRect(b, 4)) { this.facing = Math.atan2(b.y - this.y, b.x - this.x); } break; }
+      case 'repair': Abilities.repairTick(this); break;
+      case 'ability': Abilities.orderTick(this); break;
+      case 'load': { const t = o.target; if (!t || !t.alive || t.owner !== this.owner) { this.nextOrder(); break; } if (dist(this, t) < this.r + t.r + 12) { G.loadUnit(t, this); } else this.moveTo(t.x, t.y, t); break; }
+      case 'pickup': { const t = o.target; if (!t || !t.alive || t.inside) { this.nextOrder(); break; } if (dist(this, t) < this.r + t.r + 12) { G.loadUnit(this, t); this.nextOrder(); } else this.moveTo(t.x, t.y, t); break; }
+      case 'unload': { if (this.moveTo(o.x, o.y)) { if (this.cargo.length) { if ((G.frame & 7) === 0) G.unloadOne(this); } else this.nextOrder(); } break; }
+      case 'merge': { const t = o.partner; if (!t || !t.alive || t.order.type !== 'merge' || t.order.partner !== this) { this.nextOrder(); break; } if (dist(this, t) < 28) { if (this.id < t.id) G.mergeUnits(this, t, o.unit); } else this.moveTo(t.x, t.y, t); break; }
+      case 'land': { if (this.moveTo((o.tx + d.w / 2) * TILE, (o.ty + d.h / 2) * TILE)) { G.landBuilding(this, o.tx, o.ty); } break; }
+      case 'scarab': { Abilities.scarabTick(this); break; }
+      case 'interceptor': { Abilities.interceptorTick(this); break; }
+      default: this.nextOrder();
+    }
+  }
+  tickIdle() {
+    const d = this.def;
+    if (this.def.worker) { if (this.carrying && (G.frame + this.id) % 24 === 0) { this.applyOrder({ type: 'return' }); } return; }
+    if (this.hasWeapon() && !this.def.notUnit && (G.frame + this.id) % 6 === 0) { const t = this.autoTarget(false); if (t) { this.applyOrder({ type: 'attack', target: t, auto: true, ox: this.x, oy: this.y }); } }
+    if (d.suicide) { }
+  }
+  autoTarget(holdOnly) {
+    if (!this.hasWeapon()) return null;
+    if (this.def.gw && this.def.gw.burrowOnly && !this.burrowed) return null;
+    const range = holdOnly ? this.maxRange() * TILE : Math.max(this.maxRange() + 1, 5) * TILE;
+    return this.findTarget(range, holdOnly);
+  }
+  findTarget(rangePx, strict) {
+    let best = null, bs = 1e9;
+    for (const t of G.near(this.x, this.y, rangePx + 40)) {
+      if (t === this || !t.alive || t.owner === this.owner || t.inside || G.allied(this.owner, t.owner)) continue;
+      if (!G.targetable(this, t)) continue;
+      const w = this.weaponFor(t); if (!w) continue;
+      const dd = dist(this, t) - t.r - this.r; if (dd > rangePx) continue;
+      if (strict && !this.inRange(t)) continue;
+      if (w.minRange && dd < w.minRange * TILE) continue;
+      let s = dd;
+      if (t.isBuilding) s += 400 + (t.hasWeapon() ? -300 : 0);
+      else if (!t.hasWeapon() && !t.def.worker) s += 160; if (t.def.larva || t.def.egg) s += 800; if (t.def.worker) s += 60;
+      if (t.halluc) s += 50;
+      if (s < bs) { bs = s; best = t; }
+    }
+    return best;
+  }
+  inRange(t) { const w = this.weaponFor(t); if (!w) return false; const dd = dist(this, t) - t.r - this.r; if (w.minRange && dd < w.minRange * TILE) return false; return dd <= this.wRange(w) * TILE + 2; }
+  engage(t) {
+    const w = this.weaponFor(t);
+    if (!w) { this.moveTo(t.x, t.y, t); return; }
+    const dd = dist(this, t) - t.r - this.r;
+    if (dd <= this.wRange(w) * TILE) {
+      if (w.minRange && dd < w.minRange * TILE) { if (this.canMove && !this.sieged) this.moveTo(this.x + (this.x - t.x), this.y + (this.y - t.y)); return; }
+      this.facing = Math.atan2(t.y - this.y, t.x - this.x);
+      if (this.cooldown <= 0) this.fireAt(t);
+      this.path = null;
+    } else if (this.canMove && !this.sieged && !(this.burrowed && !this.def.mine)) {
+      if (this.burrowed) { this.burrowed = false; this.transT = 20; return; }
+      this.moveTo(t.x, t.y, t);
+    }
+  }
+  fireAt(t) {
+    const w = this.weaponFor(t); if (!w) return;
+    if (this.fx.dweb > 0 && !this.fly) return;
+    this.cooldown = this.wCd(w); this.facing = Math.atan2(t.y - this.y, t.x - this.x);
+    if (this.def.worker && !this.isBuilding) this.cooldown = 22;
+    Combat.fire(this, t, w);
+  }
+
+  // ---------------- movement ----------------
+  moveTo(x, y, targetUnit) {
+    if (!this.canMove || this.speed <= 0 || this.transT > 0 && this.def.id === 'siege_tank') return distPt(this.x, this.y, x, y) < 8;
+    if (this.burrowed && !this.def.mine) return false;
+    const m = G.map; const spd = this.speed;
+    const dd = distPt(this.x, this.y, x, y);
+    const arriveR = targetUnit ? Math.max(6, this.r + targetUnit.r - 4) : Math.max(4, spd);
+    if (dd <= arriveR) return true;
+    if (this.stuck > 40 && dd < 140) { this.stuck = 0; return true; }
+    let gx = x, gy = y;
+    if (!this.fly) {
+      const [sx, sy] = this.tile(); const tx = clamp(Math.floor(x / TILE), 0, m.w - 1), ty = clamp(Math.floor(y / TILE), 0, m.h - 1);
+      if (!this.path || this.pathGoal[0] !== tx || this.pathGoal[1] !== ty || this.repathT <= 0) {
+        if (G.pathBudget > 0 || !this.path) { G.pathBudget--; this.path = G.pf.find(sx, sy, tx, ty, 5000); this.pathI = 0; this.pathGoal = [tx, ty]; this.repathT = 90 + (this.id % 30); }
+      } else this.repathT--;
+      // advance along path
+      while (this.path && this.pathI < this.path.length) { const wp = this.path[this.pathI]; const wx = (wp[0] + 0.5) * TILE, wy = (wp[1] + 0.5) * TILE; if (distPt(this.x, this.y, wx, wy) < Math.max(6, spd + 2)) this.pathI++; else break; }
+      if (this.path && this.pathI < this.path.length) { const wp = this.path[this.pathI]; gx = (wp[0] + 0.5) * TILE; gy = (wp[1] + 0.5) * TILE; }
+      else if (this.path && this.path.length) { const wp = this.path[this.path.length - 1]; if (distPt(this.x, this.y, (wp[0] + .5) * TILE, (wp[1] + .5) * TILE) < TILE && distPt(this.x, this.y, x, y) > TILE * 1.5) { /* path ended short (unreachable) */ this.stuck = 0; return true; } }
+    }
+    const ang = Math.atan2(gy - this.y, gx - this.x); this.facing = ang;
+    const step = Math.min(spd, dd);
+    let nx = this.x + Math.cos(ang) * step, ny = this.y + Math.sin(ang) * step;
+    if (!this.fly) {
+      if (!G.passable(nx, ny, this) && G.passable(this.x, this.y, this)) {
+        const tries = [[nx, this.y], [this.x, ny], [this.x + Math.cos(ang + 0.8) * step, this.y + Math.sin(ang + 0.8) * step], [this.x + Math.cos(ang - 0.8) * step, this.y + Math.sin(ang - 0.8) * step]];
+        let ok = false; for (const [ax, ay] of tries) if (G.passable(ax, ay, this)) { nx = ax; ny = ay; ok = true; break; }
+        if (!ok) { this.stuck += 3; this.repathT = 0; if (this.stuck > 30) this.path = null; return false; }
+      }
+    } else { nx = clamp(nx, 8, G.map.w * TILE - 8); ny = clamp(ny, 8, G.map.h * TILE - 8); }
+    const moved = distPt(nx, ny, this.x, this.y);
+    this.vx = nx - this.x; this.vy = ny - this.y; this.x = nx; this.y = ny; this.moving = true;
+    if (moved < spd * 0.3) this.stuck++; else this.stuck = Math.max(0, this.stuck - 1);
+    return false;
+  }
+  moveToRect(b, pad = 6) { // move adjacent to a building/resource
+    const x0 = b.tx !== undefined ? b.tx * TILE : b.x * TILE, y0 = b.ty !== undefined ? b.ty * TILE : b.y * TILE;
+    const w = (b.def ? b.def.w : b.w) * TILE, h = (b.def ? b.def.h : b.h) * TILE;
+    const cx = clamp(this.x, x0, x0 + w), cy = clamp(this.y, y0, y0 + h);
+    const dd = distPt(this.x, this.y, cx, cy);
+    if (dd <= this.r + pad) return true;
+    // aim slightly outside the nearest edge point
+    const ax = cx + (this.x - cx) / (dd || 1) * (this.r + 2), ay = cy + (this.y - cy) / (dd || 1) * (this.r + 2);
+    if (this.moveTo(ax, ay)) return true;
+    return distPt(this.x, this.y, clamp(this.x, x0, x0 + w), clamp(this.y, y0, y0 + h)) <= this.r + pad;
+  }
+
+  // ---------------- gathering ----------------
+  tickGather() {
+    const o = this.order, res = o.target;
+    if (this.carrying && (this.carrying.type === 'gas') !== (res && res.type === 'gas')) { /* fallthrough */ }
+    if (!res || (res.type === 'mineral' && res.amount <= 0) || (res.type === 'gas' && !res.alive)) { const n = G.findNearestResource(this, res && res.type === 'gas' ? 'gas' : 'mineral'); if (!n) { this.nextOrder(); return; } o.target = n; o.phase = 'goto'; return; }
+    if (this.carrying) { this.applyOrder({ type: 'return', then: res }); return; }
+    this.lastRes = res;
+    if (res.type === 'mineral') {
+      if (o.phase === 'mine') { if (--o.t <= 0) { res.miner = null; res.amount -= 8; this.carrying = { type: 'mineral', amt: res.amount >= 0 ? 8 : 8 + res.amount }; if (res.amount <= 0) G.removeResource(res); this.applyOrder({ type: 'return', then: res }); } return; }
+      if (this.moveToRect(res, 6)) {
+        if (!res.miner || res.miner === this || !res.miner.alive || res.miner.order.target !== res) { res.miner = this; o.phase = 'mine'; o.t = MINE_TIME; }
+        else { // find another free field nearby
+          if ((G.frame + this.id) % 16 === 0) { let best = null, bd = 1e9; for (const r of G.map.resources) { if (r.type !== 'mineral' || r.amount <= 0 || (r.miner && r.miner.alive && r.miner.order.target === r)) continue; const dd = distPt(r.cx, r.cy, res.cx, res.cy); if (dd < 6 * TILE && dd < bd) { bd = dd; best = r; } } if (best) { o.target = best; o.phase = 'goto'; this.path = null; } }
+        }
+      }
+    } else { // gas building
+      const g = res; if (!g.done || g.owner !== this.owner) { this.nextOrder(); return; }
+      if (o.phase === 'inside') { if (--o.t <= 0) { g.occupant = null; this.inside = null; g.geyser.amount -= 8; const amt = g.geyser.amount > 0 ? 8 : 2; if (g.geyser.amount < 0) g.geyser.amount = 0; this.carrying = { type: 'gas', amt }; this.x = g.x; this.y = g.y + g.r + this.r; this.applyOrder({ type: 'return', then: g }); } return; }
+      if (this.moveToRect(g, 6)) { if (!g.occupant || !g.occupant.alive || g.occupant.order.type !== 'gather') { g.occupant = this; o.phase = 'inside'; o.t = GAS_TIME; this.inside = g; } }
+    }
+  }
+  tickReturn() {
+    const o = this.order;
+    if (!this.carrying) { if (o.then) this.applyOrder({ type: 'gather', target: o.then, phase: 'goto' }); else this.nextOrder(); return; }
+    if (!o.depot || !o.depot.alive || !o.depot.done) { o.depot = G.nearestDepot(this); if (!o.depot) { this.waitT = 24; if (--this.waitT <= 0) this.nextOrder(); return; } this.path = null; }
+    if (this.moveToRect(o.depot, 6)) {
+      const p = this.player; if (this.carrying.type === 'mineral') { p.minerals += this.carrying.amt; p.stats.mined += this.carrying.amt; } else { p.gas += this.carrying.amt; p.stats.gassed += this.carrying.amt; }
+      this.carrying = null;
+      if (o.then && ((o.then.type === 'mineral' && o.then.amount > 0) || (o.then.type === 'gas' && o.then.alive))) this.applyOrder({ type: 'gather', target: o.then, phase: 'goto' });
+      else { const n = G.findNearestResource(this, 'mineral'); if (n) this.applyOrder({ type: 'gather', target: n, phase: 'goto' }); else this.nextOrder(); }
+    }
+  }
+  // ---------------- building ----------------
+  tickBuild() {
+    const o = this.order, def = o.def, p = this.player;
+    const cx = (o.tx + def.w / 2) * TILE, cy = (o.ty + def.h / 2) * TILE;
+    const fake = { tx: o.tx, ty: o.ty, def };
+    if (def.onGeyser) { const g = G.map.geyserAt(o.tx, o.ty); if (!g) { this.nextOrder(); return; } }
+    if (this.moveToRect(fake, 8)) {
+      const err = G.map.canPlace(def, o.tx, o.ty, p, G.units, this);
+      if (err) { p.msg(err, 'error'); this.nextOrder(); return; }
+      if (!p.hasReq(def)) { p.msg('Requires ' + p.missingReq(def), 'error'); this.nextOrder(); return; }
+      if (!p.canAfford(def.min, def.gas)) { this.nextOrder(); return; }
+      p.minerals -= def.min; p.gas -= def.gas;
+      const b = G.placeBuilding(def, o.tx, o.ty, this.owner);
+      if (def.race === 'T') { this.applyOrder({ type: 'construct', target: b }); b.builder = this; }
+      else if (def.race === 'Z') { G.kill(this, null, true); }
+      else { this.nextOrder(); }
+      // push away from footprint
+      if (this.alive && !this.fly) G.nudgeOut(this, b);
+    }
+  }
+}
