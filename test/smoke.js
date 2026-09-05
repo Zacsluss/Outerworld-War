@@ -4,12 +4,12 @@ const root = path.join(__dirname, '..');
 const ctx = { console, performance, Math, addEventListener() { }, setTimeout, document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { } };
 ctx.window = ctx; ctx.globalThis = ctx;
 vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'ai', 'render', 'ui']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
+for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'render', 'ui']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
 const frames = parseInt(process.argv[2] || '6000');
 const races = (process.argv[3] || 'TZ').split('');
 vm.runInContext(`
   UI.ping = () => {}; UI.onUnitDied = () => {}; UI.selection = []; UI.markers = [];
-  G.init({ players: [{ race: '${races[0]}', human: true, name: 'H' }, { race: '${races[1] || 'P'}', human: false, difficulty: 'normal', name: 'C' }], seed: 1 });
+  G.init({ players: [{ race: '${races[0]}', human: true, name: 'H' }, { race: '${races[1] || 'P'}', human: false, difficulty: 'normal', name: 'C' }], seed: 1, layout: '${process.argv[4] || 'temple'}' });
   G.players[0].human = false; G.players[0].ai = new AI(G.players[0], 'normal'); G.players[0].showVision = true;
   const t0 = Date.now();
   for (let i = 0; i < ${frames}; i++) {

@@ -9,24 +9,23 @@ const G = {
   nukeAlerts: [],
 
   init(opts) {
-    UNIT_ID = 1;
-    this.map = new GameMap(opts.seed || 1); this.pf = new Pathfinder(this.map);
+    UNIT_ID = 1; this.seed = opts.seed || 1; this.layout = opts.layout || 'temple'; this.setup = opts; this.cheats = {}; this.log = []; this.pendingCmds = null; RNG.seed((this.seed * 7919 + 17) >>> 0); this._allVis = null;
+    this.map = new GameMap(opts.seed || 1, opts.layout || 'temple'); this.pf = new Pathfinder(this.map);
     this.units = []; this.byId = new Map(); this.effects = []; this.projectiles = []; this.fields = []; this.frame = 0; this.over = false; this.winner = -1;
     this.gw = Math.ceil(this.map.w * TILE / this.cell); this.gh = Math.ceil(this.map.h * TILE / this.cell);
     this.grid = new Array(this.gw * this.gh).fill(null).map(() => []);
     this.players = [];
     const races = ['T', 'Z', 'P'];
-    const pick = r => r === 'R' ? races[Math.floor(Math.random() * 3)] : r;
-    const startOrder = opts.players.length === 2 ? [0, 3] : [0, 3, 1, 2];
+    const pick = r => r === 'R' ? races[Math.floor(this.rand() * 3)] : r;
     opts.players.forEach((po, i) => {
-      const p = new Player(i, pick(po.race), po.human, po.name || (po.human ? 'Player' : 'Computer ' + i));
+      const p = new Player(i, pick(po.race), po.human, po.name || (po.human ? 'Player' : 'Computer ' + i)); p.team = po.team == null ? i : po.team;
       p.vis = new Uint8Array(this.map.w * this.map.h); p.ai = po.human ? null : new AI(p, po.difficulty || 'normal');
       this.players.push(p);
-      const base = this.map.starts[startOrder[i]];
+      const base = this.map.starts[i % this.map.starts.length];
       p.startBase = base; p.startX = base.cx; p.startY = base.cy;
       this.setupStart(p, base);
     });
-    this.human = this.players.findIndex(p => p.human);
+    this.human = opts.human != null ? opts.human : this.players.findIndex(p => p.human);
     this.map.recomputeCreep(this.units);
     for (const p of this.players) if (p.race === 'P') this.map.recomputePsi(p.id, this.units);
     this.recomputeSupply();
@@ -49,7 +48,8 @@ const G = {
     for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) for (const u of this.grid[cy * this.gw + cx]) { if (u.alive && distPt(u.x, u.y, x, y) <= r + u.r) out.push(u); }
     return out;
   },
-  allied(a, b) { return a === b; },
+  allied(a, b) { if (a === b) return true; const pa = this.players[a], pb = this.players[b]; return !!(pa && pb && pa.team === pb.team); },
+  allVis() { if (!this._allVis) { this._allVis = new Uint8Array(this.map.w * this.map.h).fill(2); } return this._allVis; },
   passable(x, y, u) {
     const m = this.map; const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
     if (!m.walkable(tx, ty)) return false;
@@ -76,15 +76,15 @@ const G = {
       }
     }
   },
-  nudgeOut(u, b) { const x0 = b.tx * TILE, y0 = b.ty * TILE, x1 = x0 + b.def.w * TILE, y1 = y0 + b.def.h * TILE; if (u.x > x0 - u.r && u.x < x1 + u.r && u.y > y0 - u.r && u.y < y1 + u.r) { const t = this.map.findFreeTile(Math.floor(u.x / TILE), Math.floor(u.y / TILE), 8); if (t) { u.x = (t[0] + .5) * TILE; u.y = (t[1] + .5) * TILE; } } },
+  nudgeOut(u, b) { const x0 = b.tx * TILE, y0 = b.ty * TILE, x1 = x0 + b.def.w * TILE, y1 = y0 + b.def.h * TILE; if (u.x > x0 - u.r && u.x < x1 + u.r && u.y > y0 - u.r && u.y < y1 + u.r) { const t = this.map.findFreeTile(Math.floor(u.x / TILE), Math.floor(u.y / TILE), 8); if (t) { u.x = (t[0] + .5) * TILE; u.y = (t[1] + .5) * TILE; if (u.def.larva) { u.wx = u.x; u.wy = u.y; } } } },
 
   // ---------------- visibility ----------------
   visible(pid, tx, ty) { const p = this.players[pid]; return p && p.vis[ty * this.map.w + tx] === 2; },
   visibleAt(pid, x, y) { const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); return this.map.inb(tx, ty) && this.visible(pid, tx, ty); },
   explored(pid, tx, ty) { return this.players[pid].vis[ty * this.map.w + tx] > 0; },
   detected(u, pid) { return (u.detBy[pid] || -99) >= this.frame - 8; },
-  canSee(pid, u) { if (u.owner === pid) return true; if (u.fx.parasite === pid) return true; if (!this.visibleAt(pid, u.x, u.y)) return false; if (u.isCloaked && !this.detected(u, pid)) return false; return true; },
-  targetable(att, t) { if (!t.alive || t.inside) return false; if (t.fx.stasis > 0) return false; if (t.owner === att.owner) return true; return this.canSee(att.owner, t); },
+  canSee(pid, u) { if (u.owner === pid || this.allied(pid, u.owner)) return true; if (u.fx.parasite === pid) return true; if (!this.visibleAt(pid, u.x, u.y)) return false; if (u.isCloaked && !this.detected(u, pid) && !(u.fx.ensnare > 0 || u.fx.plague > 0)) return false; return true; },
+  targetable(att, t) { if (!t.alive || t.inside) return false; if (t.fx.stasis > 0) return false; if (t.owner === att.owner || this.allied(att.owner, t.owner)) return true; return this.canSee(att.owner, t); },
   circles: {},
   circle(r) { if (this.circles[r]) return this.circles[r]; const o = []; for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (dx * dx + dy * dy <= r * r + r) o.push([dx, dy]); return this.circles[r] = o; },
   updateVision() {
@@ -92,11 +92,12 @@ const G = {
     for (const p of this.players) {
       const v = p.vis; for (let i = 0; i < v.length; i++) if (v[i] === 2) v[i] = 1;
       const mark = (ux, uy, r, uh) => { const tx = Math.floor(ux / TILE), ty = Math.floor(uy / TILE); for (const [dx, dy] of this.circle(r)) { const x = tx + dx, y = ty + dy; if (x < 0 || y < 0 || x >= m.w || y >= m.h) continue; const i = y * m.w + x; if (m.height[i] <= uh || (m.height[i] === 2 && uh === 1 && false)) v[i] = 2; } };
-      for (const u of this.units) { if (!u.alive || u.inside) continue; if (u.owner === p.id || u.fx.parasite === p.id) mark(u.x, u.y, u.sight, u.heightLevel()); }
-      for (const f of this.fields) if (f.kind === 'scan' && f.owner === p.id) mark(f.x, f.y, 10, 2);
+      for (const u of this.units) { if (!u.alive || u.inside) continue; if (this.allied(u.owner, p.id) || u.fx.parasite === p.id) mark(u.x, u.y, u.sight, u.heightLevel()); }
+      for (const f of this.fields) if (f.kind === 'scan' && this.allied(f.owner, p.id)) mark(f.x, f.y, 10, 2);
+      if (p.human && (this.cheats.reveal || this.cheats.nofog)) v.fill(2);
     }
     // detection
-    for (const u of this.units) { if (!u.alive || !u.isDetector) continue; const r = u.sight * TILE; for (const t of this.near(u.x, u.y, r)) if (t.owner !== u.owner && t.isCloaked) t.detBy[u.owner] = this.frame; }
+    for (const u of this.units) { if (!u.alive || !u.isDetector) continue; const r = u.sight * TILE; for (const t of this.near(u.x, u.y, r)) if (t.owner !== u.owner && t.isCloaked) for (const q of this.players) if (this.allied(q.id, u.owner)) t.detBy[q.id] = this.frame; }
     for (const f of this.fields) if (f.kind === 'scan') for (const t of this.near(f.x, f.y, 10 * TILE)) if (t.isCloaked) t.detBy[f.owner] = this.frame;
   },
 
@@ -121,7 +122,7 @@ const G = {
     if (b.def.onGeyser) { b.alive = true; b.type = 'gas'; }
     this.recomputeSupply();
   },
-  spawnLarva(h) { const l = this.spawnUnit('larva', h.owner, h.x - 30 + Math.random() * 60, h.y + h.def.h / 2 * TILE + 14); l.hatch = h; h.larvae.push(l); },
+  spawnLarva(h) { const l = this.spawnUnit('larva', h.owner, h.x - 30 + this.rand() * 60, h.y + h.def.h / 2 * TILE + 14); l.hatch = h; h.larvae.push(l); },
   freeSpotAround(b, fly) {
     if (fly) return [b.x, b.y + b.r + 10];
     const t = this.map.findFreeTile(b.tx + Math.floor(b.def.w / 2), b.ty + b.def.h, 10, (x, y) => this.map.walkable(x, y));
@@ -214,9 +215,9 @@ const G = {
   },
 
   // ---------------- damage & death ----------------
-  damageRaw(t, amt, src) { if (!t.alive || t.fx.stasis > 0) return; if (t.sh > 0) { const s = Math.min(t.sh, amt); t.sh -= s; amt -= s; } t.hp -= amt; if (src) { t.lastHit = this.frame; t.lastHitBy = src; } if (t.hp <= 0) this.kill(t, src); },
+  damageRaw(t, amt, src) { if (!t.alive || t.fx.stasis > 0) return; if (this.cheats.god && this.players[t.owner].human) return; if (t.sh > 0) { const s = Math.min(t.sh, amt); t.sh -= s; amt -= s; } t.hp -= amt; if (src) { t.lastHit = this.frame; t.lastHitBy = src; } if (t.hp <= 0) this.kill(t, src); },
   damage(t, dmg, type, src, opts = {}) {
-    if (!t.alive || t.fx.stasis > 0) return 0;
+    if (!t.alive || t.fx.stasis > 0) return 0; if (this.cheats.god && this.players[t.owner].human) return 0;
     if (t.halluc) dmg *= 2;
     if (t.fx.matrix) { const ab = Math.min(t.fx.matrix.hp, dmg); t.fx.matrix.hp -= ab; dmg -= ab; if (t.fx.matrix.hp <= 0) t.fx.matrix = null; if (dmg <= 0) return 0; }
     let d = dmg; const p = this.players[t.owner];
@@ -239,6 +240,8 @@ const G = {
     if (!u.alive) return; u.alive = false; const p = this.players[u.owner];
     if (u.isBuilding) { if (!u.lifted) this.map.unblock(u.tx, u.ty, u.def.w, u.def.h, u.id); if (u.def.creep) this.map.recomputeCreep(this.units); if (u.def.psi) this.map.recomputePsi(u.owner, this.units); if (u.geyser) u.geyser.building = null; for (const l of u.larvae) this.kill(l, null, true); if (u.def.bunker) { while (u.cargo.length) this.unloadOne(u); } if (u.addon) { u.addon.parent = null; } if (u.parent) u.parent.addon = null; if (u.builder && u.builder.order.target === u) u.builder.nextOrder(); for (const it of u.prod) if (it.kind === 'upg' || it.kind === 'tech') p.researching.delete(it.id); }
     for (const c of u.cargo) { c.inside = null; if (!u.def.bunker) this.kill(c, killer, true); }
+    if (u.launched) for (const ic of u.launched) if (ic.alive) this.kill(ic, null, true);
+    if (u.parent && u.parent.launched) { const i = u.parent.launched.indexOf(u); if (i >= 0) u.parent.launched.splice(i, 1); }
     if (u.inside && u.inside.cargo) { const i = u.inside.cargo.indexOf(u); if (i >= 0) u.inside.cargo.splice(i, 1); }
     if (u.order.type === 'gather' && u.order.target && u.order.target.miner === u) u.order.target.miner = null;
     if (u.order.type === 'gather' && u.order.phase === 'inside' && u.order.target) u.order.target.occupant = null;
@@ -261,7 +264,7 @@ const G = {
     if (!p.hasReq(ud)) { p.msg('Requires ' + p.missingReq(ud), 'error'); return false; }
     if (uid === 'nuke' && b.hasNuke) return false;
     if (!p.canAfford(ud.min, ud.gas)) return false;
-    if (ud.sup && !ud.notUnit && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) { p.msg(RACE_INFO[p.race].supplyMsg, 'error'); return false; }
+    if (ud.sup && !ud.notUnit && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax && !(this.cheats.food && p.human)) { p.msg(RACE_INFO[p.race].supplyMsg, 'error'); return false; }
     p.minerals -= ud.min; p.gas -= ud.gas;
     b.prod.push({ kind: 'unit', id: uid, progress: 0, total: ud.time }); this.recomputeSupply(); return true;
   },
@@ -270,7 +273,7 @@ const G = {
     if (!l.alive || !l.def.larva) return false;
     if (!p.hasReq(ud)) { p.msg('Requires ' + p.missingReq(ud), 'error'); return false; }
     if (!p.canAfford(ud.min, ud.gas)) return false;
-    if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) { p.msg(RACE_INFO[p.race].supplyMsg, 'error'); return false; }
+    if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax && !(this.cheats.food && p.human)) { p.msg(RACE_INFO[p.race].supplyMsg, 'error'); return false; }
     p.minerals -= ud.min; p.gas -= ud.gas;
     const h = l.hatch; if (h) { const i = h.larvae.indexOf(l); if (i >= 0) h.larvae.splice(i, 1); }
     l.hatch = null; l.rallyFrom = h; const ed = DATA.units.egg; l.def = ed; l.maxHp = ed.hp; l.hp = ed.hp; l.r = ed.r; l.prod = [{ kind: 'unit', id: uid, progress: 0, total: ud.time, reserved: true }];
@@ -331,6 +334,8 @@ const G = {
   // ---------------- main tick ----------------
   tick() {
     if (this.over || this.paused) return;
+    if (typeof Replay !== 'undefined') Replay.applyPending();
+    this.inTick = true;
     this.frame++; this.pathBudget = 40;
     this.rebuildGrid();
     if (this.frame % 3 === 0) this.updateVision();
@@ -342,15 +347,17 @@ const G = {
     if (this.frame % 8 === 0) this.recomputeSupply();
     if (this.frame % 24 === 0) { this.units = this.units.filter(u => u.alive); this.checkVictory(); }
     for (let i = this.effects.length - 1; i >= 0; i--) { if (--this.effects[i].t <= 0) this.effects.splice(i, 1); }
+    if (this.mission && this.frame % 24 === 0) this.mission.tick();
+    this.inTick = false;
   },
   checkVictory() {
     for (const p of this.players) {
       if (p.defeated) continue;
       const hasB = this.units.some(u => u.alive && u.owner === p.id && u.isBuilding && !u.def.notUnit && u.def.tier !== 'addon');
       const hasU = this.units.some(u => u.alive && u.owner === p.id && !u.isBuilding && !u.def.notUnit && !u.def.larva);
-      if (!hasB && (!hasU || this.frame > 24 * 60 * 3)) { p.defeated = true; p.alive = false; for (const u of this.units) if (u.alive && u.owner === p.id) this.kill(u, null, true); for (const q of this.players) if (q.human) q.msg(p.name + ' has been eliminated.'); }
+      if (!hasB && (!hasU || this.frame > 24 * 60 * 3) && !(this.cheats.alive && p.human)) { p.defeated = true; p.alive = false; for (const u of this.units) if (u.alive && u.owner === p.id) this.kill(u, null, true); for (const q of this.players) if (q.human) q.msg(p.name + ' has been eliminated.'); }
     }
-    const alive = this.players.filter(p => !p.defeated);
-    if (alive.length <= 1) { this.over = true; this.winner = alive.length ? alive[0].id : -1; }
+    const alive = this.players.filter(p => !p.defeated); const teams = new Set(alive.map(p => p.team));
+    if (teams.size <= 1 && !(this.mission && !this.mission.done)) { this.over = true; this.winner = alive.length ? alive[0].id : -1; this.winTeam = alive.length ? alive[0].team : -1; }
   },
 };

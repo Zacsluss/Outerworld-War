@@ -1,7 +1,7 @@
 // Headless feature tests: node test/features.js
 const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
 const ctx = { console, Math, performance, addEventListener() { }, setTimeout, document: { getElementById: () => ({ style: {}, addEventListener() { } }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { } }; ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'ai', 'render', 'ui']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f });
+for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'render', 'ui']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f });
 vm.runInContext(`
 UI.ping = () => {}; UI.onUnitDied = () => {};
 let pass = 0, fail = 0; const T = (name, cond) => { if (cond) pass++; else { fail++; console.log('FAIL: ' + name); } };
@@ -97,7 +97,7 @@ const tankE = sp('siege_tank', 1, arb.x + 150, arb.y); Abilities.issue(arb, 'sta
 arb.energy = 200; Abilities.issue(arb, 'recall', null, hx + 600, hy + 600); const far = sp('dragoon', 0, hx + 600, hy + 600); run(60); T('recall', distPt(far.x, far.y, arb.x, arb.y) < 8 * TILE);
 G.queueTech(ta, 'mind_control_tech'); run(1810); const da = sp('dark_archon', 0, hx - 300, hy + 300); da.energy = 200; const mc = sp('marine', 1, da.x + 100, da.y); Abilities.issue(da, 'mind_control', mc); run(30); T('mind control', mc.owner === 0 && da.sh < 5);
 const car = sp('carrier', 0, hx, hy - 400); G.queueUnit(car, 'interceptor'); run(310); T('interceptor built', car.interceptors === 1); car.interceptors = 4; const tgt2 = sp('marine', 1, car.x + 150, car.y); run(120); T('carrier attacks', !tgt2.alive);
-const rea = sp('reaver', 0, hx - 400, hy); rea.scarabs = 1; const tgt3 = sp('marine', 1, rea.x + 200, rea.y); run(120); T('reaver scarab', !tgt3.alive && rea.scarabs === 0);
+const rea = sp('reaver', 0, hx - 100, hy + 260); rea.scarabs = 1; const tgt3 = sp('marine', 1, rea.x + 200, rea.y); run(150); T('reaver scarab', !tgt3.alive && rea.scarabs === 0);
 const bat = place('shield_battery', 0, hx + 100, hy + 300); bat.energy = 200; const z2 = sp('zealot', 0, bat.x + 60, bat.y); z2.sh = 0; run(40); T('shield battery recharges', z2.sh > 30);
 const cannon = place('photon_cannon', 0, hx - 100, hy + 400); const m5 = sp('marine', 1, cannon.x + 150, cannon.y); run(100); T('cannon shoots', !m5.alive);
 const cor = sp('corsair', 0, hx, hy); const muta2 = sp('mutalisk', 1, cor.x + 100, cor.y); run(200); T('corsair damages muta', !muta2.alive || muta2.hp < 100);

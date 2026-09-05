@@ -15,6 +15,8 @@
   select, input { background: #0e1117; color: #eee; border: 1px solid #3a4452; padding: 6px 8px; font-size: 14px; }
   button { margin-top: 18px; width: 100%; padding: 12px; font-size: 18px; background: #2c3a4c; color: #fff; border: 1px solid #5a6a7c; cursor: pointer; letter-spacing: 2px; }
   button:hover { background: #3c4c60; }
+  details { margin-top: 12px; color: #aab; } summary { cursor: pointer; font-size: 13px; letter-spacing: 1px; color: #cdd; } .chk { width: auto; margin-right: 12px; color: #ccd; } .lobbyList { margin: 8px 0; font-size: 13px; color: #dde; } .lp { padding: 3px 0; border-bottom: 1px solid #2a3340; } .lp a { color: #f66; text-decoration: none; margin-left: 8px; } #lbStart { margin-top: 10px; }
+  .row2 { display: flex; gap: 8px; } .row2 button, button.small { font-size: 13px; padding: 8px; margin-top: 8px; letter-spacing: 1px; }
   .help { margin-top: 16px; font-size: 11px; color: #667; line-height: 1.5; }
 </style>
 </head>
@@ -26,8 +28,17 @@
     <div class="row"><label>Your race</label><select id="race"><option value="T">Terran</option><option value="Z">Zerg</option><option value="P">Protoss</option><option value="R">Random</option></select></div>
     <div class="row"><label>Opponents</label><select id="nopp"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option></select></div>
     <div id="opps"></div>
+    <div class="row"><label>Your team</label><select id="team"><option value="1">Team 1</option><option value="2">Team 2</option><option value="3">Team 3</option><option value="4">Team 4</option></select></div>
+    <div class="row"><label>Map</label><select id="layout"><option value="temple">Lost Ruins (4 players)</option><option value="bloodbath">Blood Pit (4 players)</option><option value="valley">Twilight Valley (2 players)</option></select></div>
     <div class="row"><label>Map seed</label><input id="seed" type="number" value="1" style="width:100px"></div>
+    <div class="row"><label>Hotkeys</label><select id="hotkeys"><option value="bw">Brood War</option><option value="grid">Grid (QWE / ASD / ZXC)</option></select></div>
+    <div class="row"><label>Audio</label><label class="chk"><input type="checkbox" id="voice"> Voice</label><label class="chk"><input type="checkbox" id="music"> Music</label></div>
     <button id="start">START GAME</button>
+    <div class="row2"><button id="loadBtn" class="small">LOAD SAVED GAME</button><button id="replayBtn" class="small">WATCH REPLAY</button></div>
+    <button id="autosaveBtn" class="small" style="display:none">CONTINUE AUTOSAVE</button>
+    <input type="file" id="loadFile" accept=".json" hidden><input type="file" id="replayFile" accept=".json" hidden>
+    <details><summary>Campaign missions</summary><div class="row"><label>Mission</label><select id="mission"></select></div><button id="missionBtn" class="small">PLAY MISSION</button></details>
+    <details><summary>Multiplayer (LAN)</summary><div class="row"><label>Server</label><input id="netUrl" style="flex:1"></div><div class="row"><label>Name</label><input id="netName" value="Player"></div><button id="netConnect" class="small">CONNECT</button><div id="netStatus" class="sub"></div><div id="lobby"></div><div class="help">Everyone opens this page from the same server address (see the LAN URL printed by serve.js), connects, and the host presses start.</div></details>
     <div class="help">Left click select, right click command. A attack-move, M move, S stop, H hold, P patrol, B build, V advanced build. Ctrl+1-9 control groups. F1 in-game help, F10 menu, +/- speed.</div>
   </div>
 </div>
@@ -38,7 +49,11 @@
 <script src="js/game.js"></script>
 <script src="js/combat.js"></script>
 <script src="js/abilities.js"></script>
+<script src="js/commands.js"></script>
 <script src="js/ai.js"></script>
+<script src="js/missions.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/net.js"></script>
 <script src="js/terrain.js"></script>
 <script src="js/sprites_units.js"></script>
 <script src="js/sprites_buildings.js"></script>

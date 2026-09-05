@@ -11,8 +11,8 @@ const Combat = {
     // Dark Swarm: ranged non-splash attacks against ground units under swarm miss
     const swarmed = ranged && !t.fly && !w.splash && !w.line && !w.glaive && Abilities.inField(t.x, t.y, 'swarm');
     if (w.suicide) { this.explode(a, t, w); return; }
-    if (w.scarab) { if (a.scarabs <= 0) { a.cooldown = 8; return; } a.scarabs--; G.projectiles.push({ kind: 'scarab', x: a.x, y: a.y, target: t, owner: a.owner, src: a, w, life: 90, spd: 16 }); return; }
-    if (w.interceptor) { const n = a.interceptors; if (n <= 0) { a.cooldown = 8; return; } for (let i = 0; i < n; i++) G.projectiles.push({ kind: 'interceptor', x: a.x + (Math.random() - .5) * 40, y: a.y + (Math.random() - .5) * 40, target: t, owner: a.owner, src: a, w, life: 30 + i * 4, spd: 13, delay: i * 3 }); return; }
+    if (w.scarab) { if (a.scarabs <= 0) { a.cooldown = 8; return; } a.scarabs--; const s = G.spawnUnit('scarab', a.owner, a.x + Math.cos(a.facing) * a.r, a.y + Math.sin(a.facing) * a.r); s.parent = a; s.lifetime = 110; s.facing = a.facing; s.applyOrder({ type: 'scarab', target: t }); return; }
+    if (w.interceptor) { a.launched = a.launched || []; for (const ic of a.launched) if (ic.alive) { ic.order.target = t; if (ic.order.type === 'dock') ic.applyOrder({ type: 'intercept', target: t }); } if (a.interceptors > 0 && !(a.launchCd > 0)) { const ic = G.spawnUnit('interceptor', a.owner, a.x, a.y + 6); ic.parent = a; ic.facing = a.facing; ic.applyOrder({ type: 'intercept', target: t }); a.interceptors--; a.launched.push(ic); a.launchCd = 8; } a.cooldown = 6; return; }
     if (w.glaive) { this.visual(a, t, 'glaive'); let cur = t, d = dmg; const hit = [t]; for (let b = 0; b < 3 && cur; b++) { if (!swarmed || b > 0) G.damage(cur, d, w.type, a); d = Math.max(1, Math.floor(d / 3)); let nx = null, nd = 1e9; for (const o of G.near(cur.x, cur.y, 3 * TILE)) { if (hit.includes(o) || o.owner === a.owner || !G.targetable(a, o) || o.isBuilding && false) continue; const dd = dist(o, cur); if (dd < nd) { nd = dd; nx = o; } } if (nx) { hit.push(nx); G.effects.push({ kind: 'line', x: cur.x, y: cur.y, tx: nx.x, ty: nx.y, t: 6, color: '#8f8' }); } cur = nx; } return; }
     if (w.line) { // Lurker spines along a line
       const ang = Math.atan2(t.y - a.y, t.x - a.x); const len = 6 * TILE; G.effects.push({ kind: 'spines', x: a.x, y: a.y, tx: a.x + Math.cos(ang) * len, ty: a.y + Math.sin(ang) * len, t: 12 });
@@ -59,9 +59,7 @@ const Combat = {
       const dx = t.x - p.x, dy = t.y - p.y, d = Math.hypot(dx, dy);
       if (p.kind === 'nuke') { if (--p.timer <= 0) { Abilities.nukeImpact(p); ps.splice(i, 1); } continue; }
       if (d <= p.spd + t.r * 0.5) {
-        if (p.kind === 'scarab') { Combat.splash(p.src, t.x, t.y, p.src.wDmg(p.w), p.w, t); }
-        else if (p.kind === 'interceptor') { if (p.src.alive) G.damage(t, p.src.wDmg(p.w), p.w.type, p.src); G.effects.push({ kind: 'laser', x: p.x, y: p.y, tx: t.x, ty: t.y, t: 4, color: '#8cf' }); }
-        else if (p.kind === 'yamato') { G.damage(t, 260, 'explosive', p.src); G.effects.push({ kind: 'boom', x: t.x, y: t.y, t: 20, r: 30 }); }
+        if (p.kind === 'yamato') { G.damage(t, 260, 'explosive', p.src); G.effects.push({ kind: 'boom', x: t.x, y: t.y, t: 20, r: 30 }); }
         ps.splice(i, 1); continue;
       }
       p.x += dx / d * p.spd; p.y += dy / d * p.spd;

@@ -47,7 +47,7 @@ const Abilities = {
     const p = u.player, ud = DATA.units[toId];
     if (!p.hasReq(ud)) { p.msg('Requires ' + p.missingReq(ud), 'error'); return false; }
     if (!p.canAfford(ud.min, ud.gas)) return false;
-    const extra = ud.sup - u.def.sup; if (extra > 0 && p.supUsed + extra > p.supMax) { p.msg(RACE_INFO.Z.supplyMsg, 'error'); return false; }
+    const extra = ud.sup - u.def.sup; if (extra > 0 && p.supUsed + extra > p.supMax && !(G.cheats.food && p.human)) { p.msg(RACE_INFO.Z.supplyMsg, 'error'); return false; }
     p.minerals -= ud.min; p.gas -= ud.gas; G.morphUnit(u, toId); return true;
   },
   // Pair up selected units for Archon / Dark Archon merging
@@ -105,7 +105,7 @@ const Abilities = {
     u.repairAcc = (u.repairAcc || 0) + cm; u.repairAccG = (u.repairAccG || 0) + cg;
     if (u.repairAcc >= 1) { if (p.minerals < 1) { p.msg('Not enough minerals.', 'error'); u.nextOrder(); return; } p.minerals -= 1; u.repairAcc -= 1; }
     if (u.repairAccG >= 1) { if (p.gas < 1) { p.msg('Not enough vespene gas.', 'error'); u.nextOrder(); return; } p.gas -= 1; u.repairAccG -= 1; }
-    t.hp = Math.min(t.maxHp, t.hp + rate); if ((G.frame & 3) === 0) G.effects.push({ kind: 'spark', x: t.x + (Math.random() - .5) * t.r, y: t.y + (Math.random() - .5) * t.r, t: 4 });
+    t.hp = Math.min(t.maxHp, t.hp + rate); if ((G.frame & 3) === 0) G.effects.push({ kind: 'spark', x: t.x + (G.rand() - .5) * t.r, y: t.y + (G.rand() - .5) * t.r, t: 4 });
   },
   mineTick(u) {
     if (!u.armT) u.armT = 0;
@@ -118,7 +118,17 @@ const Abilities = {
     if (dist(u, t) <= u.r + t.r + 4) { Combat.explode(u, t, u.def.gw); return; }
     const ang = Math.atan2(t.y - u.y, t.x - u.x); u.x += Math.cos(ang) * 16; u.y += Math.sin(ang) * 16; u.facing = ang;
   },
-  scarabTick(u) { u.nextOrder(); }, interceptorTick(u) { u.nextOrder(); },
+  scarabTick(u) { const t = u.order.target, p = u.parent; if (!t || !t.alive || !p) { G.kill(u, null, true); return; } if (dist(u, t) <= u.r + t.r + 10) { const w = p.def.gw; Combat.splash(p.alive ? p : u, t.x, t.y, (p.alive ? p.wDmg(w) : w.dmg), w, t); G.kill(u, null, true); return; } u.moveTo(t.x, t.y, t); },
+  interceptTick(u) {
+    const o = u.order, t = o.target, p = u.parent;
+    if (!p || !p.alive) { G.kill(u, null, true); return; }
+    if (!t || !t.alive || !G.targetable(u, t) || dist(u, p) > 14 * TILE) { u.applyOrder({ type: 'dock' }); return; }
+    if (o.pass) { if (u.moveTo(o.pass.x, o.pass.y)) o.pass = null; return; }
+    const w = u.def.gw; const dd = dist(u, t) - t.r - u.r;
+    if (dd <= u.wRange(w) * TILE) { if (u.cooldown <= 0) { u.fireAt(t); const a = Math.atan2(t.y - u.y, t.x - u.x) + (G.rand() - .5) * 0.8; o.pass = { x: t.x + Math.cos(a) * 130, y: t.y + Math.sin(a) * 130 }; } else u.moveTo(t.x + Math.cos(u.facing + 1.2) * 60, t.y + Math.sin(u.facing + 1.2) * 60); }
+    else u.moveTo(t.x, t.y, t);
+  },
+  dockTick(u) { const p = u.parent; if (!p || !p.alive) { G.kill(u, null, true); return; } if (dist(u, p) <= p.r) { p.interceptors = Math.min(p.interceptors + 1, 8); G.kill(u, null, true); return; } u.moveTo(p.x, p.y, p); },
   inField(x, y, kind) { for (const f of G.fields) if (f.kind === kind && distPt(x, y, f.x, f.y) <= f.r * TILE) return f; return null; },
   // ---------------- spell effects ----------------
   cast(u, id, t, x, y) {
@@ -146,6 +156,7 @@ const Abilities = {
       case 'maelstrom': for (const o of G.near(x, y, 1.5 * TILE)) if (o.def.bio && !o.isBuilding) { o.fx.maelstrom = 144; o.path = null; } ring(1.5, '#f4f'); break;
       case 'disruption_web': G.fields.push({ kind: 'dweb', x, y, r: 2.5, t: 576, owner: u.owner }); break;
       case 'stasis_field': for (const o of G.near(x, y, 1.5 * TILE)) if (!o.isBuilding) { o.fx.stasis = 720; o.path = null; } ring(1.5, '#8cf'); break;
+      case 'infest': { if (!t || t.def.id !== 'command_center' || !t.done || t.hp >= t.maxHp * 0.5 || t.lifted) { p.msg('Only a damaged, landed Command Center can be infested.', 'error'); break; } if (t.addon) { t.addon.parent = null; t.addon = null; } for (const it of t.prod) if (it.kind === 'upg' || it.kind === 'tech') G.players[t.owner].researching.delete(it.id); t.prod = []; t.rally = null; while (t.cargo.length) G.unloadOne(t); const od = G.players[t.owner]; t.owner = u.owner; t.def = DATA.buildings.infested_command_center; t.maxHp = t.def.hp; t.done = true; G.recomputeSupply(); if (od.human) od.msg('Your Command Center has been infested!', 'attack'); if (p.human) p.msg('Command Center infested.'); ring(1, '#c4f'); break; }
       case 'nydus_exit': { const def = DATA.buildings.nydus_canal; const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); const err = G.map.canPlace(def, tx, ty, p, G.units, null); if (err) { p.msg(err, 'error'); break; } const e = G.placeBuilding(def, tx, ty, u.owner); e.nydusLink = u; u.nydusLink = e; break; }
     }
   },

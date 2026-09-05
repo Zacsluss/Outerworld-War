@@ -32,7 +32,7 @@ const Render = {
     Terrain.draw(ctx, cx, cy, this.viewW, this.viewH);
     this.drawCreep(ctx);
     ctx.translate(-cx, -cy);
-    const hp = G.players[G.human]; const vis = hp.vis;
+    const hp = G.players[G.human]; const vis = UI.viewAll ? G.allVis() : hp.vis;
     const inView = (x, y, r) => x + r > cx && x - r < cx + this.viewW && y + r > cy && y - r < cy + this.viewH;
     const seen = (x, y) => { const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); return m.inb(tx, ty) && vis[ty * m.w + tx] > 0; };
     const visNow = (x, y) => { const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); return m.inb(tx, ty) && vis[ty * m.w + tx] === 2; };
@@ -45,7 +45,7 @@ const Render = {
     for (const u of G.units) {
       if (!u.alive || u.inside) continue; const x = u.px + (u.x - u.px) * alpha, y = u.py + (u.y - u.py) * alpha; if (!inView(x, y, u.r * 2 + 40)) continue;
       let canSee; if (u.owner === G.human) canSee = true; else if (u.isBuilding) canSee = seen(x, y); else canSee = visNow(x, y); if (!canSee) continue;
-      if (u.owner !== G.human && u.isCloaked && !G.detected(u, G.human)) { if (!visNow(x, y)) continue; u._alpha = 0.16; } else u._alpha = u.isCloaked ? 0.45 : 1;
+      if (u.owner !== G.human && u.isCloaked && !G.detected(u, G.human) && !UI.viewAll) { if (!visNow(x, y)) continue; u._alpha = 0.16; } else u._alpha = u.isCloaked ? 0.45 : 1;
       if (u.owner !== G.human && u.isBuilding && !visNow(x, y)) u._alpha = 0.75;
       u._x = x; u._y = y; list.push(u);
     }

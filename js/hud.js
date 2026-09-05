@@ -44,10 +44,10 @@ Object.assign(UI, {
     // ---- minimap ----
     const mr = this.miniRect(); HUD.inset(ctx, mr.x - 3, mr.y - 3, mr.s + 6, mr.s + 6);
     if (Render.mini) { ctx.imageSmoothingEnabled = false; ctx.drawImage(Render.mini, mr.x, mr.y, mr.s, mr.s); ctx.imageSmoothingEnabled = true; }
-    const sc = mr.s / (G.map.w * TILE);
-    ctx.fillStyle = 'rgba(96,40,120,0.6)'; const m = G.map; for (let ty = 0; ty < m.h; ty += 2) for (let tx = 0; tx < m.w; tx += 2) if (m.creep[m.idx(tx, ty)] && p.vis[ty * m.w + tx]) ctx.fillRect(mr.x + tx * mr.s / m.w, mr.y + ty * mr.s / m.h, 2 * mr.s / m.w + .5, 2 * mr.s / m.h + .5);
+    const sc = mr.s / (G.map.w * TILE); const vis = UI.viewAll ? G.allVis() : p.vis;
+    ctx.fillStyle = 'rgba(96,40,120,0.6)'; const m = G.map; for (let ty = 0; ty < m.h; ty += 2) for (let tx = 0; tx < m.w; tx += 2) if (m.creep[m.idx(tx, ty)] && vis[ty * m.w + tx]) ctx.fillRect(mr.x + tx * mr.s / m.w, mr.y + ty * mr.s / m.h, 2 * mr.s / m.w + .5, 2 * mr.s / m.h + .5);
     if (Render.fogCanvas) { ctx.globalAlpha = 0.85; ctx.imageSmoothingEnabled = false; ctx.drawImage(Render.fogCanvas, mr.x, mr.y, mr.s, mr.s); ctx.imageSmoothingEnabled = true; ctx.globalAlpha = 1; }
-    for (const r of m.resources) { if (p.vis[r.y * m.w + r.x] === 0) continue; ctx.fillStyle = r.type === 'mineral' ? '#6fe0ff' : '#7ee07a'; ctx.fillRect(mr.x + r.x * sc * TILE, mr.y + r.y * sc * TILE, Math.max(2, r.w * sc * TILE), Math.max(1.5, r.h * sc * TILE)); }
+    for (const r of m.resources) { if (vis[r.y * m.w + r.x] === 0) continue; ctx.fillStyle = r.type === 'mineral' ? '#6fe0ff' : '#7ee07a'; ctx.fillRect(mr.x + r.x * sc * TILE, mr.y + r.y * sc * TILE, Math.max(2, r.w * sc * TILE), Math.max(1.5, r.h * sc * TILE)); }
     for (const u of G.units) { if (!u.alive || u.inside || u.def.larva || u.def.notUnit) continue; if (u.owner !== G.human && !G.canSee(G.human, u) && !(u.isBuilding && G.explored(G.human, Math.floor(u.x / TILE), Math.floor(u.y / TILE)))) continue; ctx.fillStyle = u.owner === G.human ? '#3fe83f' : G.players[u.owner].color; const s = u.isBuilding ? Math.max(3, u.def.w * TILE * sc) : 2.5; ctx.fillRect(mr.x + u.x * sc - s / 2, mr.y + u.y * sc - s / 2, s, s); }
     for (const pg of this.pings) { ctx.strokeStyle = `rgba(255,60,60,${pg.t / 90})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(mr.x + pg.x * sc, mr.y + pg.y * sc, 4 + (90 - pg.t) % 30 / 3, 0, 7); ctx.stroke(); }
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(mr.x + Render.camX * sc + .5, mr.y + Render.camY * sc + .5, Render.viewW * sc, Render.viewH * sc);
@@ -57,10 +57,10 @@ Object.assign(UI, {
     const sel = this.selection;
     if (sel.length === 1) this.drawUnitInfo(ctx, sel[0], ix, y0 + 8, iw, ch - 16);
     else if (sel.length > 1) { const cols = Math.min(6, Math.floor((iw - 16) / 46)); sel.forEach((u, i) => { const bx = ix + 10 + (i % cols) * 46, by = y0 + 16 + Math.floor(i / cols) * 58; HUD.bevel(ctx, bx, by, 42, 52, true, '#141922'); const hr = u.hp / u.maxHp; const tint = hr > .66 ? 'rgba(60,230,60,0.8)' : hr > .33 ? 'rgba(240,220,60,0.8)' : 'rgba(255,60,60,0.8)'; ctx.drawImage(Sprites.tinted(u.def.id, G.players[u.owner].color, 36, tint), bx + 3, by + 3); if (u.maxSh) { ctx.fillStyle = '#5aa8ff'; ctx.fillRect(bx + 3, by + 42, 36 * u.sh / u.maxSh, 2); } ctx.fillStyle = hr > .66 ? '#3fe83f' : hr > .33 ? '#f0e040' : '#ff3c3c'; ctx.fillRect(bx + 3, by + 46, 36 * hr, 3); this.hotspots.push({ x: bx, y: by, w: 42, h: 52, fn: () => { if (this.keys.Shift) this.selection = this.selection.filter(v => v !== u); else this.select([u]); } }); }); }
-    else { HUD.text(ctx, RACE_INFO[p.race].name + ' Command', ix + 12, y0 + 30, HUD.accent(), 13); HUD.text(ctx, 'F1 help  ·  F10 menu  ·  speed ' + this.SPEEDS[this.speedIdx] + 'x (+/-)  ·  ' + this.fps + ' fps', ix + 12, y0 + 50, '#8a93a0', 11, false); HUD.text(ctx, 'Seed ' + G.map.seed + '   Frame ' + G.frame, ix + 12, y0 + 68, '#8a93a0', 11, false); }
+    else { HUD.text(ctx, RACE_INFO[p.race].name + ' Command', ix + 12, y0 + 30, HUD.accent(), 13); HUD.text(ctx, 'F1 help  ·  F10 menu  ·  F5 save  ·  Enter chat  ·  speed ' + this.speedName() + ' (+/-)  ·  ' + this.fps + ' fps', ix + 12, y0 + 50, '#8a93a0', 11, false); HUD.text(ctx, 'Seed ' + G.map.seed + '   Frame ' + G.frame, ix + 12, y0 + 68, '#8a93a0', 11, false); }
     // ---- command card ----
     HUD.inset(ctx, cr.x, cr.y, cr.w, cr.h);
-    const btns = this.buildCard(); this.tooltip = null;
+    const btns = this.buildCard(); this.tooltip = null; if (this.gridKeys) for (const b of btns) if (b.hk !== 'Escape') b.hk = 'QWEASDZXC'[b.slot];
     for (const b of btns) {
       const bx = cr.x + 4 + (b.slot % 3) * (cr.bw + cr.gap), by = cr.y + 4 + Math.floor(b.slot / 3) * (cr.bh + cr.gap);
       const hov = this.mouse.x >= bx && this.mouse.x < bx + cr.bw && this.mouse.y >= by && this.mouse.y < by + cr.bh;
@@ -73,7 +73,7 @@ Object.assign(UI, {
       else if (gl) HUD.glyph(ctx, gl, bx + cr.bw / 2, by + 18, 14, '#cfd6de');
       else { ctx.save(); ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(bx + cr.bw / 2, by + 18, 1, bx + cr.bw / 2, by + 18, 14); g.addColorStop(0, b.energy ? 'rgba(200,120,255,0.9)' : 'rgba(255,200,80,0.9)'); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(bx + cr.bw / 2, by + 18, 14, 0, 7); ctx.fill(); ctx.restore(); }
       ctx.restore();
-      HUD.hotLabel(ctx, b.label, b.hk, bx, by + 44, cr.bw, b.dim ? '#7a828c' : '#e6eaf0');
+      HUD.hotLabel(ctx, b.label, this.gridKeys ? '' : b.hk, bx, by + 44, cr.bw, b.dim ? '#7a828c' : '#e6eaf0'); if (this.gridKeys && b.hk !== 'Escape') { ctx.font = HUD.font(9); ctx.fillStyle = '#ffe45a'; ctx.fillText(b.hk, bx + 3, by + 10); }
       if (b.hk === 'Escape') { ctx.font = HUD.font(8); ctx.fillStyle = '#ffe45a'; ctx.fillText('ESC', bx + cr.bw - 20, by + 10); }
       if (hov && (b.cost || b.energy)) { const parts = [b.label]; if (b.cost && b.cost.min !== undefined) { parts.push(b.cost.min + ' minerals'); if (b.cost.gas) parts.push(b.cost.gas + ' gas'); if (b.cost.sup) parts.push(b.cost.sup + ' supply'); if (b.cost.time) parts.push(Math.round(b.cost.time / TPS) + 's'); } if (b.energy) parts.push(b.energy + ' energy'); this.tooltip = { lines: parts, x: bx, y: by }; }
     }
@@ -99,23 +99,28 @@ Object.assign(UI, {
       if (u.isBuilding && !u.done) line(`Constructing ${Math.floor(100 * u.progress / u.def.time)}%` + (u.def.race === 'T' && !(u.builder && u.builder.alive && u.builder.order.target === u) ? '  (no SCV)' : ''), '#ffe45a');
       if (u.isBuilding && u.addon) line(`Add-on: ${u.addon.def.name}${u.addon.done ? '' : ' (building)'}`, '#9aa4b0');
       if (u.prod.length) { const qx = tx, qy = ly + 2; u.prod.forEach((it, i) => { const name = it.kind === 'unit' ? DATA.units[it.id].name : it.kind === 'upg' ? DATA.upgrades[it.id].name + ' L' + it.level : it.kind === 'tech' ? DATA.techs[it.id].name : DATA.buildings[it.id].name; const bx = qx + i * 50; HUD.bevel(ctx, bx, qy, 46, 40, true, '#141922'); if (it.kind === 'unit' || it.kind === 'morph') ctx.drawImage(Sprites.icon(it.id, p.color, 28), bx + 9, qy + 2); else { ctx.font = HUD.font(8); ctx.fillStyle = '#cfd6de'; ctx.fillText(name.slice(0, 9), bx + 3, qy + 18); } if (i === 0) { ctx.fillStyle = '#000'; ctx.fillRect(bx + 3, qy + 32, 40, 5); ctx.fillStyle = '#3fe83f'; ctx.fillRect(bx + 3, qy + 32, 40 * it.progress / it.total, 5); } this.hotspots.push({ x: bx, y: qy, w: 46, h: 40, fn: () => G.cancelProd(u, i) }); }); if (u.prod[0]) { const it = u.prod[0]; const name = it.kind === 'unit' ? DATA.units[it.id].name : it.kind === 'upg' ? DATA.upgrades[it.id].name + ' ' + it.level : it.kind === 'tech' ? DATA.techs[it.id].name : DATA.buildings[it.id].name; HUD.text(ctx, name, tx + u.prod.length * 50 + 6, qy + 26, '#ffe45a', 11); } ly += 46; }
-      if (u.cargo.length) { u.cargo.forEach((c, i) => { const bx = tx + i * 34, by = ly + 2; HUD.bevel(ctx, bx, by, 30, 30, true, '#141922'); ctx.drawImage(Sprites.icon(c.def.id, p.color, 26), bx + 2, by + 2); this.hotspots.push({ x: bx, y: by, w: 30, h: 30, fn: () => { if (u.isBuilding) { const k = u.cargo.indexOf(c); if (k >= 0) { u.cargo.splice(k, 1); u.cargo.unshift(c); G.unloadOne(u); } } else G.unloadAll(u); } }); }); ly += 36; }
+      if (u.cargo.length) { u.cargo.forEach((c, i) => { const bx = tx + i * 34, by = ly + 2; HUD.bevel(ctx, bx, by, 30, 30, true, '#141922'); ctx.drawImage(Sprites.icon(c.def.id, p.color, 26), bx + 2, by + 2); this.hotspots.push({ x: bx, y: by, w: 30, h: 30, fn: () => G.unloadCargo(u, c) }); }); ly += 36; }
       if (u.def.upgA && !u.isBuilding) { const parts = []; if (p.upgLevel(u.def.upgA)) parts.push(`Armor +${p.upgLevel(u.def.upgA)}`); const wpn = u.def.gw || u.def.aw; if (wpn && wpn.upgKey && p.upgLevel(wpn.upgKey)) parts.push(`Weapons +${p.upgLevel(wpn.upgKey)}`); if (u.maxSh && p.upgLevel('shields')) parts.push(`Shields +${p.upgLevel('shields')}`); if (parts.length) line(parts.join('  '), '#9fb8d8'); }
     } else line(p.name, p.color);
     ctx.restore();
   },
   drawTop() {
     const ctx = Render.ctx, p = G.players[G.human];
-    const items = [['min', Math.floor(p.minerals), '#dff6ff'], ['gas', Math.floor(p.gas), '#d6f5d0'], ['sup', `${p.supUsed}/${p.supMax}`, p.supUsed > p.supMax ? '#ff6a6a' : '#f0f2f4']];
+    const items = [['min', Math.floor(p.minerals), '#dff6ff'], ['gas', Math.floor(p.gas), '#d6f5d0'], ['sup', `${Math.ceil(p.supUsed)}/${p.supMax}`, p.supUsed > p.supMax ? '#ff6a6a' : '#f0f2f4']];
     let x = Render.W - 14; ctx.font = HUD.font(14);
     for (let i = items.length - 1; i >= 0; i--) { const [k, v, col] = items[i]; const tw = ctx.measureText(String(v)).width + 40; HUD.bevel(ctx, x - tw, 6, tw, 24, true, 'rgba(12,15,20,0.85)'); HUD.resIcon(ctx, k, x - tw + 14, 18); HUD.text(ctx, String(v), x - 8, 23, col, 14, true, 'right'); x -= tw + 6; }
     const t = Math.floor(G.frame / TPS); HUD.bevel(ctx, 8, 6, 170, 24, true, 'rgba(12,15,20,0.85)'); HUD.text(ctx, `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}   ${RACE_INFO[p.race].name}` + (G.paused ? '   PAUSED' : ''), 16, 23, G.paused ? '#ffe45a' : '#e6eaf0', 13);
+    if (this.mode === 'replay') HUD.text(ctx, 'REPLAY  ' + this.speedName() + '  (+/- speed, Ctrl+V perspective, F10 menu)', Render.W / 2, 23, '#ffe45a', 13, true, 'center');
+    if (G.mission && !G.mission.done) { const d = G.mission.def; const left = d.minutes ? Math.max(0, d.minutes * 60 - Math.floor((G.frame - G.mission.start) / TPS)) : 0; HUD.text(ctx, 'Objective: ' + d.objective + (d.minutes ? `   ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : ''), 16, 66, '#ffe45a', 12); }
+    if (this.net && Net.waitingSince && performance.now() - Net.waitingSince > 800) HUD.text(ctx, 'Waiting for other players...', Render.W / 2, 60, '#ffe45a', 14, true, 'center');
     if (this.pending) HUD.text(ctx, 'Select target: ' + (this.pending.kind === 'ability' ? DATA.abilities[this.pending.abil].name : this.pending.kind) + '  (right-click to cancel)', 16, 48, '#ffe45a', 12);
     if (this.showHelp) this.drawHelp(ctx);
   },
   drawMessages() {
     const ctx = Render.ctx, p = G.players[G.human];
     let y = Render.H - this.consoleH - 14; for (let i = p.msgs.length - 1; i >= 0; i--) { const m = p.msgs[i]; const age = G.frame - m.t; if (age > 24 * 8) continue; const col = m.kind === 'error' ? '#ff8a8a' : m.kind === 'attack' || m.kind === 'nuke' ? '#ff5050' : '#ffe45a'; ctx.globalAlpha = age > 24 * 6 ? 1 - (age - 144) / 48 : 1; HUD.text(ctx, m.text, 14, y, col, 13); ctx.globalAlpha = 1; y -= 18; }
+    if (this.chat !== null && this.chat !== undefined) { HUD.bevel(ctx, 10, Render.H - this.consoleH - 40, 420, 24, false, 'rgba(8,10,14,0.9)'); HUD.text(ctx, '> ' + this.chat + (G.frame % 24 < 12 ? '_' : ''), 16, Render.H - this.consoleH - 23, '#e6eaf0', 13); }
+    if (this.loading) { const k = (G.frame - this.loading.start) / Math.max(1, this.loading.target - this.loading.start); HUD.bevel(ctx, Render.W / 2 - 160, Render.H / 2 - 30, 320, 60, true, 'rgba(10,12,16,0.95)'); HUD.text(ctx, 'Loading... re-simulating ' + Math.round(k * 100) + '%', Render.W / 2, Render.H / 2 - 6, '#ffe45a', 14, true, 'center'); ctx.fillStyle = '#3fe83f'; ctx.fillRect(Render.W / 2 - 140, Render.H / 2 + 6, 280 * k, 8); }
     this.drawCursor(ctx);
   },
   drawCursor(ctx) {

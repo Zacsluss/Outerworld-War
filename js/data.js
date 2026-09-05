@@ -62,7 +62,7 @@ const DATA = (() => {
     gw: W(5, 'normal', 0.4, 22, { upgKey: null }), abil: ['gather', 'build_basic', 'build_adv', 'burrow'], upgA: 'carapace' });
   U('overlord', { name: 'Overlord', race: 'Z', hp: 200, size: 'large', min: 100, sup: 0, supGive: 8, time: 600, speed: 0.83, sight: 9, r: 18, hk: 'O', from: 'larva', bio: true, fly: true, det: true,
     abil: ['unload'], upgA: 'flyA', speedTech: ['pneumatized', 2.5], cargoTech: 'ventral_sacs', sightTech: ['antennae', 11] });
-  U('zergling', { name: 'Zergling', race: 'Z', hp: 35, size: 'small', min: 50, sup: 1, time: 420, speed: 2.61, sight: 5, r: 7, hk: 'Z', from: 'larva', req: ['spawning_pool'], bio: true, cargoSize: 1, pair: true,
+  U('zergling', { name: 'Zergling', race: 'Z', hp: 35, size: 'small', min: 50, sup: 0.5, time: 420, speed: 2.61, sight: 5, r: 7, hk: 'Z', from: 'larva', req: ['spawning_pool'], bio: true, cargoSize: 1, pair: true,
     gw: W(5, 'normal', 0.5, 8, { upgKey: 'meleeW', cdTech: ['adrenal', 6] }), abil: ['burrow'], upgA: 'carapace', speedTech: ['metabolic', 5.49] });
   U('hydralisk', { name: 'Hydralisk', race: 'Z', hp: 80, size: 'medium', min: 75, gas: 25, sup: 1, time: 420, speed: 3.66, sight: 6, r: 10, hk: 'H', from: 'larva', req: ['hydralisk_den'], bio: true, cargoSize: 2,
     gw: W(10, 'explosive', 4, 15, { upgKey: 'missW', targets: 'both', rangeTech: ['grooved', 5] }), abil: ['burrow', 'lurker_aspect'], upgA: 'carapace', speedTech: ['muscular', 5.0] });
@@ -70,10 +70,10 @@ const DATA = (() => {
     gw: W(20, 'normal', 6, 37, { upgKey: 'missW', upgDmg: 2, line: true, burrowOnly: true }), abil: ['burrow'], upgA: 'carapace' });
   U('mutalisk', { name: 'Mutalisk', race: 'Z', hp: 120, size: 'medium', min: 100, gas: 100, sup: 2, time: 600, speed: 6.67, sight: 7, r: 12, hk: 'M', from: 'larva', req: ['spire'], bio: true, fly: true,
     gw: W(9, 'normal', 3, 30, { upgKey: 'flyW', targets: 'both', glaive: true }), abil: ['guardian_aspect', 'devourer_aspect'], upgA: 'flyA' });
-  U('scourge', { name: 'Scourge', race: 'Z', hp: 25, size: 'small', min: 25, gas: 75, sup: 1, time: 450, speed: 6.67, sight: 5, r: 8, hk: 'S', from: 'larva', req: ['spire'], bio: true, fly: true, pair: true,
+  U('scourge', { name: 'Scourge', race: 'Z', hp: 25, size: 'small', min: 25, gas: 75, sup: 0.5, time: 450, speed: 6.67, sight: 5, r: 8, hk: 'S', from: 'larva', req: ['spire'], bio: true, fly: true, pair: true,
     aw: W(110, 'normal', 0.3, 1, { targets: 'air', suicide: true, upgKey: null }), upgA: 'flyA' });
   U('queen', { name: 'Queen', race: 'Z', hp: 120, size: 'medium', min: 100, gas: 100, sup: 2, time: 750, speed: 6.67, sight: 10, r: 14, hk: 'Q', from: 'larva', req: ['queens_nest'], bio: true, fly: true, energy: 200,
-    abil: ['parasite', 'ensnare', 'spawn_broodling'], upgA: 'flyA' });
+    abil: ['parasite', 'ensnare', 'spawn_broodling', 'infest'], upgA: 'flyA' });
   U('guardian', { name: 'Guardian', race: 'Z', hp: 150, armor: 2, size: 'large', min: 50, gas: 100, sup: 2, time: 600, speed: 2.5, sight: 11, r: 16, from: 'mutalisk', req: ['greater_spire'], bio: true, fly: true, morphFrom: 'mutalisk', hk: 'G',
     gw: W(20, 'normal', 8, 30, { upgKey: 'flyW', upgDmg: 2 }), upgA: 'flyA' });
   U('devourer', { name: 'Devourer', race: 'Z', hp: 250, armor: 2, size: 'large', min: 150, gas: 50, sup: 2, time: 600, speed: 5, sight: 10, r: 16, from: 'mutalisk', req: ['greater_spire'], bio: true, fly: true, morphFrom: 'mutalisk', hk: 'V',
@@ -116,8 +116,8 @@ const DATA = (() => {
     gw: W(6, 'normal', 8, 37, { upgKey: 'airW', targets: 'both', interceptor: true }), abil: ['build_interceptor'], upgA: 'airA', interceptors: 0, interceptorTech: ['carrier_capacity', 8] });
   U('arbiter', { name: 'Arbiter', race: 'P', hp: 200, sh: 150, armor: 1, size: 'large', min: 100, gas: 350, sup: 4, time: 2400, speed: 5, sight: 9, r: 18, hk: 'A', from: 'stargate', req: ['arbiter_tribunal'], mech: true, fly: true, energy: 200, cloakField: 8,
     gw: W(10, 'explosive', 5, 45, { upgKey: 'airW', targets: 'both' }), abil: ['recall', 'stasis_field'], upgA: 'airA' });
-  U('interceptor', { name: 'Interceptor', race: 'P', hp: 40, sh: 40, size: 'small', min: 25, time: 300, speed: 13, sight: 6, r: 5, mech: true, fly: true, hk: 'I', from: 'carrier', notUnit: true });
-  U('scarab', { name: 'Scarab', race: 'P', hp: 20, size: 'small', min: 15, time: 168, speed: 16, r: 4, hk: 'S', from: 'reaver', notUnit: true });
+  U('interceptor', { name: 'Interceptor', race: 'P', hp: 40, sh: 40, size: 'small', min: 25, time: 300, speed: 13, sight: 6, r: 5, mech: true, fly: true, hk: 'I', from: 'carrier', notUnit: true, gw: W(6, 'normal', 2, 45, { upgKey: 'airW', targets: 'both' }), upgA: 'airA' });
+  U('scarab', { name: 'Scarab', race: 'P', hp: 20, size: 'small', min: 15, time: 168, speed: 12, r: 4, hk: 'S', from: 'reaver', notUnit: true, sight: 3 });
   U('hallucination', { name: 'Hallucination', race: 'P', hp: 1, size: 'small', speed: 4, sight: 7, r: 8, notUnit: true });
 
   // ============================ TERRAN BUILDINGS ============================
@@ -303,6 +303,7 @@ const DATA = (() => {
   A('plague', 'Plague', 'G', 'point', { energy: 150, tech: 'plague_tech', range: 9 });
   A('consume', 'Consume', 'C', 'unit', { energy: 0, tech: 'consume_tech', range: 1 });
   A('nydus_exit', 'Build Nydus Exit', 'N', 'point');
+  A('infest', 'Infest Command Center', 'I', 'unit', { range: 1 });
   A('psi_storm', 'Psionic Storm', 'T', 'point', { energy: 75, tech: 'psi_storm_tech', range: 9 });
   A('hallucination', 'Hallucination', 'L', 'unit', { energy: 100, tech: 'hallucination_tech', range: 9 });
   A('summon_archon', 'Summon Archon', 'S', 'merge', { unit: 'archon' });

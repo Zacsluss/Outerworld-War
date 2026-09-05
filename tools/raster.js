@@ -69,7 +69,7 @@ function mesh(kind, seg = 12) {
 
 // ---------------- renderer ----------------
 class Renderer {
-  constructor(opts = {}) { this.el = (opts.elevation || 62) * Math.PI / 180; this.light = V.norm(opts.light || [-0.55, 0.95, -0.55]); this.ambient = opts.ambient || 0.38; this.ss = opts.ss || 2; this.gz = opts.groundScale == null ? 1 : opts.groundScale; }
+  constructor(opts = {}) { this.el = (opts.elevation || 62) * Math.PI / 180; this.light = V.norm(opts.light || [-0.55, 0.95, -0.55]); this.ambient = opts.ambient || 0.38; this.ss = opts.ss || 2; this.gz = opts.groundScale == null ? 1 : opts.groundScale; this.aoH = opts.aoH || 1.0; }
   // Render a part tree at given facing into an RGBA + mask buffer of size S x S (pixels), scale k px per model unit.
   render(root, o) {
     const ss = this.ss, W = o.W * ss, H = o.H * ss; const col = new Float32Array(W * H * 4), zb = new Float32Array(W * H).fill(-1e9), mask = new Float32Array(W * H);
@@ -90,11 +90,11 @@ class Renderer {
     const nv = me.v.length; const sx = new Float32Array(nv), sy = new Float32Array(nv), sd = new Float32Array(nv), cr = new Float32Array(nv), cg = new Float32Array(nv), cb = new Float32Array(nv);
     const inv = [1 / size[0], 1 / size[1], 1 / size[2]]; const V3 = [0, se, ce]; // toward camera (approx) in world space after facing
     for (let i = 0; i < nv; i++) {
-      const p = M.p(face, M.p(m, me.v[i])); const nl = me.n[i]; const nn = M.n(face, M.n(m, [nl[0] * inv[0], nl[1] * inv[1], nl[2] * inv[2]]));
+      const pw = M.p(m, me.v[i]); const p = M.p(face, pw); const nl = me.n[i]; const ao = 0.72 + 0.28 * Math.min(1, Math.max(0, pw[1]) / this.aoH); const nn = M.n(face, M.n(m, [nl[0] * inv[0], nl[1] * inv[1], nl[2] * inv[2]]));
       sx[i] = cx + p[0] * kk; sy[i] = cy + (p[2] * this.gz - p[1] * ce) * kk; sd[i] = p[2] * ce + p[1] * se;
       let r, g, b;
       if (glow) { r = base[0]; g = base[1]; b = base[2]; }
-      else { const d = Math.max(0, V.dot(nn, this.light)); const hv = V.norm(V.add(this.light, V3)); const s = Math.pow(Math.max(0, V.dot(nn, hv)), 18) * spec; const lt = this.ambient + (1 - this.ambient) * d; r = Math.min(1, base[0] * lt + s); g = Math.min(1, base[1] * lt + s); b = Math.min(1, base[2] * lt + s); }
+      else { const d = Math.max(0, V.dot(nn, this.light)); const hv = V.norm(V.add(this.light, V3)); const s = Math.pow(Math.max(0, V.dot(nn, hv)), 18) * spec; const lt = (this.ambient + (1 - this.ambient) * d) * ao; r = Math.min(1, base[0] * lt + s); g = Math.min(1, base[1] * lt + s); b = Math.min(1, base[2] * lt + s); }
       cr[i] = r; cg[i] = g; cb[i] = b;
     }
     for (const tri of me.t) {

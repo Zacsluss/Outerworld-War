@@ -25,6 +25,7 @@ const FX = {
       case 'slash': this.sparks(e.tx, e.ty, 3, 80); break;
       case 'spark': this.sparks(e.x, e.y, 3, 70); break;
       case 'missile': this.smoke(e.x, e.y, 1, 0.5); break;
+      case 'fire': this.fire(e.x, e.y, 3, 26, 0.7); this.smoke(e.x, e.y, 1, 0.6); break;
     }
   },
   update(dt) {
@@ -62,7 +63,7 @@ const FX = {
       case 'slash': ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(e.tx, e.ty, 9, Math.PI * 0.2, Math.PI * 1.1); ctx.stroke(); break;
       case 'spines': { ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = 'rgba(200,140,220,0.6)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.tx, e.ty); ctx.stroke(); const k0 = 1 - e.t / 12; for (let i = 0; i < 7; i++) { const k = Math.min(1, k0 * 1.4 + i / 8); const x = e.x + (e.tx - e.x) * k, y = e.y + (e.ty - e.y) * k; ctx.fillStyle = 'rgba(240,220,255,0.9)'; ctx.beginPath(); ctx.moveTo(x, y - 7); ctx.lineTo(x + 3, y + 3); ctx.lineTo(x - 3, y + 3); ctx.closePath(); ctx.fill(); } break; }
       case 'boom': case 'bigboom': { const T = e.kind === 'boom' ? 18 : 40; const k = 1 - e.t / T; if (e.kind === 'bigboom' && (e.t === 30 || e.t === 20 || e.t === 12)) { const ox = (this.rnd() - .5) * e.r * 1.2, oy = (this.rnd() - .5) * e.r; this.fire(e.x + ox, e.y + oy, 14, 130); this.smoke(e.x + ox, e.y + oy, 6, 1.6); } if (k < 0.4) { ctx.globalCompositeOperation = 'lighter'; const rr = (e.r || 14) * (0.6 + k * 2.5); const g = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, rr); g.addColorStop(0, `rgba(255,255,230,${(0.4 - k) * 2})`); g.addColorStop(0.4, `rgba(255,180,60,${(0.4 - k) * 1.5})`); g.addColorStop(1, 'rgba(255,60,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(e.x, e.y, rr, 0, 7); ctx.fill(); } break; }
-      case 'blood': break;
+      case 'blood': case 'fire': break;
       case 'ring': ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = e.color; ctx.lineWidth = 3; ctx.globalAlpha = e.t / 14; ctx.beginPath(); ctx.arc(e.x, e.y, e.r * (1.3 - e.t / 14), 0, 7); ctx.stroke(); break;
       case 'heal': ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = '#7fff7f'; ctx.fillRect(e.x - 1.5, e.y - 5, 3, 10); ctx.fillRect(e.x - 5, e.y - 1.5, 10, 3); break;
       case 'spark': break;

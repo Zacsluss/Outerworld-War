@@ -9,8 +9,8 @@ const Sound = {
   tone(f, dur, type = 'square', vol = 0.05, slide = 0) { if (!this.enabled || !this.ctx) return; const c = this.ctx; if (c.state === 'suspended') c.resume(); const o = c.createOscillator(), g = c.createGain(); o.type = type; o.frequency.value = f; if (slide) o.frequency.linearRampToValueAtTime(f + slide, c.currentTime + dur); g.gain.value = vol; g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur); o.connect(g); g.connect(c.destination); o.start(); o.stop(c.currentTime + dur); },
   limited(key, ms) { const n = performance.now(); if (n - (this.last[key] || 0) < ms) return false; this.last[key] = n; return true; },
   click() { this.tone(900, 0.04, 'square', 0.03); },
-  select(u) { if (!this.limited('sel', 120)) return; const r = u.def.race; this.tone(r === 'Z' ? 220 : r === 'P' ? 520 : 380, 0.08, r === 'Z' ? 'sawtooth' : 'triangle', 0.04, r === 'Z' ? -60 : 40); },
-  ack(u) { if (!this.limited('ack', 120)) return; const r = u.def.race; this.tone(r === 'Z' ? 260 : r === 'P' ? 600 : 440, 0.07, 'triangle', 0.04, 60); },
+  select(u) { if (typeof Voice !== 'undefined') Voice.select(u); if (!this.limited('sel', 120)) return; const r = u.def.race; this.tone(r === 'Z' ? 220 : r === 'P' ? 520 : 380, 0.08, r === 'Z' ? 'sawtooth' : 'triangle', 0.04, r === 'Z' ? -60 : 40); },
+  ack(u) { if (typeof Voice !== 'undefined') Voice.ack(u); if (!this.limited('ack', 120)) return; const r = u.def.race; this.tone(r === 'Z' ? 260 : r === 'P' ? 600 : 440, 0.07, 'triangle', 0.04, 60); },
   attack(u) { if (!this.limited('atk' + u.def.id, 90)) return; const w = u.def.gw || u.def.aw; const big = w && w.dmg >= 30; this.tone(big ? 90 : 260 + (u.id % 5) * 20, big ? 0.15 : 0.05, big ? 'sawtooth' : 'square', big ? 0.06 : 0.02, -80); },
   death(u) { if (!this.limited('death', 60)) return; this.tone(u.isBuilding ? 60 : 160, u.isBuilding ? 0.6 : 0.2, 'sawtooth', 0.06, -50); },
   alert(kind) { if (kind === 'error') { this.tone(200, 0.12, 'square', 0.04); } else if (kind === 'attack') { this.tone(660, 0.1, 'square', 0.05); setTimeout(() => this.tone(440, 0.15, 'square', 0.05), 120); } else if (kind === 'nuke') { for (let i = 0; i < 4; i++) setTimeout(() => this.tone(300, 0.3, 'sawtooth', 0.06, 200), i * 400); } else this.tone(700, 0.06, 'triangle', 0.03); },
@@ -18,8 +18,9 @@ const Sound = {
 };
 
 const UI = {
-  consoleH: 196, selection: [], groups: {}, hover: null, mouse: { x: 0, y: 0, down: false, wx: 0, wy: 0, inside: false }, drag: null, dragging: false, pending: null, placing: null, menu: null, markers: [], pings: [], keys: {}, lastClick: 0, lastClickUnit: null, msgLog: [], camSaves: {}, showHelp: false, cardButtons: [], lastAlertPos: null, speedIdx: 1, accum: 0, lastT: 0, running: false, fps: 0, frames: 0, fpsT: 0,
-  SPEEDS: [0.6, 1, 1.5, 2],
+  consoleH: 196, selection: [], groups: {}, hover: null, mouse: { x: 0, y: 0, down: false, wx: 0, wy: 0, inside: false }, drag: null, dragging: false, pending: null, placing: null, menu: null, markers: [], pings: [], keys: {}, lastClick: 0, lastClickUnit: null, msgLog: [], camSaves: {}, showHelp: false, cardButtons: [], lastAlertPos: null, speedIdx: 6, accum: 0, lastT: 0, running: false, fps: 0, frames: 0, fpsT: 0,
+  SPEEDS: [0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1, 2, 4, 8], SPEED_NAMES: ['Slowest', 'Slower', 'Slow', 'Normal', 'Fast', 'Faster', 'Fastest', '2x', '4x', '8x'], mode: 'play', viewAll: false, chat: null, loading: null,
+  speedName() { return this.SPEED_NAMES[this.speedIdx]; }, maxSpeedIdx() { return this.mode === 'replay' ? 9 : 6; },
   init() {
     const c = document.getElementById('game'); Render.init(c); Sound.init(); if (typeof Atlas !== 'undefined') Atlas.init();
     window.addEventListener('resize', () => Render.resize());
@@ -30,7 +31,10 @@ const UI = {
     c.addEventListener('mouseleave', () => { this.mouse.inside = false; }); c.addEventListener('mouseenter', () => { this.mouse.inside = true; });
   },
   start(opts) {
-    G.init(opts); Render.reset(); this.selection = []; this.groups = {}; this.pending = null; this.placing = null; this.menu = null; this.markers = []; this.pings = []; this.msgLog = [];
+    opts = Object.assign({}, opts, { players: opts.players.map(p => Object.assign({}, p, { race: p.race === 'R' ? ['T', 'Z', 'P'][Math.floor(Math.random() * 3)] : p.race })) });
+    this.lastOpts = opts; this.mode = opts.mode || 'play'; this.viewAll = false; this.chat = null; this.loading = null; if (this.speedIdx > this.maxSpeedIdx()) this.speedIdx = this.maxSpeedIdx();
+    G.init(opts); G.recording = this.mode === 'play'; G.log = []; G.pendingCmds = null; G.mission = null; if (opts.mission && typeof Missions !== 'undefined') Missions.begin(opts.mission);
+    Render.reset(); if (typeof Music !== 'undefined' && Music.on) Music.start(); this.net = !!opts.net; if (this.net) G.paused = false; this.selection = []; this.groups = {}; this.pending = null; this.placing = null; this.menu = null; this.markers = []; this.pings = []; this.msgLog = []; if (G.mission) this.menu = 'brief';
     const hp = G.players[G.human]; Render.camX = hp.startX - Render.viewW / 2; Render.camY = hp.startY - Render.viewH / 2 + 40; this.clampCam();
     const hall = G.units.find(u => u.owner === G.human && u.isBuilding); if (hall) this.select([hall]);
     document.getElementById('menu').style.display = 'none'; document.getElementById('game').style.display = 'block';
@@ -38,10 +42,22 @@ const UI = {
     if (!this._loop) { this._loop = t => this.loop(t); requestAnimationFrame(this._loop); }
     if (!this.simTimer) this.simTimer = setInterval(() => this.simStep(), 1000 / 60);
   },
+  startFromLog(data, mode) {
+    const opts = { players: data.players, seed: data.seed, layout: data.layout, mission: data.mission || null, mode: mode === 'watch' ? 'replay' : 'play' };
+    this.start(opts); G.pendingCmds = { list: data.cmds || [], i: 0 }; G.recording = mode === 'load';
+    if (mode === 'load') this.fastForward(data.frame, () => { G.pendingCmds = null; if (data.cam) { Render.camX = data.cam.x; Render.camY = data.cam.y; this.clampCam(); } });
+  },
+  fastForward(target, done) {
+    this.loading = { target, start: G.frame };
+    const step = () => { const t0 = performance.now(); while (G.frame < target && !G.over && performance.now() - t0 < 40) G.tick(); if (G.frame < target && !G.over) setTimeout(step, 0); else { this.loading = null; done(); } };
+    setTimeout(step, 0);
+  },
   simStep() {
     if (!this.running) return; const now = performance.now(); const dt = Math.min(1, (now - this.lastT) / 1000); this.lastT = now;
-    if (G.paused || this.menu) return;
-    const step = 1 / (TPS * this.SPEEDS[this.speedIdx]); this.accum += dt; let n = 0;
+    if (G.paused || this.menu || this.loading) return;
+    if (this.mode === 'play' && G.frame > 0 && G.frame % (TPS * 120) === 0 && !(typeof Net !== 'undefined' && Net.active) && !this._autosaved) { this._autosaved = true; Replay.save(false); } else if (G.frame % (TPS * 120) !== 0) this._autosaved = false;
+    const step = 1 / (TPS * this.SPEEDS[this.net ? 6 : this.speedIdx]); this.accum += dt; let n = 0;
+    if (this.net && typeof Net !== 'undefined' && Net.active) { while (this.accum >= step && n < 8) { if (!Net.ready(G.frame)) { if (!Net.waitingSince) Net.waitingSince = performance.now(); this.accum = Math.min(this.accum, step); break; } Net.waitingSince = 0; Net.beforeTick(); G.tick(); this.accum -= step; n++; } return; }
     while (this.accum >= step && n < 48) { G.tick(); this.accum -= step; n++; }
     if (n >= 48) this.accum = 0;
   },
@@ -85,7 +101,7 @@ const UI = {
   onUnitDied(u) { const i = this.selection.indexOf(u); if (i >= 0) this.selection.splice(i, 1); for (const k in this.groups) { const j = this.groups[k].indexOf(u); if (j >= 0) this.groups[k].splice(j, 1); } },
   unitAt(wx, wy) {
     let best = null, bd = 1e9;
-    for (const u of G.units) { if (!u.alive || u.inside) continue; if (u.owner !== G.human && !G.canSee(G.human, u) && !(u.isBuilding && G.explored(G.human, Math.floor(u.x / TILE), Math.floor(u.y / TILE)))) continue; let hit, d; if (u.isBuilding && !u.lifted) { hit = wx >= u.tx * TILE && wx < (u.tx + u.def.w) * TILE && wy >= u.ty * TILE && wy < (u.ty + u.def.h) * TILE; d = 500; } else { d = distPt(wx, wy, u.x, u.y); hit = d <= u.r + 4; } if (hit && d < bd) { bd = d; best = u; } }
+    for (const u of G.units) { if (!u.alive || u.inside || u.def.notUnit) continue; if (u.owner !== G.human && !G.canSee(G.human, u) && !(u.isBuilding && G.explored(G.human, Math.floor(u.x / TILE), Math.floor(u.y / TILE)))) continue; let hit, d; if (u.isBuilding && !u.lifted) { hit = wx >= u.tx * TILE && wx < (u.tx + u.def.w) * TILE && wy >= u.ty * TILE && wy < (u.ty + u.def.h) * TILE; d = 500; } else { d = distPt(wx, wy, u.x, u.y); hit = d <= u.r + 4; } if (hit && d < bd) { bd = d; best = u; } }
     return best;
   },
   // ---------------- input ----------------
@@ -126,10 +142,15 @@ const UI = {
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'F10', 'F1'].includes(k)) e.preventDefault();
     if (this.menu) { if (k === 'Escape' || k === 'F10') { if (this.menu === 'pause') this.menu = null; } return; }
     if (k === 'F10') { this.menu = 'pause'; return; }
+    if (this.chat !== null) { e.preventDefault(); if (k === 'Enter') { const line = this.chat.trim(); this.chat = null; if (line) { if (this.net) Net.chat(line); else if (!G.cheat(line)) G.players[G.human].msg(line, 'info'); } } else if (k === 'Escape') this.chat = null; else if (k === 'Backspace') this.chat = this.chat.slice(0, -1); else if (k.length === 1 && this.chat.length < 60) this.chat += k; return; }
+    if (k === 'Enter' && this.mode === 'play') { this.chat = ''; e.preventDefault(); return; }
+    if (k === 'F5') { e.preventDefault(); Replay.save(true); return; }
+    if (k === 'F8') { e.preventDefault(); if (Replay.hasAutosave()) Replay.loadAutosave(); return; }
+    if ((k === 'v' || k === 'V') && e.ctrlKey && this.mode === 'replay') { this.viewAll = !this.viewAll; e.preventDefault(); return; }
     if (k === 'F1') { this.showHelp = !this.showHelp; return; }
     if (k === 'Escape') { if (this.placing || this.pending || this.cardMenu) { this.placing = null; this.pending = null; this.cardMenu = null; } else if (this.selection.length === 1 && this.selection[0].isBuilding && !this.selection[0].done && this.selection[0].owner === G.human) G.cancelBuilding(this.selection[0]); else if (this.selection.length === 1 && this.selection[0].prod.length && this.selection[0].owner === G.human) G.cancelProd(this.selection[0], this.selection[0].prod.length - 1); return; }
-    if (k === 'F9' || k === 'Pause') { G.paused = !G.paused; return; }
-    if (k === '+' || k === '=') { this.speedIdx = Math.min(3, this.speedIdx + 1); return; } if (k === '-') { this.speedIdx = Math.max(0, this.speedIdx - 1); return; }
+    if (k === 'F9' || k === 'Pause') { if (!this.net) G.paused = !G.paused; return; }
+    if (k === '+' || k === '=') { this.speedIdx = Math.min(this.maxSpeedIdx(), this.speedIdx + 1); return; } if (k === '-') { this.speedIdx = Math.max(0, this.speedIdx - 1); return; }
     if (k === ' ') { if (this.lastAlertPos) this.centerOn(this.lastAlertPos.x, this.lastAlertPos.y); return; }
     if (/^[0-9]$/.test(k)) { if (e.ctrlKey) { this.groups[k] = this.selection.slice(); e.preventDefault(); } else if (e.shiftKey) { this.groups[k] = (this.groups[k] || []).concat(this.selection.filter(u => !(this.groups[k] || []).includes(u))).slice(0, 12); } else if (this.groups[k] && this.groups[k].length) { const g = this.groups[k].filter(u => u.alive); if (this.lastGroupKey === k && performance.now() - this.lastGroupT < 400) this.centerOn(g[0].x, g[0].y); this.selection = g; this.pending = null; this.placing = null; this.cardMenu = null; this.lastGroupKey = k; this.lastGroupT = performance.now(); } return; }
     if (/^F[2-8]$/.test(k)) { if (e.shiftKey) this.camSaves[k] = { x: Render.camX, y: Render.camY }; else if (this.camSaves[k]) { Render.camX = this.camSaves[k].x; Render.camY = this.camSaves[k].y; } return; }
@@ -157,7 +178,7 @@ const UI = {
         else if (u.def.id === 'scv' && (t.def.mech || t.isBuilding) && t.hp < t.maxHp && t.done !== false) u.setOrder({ type: 'repair', target: t }, shift);
         else if ((t.def.cargo || t.def.bunker || (t.def.cargoTech && t.player.hasTech(t.def.cargoTech))) && !u.fly && !u.isBuilding && t !== u) u.setOrder({ type: 'load', target: t }, shift);
         else if ((u.def.cargo || (u.def.cargoTech && u.player.hasTech(u.def.cargoTech))) && !t.fly && !t.isBuilding) u.setOrder({ type: 'pickup', target: t }, shift);
-        else if (t.def.nydus && t.nydusLink && t.nydusLink.alive) u.setOrder({ type: 'move', x: t.nydusLink.x, y: t.nydusLink.y + 40 }, shift);
+        else if (t.def.nydus && t.nydusLink && t.nydusLink.alive && !u.fly) u.setOrder({ type: 'nydus', target: t }, shift);
         else u.setOrder({ type: 'follow', target: t }, shift);
       } else if (res && u.def.worker) { if (res.type === 'geyser') { const b = res.building; if (b && b.alive && b.done && b.owner === G.human) u.setOrder({ type: 'gather', target: b, phase: 'goto' }, shift); else u.setOrder({ type: 'move', x: wx, y: wy }, shift); } else u.setOrder({ type: 'gather', target: res, phase: 'goto' }, shift); }
       else u.setOrder({ type: 'move', x: wx, y: wy }, shift);
@@ -329,8 +350,11 @@ const UI = {
   },
   // ---------------- menus ----------------
   menuItems() {
-    if (this.menu === 'over') { const hp = G.players[G.human]; const won = G.winner === G.human; const s = hp.stats; return { title: won ? 'VICTORY' : 'DEFEAT', lines: [`Units killed ${s.unitsKilled}   lost ${s.unitsLost}`, `Structures razed ${s.buildingsKilled}   lost ${s.buildingsLost}`, `Minerals mined ${s.mined}   Gas ${s.gassed}`, `Time ${Math.floor(G.frame / TPS / 60)}:${String(Math.floor(G.frame / TPS) % 60).padStart(2, '0')}`], items: [['Continue playing', () => { this.menu = null; G.over = false; }], ['Return to main menu', () => this.toMenu()]] }; }
-    return { title: 'PAUSED', lines: [], items: [['Resume (Esc)', () => { this.menu = null; }], ['Restart', () => { this.start(this.lastOpts); }], ['Quit to menu', () => this.toMenu()]] };
+    if (this.menu === 'brief' && G.mission) { const d = G.mission.def; return { title: d.title.toUpperCase(), lines: d.brief.concat(['', 'OBJECTIVE: ' + d.objective]), items: [['Begin mission', () => { this.menu = null; }]] }; }
+    if (this.menu === 'waiting') return { title: 'WAITING FOR PLAYERS', lines: ['The game resumes when all players have caught up.'], items: [['Keep waiting', () => { this.menu = null; }], ['Leave game', () => { Net.disconnect(); this.toMenu(); }]] };
+    if (this.menu === 'over') { const hp = G.players[G.human]; const won = G.mission ? G.winner === G.human : (G.winTeam != null ? G.winTeam === hp.team : G.winner === G.human); const mins = Math.max(1, G.frame / TPS / 60); const apm = Math.round(G.log.filter(e => e.c.p === G.human).length / mins); const lines = [`Time ${Math.floor(G.frame / TPS / 60)}:${String(Math.floor(G.frame / TPS) % 60).padStart(2, '0')}   APM ${apm}`, '']; for (const q of G.players) { const s = q.stats; lines.push(`${q.name} (${RACE_INFO[q.race].name})  kills ${s.unitsKilled}/${s.buildingsKilled}  lost ${s.unitsLost}/${s.buildingsLost}  minerals ${s.mined}  gas ${s.gassed}${q.defeated ? '  ELIMINATED' : ''}`); } return { title: won ? 'VICTORY' : 'DEFEAT', lines, items: [['Continue playing', () => { this.menu = null; G.over = false; }], ['Save replay', () => { Replay.saveReplay(); }], ['Return to main menu', () => this.toMenu()]] }; }
+    if (this.mode === 'replay') return { title: 'REPLAY PAUSED', lines: ['Speed: ' + this.speedName()], items: [['Resume (Esc)', () => { this.menu = null; }], ['Toggle full map view', () => { this.viewAll = !this.viewAll; this.menu = null; }], ['Quit to menu', () => this.toMenu()]] };
+    return { title: 'PAUSED', lines: [], items: [['Resume (Esc)', () => { this.menu = null; }], ['Save game (F5)', () => { Replay.save(true); this.menu = null; }], ['Save replay', () => { Replay.saveReplay(); this.menu = null; }], ['Restart', () => { this.start(this.lastOpts); }], ['Quit to menu', () => this.toMenu()]] };
   },
   drawMenu() {
     const ctx = Render.ctx, m = this.menuItems(); const w = 420, h = 120 + m.lines.length * 22 + m.items.length * 44, x = Render.W / 2 - w / 2, y = Render.H / 2 - h / 2;
@@ -341,7 +365,7 @@ const UI = {
     ctx.textAlign = 'left';
   },
   menuClick(x, y) { for (const r of this.menuRects || []) if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) { r.fn(); return; } },
-  toMenu() { this.running = false; this.menu = null; document.getElementById('menu').style.display = 'flex'; document.getElementById('game').style.display = 'none'; },
+  toMenu() { this.running = false; this.menu = null; this.loading = null; if (typeof Net !== 'undefined' && Net.active) Net.disconnect(); if (typeof Music !== 'undefined') Music.stop(); document.getElementById('menu').style.display = 'flex'; document.getElementById('game').style.display = 'none'; const ab = document.getElementById('autosaveBtn'); if (ab) ab.style.display = Replay.hasAutosave() ? 'block' : 'none'; },
 };
 
 // ---------------- boot ----------------
@@ -349,11 +373,19 @@ window.addEventListener('DOMContentLoaded', () => {
   UI.init();
   const $ = id => document.getElementById(id);
   const oppRows = $('opps');
-  const rebuildOpps = () => { const n = parseInt($('nopp').value); oppRows.innerHTML = ''; for (let i = 0; i < n; i++) oppRows.innerHTML += `<div class="row"><label>Opponent ${i + 1}</label><select class="orace"><option value="R">Random</option><option value="T">Terran</option><option value="Z">Zerg</option><option value="P">Protoss</option></select><select class="odiff"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select></div>`; };
+  const rebuildOpps = () => { const n = parseInt($('nopp').value); oppRows.innerHTML = ''; for (let i = 0; i < n; i++) oppRows.innerHTML += `<div class="row"><label>Opponent ${i + 1}</label><select class="orace"><option value="R">Random</option><option value="T">Terran</option><option value="Z">Zerg</option><option value="P">Protoss</option></select><select class="odiff"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select><select class="oteam" title="Team">${[1, 2, 3, 4].map(t => `<option value="${t}" ${t === i + 2 ? 'selected' : ''}>Team ${t}</option>`).join('')}</select></div>`; };
   $('nopp').addEventListener('change', rebuildOpps); rebuildOpps();
+  const ms = $('mission'); if (ms) { for (const m of Missions.list) { const o = document.createElement('option'); o.value = m.id; o.textContent = `${RACE_INFO[m.race].name}: ${m.title}`; ms.appendChild(o); } $('missionBtn').addEventListener('click', () => { const m = Missions.get(ms.value); if (!m) return; UI.start({ players: [{ race: m.race, human: true, name: 'Player', team: 1 }, { race: m.enemy.race, human: false, difficulty: m.enemy.difficulty, name: 'Enemy', team: 2 }], seed: m.seed, layout: m.layout, mission: m.id }); }); }
+  const hk = $('hotkeys'); if (hk) { try { hk.value = localStorage.getItem('bw_hotkeys') || 'bw'; } catch (e) { } UI.gridKeys = hk.value === 'grid'; hk.addEventListener('change', () => { UI.gridKeys = hk.value === 'grid'; try { localStorage.setItem('bw_hotkeys', hk.value); } catch (e) { } }); }
+  const vc = $('voice'), mc = $('music'); if (vc) { vc.checked = Voice.on; vc.addEventListener('change', () => Voice.set(vc.checked)); } if (mc) { mc.checked = Music.on; mc.addEventListener('change', () => Music.set(mc.checked)); }
+  const nc = $('netConnect'); if (nc) { $('netUrl').placeholder = Net.defaultUrl(); nc.addEventListener('click', () => Net.connect($('netUrl').value.trim() || Net.defaultUrl(), $('netName').value.trim() || 'Player', 'R')); }
+  const ly = $('layout'); if (ly) ly.addEventListener('change', () => { const maxOpp = (MAP_LAYOUTS[ly.value] || {}).players ? MAP_LAYOUTS[ly.value].players - 1 : 3; const no = $('nopp'); if (parseInt(no.value) > maxOpp) { no.value = String(maxOpp); rebuildOpps(); } });
+  const ab = $('autosaveBtn'); if (ab) { ab.style.display = Replay.hasAutosave() ? 'block' : 'none'; ab.addEventListener('click', () => Replay.loadAutosave()); }
+  $('loadBtn').addEventListener('click', () => $('loadFile').click()); $('loadFile').addEventListener('change', e => { if (e.target.files[0]) Replay.fromFile(e.target.files[0], 'load'); e.target.value = ''; });
+  $('replayBtn').addEventListener('click', () => $('replayFile').click()); $('replayFile').addEventListener('change', e => { if (e.target.files[0]) Replay.fromFile(e.target.files[0], 'watch'); e.target.value = ''; });
   $('start').addEventListener('click', () => {
     const players = [{ race: $('race').value, human: true, name: 'Player' }];
-    document.querySelectorAll('#opps .row').forEach((r, i) => players.push({ race: r.querySelector('.orace').value, human: false, difficulty: r.querySelector('.odiff').value, name: 'Computer ' + (i + 1) }));
-    const opts = { players, seed: parseInt($('seed').value) || 1 }; UI.lastOpts = opts; UI.start(opts);
+    players[0].team = parseInt(($('team') || { value: 1 }).value) || 1; document.querySelectorAll('#opps .row').forEach((r, i) => players.push({ race: r.querySelector('.orace').value, human: false, difficulty: r.querySelector('.odiff').value, name: 'Computer ' + (i + 1), team: parseInt((r.querySelector('.oteam') || { value: i + 2 }).value) || (i + 2) }));
+    const opts = { players, seed: parseInt($('seed').value) || 1, layout: $('layout') ? $('layout').value : 'temple' }; UI.start(opts);
   });
 });

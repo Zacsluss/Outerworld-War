@@ -1,6 +1,6 @@
 const fs=require('fs'),vm=require('vm'),path=require('path');const root=path.join(__dirname,'..');
 const ctx={console,Math,performance,addEventListener(){},setTimeout,document:{getElementById:()=>({style:{},addEventListener(){}}),createElement:()=>({getContext:()=>null}),addEventListener(){},hasFocus:()=>false},requestAnimationFrame(){}};ctx.window=ctx;vm.createContext(ctx);
-for(const f of ['data','map','sim','game','combat','abilities','ai','render','ui'])vm.runInContext(fs.readFileSync(path.join(root,'js',f+'.js'),'utf8'),ctx,{filename:f});
+for(const f of ['data','map','sim','game','combat','abilities','commands','ai','render','ui'])vm.runInContext(fs.readFileSync(path.join(root,'js',f+'.js'),'utf8'),ctx,{filename:f});
 vm.runInContext(`UI.ping=()=>{};UI.onUnitDied=()=>{};
 G.init({players:[{race:'P',human:true},{race:'T',human:false}],seed:1}); G.players[1].ai=null; G.players[0].showVision=true;
 const hx=G.players[0].startX, hy=G.players[0].startY;

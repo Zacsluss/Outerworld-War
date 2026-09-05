@@ -3,9 +3,42 @@
 // Map: terrain grid, cliffs/ramps, resources, creep, psi power, placement.
 // height: 0 low ground, 1 ramp, 2 high ground. walk: 1 walkable.
 // ============================================================================
+// Map layouts. Coordinates are quadrant-0 tiles, mirrored 4-fold. Mains listed first.
+const MAP_LAYOUTS = {
+  temple: { name: 'Lost Ruins', players: 4, startOrder: [0, 3, 1, 2],
+    high: [['rect', 4, 4, 32, 26], ['ellipse', 20, 17, 18, 15], ['rect', 50, 50, 14, 14], ['ellipse', 63.5, 63.5, 17, 17]],
+    ramps: [[31, 28, 4, 5], [61, 45, 3, 5], [45, 61, 5, 3]],
+    rocks: [['rect', 4, 30, 18, 4], ['ellipse', 42, 33, 4, 3], ['ellipse', 30, 58, 3, 2.5], ['ellipse', 58, 28, 2.5, 3], ['ellipse', 40, 50, 3, 3]],
+    bases: [
+      { hall: [12, 12], minerals: [[7, 9], [7, 11], [7, 13], [7, 15], [7, 17], [10, 8], [12, 8], [14, 8]], geyser: [17, 7], main: true },
+      { hall: [29, 38], minerals: [[24, 36], [24, 38], [24, 40], [24, 42], [27, 45], [29, 45], [31, 45]], geyser: [34, 44], natural: true },
+      { hall: [10, 52], minerals: [[5, 49], [5, 51], [5, 53], [5, 55], [5, 57], [5, 59]], geyser: [10, 57] },
+      { hall: [52, 10], minerals: [[49, 5], [51, 5], [53, 5], [55, 5], [57, 5], [59, 5]], geyser: [58, 10] },
+    ] },
+  bloodbath: { name: 'Blood Pit', players: 4, startOrder: [0, 3, 1, 2],
+    high: [['ellipse', 63.5, 63.5, 12, 10]],
+    ramps: [[62, 52, 3, 3], [52, 62, 3, 3]],
+    rocks: [['ellipse', 30, 30, 5, 4], ['rect', 4, 40, 10, 3], ['rect', 40, 4, 3, 10], ['ellipse', 46, 22, 3, 3], ['ellipse', 22, 46, 3, 3]],
+    bases: [
+      { hall: [12, 12], minerals: [[7, 9], [7, 11], [7, 13], [7, 15], [10, 7], [12, 7], [14, 7], [16, 7]], geyser: [18, 11], main: true },
+      { hall: [30, 12], minerals: [[27, 5], [29, 5], [31, 5], [33, 5], [35, 5], [37, 8]], geyser: [36, 12] },
+      { hall: [12, 30], minerals: [[5, 27], [5, 29], [5, 31], [5, 33], [5, 35], [8, 37]], geyser: [12, 36] },
+    ] },
+  valley: { name: 'Twilight Valley', players: 2, startOrder: [0, 3],
+    high: [['rect', 4, 4, 40, 30], ['ellipse', 24, 19, 22, 17], ['rect', 4, 60, 22, 8], ['ellipse', 96, 40, 14, 10]],
+    ramps: [[38, 32, 5, 5], [24, 60, 4, 4], [86, 40, 4, 4]],
+    rocks: [['rect', 44, 4, 4, 22], ['ellipse', 56, 40, 6, 5], ['ellipse', 64, 63, 10, 4], ['rect', 30, 44, 10, 3], ['ellipse', 80, 20, 4, 4]],
+    bases: [
+      { hall: [14, 14], minerals: [[9, 11], [9, 13], [9, 15], [9, 17], [9, 19], [12, 10], [14, 10], [16, 10], [18, 10]], geyser: [20, 9], main: true, quadrants: [0, 3] },
+      { hall: [36, 40], minerals: [[31, 38], [31, 40], [31, 42], [31, 44], [34, 47], [36, 47], [38, 47]], geyser: [41, 46], natural: true, quadrants: [0, 3] },
+      { hall: [12, 72], minerals: [[7, 69], [7, 71], [7, 73], [7, 75], [7, 77], [10, 79]], geyser: [15, 78], quadrants: [0, 3] },
+      { hall: [60, 14], minerals: [[57, 9], [59, 9], [61, 9], [63, 9], [65, 9], [67, 12]], geyser: [66, 16], quadrants: [0, 3] },
+      { hall: [94, 40], minerals: [[89, 37], [89, 39], [89, 41], [89, 43], [92, 35], [94, 35]], geyser: [98, 36], quadrants: [0, 3], rich: true },
+    ] },
+};
 class GameMap {
-  constructor(seed = 1) {
-    this.w = 128; this.h = 128;
+  constructor(seed = 1, layout = 'temple') {
+    this.layout = layout; this.w = 128; this.h = 128;
     const n = this.w * this.h;
     this.height = new Uint8Array(n);
     this.walk = new Uint8Array(n).fill(1);
@@ -41,12 +74,11 @@ class GameMap {
     const W = this.w, Hh = this.h;
     const setH = v => (x, y) => { this.height[this.idx(x, y)] = v; };
     const rock = (x, y) => { this.walk[this.idx(x, y)] = 0; this.cliff[this.idx(x, y)] = 2; };
-    // --- high ground: mains (each quadrant) ---
-    this.rect(4, 4, 32, 26, (x, y) => this.sym(x, y, setH(2)));
-    this.ellipse(20, 17, 18, 15, (x, y) => this.sym(x, y, setH(2)));
-    // --- center plateau ---
-    this.rect(50, 50, 14, 14, (x, y) => this.sym(x, y, setH(2)));
-    this.ellipse(63.5, 63.5, 17, 17, (x, y) => this.sym(x, y, setH(2)));
+    const ramp = (x, y) => { const i = this.idx(x, y); this.walk[i] = 1; this.cliff[i] = 0; this.height[i] = 1; };
+    const L = MAP_LAYOUTS[this.layout] || MAP_LAYOUTS.temple;
+    this.name = L.name; this.players = L.players;
+    // --- high ground ---
+    for (const [kind, ...a] of L.high) { if (kind === 'rect') this.rect(a[0], a[1], a[2], a[3], (x, y) => this.sym(x, y, setH(2))); else this.ellipse(a[0], a[1], a[2], a[3], (x, y) => this.sym(x, y, setH(2))); }
     // --- cliffs: high tiles adjacent to low become unwalkable cliff ring ---
     const cliffs = [];
     for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) {
@@ -56,55 +88,39 @@ class GameMap {
       if (edge) cliffs.push(this.idx(x, y));
     }
     for (const i of cliffs) { this.walk[i] = 0; this.cliff[i] = 1; }
-    // --- ramps (walkable, height 1) ---
-    const ramp = (x, y) => { const i = this.idx(x, y); this.walk[i] = 1; this.cliff[i] = 0; this.height[i] = 1; };
-    this.rect(31, 28, 4, 5, (x, y) => this.sym(x, y, ramp));       // main ramp (down toward natural)
-    this.rect(61, 45, 3, 5, (x, y) => this.sym(x, y, ramp));       // center plateau top/bottom ramps
-    this.rect(45, 61, 5, 3, (x, y) => this.sym(x, y, ramp));       // center plateau left/right ramps
-    // widen ramp mouths: clear cliff directly beside ramps at low side
+    for (const r of L.ramps) this.rect(r[0], r[1], r[2], r[3], (x, y) => this.sym(x, y, ramp));
     // --- map border ---
     this.rect(0, 0, W, 2, (x, y) => rock(x, y)); this.rect(0, Hh - 2, W, 2, (x, y) => rock(x, y));
     this.rect(0, 0, 2, Hh, (x, y) => rock(x, y)); this.rect(W - 2, 0, 2, Hh, (x, y) => rock(x, y));
     // --- rocks / chokes ---
-    this.rect(4, 30, 18, 4, (x, y) => this.sym(x, y, rock));         // seal left side below main
-    this.ellipse(42, 33, 4, 3, (x, y) => this.sym(x, y, rock));       // natural choke rock
-    this.ellipse(30, 58, 3, 2.5, (x, y) => this.sym(x, y, rock));     // mid lane rock
-    this.ellipse(58, 28, 2.5, 3, (x, y) => this.sym(x, y, rock));
-    this.ellipse(40, 50, 3, 3, (x, y) => this.sym(x, y, rock));
+    for (const [kind, ...a] of L.rocks) { if (kind === 'rect') this.rect(a[0], a[1], a[2], a[3], (x, y) => this.sym(x, y, rock)); else this.ellipse(a[0], a[1], a[2], a[3], (x, y) => this.sym(x, y, rock)); }
     // --- bases (defined in quadrant 0, mirrored) ---
-    const baseDefs = [
-      { hall: [12, 12], minerals: [[7, 9], [7, 11], [7, 13], [7, 15], [7, 17], [10, 8], [12, 8], [14, 8]], geyser: [17, 7], main: true },
-      { hall: [29, 38], minerals: [[24, 36], [24, 38], [24, 40], [24, 42], [27, 45], [29, 45], [31, 45]], geyser: [34, 44], natural: true },
-      { hall: [10, 52], minerals: [[5, 49], [5, 51], [5, 53], [5, 55], [5, 57], [5, 59]], geyser: [10, 57] },
-      { hall: [52, 10], minerals: [[49, 5], [51, 5], [53, 5], [55, 5], [57, 5], [59, 5]], geyser: [58, 10] },
-    ];
-    for (let q = 0; q < 4; q++) for (const bd of baseDefs) {
+    for (let q = 0; q < 4; q++) for (const bd of L.bases) {
+      if (bd.quadrants && !bd.quadrants.includes(q)) continue;
       const base = { minerals: [], geyser: null, main: !!bd.main, natural: !!bd.natural, quadrant: q };
-      const tr = (x, y, w, h) => { // transform a rect top-left by quadrant
-        let [tx, ty] = this.mirrorPt(x, y, q);
-        if (q === 1 || q === 3) tx -= w - 1;
-        if (q === 2 || q === 3) ty -= h - 1;
-        return [tx, ty];
-      };
+      const tr = (x, y, w, h) => { let [tx, ty] = this.mirrorPt(x, y, q); if (q === 1 || q === 3) tx -= w - 1; if (q === 2 || q === 3) ty -= h - 1; return [tx, ty]; };
       const [hx, hy] = tr(bd.hall[0], bd.hall[1], 4, 3);
       base.x = hx; base.y = hy; base.cx = (hx + 2) * TILE; base.cy = (hy + 1.5) * TILE;
       for (const m of bd.minerals) {
         const [mx, my] = tr(m[0], m[1], 2, 1);
-        const res = { type: 'mineral', x: mx, y: my, w: 2, h: 1, amount: 1500, cx: (mx + 1) * TILE, cy: (my + 0.5) * TILE, miner: null, id: this.resources.length };
+        const res = { type: 'mineral', x: mx, y: my, w: 2, h: 1, amount: bd.rich ? 5000 : 1500, cx: (mx + 1) * TILE, cy: (my + 0.5) * TILE, miner: null, id: this.resources.length };
         this.resources.push(res); base.minerals.push(res);
-        this.rect(mx, my, 2, 1, (x, y) => { this.blocked[this.idx(x, y)] = -2; });
+        this.rect(mx, my, 2, 1, (x, y) => { this.blocked[this.idx(x, y)] = -2; this.walk[this.idx(x, y)] = 1; this.cliff[this.idx(x, y)] = 0; });
       }
-      const [gx, gy] = tr(bd.geyser[0], bd.geyser[1], 4, 2);
-      const g = { type: 'geyser', x: gx, y: gy, w: 4, h: 2, amount: 5000, cx: (gx + 2) * TILE, cy: (gy + 1) * TILE, building: null, id: this.resources.length };
-      this.resources.push(g); base.geyser = g;
-      this.rect(gx, gy, 4, 2, (x, y) => { this.blocked[this.idx(x, y)] = -3; });
-      // clear rocks around base footprints
+      if (bd.geyser) {
+        const [gx, gy] = tr(bd.geyser[0], bd.geyser[1], 4, 2);
+        const g = { type: 'geyser', x: gx, y: gy, w: 4, h: 2, amount: 5000, cx: (gx + 2) * TILE, cy: (gy + 1) * TILE, building: null, id: this.resources.length };
+        this.resources.push(g); base.geyser = g;
+        this.rect(gx, gy, 4, 2, (x, y) => { this.blocked[this.idx(x, y)] = -3; this.walk[this.idx(x, y)] = 1; this.cliff[this.idx(x, y)] = 0; });
+      }
       this.rect(hx - 1, hy - 1, 6, 5, (x, y) => { if (this.height[this.idx(x, y)] !== 2 || !this.cliff[this.idx(x, y)]) { this.walk[this.idx(x, y)] = 1; this.cliff[this.idx(x, y)] = 0; } });
       this.bases.push(base);
-      if (bd.main) this.starts[q] = base;
+      if (bd.main) this.starts.push(base);
     }
-    // Ensure resource tiles walkable flag off (they block)
+    // start order: spread players across the map (diagonal first)
+    const order = L.startOrder || [0, 3, 1, 2]; this.starts = order.map(i => this.starts[i]).filter(Boolean);
     for (const r of this.resources) this.rect(r.x, r.y, r.w, r.h, (x, y) => { this.cliff[this.idx(x, y)] = 0; });
+    this.resById = new Map(this.resources.map(r => [r.id, r]));
   }
 
   // ---------------- queries ----------------
@@ -143,7 +159,7 @@ class GameMap {
     // units in the way (ground, non-builder)
     const x0 = tx * TILE, y0 = ty * TILE, x1 = (tx + def.w) * TILE, y1 = (ty + def.h) * TILE;
     for (const u of units) {
-      if (!u.alive || u.fly || u === ignoreUnit || u.isBuilding || u.burrowed && u.def.mine) continue;
+      if (!u.alive || u.fly || u === ignoreUnit || u.isBuilding || u.def.larva || (u.burrowed && u.def.mine)) continue;
       if (u.x + u.r > x0 && u.x - u.r < x1 && u.y + u.r > y0 && u.y - u.r < y1) { if (u.owner === player.id && u.def.worker) continue; return 'Unit in the way'; }
     }
     // resource proximity rule for town halls (no hall within 3 tiles of minerals)

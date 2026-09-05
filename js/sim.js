@@ -6,6 +6,9 @@
 const SIEGE_W = { dmg: 70, type: 'explosive', range: 12, minRange: 2, cd: 75, hits: 1, upgDmg: 5, upgKey: 'vehW', targets: 'ground', splash: [0.3, 0.8, 1.25], ff: true };
 const EQUIV = { hatchery: ['lair', 'hive'], lair: ['hive'], spire: ['greater_spire'], command_center: [], nexus: [] };
 const MINE_TIME = 75, GAS_TIME = 37, LARVA_TIME = 342, MAX_QUEUE = 5;
+// turn rate (rad/frame) for ground units that must rotate before moving; acceleration (px/frame^2) for flyers
+const TURN = { vulture: 0.22, siege_tank: 0.12, goliath: 0.28, dragoon: 0.25, reaver: 0.15, ultralisk: 0.2, archon: 0.3, dark_archon: 0.3, lurker: 0.3, hydralisk: 0.4, defiler: 0.35 };
+const ACCEL = { wraith: 0.35, scout: 0.35, corsair: 0.5, mutalisk: 0.6, scourge: 0.9, queen: 0.5, guardian: 0.15, devourer: 0.3, overlord: 0.05, battlecruiser: 0.06, carrier: 0.1, arbiter: 0.2, valkyrie: 0.35, dropship: 0.3, shuttle: 0.3, observer: 0.3, science_vessel: 0.25, interceptor: 1.5, cocoon: 0.1 };
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const distPt = (x1, y1, x2, y2) => Math.hypot(x1 - x2, y1 - y2);
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -21,13 +24,13 @@ class Player {
   }
   upgLevel(k) { return k ? (this.upg[k] || 0) : 0; }
   hasTech(t) { return this.tech.has(t); }
-  msg(text, kind = 'info') { if (!this.human) return; const last = this.lastAlert[text] || -9999; if (G.frame - last < 72) return; this.lastAlert[text] = G.frame; this.msgs.push({ text, t: G.frame, kind }); if (this.msgs.length > 6) this.msgs.shift(); if (typeof Sound !== 'undefined') Sound.alert(kind); }
+  msg(text, kind = 'info') { if (!this.human) return; const last = this.lastAlert[text] || -9999; if (G.frame - last < 72) return; this.lastAlert[text] = G.frame; this.msgs.push({ text, t: G.frame, kind }); if (this.msgs.length > 6) this.msgs.shift(); if (typeof Sound !== 'undefined') Sound.alert(kind); if (typeof Voice !== 'undefined' && (kind === 'attack' || kind === 'nuke' || text.endsWith('complete.') || text === RACE_INFO[this.race].supplyMsg || text.startsWith('Mission') || text.startsWith('Nuclear'))) Voice.announce(text); }
   canAfford(min, gas, quiet) { if (this.minerals < min) { if (!quiet) this.msg('Not enough minerals.', 'error'); return false; } if (this.gas < gas) { if (!quiet) this.msg('Not enough vespene gas.', 'error'); return false; } return true; }
   hasBuilding(id) {
     for (const u of G.units) { if (u.alive && u.owner === this.id && u.isBuilding && u.done && (u.def.id === id || (EQUIV[id] || []).includes(u.def.id))) return true; }
     return false;
   }
-  hasReq(def) { if (!def.req) return true; for (const r of def.req) { if (DATA.techs[r]) { if (!this.tech.has(r)) return false; } else if (!this.hasBuilding(r)) return false; } return true; }
+  hasReq(def) { if (!def.req || (G.cheats.noreq && this.human)) return true; for (const r of def.req) { if (DATA.techs[r]) { if (!this.tech.has(r)) return false; } else if (!this.hasBuilding(r)) return false; } return true; }
   missingReq(def) { if (!def.req) return null; for (const r of def.req) { if (DATA.techs[r]) { if (!this.tech.has(r)) return DATA.techs[r].name; } else if (!this.hasBuilding(r)) return DATA.buildings[r].name; } return null; }
 }
 
@@ -39,7 +42,7 @@ class Unit {
     this.r = def.r || 12; this.isBuilding = !!def.isBuilding; this.alive = true;
     this.maxHp = def.hp; this.hp = def.hp; this.maxSh = def.sh || 0; this.sh = this.maxSh;
     this.maxEnergy = def.energy || 0; this.energy = def.energy ? 50 : 0;
-    this.facing = Math.random() * Math.PI * 2; this.fly = !!def.fly; this.done = !this.isBuilding;
+    this.facing = G.rand() * Math.PI * 2; this.fly = !!def.fly; this.done = !this.isBuilding;
     this.order = { type: 'idle' }; this.queue = []; this.path = null; this.pathI = 0; this.stuck = 0; this.repathT = 0;
     this.cooldown = 0; this.cargo = []; this.inside = null; this.carrying = null; this.lastRes = null;
     this.prod = []; this.rally = null; this.addon = null; this.parent = null; this.sieged = false; this.transT = 0;
@@ -109,6 +112,7 @@ class Unit {
     // regen
     if (this.maxSh && this.sh < this.maxSh) this.sh = Math.min(this.maxSh, this.sh + 0.045);
     if (this.maxEnergy && this.energy < this.maxEnergy && !(this.fx.stasis > 0)) this.energy = Math.min(this.maxEnergy, this.energy + 0.03125);
+    if (G.cheats.energy && p.human && this.maxEnergy) this.energy = this.maxEnergy;
     if (d.race === 'Z' && this.hp < this.maxHp && !(this.isBuilding && !this.done)) this.hp = Math.min(this.maxHp, this.hp + 0.025);
     if (this.stim > 0) this.stim--;
     if (this.cooldown > 0) this.cooldown--;
@@ -131,6 +135,7 @@ class Unit {
     if (this.prod.length) this.tickProduction();
     this.tickOrder();
     if (d.id === 'medic' && this.order.type !== 'ability' && (G.frame + this.id) % 8 === 0) Abilities.medicAuto(this);
+    if (d.id === 'carrier' && this.launched && this.launched.length) { if (this.launchCd > 0) this.launchCd--; const fighting = this.order.type === 'attack' || (this.order.type === 'attackmove' && this.order.target) || this.order.type === 'hold' && this.target; if (!fighting && (G.frame + this.id) % 24 === 0) for (const ic of this.launched) if (ic.alive && ic.order.type === 'intercept') ic.applyOrder({ type: 'dock' }); this.launched = this.launched.filter(ic => ic.alive); }
     if (d.id === 'science_vessel' && this.order.type === 'idle') { /* nothing auto */ }
   }
 
@@ -143,13 +148,14 @@ class Unit {
       if (d.race === 'T' && !d.tier.startsWith('addon')) { const b = this.builder; adv = !!(b && b.alive && b.order.type === 'construct' && b.order.target === this && distPt(b.x, b.y, this.x, this.y) < this.r + 40); }
       else adv = true;
       if (adv) {
-        this.progress++;
+        this.progress += (G.cheats.cwal && p.human) ? 10 : 1;
         const tot = d.time; this.hp = Math.min(this.maxHp, this.hp + this.maxHp * 0.9 / tot);
         if (this.maxSh) this.sh = Math.min(this.maxSh, this.sh + this.maxSh / tot);
         if (this.progress >= tot) G.completeBuilding(this);
       }
       return;
     }
+    if (d.race === 'T' && this.hp < this.maxHp / 3) { this.hp -= 0.03; if ((G.frame + this.id) % 10 === 0) G.effects.push({ kind: 'fire', x: this.x + (G.rand() - .5) * d.w * TILE * 0.6, y: this.y + (G.rand() - .5) * d.h * TILE * 0.5, t: 14 }); if (this.hp <= 0) { G.kill(this, null); return; } }
     if (this.lifted) { this.tickOrder(); return; }
     if (d.race === 'P' && d.needsPsi) { const cx = this.tx + Math.floor(d.w / 2), cy = this.ty + Math.floor(d.h / 2); this.unpowered = !(G.map.hasPsi(this.owner, cx, cy) || G.map.hasPsi(this.owner, cx - 1, cy)); if (this.unpowered) return; }
     if (d.spawnsLarva) { if (this.larvae.length < 3) { if (--this.larvaT <= 0) { this.larvaT = LARVA_TIME; G.spawnLarva(this); } } else this.larvaT = LARVA_TIME; }
@@ -173,15 +179,15 @@ class Unit {
   tickProduction() {
     if (!this.prod.length) return;
     const it = this.prod[0]; const d = this.def;
-    if (it.kind === 'unit' && !d.egg && !it.started) { const ud = DATA.units[it.id]; if (ud.sup && this.player.supUsed + ud.sup * (ud.pair ? 2 : 1) > this.player.supMax && !it.reserved) { this.player.msg(RACE_INFO[this.player.race].supplyMsg, 'error'); return; } it.started = true; }
-    it.progress++;
+    if (it.kind === 'unit' && !d.egg && !it.started) { const ud = DATA.units[it.id]; if (ud.sup && this.player.supUsed + ud.sup * (ud.pair ? 2 : 1) > this.player.supMax && !it.reserved && !(G.cheats.food && this.player.human)) { this.player.msg(RACE_INFO[this.player.race].supplyMsg, 'error'); return; } it.started = true; }
+    it.progress += (G.cheats.cwal && this.player.human) ? 10 : 1;
     if (it.progress >= it.total) { this.prod.shift(); G.finishProduction(this, it); }
   }
 
   // ---------------- larva ----------------
   tickLarva() {
     if (!this.hatch || !this.hatch.alive) { G.kill(this, null, true); return; }
-    if ((G.frame + this.id) % 60 === 0) { const a = Math.random() * Math.PI * 2; this.wx = this.hatch.x + Math.cos(a) * 60; this.wy = this.hatch.y + (this.hatch.def.h / 2) * TILE + 14 + Math.random() * 18; }
+    if ((G.frame + this.id) % 60 === 0) { const a = G.rand() * Math.PI * 2; this.wx = this.hatch.x + Math.cos(a) * 60; this.wy = this.hatch.y + (this.hatch.def.h / 2) * TILE + 14 + G.rand() * 18; }
     if (this.wx !== undefined) { const dx = this.wx - this.x, dy = this.wy - this.y, dd = Math.hypot(dx, dy); if (dd > 2) { this.x += dx / dd * 0.3; this.y += dy / dd * 0.3; } }
   }
 
@@ -223,8 +229,10 @@ class Unit {
       case 'unload': { if (this.moveTo(o.x, o.y)) { if (this.cargo.length) { if ((G.frame & 7) === 0) G.unloadOne(this); } else this.nextOrder(); } break; }
       case 'merge': { const t = o.partner; if (!t || !t.alive || t.order.type !== 'merge' || t.order.partner !== this) { this.nextOrder(); break; } if (dist(this, t) < 28) { if (this.id < t.id) G.mergeUnits(this, t, o.unit); } else this.moveTo(t.x, t.y, t); break; }
       case 'land': { if (this.moveTo((o.tx + d.w / 2) * TILE, (o.ty + d.h / 2) * TILE)) { G.landBuilding(this, o.tx, o.ty); } break; }
+      case 'nydus': { const c = o.target; if (!c || !c.alive || !c.nydusLink || !c.nydusLink.alive || !c.nydusLink.done || this.fly) { this.nextOrder(); break; } if (this.moveToRect(c, 6)) { const e = c.nydusLink; const t = G.map.findFreeTile(e.tx + 1, e.ty + e.def.h + 1, 6); if (t) { this.x = (t[0] + .5) * TILE; this.y = (t[1] + .5) * TILE; this.px = this.x; this.py = this.y; this.path = null; G.effects.push({ kind: 'ring', x: this.x, y: this.y, r: 16, t: 10, color: '#c8f' }); } this.nextOrder(); } break; }
+      case 'intercept': { Abilities.interceptTick(this); break; }
+      case 'dock': { Abilities.dockTick(this); break; }
       case 'scarab': { Abilities.scarabTick(this); break; }
-      case 'interceptor': { Abilities.interceptorTick(this); break; }
       default: this.nextOrder();
     }
   }
@@ -243,7 +251,7 @@ class Unit {
   findTarget(rangePx, strict) {
     let best = null, bs = 1e9;
     for (const t of G.near(this.x, this.y, rangePx + 40)) {
-      if (t === this || !t.alive || t.owner === this.owner || t.inside || G.allied(this.owner, t.owner)) continue;
+      if (t === this || !t.alive || t.inside || G.allied(this.owner, t.owner)) continue;
       if (!G.targetable(this, t)) continue;
       const w = this.weaponFor(t); if (!w) continue;
       const dd = dist(this, t) - t.r - this.r; if (dd > rangePx) continue;
@@ -275,7 +283,7 @@ class Unit {
   fireAt(t) {
     const w = this.weaponFor(t); if (!w) return;
     if (this.fx.dweb > 0 && !this.fly) return;
-    this.cooldown = this.wCd(w); this.facing = Math.atan2(t.y - this.y, t.x - this.x); this.lastFire = G.frame;
+    this.cooldown = this.wCd(w) + Math.floor(G.rand() * 3) - 1; this.facing = Math.atan2(t.y - this.y, t.x - this.x); this.lastFire = G.frame;
     if (this.def.worker && !this.isBuilding) this.cooldown = 22;
     Combat.fire(this, t, w);
   }
@@ -300,8 +308,14 @@ class Unit {
       if (this.path && this.pathI < this.path.length) { const wp = this.path[this.pathI]; gx = (wp[0] + 0.5) * TILE; gy = (wp[1] + 0.5) * TILE; }
       else if (this.path && this.path.length) { const wp = this.path[this.path.length - 1]; if (distPt(this.x, this.y, (wp[0] + .5) * TILE, (wp[1] + .5) * TILE) < TILE && distPt(this.x, this.y, x, y) > TILE * 1.5) { /* path ended short (unreachable) */ this.stuck = 0; return true; } }
     }
-    const ang = Math.atan2(gy - this.y, gx - this.x); this.facing = ang;
-    const step = Math.min(spd, dd);
+    const want = Math.atan2(gy - this.y, gx - this.x); let ang = want; let step = Math.min(spd, dd);
+    if (!this.lifted) {
+      const turn = TURN[this.def.id] || (this.fly ? 0.3 : 0.7); let diff = want - this.facing; diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      if (Math.abs(diff) <= turn || dd < 20) this.facing = want; else this.facing += Math.sign(diff) * turn;
+      this.facing = Math.atan2(Math.sin(this.facing), Math.cos(this.facing)); ang = this.facing;
+      if (!this.fly) { if (Math.abs(diff) > 1.2) step *= TURN[this.def.id] ? 0.15 : 0.45; }
+      else { const acc = ACCEL[this.def.id] || 0.4; this.spdCur = Math.min(spd, (this.spdCur || 0) + acc); const brake = (this.spdCur * this.spdCur) / (2 * acc); if (dd < brake) this.spdCur = Math.max(Math.min(spd, 1.5), this.spdCur - acc); step = Math.min(this.spdCur, dd); }
+    } else this.facing = ang;
     let nx = this.x + Math.cos(ang) * step, ny = this.y + Math.sin(ang) * step;
     if (!this.fly) {
       if (!G.passable(nx, ny, this) && G.passable(this.x, this.y, this)) {
