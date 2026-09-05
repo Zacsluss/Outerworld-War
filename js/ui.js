@@ -21,7 +21,7 @@ const UI = {
   consoleH: 196, selection: [], groups: {}, hover: null, mouse: { x: 0, y: 0, down: false, wx: 0, wy: 0, inside: false }, drag: null, dragging: false, pending: null, placing: null, menu: null, markers: [], pings: [], keys: {}, lastClick: 0, lastClickUnit: null, msgLog: [], camSaves: {}, showHelp: false, cardButtons: [], lastAlertPos: null, speedIdx: 1, accum: 0, lastT: 0, running: false, fps: 0, frames: 0, fpsT: 0,
   SPEEDS: [0.6, 1, 1.5, 2],
   init() {
-    const c = document.getElementById('game'); Render.init(c); Sound.init();
+    const c = document.getElementById('game'); Render.init(c); Sound.init(); if (typeof Atlas !== 'undefined') Atlas.init();
     window.addEventListener('resize', () => Render.resize());
     c.addEventListener('mousemove', e => this.onMove(e)); c.addEventListener('mousedown', e => this.onDown(e)); window.addEventListener('mouseup', e => this.onUp(e));
     c.addEventListener('contextmenu', e => e.preventDefault()); c.addEventListener('dblclick', e => { });

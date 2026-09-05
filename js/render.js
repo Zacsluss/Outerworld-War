@@ -98,7 +98,7 @@ const Render = {
     if (u.morphT > 0) { ctx.globalAlpha *= 0.5 + 0.5 * Math.sin(G.frame * 0.3); }
     ctx.translate(x, y + bob); if (sc !== 1) ctx.scale(sc, 1 / sc);
     if (u.def.id === 'archon' || u.def.id === 'dark_archon') { ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(0, 0, 2, 0, 0, u.r * 1.8); g.addColorStop(0, u.def.id === 'archon' ? 'rgba(120,200,255,0.6)' : 'rgba(200,80,255,0.6)'); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, u.r * 1.8 + Math.sin(G.frame * 0.3) * 3, 0, 7); ctx.fill(); ctx.globalCompositeOperation = 'source-over'; }
-    ctx.drawImage(s.cv, -s.ox, -s.oy);
+    Sprites.draw(ctx, s, 0, 0);
     if (u.halluc) { ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = 'rgba(100,180,255,0.25)'; ctx.beginPath(); ctx.arc(0, 0, u.r + 2, 0, 7); ctx.fill(); }
     ctx.restore();
     this.drawStatus(ctx, u, x, y);
@@ -131,7 +131,7 @@ const Render = {
     ctx.save(); ctx.globalAlpha = u._alpha;
     // ground shadow
     ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.ellipse(x0 + W / 2 + 4, y0 + H / 2 + 8, W / 2 + 4, H / 2 + 2, 0, 0, 7); ctx.fill();
-    if (u.done) { ctx.drawImage(s.cv, x0 - s.M, y0 - s.M); if (u.def.race === 'P' && u.unpowered) { ctx.fillStyle = 'rgba(40,20,20,0.45)'; ctx.fillRect(x0, y0, W, H); } const an = BUILDING_ANIM[u.def.id]; if (an && u._alpha > 0.5) an(ctx, u, x0, y0, W, H, G.frame); }
+    if (u.done) { ctx.drawImage(s.cv, x0 - s.M, y0 - s.T); if (u.def.race === 'P' && u.unpowered) { ctx.fillStyle = 'rgba(40,20,20,0.45)'; ctx.fillRect(x0, y0, W, H); } const an = BUILDING_ANIM[u.def.id]; if (an && u._alpha > 0.5) an(ctx, u, x0, y0, W, H, G.frame); }
     else this.drawConstruction(ctx, u, s, x0, y0, W, H);
     ctx.restore();
     if (u.done && u.unpowered) { ctx.fillStyle = '#ff5050'; ctx.font = 'bold 10px Arial'; ctx.fillText('UNPOWERED', x0 + W / 2 - 30, y0 + H / 2); }
@@ -141,14 +141,14 @@ const Render = {
     const k = clamp(u.progress / u.def.time, 0, 1); const race = u.def.race;
     if (race === 'T') {
       ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 2; ctx.strokeRect(x0 + 3, y0 + 3, W - 6, H - 6); ctx.fillStyle = '#2a2e33'; ctx.fillRect(x0 + 4, y0 + 4, W - 8, H - 8);
-      ctx.save(); ctx.beginPath(); ctx.rect(x0 - s.M, y0 + H - (H + s.M) * k - s.M, W + s.M * 2, (H + s.M * 2) * k + s.M); ctx.clip(); ctx.drawImage(s.cv, x0 - s.M, y0 - s.M); ctx.restore();
+      ctx.save(); ctx.beginPath(); const full = H + s.T + s.M; ctx.rect(x0 - s.M, y0 + H + s.M - full * k, W + s.M * 2, full * k); ctx.clip(); ctx.drawImage(s.cv, x0 - s.M, y0 - s.T); ctx.restore();
       ctx.strokeStyle = 'rgba(255,200,60,0.7)'; ctx.lineWidth = 2; for (let i = 0; i < 4; i++) { const yy = y0 + 6 + i * (H - 12) / 3; if (yy < y0 + H - H * k) { ctx.beginPath(); ctx.moveTo(x0 + 4, yy); ctx.lineTo(x0 + W - 4, yy); ctx.stroke(); } } ctx.beginPath(); ctx.moveTo(x0 + 6, y0 + 6); ctx.lineTo(x0 + 6, y0 + H - 6); ctx.moveTo(x0 + W - 6, y0 + 6); ctx.lineTo(x0 + W - 6, y0 + H - 6); ctx.stroke();
       if (u.builder && u.builder.alive && (G.frame % 6) < 3) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = 'rgba(255,240,180,0.9)'; ctx.beginPath(); ctx.arc(x0 + 10 + (G.frame * 7) % (W - 20), y0 + H - H * k, 3, 0, 7); ctx.fill(); ctx.restore(); }
     } else if (race === 'Z') {
-      ctx.save(); ctx.translate(x0 + W / 2, y0 + H / 2); const sc = 0.45 + k * 0.55; ctx.scale(sc, sc); ctx.globalAlpha *= 0.55 + k * 0.45; ctx.drawImage(s.cv, -W / 2 - s.M, -H / 2 - s.M); ctx.restore();
+      ctx.save(); ctx.translate(x0 + W / 2, y0 + H / 2); const sc = 0.45 + k * 0.55; ctx.scale(sc, sc); ctx.globalAlpha *= 0.55 + k * 0.45; ctx.drawImage(s.cv, -W / 2 - s.M, -H / 2 - s.T); ctx.restore();
       ctx.fillStyle = `rgba(150,90,150,${0.35 * (1 - k)})`; ctx.beginPath(); ctx.ellipse(x0 + W / 2, y0 + H / 2, W / 2 * (0.6 + 0.4 * k), H / 2 * (0.6 + 0.4 * k), 0, 0, 7); ctx.fill();
     } else {
-      ctx.save(); ctx.globalAlpha *= 0.25 + k * 0.75; ctx.drawImage(s.cv, x0 - s.M, y0 - s.M); ctx.restore();
+      ctx.save(); ctx.globalAlpha *= 0.25 + k * 0.75; ctx.drawImage(s.cv, x0 - s.M, y0 - s.T); ctx.restore();
       ctx.save(); ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(x0 + W / 2, y0 + H / 2, 2, x0 + W / 2, y0 + H / 2, Math.max(W, H) * 0.7); g.addColorStop(0, `rgba(120,200,255,${0.5 * (1 - k) + 0.1})`); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.fillRect(x0 - 20, y0 - 20, W + 40, H + 40); for (let i = 0; i < 5; i++) { const xx = x0 + 8 + ((i * 37 + G.frame * 2) % (W - 16)); ctx.fillStyle = 'rgba(160,220,255,0.35)'; ctx.fillRect(xx, y0 - 10, 2, H + 20); } ctx.restore();
     }
     const w = W - 8; ctx.fillStyle = '#000'; ctx.fillRect(x0 + 4, y0 + H - 7, w, 5); ctx.fillStyle = '#3f3'; ctx.fillRect(x0 + 4, y0 + H - 7, w * k, 5);
@@ -172,7 +172,7 @@ const Render = {
   drawPlacement(ctx) {
     const pl = UI.placing, def = pl.def, m = G.map; const tx = pl.tx, ty = pl.ty;
     const err = m.canPlace(def, tx, ty, G.players[G.human], G.units, pl.builder);
-    const fake = { def, owner: G.human }; const s = Sprites.building(fake); ctx.save(); ctx.globalAlpha = 0.55; ctx.drawImage(s.cv, tx * TILE - s.M, ty * TILE - s.M); ctx.restore();
+    const fake = { def, owner: G.human }; const s = Sprites.building(fake); ctx.save(); ctx.globalAlpha = 0.55; ctx.drawImage(s.cv, tx * TILE - s.M, ty * TILE - s.T); ctx.restore();
     for (let y = 0; y < def.h; y++) for (let x = 0; x < def.w; x++) { ctx.fillStyle = !err ? 'rgba(60,255,60,0.28)' : 'rgba(255,60,60,0.35)'; ctx.fillRect((tx + x) * TILE + 1, (ty + y) * TILE + 1, TILE - 2, TILE - 2); }
     if (def.psi) { ctx.strokeStyle = 'rgba(80,140,255,0.5)'; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.ellipse((tx + 1) * TILE, (ty + 1) * TILE, def.psi * TILE, def.psi * 0.7 * TILE, 0, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
     if (def.creep) { ctx.strokeStyle = 'rgba(180,80,255,0.5)'; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.ellipse((tx + def.w / 2) * TILE, (ty + def.h / 2) * TILE, def.creep * TILE, def.creep * 0.8 * TILE, 0, 0, 7); ctx.stroke(); ctx.setLineDash([]); }

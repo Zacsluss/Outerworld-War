@@ -12,8 +12,11 @@ const Sprites = {
     c.globalCompositeOperation = 'source-atop'; const g = c.createLinearGradient(-S / 2, -S / 2, S / 2, S / 2); g.addColorStop(0, `rgba(255,255,255,${0.26 * strength})`); g.addColorStop(0.45, 'rgba(255,255,255,0)'); g.addColorStop(0.6, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${0.42 * strength})`); c.fillStyle = g; c.fillRect(-S / 2, -S / 2, S, S); c.globalCompositeOperation = 'source-over';
   },
   WALK_FRAMES: 8, ATK_FRAMES: 5,
+  draw(ctx, s, x, y) { if (s.sub) ctx.drawImage(s.cv, s.sx, s.sy, s.S, s.S, x - s.ox, y - s.oy, s.S, s.S); else ctx.drawImage(s.cv, x - s.ox, y - s.oy); },
   unit(u, dir, anim = 'i') {
-    const id = u.def.id, color = G.players[u.owner].color, v = this.variant(u); const key = 'u|' + id + '|' + color + '|' + dir + '|' + v + '|' + anim;
+    const id = u.def.id, color = G.players[u.owner].color, v = this.variant(u); const aid = v === 's' ? id + '_s' : id;
+    if (typeof Atlas !== 'undefined' && Atlas.hasUnit(aid)) return Atlas.unitFrame(aid, color, dir, anim);
+    const key = 'u|' + id + '|' + color + '|' + dir + '|' + v + '|' + anim;
     let s = this.cache.get(key); if (s) return s;
     const r = u.r; const S = Math.ceil(r * 4.2) + 12; const cv = document.createElement('canvas'); cv.width = S; cv.height = S; const c = cv.getContext('2d');
     c.translate(S / 2, S / 2); c.rotate(dir * Math.PI * 2 / this.DIRS);
@@ -25,17 +28,19 @@ const Sprites = {
   },
   building(u) {
     const id = u.def.id, color = G.players[u.owner].color; const key = 'b|' + id + '|' + color;
+    if (typeof Atlas !== 'undefined' && Atlas.hasBuilding(id)) return Atlas.buildingImage(id, color);
     let s = this.cache.get(key); if (s) return s;
     const M = 18, W = u.def.w * TILE, H = u.def.h * TILE; const cv = document.createElement('canvas'); cv.width = W + M * 2; cv.height = H + M * 2; const c = cv.getContext('2d');
     c.translate(M, M); const h = PaintHelpers(c); c.lineJoin = 'round';
     (BUILDING_PAINTERS[id] || BUILDING_PAINTERS.supply_depot)(h, c, W, H, color, shade(color, 0.6));
     c.setTransform(1, 0, 0, 1, M + W / 2, M + H / 2); this.light(c, Math.max(W, H) + M * 2, 0.8);
-    s = { cv, M, W, H }; this.cache.set(key, s); return s;
+    s = { cv, M, T: M, W, H }; this.cache.set(key, s); return s;
   },
   // Icon rendering for HUD (unit or building), returns canvas of size sz
   icon(defId, color, sz) {
     const key = 'i|' + defId + '|' + color + '|' + sz; let s = this.cache.get(key); if (s) return s;
     const cv = document.createElement('canvas'); cv.width = sz; cv.height = sz; const c = cv.getContext('2d'); const def = DATA.all[defId]; if (!def) return cv;
+    if (typeof Atlas !== 'undefined') { if (!def.isBuilding && Atlas.hasUnit(defId)) { const f = Atlas.unitFrame(defId, color, 14, 'i'); const k = (sz - 2) / f.S * 1.35; c.translate(sz / 2, sz / 2 + 2); c.scale(k, k); this.draw(c, f, 0, 0); this.cache.set(key, cv); return cv; } if (def.isBuilding && Atlas.hasBuilding(defId)) { const b = Atlas.buildingImage(defId, color); const k = (sz - 4) / Math.max(b.cv.width, b.cv.height); c.translate(sz / 2 - b.cv.width * k / 2, sz / 2 - b.cv.height * k / 2); c.scale(k, k); c.drawImage(b.cv, 0, 0); this.cache.set(key, cv); return cv; } }
     const h = PaintHelpers(c); c.lineJoin = 'round';
     if (def.isBuilding) { const W = def.w * TILE, H = def.h * TILE; const k = (sz - 6) / Math.max(W, H); c.translate(sz / 2 - W * k / 2, sz / 2 - H * k / 2); c.scale(k, k); (BUILDING_PAINTERS[defId] || BUILDING_PAINTERS.supply_depot)(h, c, W, H, color, shade(color, .6)); }
     else { const r = def.r || 10; const k = (sz / 2 - 3) / (r * 1.5); c.translate(sz / 2, sz / 2); c.scale(k, k); c.rotate(-Math.PI / 2 + 0.6); (UNIT_PAINTERS[defId] || UNIT_PAINTERS.marine)(h, r, color, shade(color, .6), { walk: null, atk: null }); }
