@@ -379,7 +379,7 @@ const UI = {
     ctx.textAlign = 'left';
   },
   menuClick(x, y) { for (const r of this.menuRects || []) if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) { r.fn(); return; } },
-  toMenu() { this.running = false; this.menu = null; this.loading = null; if (typeof Net !== 'undefined' && Net.active) Net.disconnect(); if (typeof Music !== 'undefined') Music.stop(); document.getElementById('menu').style.display = 'flex'; document.getElementById('game').style.display = 'none'; const ab = document.getElementById('autosaveBtn'); if (ab) ab.style.display = Replay.hasAutosave() ? 'block' : 'none'; },
+  toMenu() { this.running = false; this.menu = null; this.loading = null; if (this.refreshMapList) this.refreshMapList(); if (typeof Net !== 'undefined' && Net.active) Net.disconnect(); if (typeof Music !== 'undefined') Music.stop(); document.getElementById('menu').style.display = 'flex'; document.getElementById('game').style.display = 'none'; const ab = document.getElementById('autosaveBtn'); if (ab) ab.style.display = Replay.hasAutosave() ? 'block' : 'none'; },
 };
 
 // ---------------- boot ----------------
@@ -393,6 +393,16 @@ window.addEventListener('DOMContentLoaded', () => {
   const hk = $('hotkeys'); if (hk) { try { hk.value = localStorage.getItem('bw_hotkeys') || 'bw'; } catch (e) { } UI.gridKeys = hk.value === 'grid'; hk.addEventListener('change', () => { UI.gridKeys = hk.value === 'grid'; try { localStorage.setItem('bw_hotkeys', hk.value); } catch (e) { } }); }
   const vc = $('voice'), mc = $('music'); if (vc) { vc.checked = Voice.on; vc.addEventListener('change', () => Voice.set(vc.checked)); } if (mc) { mc.checked = Music.on; mc.addEventListener('change', () => Music.set(mc.checked)); }
   const nc = $('netConnect'); if (nc) { $('netUrl').placeholder = Net.defaultUrl(); nc.addEventListener('click', () => Net.connect($('netUrl').value.trim() || Net.defaultUrl(), $('netName').value.trim() || 'Player', 'R')); }
+  // custom maps made in the editor appear in the same dropdown as the built-ins
+  UI.refreshMapList = () => {
+    const sel = $('layout'); if (!sel || typeof Editor === 'undefined') return;
+    const keep = sel.value; for (const o of [...sel.options]) if (o.value.startsWith('custom:')) o.remove();
+    for (const name of Editor.register()) { const o = document.createElement('option'); o.value = 'custom:' + name; o.textContent = name + ' (custom)'; sel.appendChild(o); }
+    if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+  };
+  UI.refreshMapList();
+  const eb = $('editorBtn'); if (eb) eb.addEventListener('click', () => Editor.open());
+  const mf = $('mapFile'); if (mf) mf.addEventListener('change', e => { if (e.target.files[0]) Editor.importFile(e.target.files[0]); e.target.value = ''; });
   const ly = $('layout'); if (ly) ly.addEventListener('change', () => { const maxOpp = (MAP_LAYOUTS[ly.value] || {}).players ? MAP_LAYOUTS[ly.value].players - 1 : 3; const no = $('nopp'); if (parseInt(no.value) > maxOpp) { no.value = String(maxOpp); rebuildOpps(); } });
   const ab = $('autosaveBtn'); if (ab) { ab.style.display = Replay.hasAutosave() ? 'block' : 'none'; ab.addEventListener('click', () => Replay.loadAutosave()); }
   $('loadBtn').addEventListener('click', () => $('loadFile').click()); $('loadFile').addEventListener('change', e => { if (e.target.files[0]) Replay.fromFile(e.target.files[0], 'load'); e.target.value = ''; });

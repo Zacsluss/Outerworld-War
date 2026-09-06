@@ -36,6 +36,12 @@ const MAP_LAYOUTS = {
       { hall: [94, 40], minerals: [[89, 37], [89, 39], [89, 41], [89, 43], [92, 35], [94, 35]], geyser: [98, 34], quadrants: [0, 3], rich: true },
     ] },
 };
+// Run-length codec for the editor's tile grids: "2x40,0x88,..." keeps a 128x128 map a few hundred bytes.
+const MapCodec = {
+  encode(arr) { let out = '', v = arr[0], n = 0; for (let i = 0; i < arr.length; i++) { if (arr[i] === v) { n++; continue; } out += v + 'x' + n + ','; v = arr[i]; n = 1; } return out + v + 'x' + n; },
+  decode(s, len) { const out = new Uint8Array(len); if (!s) return out; let i = 0; for (const part of String(s).split(',')) { const [v, n] = part.split('x'); const val = +v, cnt = +n; for (let k = 0; k < cnt && i < len; k++) out[i++] = val; } return out; },
+};
+
 class GameMap {
   constructor(seed = 1, layout = 'temple') {
     this.layout = layout; this.w = 128; this.h = 128;
@@ -77,6 +83,7 @@ class GameMap {
     const ramp = (x, y) => { const i = this.idx(x, y); this.walk[i] = 1; this.cliff[i] = 0; this.height[i] = 1; };
     const L = MAP_LAYOUTS[this.layout] || MAP_LAYOUTS.temple;
     this.name = L.name; this.players = L.players;
+    if (L.custom) return this.generateCustom(L);
     // --- high ground ---
     for (const [kind, ...a] of L.high) { if (kind === 'rect') this.rect(a[0], a[1], a[2], a[3], (x, y) => this.sym(x, y, setH(2))); else this.ellipse(a[0], a[1], a[2], a[3], (x, y) => this.sym(x, y, setH(2))); }
     // --- cliffs: high tiles adjacent to low become unwalkable cliff ring ---
@@ -119,6 +126,47 @@ class GameMap {
     }
     // start order: spread players across the map (diagonal first)
     const order = L.startOrder || [0, 3, 1, 2]; const mains = this.starts; this.starts = order.map(i => mains[i]).filter(Boolean); for (const b of mains) if (!this.starts.includes(b)) this.starts.push(b);
+    for (const r of this.resources) this.rect(r.x, r.y, r.w, r.h, (x, y) => { this.cliff[this.idx(x, y)] = 0; });
+    this.resById = new Map(this.resources.map(r => [r.id, r]));
+  }
+
+  // ---------------- custom (editor-made) maps ----------------
+  // A custom layout stores the painted height grid and rock grid run-length encoded, plus explicit
+  // bases. Cliff edges are derived here exactly as for the built-in layouts, so the editor only has
+  // to paint heights and the engine keeps one rule for what is walkable.
+  generateCustom(L) {
+    const W = this.w, Hh = this.h, n = W * Hh;
+    const hgt = MapCodec.decode(L.height, n), rk = MapCodec.decode(L.rocks, n);
+    for (let i = 0; i < n; i++) { this.height[i] = hgt[i] > 2 ? 0 : hgt[i]; this.walk[i] = 1; this.cliff[i] = 0; }
+    const cliffs = [];
+    for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) {
+      if (this.height[this.idx(x, y)] !== 2) continue;
+      let edge = false;
+      for (let dy = -1; dy <= 1 && !edge; dy++) for (let dx = -1; dx <= 1; dx++) { if (!this.inb(x + dx, y + dy) || this.height[this.idx(x + dx, y + dy)] === 0) { edge = true; break; } }
+      if (edge) cliffs.push(this.idx(x, y));
+    }
+    for (const i of cliffs) { this.walk[i] = 0; this.cliff[i] = 1; }
+    for (let i = 0; i < n; i++) if (this.height[i] === 1) { this.walk[i] = 1; this.cliff[i] = 0; }   // ramps stay walkable
+    for (let i = 0; i < n; i++) if (rk[i]) { this.walk[i] = 0; this.cliff[i] = 2; }                  // painted rocks
+    this.rect(0, 0, W, 2, (x, y) => { const i = this.idx(x, y); this.walk[i] = 0; this.cliff[i] = 2; });
+    this.rect(0, Hh - 2, W, 2, (x, y) => { const i = this.idx(x, y); this.walk[i] = 0; this.cliff[i] = 2; });
+    this.rect(0, 0, 2, Hh, (x, y) => { const i = this.idx(x, y); this.walk[i] = 0; this.cliff[i] = 2; });
+    this.rect(W - 2, 0, 2, Hh, (x, y) => { const i = this.idx(x, y); this.walk[i] = 0; this.cliff[i] = 2; });
+    for (const bd of (L.bases || [])) {
+      const base = { minerals: [], geyser: null, main: !!bd.main, natural: !!bd.natural, quadrant: 0, x: bd.x, y: bd.y, cx: (bd.x + 2) * TILE, cy: (bd.y + 1.5) * TILE };
+      for (const m of (bd.minerals || [])) {
+        const res = { type: 'mineral', x: m[0], y: m[1], w: 2, h: 1, amount: bd.rich ? 5000 : 1500, cx: (m[0] + 1) * TILE, cy: (m[1] + 0.5) * TILE, miner: null, id: this.resources.length };
+        this.resources.push(res); base.minerals.push(res);
+        this.rect(m[0], m[1], 2, 1, (x, y) => { this.blocked[this.idx(x, y)] = -2; this.walk[this.idx(x, y)] = 1; this.cliff[this.idx(x, y)] = 0; });
+      }
+      if (bd.geyser) {
+        const g = { type: 'geyser', x: bd.geyser[0], y: bd.geyser[1], w: 4, h: 2, amount: 5000, cx: (bd.geyser[0] + 2) * TILE, cy: (bd.geyser[1] + 1) * TILE, building: null, id: this.resources.length };
+        this.resources.push(g); base.geyser = g;
+        this.rect(g.x, g.y, 4, 2, (x, y) => { this.blocked[this.idx(x, y)] = -3; this.walk[this.idx(x, y)] = 1; this.cliff[this.idx(x, y)] = 0; });
+      }
+      this.rect(bd.x - 1, bd.y - 1, 6, 5, (x, y) => { const i = this.idx(x, y); if (!rk[i]) { this.walk[i] = 1; this.cliff[i] = 0; } });
+      this.bases.push(base); if (bd.main) this.starts.push(base);
+    }
     for (const r of this.resources) this.rect(r.x, r.y, r.w, r.h, (x, y) => { this.cliff[this.idx(x, y)] = 0; });
     this.resById = new Map(this.resources.map(r => [r.id, r]));
   }

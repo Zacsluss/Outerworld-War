@@ -36,7 +36,8 @@
     <button id="start">START GAME</button>
     <div class="row2"><button id="loadBtn" class="small">LOAD SAVED GAME</button><button id="replayBtn" class="small">WATCH REPLAY</button></div>
     <button id="autosaveBtn" class="small" style="display:none">CONTINUE AUTOSAVE</button>
-    <input type="file" id="loadFile" accept=".json" hidden><input type="file" id="replayFile" accept=".json" hidden>
+    <input type="file" id="loadFile" accept=".json" hidden><input type="file" id="replayFile" accept=".json" hidden><input type="file" id="mapFile" accept=".json" hidden>
+    <button id="editorBtn" class="small">MAP EDITOR</button>
     <details><summary>Campaign missions</summary><div class="row"><label>Mission</label><select id="mission"></select></div><button id="missionBtn" class="small">PLAY MISSION</button></details>
     <details><summary>Multiplayer (LAN)</summary><div class="row"><label>Server</label><input id="netUrl" style="flex:1"></div><div class="row"><label>Name</label><input id="netName" value="Player"></div><button id="netConnect" class="small">CONNECT</button><div id="netStatus" class="sub"></div><div id="lobby"></div><div class="help">Everyone opens this page from the same server address (see the LAN URL printed by serve.js), connects, and the host presses start.</div></details>
     <div class="help">Left click select, right click command. A attack-move, M move, S stop, H hold, P patrol, B build, V advanced build. Ctrl+1-9 control groups. F1 in-game help, F10 menu, +/- speed.</div>
@@ -62,6 +63,7 @@
 <script src="js/atlas.js"></script>
 <script src="js/fx.js"></script>
 <script src="js/render.js"></script>
+<script src="js/editor.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/hud.js"></script>
 </body>
