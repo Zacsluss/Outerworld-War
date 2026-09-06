@@ -9,6 +9,7 @@ const Editor = {
   W: 128, H: 128, active: false, name: 'My Map',
   height: null, rocks: null, bases: [], tool: 'high', brush: 2, camX: 0, camY: 0, zoom: 6,
   painting: false, msg: '', msgT: 0, hoverTile: [0, 0], dirty: false,
+  rectMode: false, rectStart: null, mirror: 'off', undoStack: [], redoStack: [],
 
   // ---------------- storage ----------------
   store: {
@@ -26,6 +27,25 @@ const Editor = {
   },
   idx(x, y) { return y * this.W + x; },
   inb(x, y) { return x >= 0 && y >= 0 && x < this.W && y < this.H; },
+
+  // ---------------- undo / redo ----------------
+  // A whole-map snapshot is 32 KB, so 50 of them is cheaper than tracking per-tile deltas and it
+  // survives base edits and template loads without any special cases.
+  snap() { return { height: this.height.slice(), rocks: this.rocks.slice(), name: this.name, bases: this.bases.map(b => ({ x: b.x, y: b.y, main: b.main, natural: b.natural, minerals: b.minerals.map(m => m.slice()), geyser: b.geyser ? b.geyser.slice() : null })) }; },
+  restore(sn) { this.height = sn.height.slice(); this.rocks = sn.rocks.slice(); this.name = sn.name; this.bases = sn.bases.map(b => ({ x: b.x, y: b.y, main: b.main, natural: b.natural, minerals: b.minerals.map(m => m.slice()), geyser: b.geyser ? b.geyser.slice() : null })); this.dirty = true; },
+  mark() { this.undoStack.push(this.snap()); if (this.undoStack.length > 50) this.undoStack.shift(); this.redoStack.length = 0; }, // call once per gesture, not per tile
+  undo() { if (!this.undoStack.length) { this.msgSay('Nothing to undo.'); return; } this.redoStack.push(this.snap()); this.restore(this.undoStack.pop()); this.msgSay('Undo.'); },
+  redo() { if (!this.redoStack.length) { this.msgSay('Nothing to redo.'); return; } this.undoStack.push(this.snap()); this.restore(this.redoStack.pop()); this.msgSay('Redo.'); },
+
+  // ---------------- mirroring ----------------
+  // Positions that mirror (tx,ty) for a w x h footprint. Anchors are mirrored by footprint, not by
+  // centre tile, so a 4x3 base lands symmetrically rather than three tiles off.
+  mirrors(tx, ty, w = 1, h = 1) {
+    const W = this.W, H = this.H, out = [[tx, ty]];
+    if (this.mirror === '2') out.push([W - tx - w, H - ty - h]);
+    else if (this.mirror === '4') { out.push([W - tx - w, ty], [tx, H - ty - h], [W - tx - w, H - ty - h]); }
+    return out.filter(([x, y], i) => this.inb(x, y) && out.findIndex(o => o[0] === x && o[1] === y) === i);
+  },
   // Turn the painted grids into a layout object the engine can generate from.
   toLayout() {
     return { name: this.name, players: Math.max(2, this.bases.filter(b => b.main).length), custom: true, w: this.W, h: this.H, height: MapCodec.encode(this.height), rocks: MapCodec.encode(this.rocks), bases: this.bases.map(b => ({ x: b.x, y: b.y, main: !!b.main, natural: !!b.natural, minerals: b.minerals.slice(), geyser: b.geyser ? b.geyser.slice() : null })) };
@@ -54,6 +74,8 @@ const Editor = {
     this.dirty = true;
   },
   baseAt(tx, ty) { return this.bases.find(b => tx >= b.x - 6 && tx <= b.x + 9 && ty >= b.y - 5 && ty <= b.y + 5); },
+  addBaseMirrored(tx, ty, main) { let n = 0; for (const [x, y] of this.mirrors(tx, ty, 4, 3)) if (!this.baseAt(x, y)) { this.addBase(x, y, main); n++; } return n; },
+  removeBaseMirrored(tx, ty) { let n = 0; for (const [x, y] of this.mirrors(tx, ty, 4, 3)) { const b = this.baseAt(x, y); if (b) { this.bases.splice(this.bases.indexOf(b), 1); n++; } } if (n) this.dirty = true; return n; },
 
   // ---------------- validation ----------------
   // Everything the engine needs to be true before a map can be played.
@@ -94,8 +116,18 @@ const Editor = {
   bind() {
     if (this._bound) return; this._bound = true;
     const c = this.canvas;
-    c.addEventListener('mousedown', e => { if (!this.active) return; if (this.uiClick(e.clientX, e.clientY)) return; this.painting = e.button === 0 ? 'paint' : 'erase'; this.paintAt(e.clientX, e.clientY); });
-    window.addEventListener('mouseup', () => { this.painting = false; });
+    c.addEventListener('mousedown', e => {
+      if (!this.active) return; if (this.uiClick(e.clientX, e.clientY)) return; if (this.minimapClick(e.clientX, e.clientY)) return;
+      this.mark(); // one undo entry per gesture
+      this.painting = e.button === 0 ? 'paint' : 'erase';
+      if (this.rectMode && this.tool !== 'base' && this.tool !== 'start') { this.rectStart = this.toTile(e.clientX, e.clientY); return; }
+      this.paintAt(e.clientX, e.clientY);
+    });
+    window.addEventListener('mouseup', e => {
+      if (this.active && this.rectStart) { const [tx, ty] = this.toTile(e.clientX, e.clientY); this.fillRect(this.rectStart[0], this.rectStart[1], tx, ty, this.painting === 'erase'); this.rectStart = null; }
+      else if (this.active && this.painting && this.undoStack.length && !this.dirty) this.undoStack.pop(); // the gesture changed nothing
+      this.painting = false;
+    });
     c.addEventListener('mousemove', e => { if (!this.active) return; this.hoverTile = this.toTile(e.clientX, e.clientY); if (this.painting) this.paintAt(e.clientX, e.clientY); });
     c.addEventListener('wheel', e => { if (!this.active) return; e.preventDefault(); this.zoom = clamp(this.zoom + (e.deltaY < 0 ? 1 : -1), 2, 16); }, { passive: false });
     window.addEventListener('keydown', e => {
@@ -106,7 +138,10 @@ const Editor = {
       else if (k === '1') this.tool = 'low'; else if (k === '2') this.tool = 'ramp'; else if (k === '3') this.tool = 'high';
       else if (k === '4') this.tool = 'rock'; else if (k === '5') this.tool = 'base'; else if (k === '6') this.tool = 'start';
       else if (k === '[') this.brush = Math.max(1, this.brush - 1); else if (k === ']') this.brush = Math.min(12, this.brush + 1);
-      else if (k === 'escape') this.close();
+      else if (k === 'r') this.rectMode = !this.rectMode; else if (k === 'm') this.cycleMirror();
+      else if (k === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (e.shiftKey) this.redo(); else this.undo(); }
+      else if (k === 'y' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); this.redo(); }
+      else if (k === 'escape') { if (this.rectStart) { this.rectStart = null; this.undo(); } else this.close(); }
       this.camX = clamp(this.camX, 0, Math.max(0, this.W - this.viewTilesX())); this.camY = clamp(this.camY, 0, Math.max(0, this.H - this.viewTilesY()));
     });
     window.addEventListener('resize', () => { if (this.active) this.resize(); });
@@ -114,24 +149,30 @@ const Editor = {
   viewTilesX() { return Math.floor(this.canvas.width / this.zoom); },
   viewTilesY() { return Math.floor((this.canvas.height - 90) / this.zoom); },
   toTile(sx, sy) { return [clamp(this.camX + Math.floor(sx / this.zoom), 0, this.W - 1), clamp(this.camY + Math.floor((sy - 60) / this.zoom), 0, this.H - 1)]; },
+  toolValue() { return this.tool === 'low' ? 0 : this.tool === 'ramp' ? 1 : 2; },
+  setTile(x, y, erase) {
+    if (!this.inb(x, y)) return; const i = this.idx(x, y);
+    if (this.tool === 'rock') this.rocks[i] = erase ? 0 : 1;
+    else { this.height[i] = erase ? 0 : this.toolValue(); if (!erase) this.rocks[i] = 0; }
+  },
+  brushAt(tx, ty, erase) { const r = this.brush; for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (dx * dx + dy * dy <= r * r) for (const [x, y] of this.mirrors(tx + dx, ty + dy)) this.setTile(x, y, erase); this.dirty = true; },
+  fillRect(x0, y0, x1, y1, erase) {
+    const ax = Math.min(x0, x1), ay = Math.min(y0, y1), bx = Math.max(x0, x1), by = Math.max(y0, y1);
+    for (let y = ay; y <= by; y++) for (let x = ax; x <= bx; x++) for (const [mx, my] of this.mirrors(x, y)) this.setTile(mx, my, erase);
+    this.dirty = true;
+  },
   paintAt(sx, sy) {
     if (sy < 60 || sy > this.canvas.height - 30) return;
     const [tx, ty] = this.toTile(sx, sy); const erase = this.painting === 'erase';
     if (this.tool === 'base' || this.tool === 'start') {
-      if (this.painting !== 'paint') { const b = this.baseAt(tx, ty); if (b) { this.bases.splice(this.bases.indexOf(b), 1); this.dirty = true; this.msgSay('Base removed.'); } return; }
+      if (this.painting !== 'paint') { const n = this.removeBaseMirrored(tx, ty); if (n) this.msgSay(n > 1 ? n + ' bases removed.' : 'Base removed.'); return; }
       if (this.baseAt(tx, ty)) return;
-      this.addBase(tx, ty, this.tool === 'start'); this.msgSay(this.tool === 'start' ? 'Start location added.' : 'Expansion added.');
+      const n = this.addBaseMirrored(tx, ty, this.tool === 'start');
+      this.msgSay((this.tool === 'start' ? 'Start location' : 'Expansion') + (n > 1 ? ' x' + n + ' added.' : ' added.'));
       this.painting = false; return;
     }
-    const v = this.tool === 'low' ? 0 : this.tool === 'ramp' ? 1 : 2;
-    const r = this.brush;
-    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
-      const x = tx + dx, y = ty + dy; if (!this.inb(x, y) || dx * dx + dy * dy > r * r) continue;
-      const i = this.idx(x, y);
-      if (this.tool === 'rock') this.rocks[i] = erase ? 0 : 1;
-      else { this.height[i] = erase ? 0 : v; if (!erase) this.rocks[i] = 0; }
-    }
-    this.dirty = true;
+    if (this.rectMode) return; // the rectangle is committed on mouse-up, not dragged over
+    this.brushAt(tx, ty, erase);
   },
 
   // ---------------- toolbar ----------------
@@ -147,9 +188,13 @@ const Editor = {
     x += 14;
     add('Brush -', '[', () => this.brush = Math.max(1, this.brush - 1));
     add('Brush +', ']', () => this.brush = Math.min(12, this.brush + 1));
+    add(this.rectMode ? 'Rect' : 'Brush', 'R', () => this.rectMode = !this.rectMode, this.rectMode);
+    add('Mirror ' + (this.mirror === 'off' ? 'off' : this.mirror + 'p'), 'M', () => this.cycleMirror(), this.mirror !== 'off');
+    add('Undo', '^Z', () => this.undo());
+    add('Redo', '^Y', () => this.redo());
     x += 14;
-    add('New', '', () => { this.template(); });
-    add('Rename', '', () => { const n = prompt('Map name', this.name); if (n) { this.name = n.slice(0, 24); this.dirty = true; } });
+    add('New', '', () => { this.mark(); this.template(); });
+    add('Rename', '', () => { const n = prompt('Map name', this.name); if (n) { this.mark(); this.name = n.slice(0, 24); this.dirty = true; } });
     add('Check', '', () => { const p = this.problems(); this.msgSay(p.length ? 'Problems: ' + p.slice(0, 2).join('; ') : 'Map is valid and fully connected.'); });
     add('Save', '', () => this.save());
     add('Export', '', () => this.exportFile());
@@ -159,6 +204,31 @@ const Editor = {
     return b;
   },
   uiClick(sx, sy) { for (const b of this.buttons()) if (sx >= b.x && sx < b.x + b.w && sy >= b.y && sy < b.y + b.h) { b.fn(); return true; } return false; },
+  cycleMirror() { this.mirror = this.mirror === 'off' ? '2' : this.mirror === '2' ? '4' : 'off'; this.msgSay(this.mirror === 'off' ? 'Mirroring off.' : 'Mirroring on: ' + this.mirror + '-player symmetry.'); },
+
+  // ---------------- minimap preview ----------------
+  // One pixel per tile in the bottom-right corner, with the viewport outlined. Clicking jumps the camera,
+  // which is the only way to cross a 128x128 map quickly at a useful zoom.
+  minimapRect() { const s = 2, w = this.W * s / 2, h = this.H * s / 2; return { x: this.canvas.width - w - 10, y: this.canvas.height - h - 34, w, h, s: s / 2 }; },
+  minimapClick(sx, sy) {
+    const r = this.minimapRect(); if (sx < r.x || sy < r.y || sx >= r.x + r.w || sy >= r.y + r.h) return false;
+    this.camX = clamp(Math.round((sx - r.x) / r.s - this.viewTilesX() / 2), 0, Math.max(0, this.W - this.viewTilesX()));
+    this.camY = clamp(Math.round((sy - r.y) / r.s - this.viewTilesY() / 2), 0, Math.max(0, this.H - this.viewTilesY()));
+    return true;
+  },
+  drawMinimap() {
+    const ctx = this.ctx, r = this.minimapRect();
+    ctx.fillStyle = '#0b0e13'; ctx.fillRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4);
+    for (let y = 0; y < this.H; y++) for (let x = 0; x < this.W; x++) {
+      const i = this.idx(x, y);
+      ctx.fillStyle = this.rocks[i] ? '#2b2b2f' : this.height[i] === 2 ? '#7a6a4e' : this.height[i] === 1 ? '#9a8a5e' : '#4a4436';
+      ctx.fillRect(r.x + x * r.s, r.y + y * r.s, r.s, r.s);
+    }
+    for (const b of this.bases) { ctx.fillStyle = b.main ? '#5ac8ff' : '#ffdc5a'; ctx.fillRect(r.x + b.x * r.s - 1, r.y + b.y * r.s - 1, 4, 4); }
+    ctx.strokeStyle = '#e6eaf0'; ctx.lineWidth = 1;
+    ctx.strokeRect(r.x + this.camX * r.s + .5, r.y + this.camY * r.s + .5, this.viewTilesX() * r.s, this.viewTilesY() * r.s);
+    ctx.strokeStyle = '#556'; ctx.strokeRect(r.x - 2.5, r.y - 2.5, r.w + 5, r.h + 5);
+  },
   save() {
     const p = this.problems();
     if (p.length) { this.msgSay('Not saved: ' + p[0]); return false; }
@@ -203,7 +273,18 @@ const Editor = {
     // brush cursor
     const [hx, hy] = this.hoverTile; ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1;
     const r = (this.tool === 'base' || this.tool === 'start') ? 2 : this.brush;
-    ctx.beginPath(); ctx.arc((hx - tx0 + .5) * z, 60 + (hy - ty0 + .5) * z, (r + .5) * z, 0, 7); ctx.stroke();
+    const fw = (this.tool === 'base' || this.tool === 'start') ? 4 : 1, fh = (this.tool === 'base' || this.tool === 'start') ? 3 : 1;
+    if (this.rectStart && this.tool !== 'base' && this.tool !== 'start') {
+      ctx.strokeStyle = 'rgba(255,228,90,0.95)';
+      for (const [ax, ay] of this.mirrors(Math.min(this.rectStart[0], hx), Math.min(this.rectStart[1], hy), Math.abs(hx - this.rectStart[0]) + 1, Math.abs(hy - this.rectStart[1]) + 1))
+        ctx.strokeRect((ax - tx0) * z + .5, 60 + (ay - ty0) * z + .5, (Math.abs(hx - this.rectStart[0]) + 1) * z, (Math.abs(hy - this.rectStart[1]) + 1) * z);
+    } else {
+      for (const [mx, my] of this.mirrors(hx, hy, fw, fh)) { // the mirrored copies show where the same stroke will land
+        ctx.strokeStyle = (mx === hx && my === hy) ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.35)';
+        ctx.beginPath(); ctx.arc((mx - tx0 + .5) * z, 60 + (my - ty0 + .5) * z, (r + .5) * z, 0, 7); ctx.stroke();
+      }
+    }
+    this.drawMinimap();
     // toolbar
     ctx.fillStyle = '#151a22'; ctx.fillRect(0, 0, W, 58); ctx.fillStyle = '#2c3340'; ctx.fillRect(0, 58, W, 2);
     for (const b of this.buttons()) {
@@ -216,7 +297,7 @@ const Editor = {
     ctx.fillStyle = '#151a22'; ctx.fillRect(0, H - 28, W, 28);
     ctx.fillStyle = '#9aa4b0'; ctx.font = '12px sans-serif';
     const mains = this.bases.filter(b => b.main).length;
-    ctx.fillText(`"${this.name}"${this.dirty ? ' *' : ''}   tile ${hx},${hy}   brush ${this.brush}   starts ${mains}   expansions ${this.bases.length - mains}   arrows scroll, wheel zooms, right-drag erases`, 10, H - 10);
+    ctx.fillText(`"${this.name}"${this.dirty ? ' *' : ''}   tile ${hx},${hy}   brush ${this.brush}   starts ${mains}   expansions ${this.bases.length - mains}   ${this.rectMode ? 'rectangle' : 'brush'}   mirror ${this.mirror === 'off' ? 'off' : this.mirror + 'p'}   Ctrl+Z undo, R rectangle, M mirror, right-drag erases`, 10, H - 10);
     if (this.msg && performance.now() - this.msgT < 6000) { ctx.fillStyle = '#ffe45a'; ctx.textAlign = 'right'; ctx.fillText(this.msg, W - 10, H - 10); ctx.textAlign = 'left'; }
   },
 };
