@@ -226,7 +226,9 @@ class Unit {
       case 'construct': { const b = o.target; if (!b || !b.alive || b.done) { this.nextOrder(); break; } if (b.builder && b.builder !== this && b.builder.alive && b.builder.order.target === b) { this.nextOrder(); break; } b.builder = this; if (this.moveToRect(b, 4)) { this.facing = Math.atan2(b.y - this.y, b.x - this.x); } break; }
       case 'repair': Abilities.repairTick(this); break;
       case 'ability': Abilities.orderTick(this); break;
-      case 'load': { const t = o.target; if (!t || !t.alive || t.owner !== this.owner || this.fly || t.inside) { this.nextOrder(); break; } const near = t.isBuilding ? this.moveToRect(t, 8) : (dist(this, t) < this.r + t.r + 12 || this.moveTo(t.x, t.y, t)); if (near && !G.loadUnit(t, this)) this.nextOrder(); break; }
+      case 'load': { const t = o.target; if (!t || !t.alive || t.owner !== this.owner || this.fly || t.inside) { this.nextOrder(); break; }
+        if (this.burrowed) { if (this.transT <= 0) { this.burrowed = false; this.transT = 24; this.path = null; } break; } // a burrowed unit cannot board, and moveTo refuses to move it: surface first and keep the order rather than sitting on it forever
+        const near = t.isBuilding ? this.moveToRect(t, 8) : (dist(this, t) < this.r + t.r + 12 || this.moveTo(t.x, t.y, t)); if (near && !G.loadUnit(t, this)) this.nextOrder(); break; }
       case 'pickup': { const t = o.target; if (!t || !t.alive || t.inside) { this.nextOrder(); break; } if (dist(this, t) < this.r + t.r + 12) { G.loadUnit(this, t); this.nextOrder(); } else this.moveTo(t.x, t.y, t); break; }
       case 'unload': { if (this.moveTo(o.x, o.y)) { if (this.cargo.length) { if ((G.frame & 7) === 0 && !G.unloadOne(this)) { this.player.msg('Cannot unload here.', 'error'); this.nextOrder(); } } else this.nextOrder(); } break; }
       case 'merge': { const t = o.partner; if (!t || !t.alive || t.order.type !== 'merge' || t.order.partner !== this) { this.nextOrder(); break; } if (dist(this, t) < 28) { if (this.id < t.id) G.mergeUnits(this, t, o.unit); } else this.moveTo(t.x, t.y, t); break; }

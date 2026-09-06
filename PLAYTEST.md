@@ -61,3 +61,30 @@ The same three matchups also run headless for 20 minutes each through `node test
 
 - Browser: `node test/serve.js 8765`, desktop app browser pane at 1280x800, errors captured by a page hook, cheats typed into the chat box (`show me the money`, `operation cwal`, `food for thought`, `medieval man`, `power overwhelming`, `there is no cow level`).
 - Headless: `node test/playtest.js all 28800 3 --quiet` (options: matchup `TZ|PT|ZP|all`, frames, seed, `--diff=easy|normal|hard`, `--cheat=<minutes>`).
+
+## Round three: M3 task 2
+
+The three ladder matchups were re-run on **Normal** (M2 ran them on Easy) now that the AI macros properly, and the eight campaign missions were driven through the UI layer for the first time. `test/playtest.js` grew a `missions` mode for this: it starts each mission the way the menu button does, dismisses the briefing through its own menu item, runs the matching race script, and reports the objective outcome alongside the usual error/stuck/invariant checks.
+
+| session | JS errors | stuck units | invariant violations |
+|---|---|---|---|
+| `node test/playtest.js all 28800 3 --diff=normal` (TvZ, PvT, ZvP) | 0 | 0 | 0 |
+| `node test/playtest.js missions 21600` (all eight missions) | 0 | 0 | 0 |
+| Browser pane, mission t1 through the real UI at 1280x800 | 0 | 0 | — |
+
+The browser pass used the real DOM/canvas input path (menu, `<details>` campaign section, Begin mission, drag box-select, `A` + click attack-move) with a `window.onerror` + `console.error` hook. Selection and orders behaved correctly and nothing threw.
+
+### Bugs found and fixed
+
+28. **Burrowed units silently swallowed every movement order.** Repro: in `z3 Tunnel Vision`, burrow a Zergling, then right-click an Overlord with Ventral Sacs. The Zergling keeps a `load` order for the rest of the game without moving. `moveTo` returns `false` immediately for a burrowed unit, so the order can never complete and nothing ever cancels it. **Fixed** for the case that matters: a burrowed unit with a `load` order surfaces and keeps the order, which is what Brood War does. The general case (a burrowed unit given a plain move order does nothing) is still open, see below.
+29. **The Nydus Canal exit was placed a tile off the cursor.** Repro: select a Nydus Canal, click Build Nydus Exit, click a spot that is exactly wide enough. Placement is refused. Every other placement in the game centres the footprint on the cursor (`UI.confirmPlacement` uses `floor(x / TILE - def.w / 2 + .5)`) but `nydus_exit` put the building's top-left corner there instead, so it landed a tile down and right of where the player aimed and failed against anything nearby. **Fixed**: the exit now uses the same centring as every other placement. This was breaking the core mechanic of `z3 Tunnel Vision`.
+
+### Investigated and deliberately not changed
+
+- **An unreachable goal is never abandoned.** `Pathfinder.find` returns a best-effort partial path rather than failing, so a unit ordered somewhere it cannot reach walks into the obstacle and slides along it forever with a live order. `u.stuck` does not catch it because the unit *is* moving. A movement watchdog was written and measured (give up after ten seconds without getting closer, then let `follow`/`patrol`/`construct`/`load` drop the order). It fixed every case it was aimed at, but it also made units go idle *inside* building footprints in `z1`/`z2`, which were clean before. Reverted: the cure was worse. Worth another attempt with the push-out logic in mind.
+- **Burrowed units and plain move orders.** The obvious fix is to unburrow on any movement order, as Brood War does. It is not safe here yet: the AI burrows Lurkers and then keeps issuing `attackmove` to its whole army every think, so auto-unburrowing would make Lurkers surface immediately and oscillate. `army()` skips `u.sieged` but not `u.burrowed`; fixing both together is the real change.
+
+### Annoyances (not fixed)
+
+- Mission briefing text overflows the panel horizontally on a narrow window; the longest line is clipped at both edges.
+- Below roughly 900x600 the fixed-height console leaves almost no map viewport. 1280x800 is fine.
