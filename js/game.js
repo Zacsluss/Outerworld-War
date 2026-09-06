@@ -76,7 +76,7 @@ const G = {
       }
     }
   },
-  nudgeOut(u, b) { const x0 = b.tx * TILE, y0 = b.ty * TILE, x1 = x0 + b.def.w * TILE, y1 = y0 + b.def.h * TILE; if (u.x > x0 - u.r && u.x < x1 + u.r && u.y > y0 - u.r && u.y < y1 + u.r) { const t = this.map.findFreeTile(Math.floor(u.x / TILE), Math.floor(u.y / TILE), 8); if (t) { u.x = (t[0] + .5) * TILE; u.y = (t[1] + .5) * TILE; if (u.def.larva) { u.wx = u.x; u.wy = u.y; } } } },
+  nudgeOut(u, b) { const x0 = b.tx * TILE, y0 = b.ty * TILE, x1 = x0 + b.def.w * TILE, y1 = y0 + b.def.h * TILE; if (u.x > x0 - u.r && u.x < x1 + u.r && u.y > y0 - u.r && u.y < y1 + u.r) { const t = this.map.findFreeTile(Math.floor(u.x / TILE), Math.floor(u.y / TILE), 8, (x, y) => this.passable((x + .5) * TILE, (y + .5) * TILE, u)); if (t) { u.x = (t[0] + .5) * TILE; u.y = (t[1] + .5) * TILE; u.px = u.x; u.py = u.y; u.path = null; if (u.def.larva) { u.wx = u.x; u.wy = u.y; } } } },
 
   // ---------------- visibility ----------------
   visible(pid, tx, ty) { const p = this.players[pid]; return p && p.vis[ty * this.map.w + tx] === 2; },
@@ -345,6 +345,8 @@ const G = {
     for (const u of this.units) { if (u.alive) { u.px = u.x; u.py = u.y; } }
     for (const u of this.units) { if (u.alive) { try { u.tick(); } catch (e) { console.error(e, u.def.id); } } }
     this.separate();
+    // self-heal: a ground unit whose centre tile ended up inside a building footprint is pushed out
+    if (this.frame % 16 === 0) for (const u of this.units) { if (!u.alive || u.isBuilding || u.fly || u.inside || u.burrowed || u.def.larva) continue; const b = this.map.blocked[this.map.idx(clamp(Math.floor(u.x / TILE), 0, this.map.w - 1), clamp(Math.floor(u.y / TILE), 0, this.map.h - 1))]; if (b < 0) continue; const bb = this.byId.get(b); if (bb && bb.alive && bb.isBuilding && !bb.lifted) this.nudgeOut(u, bb); }
     Combat.tickProjectiles(); Abilities.tickFields();
     for (const p of this.players) if (p.ai && this.frame % 4 === p.id % 4) p.ai.tick();
     if (this.frame % 8 === 0) this.recomputeSupply();

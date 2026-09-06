@@ -4,25 +4,31 @@
 // ============================================================================
 const AI_SCRIPTS = {
   T: [[9, 'supply_depot'], [11, 'barracks'], [12, 'refinery'], [15, 'supply_depot'], [16, 'factory'], [19, 'supply_depot'], [20, 'machine_shop'], [22, 'academy'], [23, 'command_center'], [24, 'engineering_bay'], [26, 'supply_depot'], [28, 'factory'], [30, 'comsat_station'], [32, 'armory'], [34, 'supply_depot'], [36, 'starport'], [38, 'barracks'], [40, 'machine_shop'], [42, 'control_tower'], [44, 'science_facility'], [46, 'command_center'], [50, 'factory'], [56, 'missile_turret'], [60, 'physics_lab'], [64, 'starport'], [70, 'barracks'], [80, 'factory']],
-  Z: [[11, 'spawning_pool'], [12, 'hatchery'], [13, 'extractor'], [16, 'creep_colony'], [17, 'hydralisk_den'], [18, 'creep_colony'], [20, 'hatchery'], [22, 'lair'], [23, 'evolution_chamber'], [26, 'hatchery'], [28, 'extractor'], [30, 'creep_colony'], [34, 'spire'], [36, 'hatchery'], [44, 'queens_nest'], [48, 'extractor'], [52, 'hive'], [56, 'creep_colony'], [60, 'ultralisk_cavern'], [64, 'hatchery'], [66, 'defiler_mound'], [70, 'greater_spire'], [80, 'hatchery']],
-  P: [[8, 'pylon'], [10, 'gateway'], [12, 'assimilator'], [14, 'cybernetics_core'], [15, 'pylon'], [18, 'gateway'], [20, 'nexus'], [22, 'pylon'], [24, 'citadel_of_adun'], [26, 'forge'], [27, 'pylon'], [28, 'robotics_facility'], [30, 'templar_archives'], [32, 'gateway'], [34, 'pylon'], [36, 'photon_cannon'], [38, 'gateway'], [40, 'stargate'], [42, 'observatory'], [44, 'nexus'], [46, 'pylon'], [48, 'robotics_support_bay'], [52, 'fleet_beacon'], [56, 'gateway'], [60, 'arbiter_tribunal'], [66, 'gateway'], [72, 'stargate'], [80, 'nexus']],
+  Z: [[11, 'spawning_pool'], [12, 'hatchery'], [13, 'extractor'], [16, 'hydralisk_den'], [18, 'creep_colony'], [20, 'lair'], [22, 'extractor'], [24, 'hatchery'], [26, 'spire'], [28, 'evolution_chamber'], [30, 'creep_colony'], [34, 'hatchery'], [38, 'creep_colony'], [44, 'queens_nest'], [48, 'extractor'], [52, 'hive'], [56, 'creep_colony'], [60, 'ultralisk_cavern'], [64, 'hatchery'], [66, 'defiler_mound'], [70, 'greater_spire'], [80, 'hatchery']],
+  P: [[8, 'pylon'], [10, 'gateway'], [12, 'assimilator'], [14, 'cybernetics_core'], [15, 'pylon'], [18, 'gateway'], [20, 'nexus'], [22, 'pylon'], [24, 'citadel_of_adun'], [26, 'forge'], [27, 'pylon'], [28, 'robotics_facility'], [30, 'observatory'], [32, 'templar_archives'], [34, 'gateway'], [36, 'pylon'], [38, 'photon_cannon'], [40, 'gateway'], [42, 'stargate'], [44, 'nexus'], [46, 'pylon'], [48, 'robotics_support_bay'], [52, 'fleet_beacon'], [56, 'gateway'], [60, 'arbiter_tribunal'], [66, 'gateway'], [72, 'stargate'], [80, 'nexus']],
 };
 const gasBuildings = ai => ai.mine(u => u.def.onGeyser).length + 1;
 const AI_COMP = {
   T: [['marine', 6], ['medic', 2], ['firebat', 1], ['vulture', 2], ['siege_tank', 4], ['goliath', 2], ['science_vessel', 1], ['wraith', 1], ['battlecruiser', 2]],
   Z: [['zergling', 4], ['hydralisk', 6], ['mutalisk', 4], ['scourge', 1], ['ultralisk', 3], ['defiler', 1], ['queen', 0]],
+  ZvT: [['zergling', 3], ['hydralisk', 5], ['mutalisk', 5], ['scourge', 1], ['ultralisk', 4], ['defiler', 2], ['queen', 0]],
+  PvZ: [['zealot', 2], ['dragoon', 8], ['high_templar', 3], ['dark_templar', 1], ['reaver', 1], ['observer', 3], ['corsair', 2], ['carrier', 1], ['arbiter', 1]],
+  ZvP: [['zergling', 3], ['hydralisk', 6], ['mutalisk', 3], ['scourge', 1], ['ultralisk', 3], ['defiler', 1], ['queen', 0]],
   P: [['zealot', 4], ['dragoon', 5], ['high_templar', 2], ['dark_templar', 1], ['reaver', 1], ['observer', 1], ['corsair', 1], ['carrier', 2], ['arbiter', 1]],
 };
 const AI_RESEARCH = {
-  T: ['stim', 'siege_tech', 'u238', 'infW', 'ion_thrusters', 'spider_mines_tech', 'infA', 'vehW', 'charon', 'vehA', 'irradiate_tech', 'emp_tech', 'yamato_tech', 'shipW', 'cloaking_field'],
-  Z: ['metabolic', 'lurker_aspect', 'carapace', 'grooved', 'muscular', 'missW', 'burrow_tech', 'flyW', 'pneumatized', 'meleeW', 'anabolic', 'chitinous', 'adrenal', 'consume_tech', 'plague_tech', 'flyA'],
-  P: ['singularity', 'leg_enhancements', 'gW', 'psi_storm_tech', 'gA', 'shields', 'scarab_damage', 'gravitic_drive', 'airW', 'carrier_capacity', 'stasis_tech', 'khaydarin_amulet', 'airA', 'recall_tech'],
+  T: ['stim', 'siege_tech', 'u238', 'infW', 'infA', 'ion_thrusters', 'spider_mines_tech', 'vehW', 'charon', 'vehA', 'irradiate_tech', 'emp_tech', 'yamato_tech', 'shipW', 'cloaking_field'],
+  Z: ['metabolic', 'flyW', 'lurker_aspect', 'carapace', 'meleeW', 'grooved', 'muscular', 'missW', 'flyA', 'burrow_tech', 'pneumatized', 'anabolic', 'chitinous', 'adrenal', 'consume_tech', 'plague_tech'],
+  P: ['singularity', 'gW', 'leg_enhancements', 'gA', 'psi_storm_tech', 'shields', 'scarab_damage', 'gravitic_drive', 'airW', 'carrier_capacity', 'stasis_tech', 'khaydarin_amulet', 'airA', 'recall_tech'],
 };
 class AI {
   constructor(p, diff) {
-    this.p = p; this.diff = diff; this.step = 0; this.pending = {}; this.lastThink = 0; this.lastArmy = 0; this.state = 'gather'; this.target = null; this.attackN = 0; this.attackThreshold = (diff === 'easy' ? 40 : diff === 'hard' ? 24 : 30) + (p.race === 'Z' ? 6 : 0); this.waves = 0; this.scouted = false; this.dropOp = null; this.lastDrop = 0;
-    this.thinkEvery = diff === 'easy' ? 72 : diff === 'hard' ? 20 : 32; this.scriptIdx = 0; this.lastExpand = 0; this.rally = null; this.startedAttack = 0;
+    this.p = p; this.diff = diff; this.step = 0; this.pending = {}; this.lastThink = 0; this.lastArmy = 0; this.state = 'gather'; this.target = null; this.attackN = 0; this.attackThreshold = (diff === 'easy' ? 40 : diff === 'hard' ? 24 : 30) + (p.race === 'Z' ? 4 : p.race === 'P' ? 6 : 2); this.waves = 0; this.scouted = false; this.dropOp = null; this.lastDrop = 0;
+    this.thinkEvery = diff === 'easy' ? 72 : diff === 'hard' ? 20 : 32; this.scriptIdx = 0; this.lastExpand = 0; this.rally = null; this.startedAttack = 0; this.reserveMin = 0; this.reserveGas = 0;
   }
+  // money set aside for the building the script/expansion logic is waiting to afford; workers, supply and gas ignore it
+  afford(min, gas) { const m = this.p.minerals, g = this.p.gas; if (min && this.reserveMin && m >= this.reserveMin * 0.25 && m - this.reserveMin < min) return false; if (gas && this.reserveGas && g >= this.reserveGas * 0.25 && g - this.reserveGas < gas) return false; return m >= min && g >= gas; } // once a quarter of the target is banked, stop spending until it is affordable
+  reserve(def) { this.reserveMin = Math.max(this.reserveMin, def.min); this.reserveGas = Math.max(this.reserveGas, def.gas); } // hold back the single most expensive thing we are saving for, not the sum
   get race() { return this.p.race; }
   mine(pred) { const out = []; for (const u of G.units) if (u.alive && u.owner === this.p.id && pred(u)) out.push(u); return out; }
   count(id, inclProd = true) { let n = 0; for (const u of G.units) { if (!u.alive || u.owner !== this.p.id) continue; if (u.def.id === id) n++; if (inclProd) for (const it of u.prod) if (it.id === id) n++; if (u.order.type === 'build' && u.order.def.id === id) n++; } if (this.pending[id] && G.frame - this.pending[id] < 360) n++; return n; }
@@ -32,6 +38,8 @@ class AI {
     if (this.p.defeated) return;
     if (G.frame - this.lastThink < this.thinkEvery) { if (G.frame % 12 === 0) this.micro(); return; }
     this.lastThink = G.frame;
+    this.reserveMin = 0; this.reserveGas = 0;
+    for (const w of this.mine(u => u.def.worker && u.order.type === 'build' && u.order.def)) this.reserve(w.order.def); // keep the money for buildings a worker is walking to
     try { this.economy(); this.supply(); this.script(); this.macro(); this.production(); this.research(); this.army(); this.scout(); this.drops(); this.micro(); } catch (e) { console.error('AI', e); }
   }
   // ---------------- economy ----------------
@@ -44,7 +52,7 @@ class AI {
     const gasB = this.mine(u => u.def.onGeyser && u.done && u.geyser.amount > 0);
     gasB.forEach((g, gi) => {
       const on = workers.filter(w => (w.order.type === 'gather' && w.order.target === g) || (w.order.type === 'return' && w.order.then === g));
-      let want = workers.length < 14 ? (gi === 0 ? 2 : 0) : workers.length < 24 ? (gi === 0 ? 3 : 1) : 3;
+      let want = workers.length < 11 ? (gi === 0 ? 2 : 0) : workers.length < 18 ? 3 : 3;
       if (p.gas > 800 && p.minerals < 300) want = Math.min(want, 1); if ((p.gas > 400 && p.minerals < 150) || p.gas > 1500) want = 0;
       if (on.length < want) { const cands = workers.filter(w => w.order.type === 'gather' && w.order.target && w.order.target.type === 'mineral' && !w.carrying && dist(w, g) < 20 * TILE); cands.sort((a, b) => dist(a, g) - dist(b, g)); for (let i = 0; i < want - on.length && i < cands.length; i++) cands[i].applyOrder({ type: 'gather', target: g, phase: 'goto' }); }
       else if (on.length > want) { const m = G.findNearestResource(on[0], 'mineral'); if (m) on[0].applyOrder({ type: 'gather', target: m, phase: 'goto' }); }
@@ -52,7 +60,8 @@ class AI {
     // worker production
     const fields = G.map.resources.filter(r => r.type === 'mineral' && r.amount > 0 && halls.some(h => h.done && distPt(r.cx, r.cy, h.x, h.y) < 10 * TILE)).length; const want = Math.min(70, fields * 2 + gasB.length * 3 + 2);
     const larvaN = this.race === 'Z' ? this.mine(u => u.def.larva).length : 9;
-    if (this.count(RACE_INFO[p.race].worker) < want && (larvaN >= 2 || workers.length < 12 || this.armyUnits().length > workers.length)) this.train(RACE_INFO[p.race].worker, 2);
+    const armySup = this.armyUnits().reduce((s, u) => s + u.def.sup, 0); this.armySup = armySup;
+    if (this.count(RACE_INFO[p.race].worker) < want && (p.race !== 'Z' ? (larvaN >= 2 || workers.length < 12 || armySup >= workers.length * 0.4) : (workers.length < 14 || armySup >= workers.length * 0.45))) this.train(RACE_INFO[p.race].worker, 2); // drones only once the army keeps up
     // transfer workers from saturated to new bases
     if (G.frame % (24 * 10) < this.thinkEvery && halls.length > 1) {
       for (const h of halls) { const near = workers.filter(w => dist(w, h) < 12 * TILE); const fields = G.map.resources.filter(r => r.type === 'mineral' && distPt(r.cx, r.cy, h.x, h.y) < 10 * TILE).length; if (near.length > fields * 2 + 3) { const other = halls.find(o => o !== h && o.done && workers.filter(w => dist(w, o) < 12 * TILE).length < 8); if (other) { const m = G.map.resources.find(r => r.type === 'mineral' && distPt(r.cx, r.cy, other.x, other.y) < 10 * TILE); if (m) for (let i = 0; i < 4; i++) { const w = near.find(w => w.order.type === 'gather' && !w.carrying); if (w) w.applyOrder({ type: 'gather', target: m, phase: 'goto' }); } } } }
@@ -64,65 +73,73 @@ class AI {
     const margin = 4 + prodN * 2;
     if (p.supMax - p.supUsed < margin) {
       const sid = RACE_INFO[p.race].supply;
-      if (p.race === 'Z') { if (this.count('overlord') - this.mine(u => u.def.id === 'overlord').length < 1 + (prodN > 6 ? 1 : 0)) this.train('overlord', 1); }
-      else if (this.count(sid) - this.mine(u => u.def.id === sid && u.done).length < 1 + (prodN > 6 ? 1 : 0)) this.build(sid);
+      if (p.race === 'Z') { const inFlight = this.count('overlord') - this.mine(u => u.def.id === 'overlord').length; if (inFlight < (p.supMax - p.supUsed < 4 ? 3 : prodN > 4 ? 2 : 1)) this.train('overlord', 1); }
+      else if (this.count(sid) - this.mine(u => u.def.id === sid && u.done).length < 1 + (prodN > 6 ? 1 : 0)) this.build(sid, p.supMax - p.supUsed < 4);
     }
   }
+  // how many buildings are being built or walked to right now (a human never starts five things at once)
+  underway() { return this.mine(u => (u.isBuilding && !u.done && u.def.tier !== 'addon') || (u.def.worker && u.order.type === 'build' && u.order.def)).length; }
   script() {
     const s = AI_SCRIPTS[this.race]; if (this.scriptIdx >= s.length) return;
     const [at, id] = s[this.scriptIdx]; const p = this.p;
     if (p.supUsed < at) { this.stepT = G.frame; return; }
     const def = DATA.buildings[id];
     let need = 0; for (let i = 0; i <= this.scriptIdx; i++) if (s[i][1] === id) need++;
-    const have = this.mine(u => u.def.id === id || (id === 'hatchery' && (u.def.id === 'lair' || u.def.id === 'hive')) || (id === 'lair' && u.def.id === 'hive') || (id === 'spire' && u.def.id === 'greater_spire')).length;
+    const have = this.mine(u => u.def.id === id || (id === 'hatchery' && (u.def.id === 'lair' || u.def.id === 'hive')) || (id === 'lair' && u.def.id === 'hive') || (id === 'spire' && u.def.id === 'greater_spire') || (id === 'creep_colony' && (u.def.id === 'sunken_colony' || u.def.id === 'spore_colony'))).length;
     if (have >= need) { this.scriptIdx++; this.stepT = G.frame; return; }
     if (this.stepT === undefined) this.stepT = G.frame;
-    if (G.frame - this.stepT > 24 * 240) { this.scriptIdx++; this.stepT = G.frame; return; } // give up on this step
+    if (G.frame - this.stepT > 24 * 200) { this.scriptIdx++; this.stepT = G.frame; return; } // give up on a step we cannot afford or place
     if (!p.hasReq(def)) return;
     if (def.tier === 'addon') { this.addon(id); return; }
     if (def.tier === 'morph') { if (!this.mine(u => u.prod.some(it => it.kind === 'morph' && it.id === id)).length) this.morph(id); return; }
     if (this.count(id) > have) return; // already pending / in construction
-    if (p.minerals < def.min || p.gas < def.gas) return;
-    this.build(id);
+    if (this.underway() >= (def.depot ? 3 : 2)) return; // finish what is already going up first (the give-up timer keeps running)
+    // gas-hungry tech waits until there is an army and enough production to use it
+    const prodDone = this.mine(u => u.isBuilding && u.def.produces.length && !u.def.depot && u.done).length;
+    if (def.gas >= 100 && !def.produces.length && (this.armySup || 0) < 16 && prodDone < 3) return;
+    if (p.minerals < def.min || p.gas < def.gas) { this.reserve(def); return; } // save up for it instead of spending on units
+    this.build(id, !this.mine(u => u.def.worker && u.order.type === 'build' && u.order.def).length); // a worker already walking to a site keeps its money
   }
   macro() {
     const p = this.p, r = this.race; const halls = this.halls();
     // expansion when floating minerals or saturated
     const workers = this.mine(u => u.def.worker).length;
-    if (G.frame - this.lastExpand > 24 * 60 && (p.minerals > 500 || workers > halls.length * 18) && this.count(RACE_INFO[r].hall) <= halls.length) { if (this.build(RACE_INFO[r].hall)) this.lastExpand = G.frame; }
+    if (G.frame - this.lastExpand > 24 * 60 && (p.minerals > 500 || workers > halls.length * 16 || ((this.armySup || 0) >= 30 && halls.length < 3)) && this.count(RACE_INFO[r].hall) <= halls.length) { const hd = DATA.buildings[RACE_INFO[r].hall]; if (p.minerals < hd.min) { if (this.pickExpansion()) this.reserve(hd); } else if (this.build(RACE_INFO[r].hall, true)) this.lastExpand = G.frame; } // start saving as soon as a free base exists, or the army eats the money forever
     // more production when floating
-    if ((p.minerals > 450 && this.scriptIdx >= 6) || p.minerals > 700) {
-      const prodId = r === 'T' ? (this.count('factory') >= 2 && p.gas > 200 ? 'factory' : 'barracks') : r === 'P' ? 'gateway' : 'hatchery';
+    // production capacity should track income: roughly one production building per 4 workers
+    const prodWant = Math.min(10, Math.max(2, Math.floor(workers / 4)));
+    if ((p.minerals > 250 && this.scriptIdx >= 6 && this.mine(u => u.isBuilding && u.def.produces.length && !u.def.depot && u.done).length < prodWant) || p.minerals > 600) {
+      if (this.underway() >= 3) return; const prodId = r === 'T' ? (this.count('factory') >= 2 && p.gas > 200 ? 'factory' : 'barracks') : r === 'P' ? 'gateway' : 'hatchery';
       if (r === 'Z' && this.count('hatchery') + this.count('lair') + this.count('hive') < 8 && workers >= 12 * this.mine(u => u.isBuilding && u.def.spawnsLarva).length) this.build('hatchery');
-      else if (r !== 'Z' && this.count(prodId) < 10) this.build(prodId);
+      else if (r !== 'Z' && this.count(prodId) < prodWant) this.build(prodId, true); // the army engine outranks whatever the script is saving for
     }
-    if (r === 'Z' && ((p.minerals > 350 && !this.mine(u => u.def.larva).length) || p.minerals > 600) && workers >= 12 * this.mine(u => u.isBuilding && u.def.spawnsLarva).length && this.count('hatchery') <= this.halls().length && this.mine(u => u.isBuilding && u.def.spawnsLarva).length < 8 && halls.length) this.buildNear('hatchery', halls[0].x, halls[0].y);
+    // Zerg macro hatcheries: larvae are the bottleneck, so floating minerals with no larva means another hatchery, not more drones per hatchery
+    if (r === 'Z' && ((p.minerals > 300 && !this.mine(u => u.def.larva).length) || p.minerals > 550) && workers >= 5 * this.mine(u => u.isBuilding && u.def.spawnsLarva).length && this.count('hatchery') <= this.halls().length && this.mine(u => u.isBuilding && u.def.spawnsLarva).length < 6 && halls.length) { const h = halls[Math.floor(G.rand() * halls.length)]; this.buildNear('hatchery', h.x, h.y); } // macro hatcheries go next to a base we already hold; real expansions come from the shared rule below
     // gas: one per base with hall
-    if (this.scriptIdx >= 3 && workers > 14 * gasBuildings(this) && !(p.gas > 800 && p.minerals < 300)) for (const h of halls) { if (!h.done) continue; const base = G.map.bases.find(b => distPt(b.cx, b.cy, h.x, h.y) < 3 * TILE); if (base && base.geyser.amount > 0 && !(base.geyser.building && base.geyser.building.alive) && p.minerals >= 100 && this.count(RACE_INFO[r].gasB) <= this.mine(u => u.def.onGeyser).length) { this.buildAt(RACE_INFO[r].gasB, base.geyser.x, base.geyser.y); break; } }
+    if (this.scriptIdx >= 3 && workers > 5 * gasBuildings(this) && !(p.gas > 800 && p.minerals < 300)) for (const h of halls) { if (!h.done) continue; const base = G.map.bases.find(b => distPt(b.cx, b.cy, h.x, h.y) < 3 * TILE); if (base && base.geyser.amount > 0 && !(base.geyser.building && base.geyser.building.alive) && p.minerals >= 100 && this.count(RACE_INFO[r].gasB) <= this.mine(u => u.def.onGeyser).length) { this.buildAt(RACE_INFO[r].gasB, base.geyser.x, base.geyser.y, true); break; } } // gas pays for itself, never let the reserve block it
     // static defense at natural / detection
-    if (this.scriptIdx >= 8 && p.minerals > 300) {
-      const nat = halls.find(h => h !== halls[0]);
-      if (nat && nat.done) { const defId = r === 'T' ? 'missile_turret' : r === 'P' ? 'photon_cannon' : 'creep_colony'; const near = this.mine(u => u.isBuilding && (u.def.id === defId || u.def.id === 'sunken_colony' || u.def.id === 'spore_colony') && dist(u, nat) < 10 * TILE).length; if (near < (r === 'Z' ? 3 : 2) && p.hasReq(DATA.buildings[defId])) this.buildNear(defId, nat.x + (G.map.w * TILE / 2 - nat.x) * 0.15, nat.y + (G.map.h * TILE / 2 - nat.y) * 0.15); }
+    if (this.scriptIdx >= 4 && p.minerals > 200) {
+      for (const nat of halls.slice(1, 3)) if (nat.done) { const defId = r === 'T' ? 'missile_turret' : r === 'P' ? 'photon_cannon' : 'creep_colony'; const px = nat.x + (G.map.w * TILE / 2 - nat.x) * 0.15, py = nat.y + (G.map.h * TILE / 2 - nat.y) * 0.15; const isDef = u => u.isBuilding && (u.def.id === defId || u.def.id === 'sunken_colony' || u.def.id === 'spore_colony'); const near = this.mine(u => isDef(u) && (dist(u, nat) < 16 * TILE || distPt(u.x, u.y, px, py) < 16 * TILE)).length; if (near < 2 && this.count(defId) <= this.mine(isDef).length && p.hasReq(DATA.buildings[defId])) { this.buildNear(defId, px, py); break; } }
     }
     // Zerg: morph creep colonies into sunkens
-    if (r === 'Z') for (const c of this.mine(u => u.def.id === 'creep_colony' && u.done && !u.prod.length)) { G.queueMorph(c, p.hasBuilding('evolution_chamber') && this.mine(u => u.def.id === 'spore_colony').length < this.mine(u => u.def.id === 'sunken_colony').length ? 'spore_colony' : 'sunken_colony'); }
+    if (r === 'Z') { const enemyAir = this.enemies().some(q => G.units.some(u => u.alive && u.owner === q.id && u.fly && (u.hasWeapon() || u.def.cargo))); const spores = this.mine(u => u.def.id === 'spore_colony').length, sunkens = this.mine(u => u.def.id === 'sunken_colony').length; for (const c of this.mine(u => u.def.id === 'creep_colony' && u.done && !u.prod.length)) G.queueMorph(c, p.hasBuilding('evolution_chamber') && (enemyAir ? spores < sunkens : spores < Math.floor(sunkens / 3)) ? 'spore_colony' : 'sunken_colony'); }
     // Terran addons
     if (r === 'T') { for (const b of this.mine(u => u.isBuilding && u.done && !u.addon && !u.prod.length && u.def.addons.length)) { const aid = b.def.addons[0]; if (aid === 'comsat_station' && !p.hasBuilding('academy')) continue; if (aid === 'machine_shop' || aid === 'control_tower' || aid === 'comsat_station') { if (p.minerals > 150 && p.gas > 100) G.queueAddon(b, aid); } else if (aid === 'physics_lab' && p.minerals > 300) G.queueAddon(b, aid); } }
     // Protoss: pylons when running low on power spots
-    if (r === 'P' && p.minerals > 200 && this.count('pylon') < 3 + this.mine(u => u.isBuilding && !u.def.psi && !u.def.depot).length / 2) this.build('pylon');
+    if (r === 'P' && p.minerals > 200 && this.afford(100, 0) && this.count('pylon') < 3 + this.mine(u => u.isBuilding && !u.def.psi && !u.def.depot).length / 2) this.build('pylon');
     // Zerg: lair/hive/greater spire upgrades are in script; hatchery tech at 2 hatch
   }
   production() {
-    const p = this.p, comp = AI_COMP[this.race]; const cands = [];
+    const p = this.p; const foe = this.enemies()[0]; const comp = (foe && AI_COMP[this.race + 'v' + foe.race]) || AI_COMP[this.race]; const cands = [];
     const counts = {}; for (const u of G.units) if (u.alive && u.owner === p.id) { counts[u.def.id] = (counts[u.def.id] || 0) + 1; for (const it of u.prod) if (it.kind === 'unit') counts[it.id] = (counts[it.id] || 0) + 1; }
     const enemyAir = this.enemies().some(q => G.units.some(u => u.alive && u.owner === q.id && u.fly && u.hasWeapon())) ;
     for (const [id, wgt] of comp) {
       const ud = DATA.units[id]; if (!wgt || !p.hasReq(ud)) continue;
       if (id === 'scourge' && !enemyAir) continue; if (id === 'corsair' && !enemyAir && !this.enemies().some(q => q.race === 'Z')) continue;
-      if (id === 'observer' && (counts.observer || 0) >= 2) continue;
+      if (id === 'observer' && (counts.observer || 0) >= (foe && foe.race === 'Z' ? 3 : 2)) continue;
       let w = wgt; if (this.race === 'Z' && id === 'hydralisk' && p.hasTech('lurker_aspect')) w += 2;
       if (ud.from !== 'larva' && !this.mine(b => b.isBuilding && b.done && b.def.produces.includes(id)).length) continue;
-      cands.push([((counts[id] || 0) + 1) / w, id]);
+      const sup = (ud.sup || 1) * (ud.pair ? 2 : 1); cands.push([((counts[id] || 0) * sup + sup) / w, id]); // weights are a share of army supply, so cheap units cannot crowd out the rest
     }
     cands.sort((a, b) => a[0] - b[0]);
     if (!cands.length) return;
@@ -133,7 +150,7 @@ class AI {
     if (this.race === 'P') { const hts = this.mine(u => u.def.id === 'high_templar' && u.energy < 60 && u.order.type !== 'merge'); if (hts.length >= 2 && ((counts.high_templar || 0) > 3 || !p.hasTech('psi_storm_tech'))) Abilities.merge(hts, 'summon_archon'); }
     // Reaver scarabs / carrier interceptors
     for (const u of this.mine(u => (u.def.id === 'reaver' || u.def.id === 'carrier') && !u.prod.length)) { if (u.def.id === 'reaver' && u.scarabs < 5) G.queueUnit(u, 'scarab'); if (u.def.id === 'carrier' && u.interceptors < (p.hasTech('carrier_capacity') ? 8 : 4)) G.queueUnit(u, 'interceptor'); }
-    let made = 0; for (const [, id] of cands) { if (this.train(id, 3)) { made++; if (made >= (this.race === 'Z' ? 2 : 1)) break; } }
+    let made = 0; for (const [, id] of cands) { if (this.train(id, 3)) { made++; if (made >= 3) break; } } // money is the real limit; every race gets the same number of tries
   }
   research() {
     const p = this.p; if (p.minerals < 200 || p.gas < 150) return;
@@ -146,6 +163,7 @@ class AI {
   train(id, maxQ) {
     const p = this.p, ud = DATA.units[id]; if (!ud || !p.hasReq(ud)) return false;
     if (p.minerals < ud.min || p.gas < ud.gas) return false;
+    if (!ud.worker && !(ud.supGive && p.supMax - p.supUsed < 4) && !this.afford(ud.min, ud.gas)) return false; // saving up never starves workers or urgent supply
     if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) return false;
     if (ud.from === 'larva') { const l = this.mine(u => u.def.larva)[0]; if (!l) return false; return G.larvaMorph(l, id); }
     const bs = this.mine(u => u.isBuilding && u.done && !u.lifted && u.def.produces.includes(id) && u.prod.length < (maxQ || 2) && !(u.addon && !u.addon.done)); if (!bs.length) return false;
@@ -153,23 +171,24 @@ class AI {
   }
   addon(id) { const p = this.p, ad = DATA.buildings[id]; if (!p.hasReq(ad)) return false; const b = this.mine(u => u.isBuilding && u.done && u.def.id === ad.parent && !u.addon && !u.prod.length)[0]; if (!b) return false; return G.queueAddon(b, id); }
   morph(id) { const p = this.p, nd = DATA.buildings[id]; const from = id === 'lair' ? 'hatchery' : id === 'hive' ? 'lair' : id === 'greater_spire' ? 'spire' : null; if (!from) return false; if (p.minerals < nd.min || p.gas < nd.gas) return false; const b = this.mine(u => u.isBuilding && u.done && u.def.id === from && !u.prod.length)[0]; if (!b) return false; return G.queueMorph(b, id); }
-  build(id) {
+  // force: this is the building being saved for (script step, expansion, gas, urgent supply); otherwise the reserve applies
+  build(id, force) {
     const def = DATA.buildings[id], p = this.p; if (!p.hasReq(def)) return false;
-    if (def.depot) { const base = this.pickExpansion(); if (!base) return false; return this.buildAt(id, base.x, base.y); }
-    if (def.onGeyser) { for (const h of this.halls()) { const base = G.map.bases.find(b => distPt(b.cx, b.cy, h.x, h.y) < 3 * TILE); if (base && !(base.geyser.building && base.geyser.building.alive) && base.geyser.amount > 0) return this.buildAt(id, base.geyser.x, base.geyser.y); } return false; }
-    const halls = this.halls(); const h = halls[Math.floor(G.rand() * Math.min(2, halls.length))] || { x: p.startX, y: p.startY };
-    return this.buildNear(id, h.x, h.y);
+    if (def.depot) { const base = this.pickExpansion(); if (!base) return false; return this.buildAt(id, base.x, base.y, force); }
+    if (def.onGeyser) { for (const h of this.halls()) { const base = G.map.bases.find(b => distPt(b.cx, b.cy, h.x, h.y) < 3 * TILE); if (base && !(base.geyser.building && base.geyser.building.alive) && base.geyser.amount > 0) return this.buildAt(id, base.geyser.x, base.geyser.y, true); } return false; }
+    const halls = this.halls(); const defensive = def.gw || def.aw || def.id === 'creep_colony'; const h = (defensive && halls.length > 1 ? halls[halls.length - 1] : halls[Math.floor(G.rand() * Math.min(2, halls.length))]) || { x: p.startX, y: p.startY }; // static defence goes to the newest (most exposed) base
+    return this.buildNear(id, h.x, h.y, force);
   }
-  buildNear(id, x, y) {
+  buildNear(id, x, y, force) {
     const def = DATA.buildings[id], p = this.p; const spot = this.findSpot(def, Math.floor(x / TILE), Math.floor(y / TILE)); if (!spot) return false;
-    return this.buildAt(id, spot[0], spot[1]);
+    return this.buildAt(id, spot[0], spot[1], force);
   }
-  buildAt(id, tx, ty) {
-    const def = DATA.buildings[id], p = this.p; if (p.minerals < def.min || p.gas < def.gas) return false;
+  buildAt(id, tx, ty, force) {
+    const def = DATA.buildings[id], p = this.p; if (p.minerals < def.min || p.gas < def.gas) return false; if (!force && !this.afford(def.min, def.gas)) return false;
     const w = this.pickWorker((tx + def.w / 2) * TILE, (ty + def.h / 2) * TILE); if (!w) return false;
-    w.setOrder({ type: 'build', def, tx, ty }); this.pending[id] = G.frame; return true;
+    w.setOrder({ type: 'build', def, tx, ty }); this.pending[id] = G.frame; this.reserve(def); return true; // the walk to the site must not be spent
   }
-  pickWorker(x, y) { const ws = this.mine(u => u.def.worker && !u.inside && (u.order.type === 'gather' || u.order.type === 'idle' || u.order.type === 'return') && !(u.order.type === 'gather' && u.order.target && u.order.target.type === 'gas')); if (!ws.length) return null; ws.sort((a, b) => distPt(a.x, a.y, x, y) + (a.carrying ? 200 : 0) - distPt(b.x, b.y, x, y) - (b.carrying ? 200 : 0)); return ws[0]; }
+  pickWorker(x, y) { const ws = this.mine(u => u.def.worker && !u.inside && u.stuck < 60 && (u.order.type === 'gather' || u.order.type === 'idle' || u.order.type === 'return') && !(u.order.type === 'gather' && u.order.target && u.order.target.type === 'gas')); if (!ws.length) return null; ws.sort((a, b) => distPt(a.x, a.y, x, y) + (a.carrying ? 200 : 0) - distPt(b.x, b.y, x, y) - (b.carrying ? 200 : 0)); return ws[0]; }
   pickExpansion() {
     const p = this.p; let best = null, bd = 1e9; const halls = this.halls();
     for (const b of G.map.bases) {
@@ -189,10 +208,10 @@ class AI {
         const ang = (k / 24) * Math.PI * 2 + r * 0.3; const tx = Math.round(cx + Math.cos(ang) * r - def.w / 2), ty = Math.round(cy + Math.sin(ang) * r * 0.8 - def.h / 2);
         if (m.canPlace(def, tx, ty, p, G.units, null)) continue;
         if (this.nearResources(tx, ty, def.w, def.h)) continue;
-        // keep an exit row below and addon slot free for production buildings
+        // keep a free tile all around (units must never get walled in) and the addon slot free for Terran production buildings
         let ok = true;
-        for (let x = tx - 1; x <= tx + def.w && ok; x++) { if (!m.walkable(x, ty + def.h)) ok = false; }
-        if (ok && isProd && def.race === 'T') { for (let y = ty + def.h - 2; y < ty + def.h && ok; y++) for (let x = tx + def.w; x < tx + def.w + 2; x++) if (!m.walkable(x, y)) ok = false; }
+        for (let y = ty - 1; y <= ty + def.h && ok; y++) for (let x = tx - 1; x <= tx + def.w && ok; x++) { if (x >= tx && x < tx + def.w && y >= ty && y < ty + def.h) continue; if (!m.walkable(x, y)) ok = false; }
+        if (ok && isProd && def.race === 'T') { for (let y = ty + def.h - 2; y < ty + def.h && ok; y++) for (let x = tx + def.w; x < tx + def.w + 3; x++) if (!m.walkable(x, y)) ok = false; }
         if (ok && def.psi) { let close = false; for (const u of G.units) if (u.alive && u.owner === p.id && u.def.psi && distPt(u.x, u.y, (tx + 1) * TILE, (ty + 1) * TILE) < 5 * TILE) close = true; if (close && G.rand() < 0.7) ok = false; }
         if (ok) return [tx, ty];
       }
@@ -209,6 +228,13 @@ class AI {
     const cx = G.map.w * TILE / 2, cy = G.map.h * TILE / 2; const d = distPt(nat.x, nat.y, cx, cy);
     return { x: nat.x + (cx - nat.x) / d * 7 * TILE, y: nat.y + (cy - nat.y) / d * 7 * TILE };
   }
+  // biggest enemy army supply we have actually seen, decayed slowly so old sightings stop mattering
+  seenEnemyArmy() {
+    let sup = 0;
+    for (const u of G.units) { if (!u.alive || u.def.worker || u.def.larva || u.def.egg || u.def.notUnit) continue; if (G.allied(u.owner, this.p.id)) continue; if (u.isBuilding) { if ((u.def.gw || u.def.aw) && u.done && G.explored(this.p.id, Math.floor(u.x / TILE), Math.floor(u.y / TILE))) sup += 4; continue; } if (!u.hasWeapon()) continue; if (!G.canSee(this.p.id, u)) continue; sup += u.def.sup || 1; } // a defended base costs more army than an open field
+    if (sup > (this.seenSup || 0)) this.seenSup = sup; else this.seenSup = (this.seenSup || 0) * 0.995;
+    return this.seenSup;
+  }
   army() {
     const p = this.p, army = this.armyUnits(), sup = army.reduce((s, u) => s + u.def.sup, 0);
     const rally = this.rallyPoint(); this.rally = rally;
@@ -220,7 +246,7 @@ class AI {
     if (this.state === 'gather') {
       for (const u of army) if (u.order.type === 'idle' && distPt(u.x, u.y, rally.x, rally.y) > 5 * TILE) u.setOrder({ type: 'attackmove', x: rally.x + (G.rand() - .5) * 96, y: rally.y + (G.rand() - .5) * 96 });
       for (const u of this.supportUnits()) if (u.order.type === 'idle' && distPt(u.x, u.y, rally.x, rally.y) > 6 * TILE) u.setOrder({ type: 'move', x: rally.x, y: rally.y });
-      const threshold = this.attackThreshold + this.waves * 8 + (p.supUsed > 150 ? -20 : 0);
+      const threshold = Math.max(this.attackThreshold + this.waves * 8 + (p.supUsed > 150 ? -20 : 0), this.seenEnemyArmy() * 1.25);
       if (sup >= threshold || p.supUsed >= 190) { this.state = 'attack'; this.waves++; this.startedAttack = G.frame; const wave = army.filter(u => distPt(u.x, u.y, rally.x, rally.y) < 14 * TILE || this.waves > 1); for (const u of wave) u.wave = this.waves; this.attackN = wave.length; this.target = this.pickTarget(rally); }
     }
     if (this.state === 'attack') {
@@ -242,12 +268,15 @@ class AI {
   }
   pickTarget(from) {
     let best = null, bd = 1e9;
-    for (const u of G.units) { if (!u.alive || G.allied(u.owner, this.p.id) || !u.isBuilding || u.def.tier === 'addon') continue; if (G.players[u.owner].defeated) continue; const d = distPt(u.x, u.y, from.x, from.y) - (u.def.depot ? 8 * TILE : 0); if (d < bd) { bd = d; best = u; } }
+    const defenders = G.units.filter(u => u.alive && u.isBuilding && (u.def.gw || u.def.aw) && !G.allied(u.owner, this.p.id));
+    for (const u of G.units) { if (!u.alive || G.allied(u.owner, this.p.id) || !u.isBuilding || u.def.tier === 'addon') continue; if (G.players[u.owner].defeated) continue; const guarded = defenders.filter(d => distPt(d.x, d.y, u.x, u.y) < 8 * TILE).length; const d = distPt(u.x, u.y, from.x, from.y) - (u.def.depot ? 8 * TILE : 0) + guarded * 10 * TILE; if (d < bd) { bd = d; best = u; } } // prefer targets without static defence around them
     if (!best) { for (const u of G.units) { if (u.alive && !G.allied(u.owner, this.p.id) && !G.players[u.owner].defeated && !u.def.larva) { const d = distPt(u.x, u.y, from.x, from.y); if (d < bd) { bd = d; best = u; } } } }
     return best;
   }
   micro() {
     const p = this.p;
+    // Terran: scan where our units are being hit by something we cannot see (burrowed lurkers, cloaked units)
+    if (p.race === 'T' && (G.frame + p.id) % 48 === 0) { const cs = this.mine(u => u.def.id === 'comsat_station' && u.done && u.energy >= 50)[0]; if (cs) { const hit = this.mine(u => !u.isBuilding && G.frame - u.lastHit < 24 && u.lastHitBy && u.lastHitBy.alive && u.lastHitBy.isCloaked && !G.detected(u.lastHitBy, p.id))[0]; if (hit) Abilities.issue(cs, 'scanner_sweep', null, hit.lastHitBy.x, hit.lastHitBy.y); } }
     for (const u of G.units) {
       if (!u.alive || u.owner !== p.id || u.isBuilding || u.inside) continue;
       const d = u.def.id;

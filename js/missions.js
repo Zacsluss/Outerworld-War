@@ -34,12 +34,52 @@ const Missions = {
       objective: 'Destroy all enemy structures', minutes: 0,
       setup(G, me, en) { const h = G.hallOf(me); G.placeDone(me, 'gateway', h.tx + 6, h.ty); G.placeDone(me, 'cybernetics_core', h.tx + 6, h.ty + 4); G.placeDone(me, 'stargate', h.tx - 5, h.ty + 4); G.placeDone(me, 'fleet_beacon', h.tx - 4, h.ty - 3); for (let i = 0; i < 2; i++) { const c = G.spawnUnit('carrier', me, h.x + 40 + i * 60, h.y - 60); c.interceptors = 4; } G.givePlayer(me, { minerals: 500, gas: 300 }); },
       check(G, m, me, en) { if (!G.hallOf(me)) return 'lose'; return null; } },
+    { id: 'z3', race: 'Z', title: 'Tunnel Vision', layout: 'valley', seed: 53, enemy: { race: 'T', difficulty: 'normal' },
+      brief: ['The Terrans hold the far plateau and our swarm cannot cross the open ground alive.', 'A Nydus Canal is grown and waiting. Place its exit near their mining line.', 'Ventral Sacs are ready: Overlords can carry a strike force over the cliffs.', 'Take their command post apart from the inside.'],
+      objective: 'Destroy the Terran Command Center', minutes: 0,
+      setup(G, me, en) {
+        const h = G.hallOf(me); G.morphBuilding(h, 'lair');
+        G.placeDone(me, 'spawning_pool', h.tx + 6, h.ty + 1); G.placeDone(me, 'hydralisk_den', h.tx + 6, h.ty + 4); G.placeDone(me, 'extractor', h.tx, h.ty);
+        const canal = G.placeDone(me, 'nydus_canal', h.tx - 4, h.ty + 3); if (canal) G.mission.state.canal = canal;
+        G.givePlayer(me, { minerals: 500, gas: 400, tech: ['metabolic', 'ventral_sacs', 'muscular', 'burrow_tech'] });
+        for (let i = 0; i < 8; i++) G.spawnUnit('zergling', me, h.x - 90 + i * 24, h.y + 100);
+        for (let i = 0; i < 6; i++) G.spawnUnit('hydralisk', me, h.x - 70 + i * 26, h.y + 130);
+        for (let i = 0; i < 2; i++) G.spawnUnit('overlord', me, h.x + 40 + i * 50, h.y - 70);
+      },
+      check(G, m, me, en) { if (!G.hallOf(me)) return 'lose'; return G.units.some(u => u.alive && u.owner === en && u.def.id === 'command_center') ? null : 'win'; } },
+    { id: 'p3', race: 'P', title: 'The Long Way Home', layout: 'bloodbath', seed: 67, enemy: { race: 'Z', difficulty: 'normal' },
+      brief: ['The swarm has dug in behind a wall of sunken colonies.', 'A frontal assault would feed them. The Arbiter Tribunal offers another road.', 'Stasis their defenders, then Recall your army straight into the hive cluster.', 'Leave nothing of it standing.'],
+      objective: 'Destroy every Zerg Hatchery, Lair and Hive', minutes: 0,
+      setup(G, me, en) {
+        const h = G.hallOf(me);
+        G.placeDone(me, 'gateway', h.tx + 6, h.ty); G.placeDone(me, 'pylon', h.tx + 6, h.ty + 4); G.placeDone(me, 'cybernetics_core', h.tx - 5, h.ty + 4);
+        G.placeDone(me, 'citadel_of_adun', h.tx - 5, h.ty); G.placeDone(me, 'stargate', h.tx + 2, h.ty - 4); G.placeDone(me, 'arbiter_tribunal', h.tx - 2, h.ty - 4);
+        G.givePlayer(me, { minerals: 600, gas: 500, tech: ['recall_tech', 'stasis_tech', 'singularity', 'leg_enhancements'] });
+        const a = G.spawnUnit('arbiter', me, h.x, h.y - 90); a.energy = 200;
+        for (let i = 0; i < 6; i++) G.spawnUnit('zealot', me, h.x - 80 + i * 26, h.y + 100);
+        for (let i = 0; i < 4; i++) G.spawnUnit('dragoon', me, h.x - 50 + i * 34, h.y + 130);
+      },
+      check(G, m, me, en) { if (!G.hallOf(me)) return 'lose'; return G.units.some(u => u.alive && u.owner === en && u.def.spawnsLarva) ? null : 'win'; } },
   ],
   get(id) { return this.list.find(m => m.id === id); },
   // Called from UI.start after G.init; wires mission state into G
   begin(id) {
     const def = this.get(id); if (!def) return; const me = G.human, en = G.players.findIndex(p => !p.human);
-    G.mission = { def, done: false, start: G.frame, state: {}, tick() { if (this.done) return; const r = def.check(G, this, me, en); if (r === 'win') { this.done = true; G.over = true; G.winner = me; G.winTeam = G.players[me].team; G.players[me].msg('Mission accomplished.'); } else if (r === 'lose') { this.done = true; G.over = true; G.winner = en; G.winTeam = G.players[en].team; G.players[me].msg('Mission failed.'); } } };
+    G.mission = {
+      def, done: false, start: G.frame, state: {}, summary: null,
+      // Time, kills and losses, shown on the result screen and in the message log.
+      score() { const p = G.players[me]; const t = Math.floor((G.frame - this.start) / TPS); return `Time ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}   killed ${p.stats.unitsKilled} units / ${p.stats.buildingsKilled} buildings   lost ${p.stats.unitsLost} units / ${p.stats.buildingsLost} buildings   mined ${p.stats.mined}`; },
+      finish(won) { this.done = true; this.summary = this.score(); G.over = true; G.winner = won ? me : en; G.winTeam = G.players[G.winner].team; G.players[me].msg(won ? 'Mission accomplished.' : 'Mission failed.'); G.players[me].msg(this.summary, 'info'); },
+      tick() {
+        if (this.done) return;
+        const r = def.check(G, this, me, en);
+        if (r === 'win') return this.finish(true);
+        if (r === 'lose') return this.finish(false);
+        // Fallback: razing the enemy always completes a mission, so an objective that became
+        // impossible (the Command Center to infest died, the beacon holder was killed) is never a dead end.
+        if (!G.units.some(u => u.alive && u.owner === en && u.isBuilding && u.def.tier !== 'addon')) this.finish(true);
+      },
+    };
     def.setup(G, me, en); G.recomputeSupply(); G.updateVision();
     if (typeof UI !== 'undefined') { UI.menu = 'brief'; }
   },
