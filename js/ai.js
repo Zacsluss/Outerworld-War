@@ -70,11 +70,14 @@ class AI {
   supply() {
     const p = this.p; if (p.supMax >= 200) return;
     const prodN = this.mine(u => u.isBuilding && u.def.produces.length && u.done).length + (p.race === 'Z' ? this.halls().length : 0);
-    const margin = 4 + prodN * 2;
+    // A depot takes 25 s to finish and late-game production eats supply faster than that, so the margin
+    // has to scale with how much production is actually running. Measured with test/aiaudit.js: the AI
+    // was supply blocked 13% of the time, which no human would tolerate.
+    const margin = 6 + prodN * 3;
     if (p.supMax - p.supUsed < margin) {
       const sid = RACE_INFO[p.race].supply;
       if (p.race === 'Z') { const inFlight = this.count('overlord') - this.mine(u => u.def.id === 'overlord').length; if (inFlight < (p.supMax - p.supUsed < 4 ? 3 : prodN > 4 ? 2 : 1)) this.train('overlord', 1); }
-      else if (this.count(sid) - this.mine(u => u.def.id === sid && u.done).length < 1 + (prodN > 6 ? 1 : 0)) this.build(sid, p.supMax - p.supUsed < 4);
+      else if (this.count(sid) - this.mine(u => u.def.id === sid && u.done).length < 1 + (prodN > 4 ? 1 : 0) + (prodN > 8 ? 1 : 0)) this.build(sid, p.supMax - p.supUsed < 4); // more than one in flight once there is real production to feed
     }
   }
   // how many buildings are being built or walked to right now (a human never starts five things at once)

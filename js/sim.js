@@ -223,8 +223,14 @@ class Unit {
         if (!o.target || !o.target.alive || (o.target.inside) || (!G.targetable(this, o.target) && !o.target.isBuilding)) { this.nextOrder(); break; }
         if (!this.weaponFor(o.target)) { if (this.hasWeapon() || d.worker) { if (dist(this, o.target) > 48) this.moveTo(o.target.x, o.target.y, o.target); else this.nextOrder(); } else this.nextOrder(); break; }
         // an immobile attacker (sieged tank, burrowed lurker) whose target is out of range keeps shooting whatever is in range
-        if ((this.sieged || (this.burrowed && !d.mine)) && !this.inRange(o.target)) { const t = this.autoTarget(true); if (t) this.fireAt(t); break; }
-        this.engage(o.target); break;
+        if ((this.sieged || (this.burrowed && !d.mine)) && !this.inRange(o.target)) {
+          const t = this.autoTarget(true); if (t) { this.fireAt(t); break; }
+          // Nothing in range. A Lurker's weapon is burrowOnly so staying down is the whole point, but any
+          // other burrowed unit cannot shoot at all and was just sitting on the order forever: surface.
+          if (this.burrowed && !d.mine && !((d.gw && d.gw.burrowOnly) || (d.aw && d.aw.burrowOnly))) { this.burrowed = false; this.transT = 20; this.path = null; }
+          break;
+        }
+        this.engage(o.target); if (this.moveFailed) this.nextOrder(); break;
       }
       case 'gather': this.tickGather(); break;
       case 'return': this.tickReturn(); break;

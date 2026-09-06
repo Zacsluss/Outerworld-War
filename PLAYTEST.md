@@ -88,3 +88,41 @@ The browser pass used the real DOM/canvas input path (menu, `<details>` campaign
 
 - Mission briefing text overflows the panel horizontally on a narrow window; the longest line is clipped at both edges.
 - Below roughly 900x600 the fixed-height console leaves almost no map viewport. 1280x800 is fine.
+
+## Round three: M4 task 6 — auditing the AI instead of watching it
+
+Watching replays is the obvious way to do this, but "the AI does something no human would" is
+measurable, so `test/aiaudit.js` counts it instead. It plays nine AI-vs-AI games (three matchups x
+three seeds), samples the state once a game-second and reports rates. It has no pass/fail: it is a
+before/after instrument for AI changes.
+
+Baseline over 125 game-minutes, and after the supply fix below:
+
+| what a human would never do | before | after |
+|---|---|---|
+| production buildings idle while the money to fill them is banked (per minute, both players) | 158.9 | 121.7 |
+| spellcasters sitting on a full energy bar (per minute) | 33.4 | **2.2** |
+| army standing idle while its own base is being hit (per minute) | 3.3 | 1.2 |
+| share of time over 700 minerals unspent | 3% | **0%** |
+| share of time over 700 gas unspent | 1% | 3% |
+| share of time supply blocked | 13% | 10% |
+| share of time attacking into two or more static defences | 1% | 0% |
+
+### Fixed
+
+30. **Supply blocked 13% of the time.** The supply margin was `4 + production * 2`, but a Supply Depot
+    takes 25 seconds and late-game production eats supply faster than that, and only one could be in
+    flight until there were more than six production buildings. The margin is now `6 + production * 3`
+    and two or three can be building at once once there is real production to feed. This is the change
+    the "after" column measures; it also cleared the floating minerals and almost all of the hoarded
+    caster energy, because a supply-blocked AI banks money it cannot spend and never gets round to
+    casting.
+
+### Known, measured, not yet fixed
+
+- **Production buildings idle about a fifth of the time** even after the fix. Part of this is
+  deliberate — the composition hold banks for up to eight seconds so the army does not drift to the
+  cheapest unit — but not all of it. Worth attacking next; it is the largest remaining number.
+- **Supply still blocked 10% of the time.** Better, not solved.
+- **Six or seven idle workers per minute.** Usually workers whose mineral patch was mined out, or who
+  were bumped off a build site.
