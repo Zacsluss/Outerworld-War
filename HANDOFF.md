@@ -26,9 +26,7 @@ What M3 added on top of M2:
 **Read this before doing any more balance work.** Two things matter more than the numbers themselves:
 
 1. **The variance is much larger than M2 assumed.** A `--seeds=1,2,3,4,5,6` run is 36 games per matchup, and the 95% interval on 36 games is about 30 points wide. Two independent 108-game runs of the *same* code gave PvT 41.7% and 25.0% — and those two are further apart than binomial noise alone explains, so per-seed map structure adds variation on top. `test/balance.js` now prints the interval and reports "undecided" rather than a number you can tune against; **97 decided games per matchup** are needed for ±10 points, 385 for ±5.
-2. **The M3 task 1 commit message (48f7fc2) overstates the result.** It quotes the seeds 1–6 run only. The honest numbers, 216 games per configuration (12 seeds x 3 layouts x both sides), on Normal:
-
-With 95% Wilson intervals (added in M4 task 2 — `node test/balance_stats.js`), 72 decided games per matchup per configuration:
+2. **The M3 task 1 commit message (48f7fc2) overstates the result.** It quotes the seeds 1–6 run only. Here is the same comparison over 216 games per configuration (12 seeds x 3 layouts x both sides, so 72 decided games per matchup) with 95% Wilson intervals:
 
 | matchup | baseline (M2) | after M3 task 1 |
 |---|---|---|
