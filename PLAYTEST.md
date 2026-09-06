@@ -47,6 +47,16 @@ The same three matchups also run headless for 20 minutes each through `node test
 - Attack-move stacks of melee units jam around a single building for several seconds before spreading out.
 - Zerg AI on Normal reached 100 units by 9:30 against a slow human opener; balance is task 3.
 
+## Round two: issues found while finishing M2 (tasks 3-6)
+
+21. **The AI never expanded as Terran or Protoss.** It spent every mineral on units the moment it had them, so it could never bank the 400 for a Command Center or Nexus. Fixed with a money reservation; workers, urgent supply, gas and research are exempt so saving never starves the economy.
+22. **Mass-zergling armies crowded out everything.** The AI picked its next unit by comparing unit *counts* against weights, so the cheapest unit always won and Zerg fielded 110 zerglings. Weights are now a share of army supply.
+23. **Zerg could deadlock on a Spire it could not afford**, because its second Extractor sat behind the Spire in the build order and the script's give-up timer was being reset every think by the new early-returns.
+24. **Ultralisks got stuck inside sunken colony footprints.** Any ground unit whose centre tile ends up inside a building is now pushed out.
+25. **A render crash on a zero-sized canvas.** Starting a mission while the canvas was hidden made `drawImage` throw every frame. The renderer now clamps its size and skips frames with no viewport.
+26. **Infestation and Reclamation could not be won** once the objective became impossible (the last Command Center died, or the beacon holder was killed). Razing every enemy structure now completes any mission.
+27. **The map editor's default base layout was unplaceable**: the geyser sat inside the town hall's 3-tile resource exclusion, so no map validated until the geyser was moved clear.
+
 ## How the log was produced
 
 - Browser: `node test/serve.js 8765`, desktop app browser pane at 1280x800, errors captured by a page hook, cheats typed into the chat box (`show me the money`, `operation cwal`, `food for thought`, `medieval man`, `power overwhelming`, `there is no cow level`).

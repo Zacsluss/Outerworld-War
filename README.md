@@ -24,11 +24,12 @@ Then open http://localhost:8765. The server also prints a LAN address for multip
 
 **Modes**
 - Single player vs 1-3 computer opponents (Easy/Normal/Hard) with **teams** (shared vision, allied victory).
-- **Campaign**: six scripted missions with briefings and custom objectives (hold out, nuke a base, escort to a beacon, infest a Command Center, and more).
+- **Campaign**: eight scripted missions with briefings and custom objectives (hold out, nuke a base, escort to a beacon, infest a Command Center, tunnel a Nydus Canal behind enemy lines, Recall an army past a sunken wall). Razing every enemy structure always completes a mission, and the result screen shows the objective plus a score line.
 - **LAN multiplayer**: deterministic lockstep over a WebSocket relay built into serve.js. Everyone opens the LAN address, connects in the lobby, the host adds AI players if wanted and starts. In-game Enter is chat. Clients exchange a state hash every two seconds; a mismatch shows a desync banner and both sides download their command logs. If someone drops, their units stop on a frame the relay picks and the game continues; connecting again with the same name rejoins the game by re-simulating the relay's command history.
 - **Replays**: every game records its command log. Save a replay from the menu, watch it later at up to 8x with Ctrl+V to see the whole map.
 - **Save/Load**: F5 saves (file + browser autosave), F8 loads the autosave; loading re-simulates the recorded commands, so saves are tiny and always consistent. Autosave runs every two minutes.
 - Three map layouts (Lost Ruins 4p, Blood Pit 4p, Twilight Valley 2p) with seeded variation, seven BW speed presets (Slowest to Fastest), Brood War or grid (QWE/ASD/ZXC) hotkeys, voice and music toggles.
+- **Map editor**: paint terrain height, ramps and rocks, drop start locations and expansions, check the map for unreachable bases, then save it. Custom maps appear in the map list next to the built-ins, work in single player and LAN, and export/import as small JSON files.
 - Classic cheat codes in single player: press Enter and type `show me the money`, `black sheep wall`, `operation cwal`, `power overwhelming`, `food for thought`, `the gathering`, `modify the phase variance`, `staying alive`, `medieval man`, `something for nothing`, `war aint what it used to be`, `there is no cow level`, `game over man`.
 
 **AI**: scripted openings per race, macro (workers, supply, gas saturation, expansions, production, add-ons, static defence), research priorities, scouting, wave attacks with grouping and reinforcement, drop play with transports, kiting for vultures/mutalisks/dragoons, siege/unsiege, stim, lurker burrow, storm, plague/swarm, irradiate, broodlings, stasis, mines and nukes.
@@ -57,10 +58,14 @@ node broodwar/test/determinism.js   # identical runs match; replay reproduces th
 node broodwar/test/smoke.js 16000 TZ temple   # AI vs AI on a layout
 node broodwar/test/playtest.js all          # scripted human plays TvZ, PvT, ZvP through the UI layer
 node broodwar/test/net.js                   # two lockstep clients + AI through the relay: hashes, drop, rejoin, desync detection
+node broodwar/test/missions.js              # every campaign mission: setup, placement, objective resolves
+node broodwar/test/balance.js               # AI-vs-AI win-rate matrix across matchups, layouts and seeds
+node broodwar/test/perf.js 600 4 --sustain  # 4-player 200-supply battle, per-tick cost by phase
+node broodwar/test/editor.js                # builds a custom map, then plays an AI game and a LAN game on it
 ```
 
 ## Known gaps vs. the original
 
 - No online matchmaking (LAN only), no original campaign story, no hand-painted art or recorded voice acting.
 - Exact BW pathfinding quirks, collision boxes and animation timings are approximations.
-- Balance is tuned by AI-vs-AI runs, not by human ladder play.
+- Balance is tuned by AI-vs-AI runs, not by human ladder play. Terran and Zerg are close to even; Protoss currently loses about 64/36 to both (see HANDOFF.md).
