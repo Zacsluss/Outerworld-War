@@ -34,7 +34,7 @@ Then open http://localhost:8765. The server also prints a LAN address for multip
 
 **AI**: scripted openings per race, macro (workers, supply, gas saturation, expansions, production, add-ons, static defence), research priorities, scouting, wave attacks with grouping and reinforcement, drop play with transports, kiting for vultures/mutalisks/dragoons, siege/unsiege, stim, lurker burrow, storm, plague/swarm, irradiate, broodlings, stasis, mines and nukes.
 
-**Presentation**: procedural Badlands-style terrain with cliffs, ramps, boulders and doodads; sprites baked from 3D models (16 facings, 4 idle, 8 walk and 5 attack frames, consistent lighting, team colours, death collapse); animated building parts; additive particle effects, blood, scorch marks and lingering corpses; BW-style bevelled console with icon buttons, portrait, wireframes and a custom cursor; score screen with per-player stats and APM.
+**Presentation**: procedural Badlands-style terrain with cliffs, ramps, boulders and doodads; sprites baked from 3D models (16 facings, 4 idle, 8 walk and 5 attack frames, consistent lighting, team colours, death collapse); animated building parts; damage states at two thresholds for every race (Terran scorch and buckled plating, Zerg necrosis and ichor, Protoss hull rents with plasma arcs); additive particle effects, blood, scorch marks and lingering corpses; BW-style bevelled console with icon buttons, portrait, wireframes and a custom cursor; score screen with per-player stats and APM.
 
 ## Art pipeline
 

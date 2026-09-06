@@ -142,8 +142,65 @@ const Render = {
     if (u.done) { ctx.drawImage(s.cv, x0 - s.M, y0 - s.T); if (u.def.race === 'P' && u.unpowered) { ctx.fillStyle = 'rgba(40,20,20,0.45)'; ctx.fillRect(x0, y0, W, H); } const an = BUILDING_ANIM[u.def.id]; if (an && u._alpha > 0.5) an(ctx, u, x0, y0, W, H, G.frame); }
     else this.drawConstruction(ctx, u, s, x0, y0, W, H);
     ctx.restore();
+    if (u.done) this.drawDamage(ctx, u, x0, y0, W, H);
     if (u.done && u.unpowered) { ctx.fillStyle = '#ff5050'; ctx.font = 'bold 10px Arial'; ctx.fillText('UNPOWERED', x0 + W / 2 - 30, y0 + H / 2); }
     if (u.hasNuke) { ctx.fillStyle = G.frame % 20 < 10 ? '#ff3030' : '#902020'; ctx.beginPath(); ctx.arc(x0 + W / 2, y0 - 6, 5, 0, 7); ctx.fill(); }
+  },
+  // Visible damage at two thresholds, in each race's own idiom. Render-only and deterministic in
+  // G.frame, so nothing here can feed back into the simulation. Terran structures already catch fire
+  // below a third (that part is in sim.js because it costs hp); this adds the look of it and gives the
+  // other two races an equivalent.
+  drawDamage(ctx, u, x0, y0, W, H) {
+    const hr = u.hp / u.maxHp;
+    if (hr >= 0.66 || u._alpha < 0.4) return;
+    const heavy = hr < 0.33, race = u.def.race;
+    const f = G.frame, seed = u.id * 2654435761;
+    // deterministic per-building jitter, so the cracks do not crawl around between frames
+    const rnd = i => { const v = Math.sin((seed + i * 374761393) % 65536) * 43758.5453; return v - Math.floor(v); };
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x0, y0, W, H); ctx.clip();
+    ctx.globalAlpha = u._alpha * (heavy ? 0.9 : 0.7);
+    const n = heavy ? 5 : 3;
+    if (race === 'T') {
+      // scorched plating and buckled panels, plus smoke that thickens with the damage
+      ctx.strokeStyle = 'rgba(20,16,12,0.85)'; ctx.lineWidth = heavy ? 2.2 : 1.4;
+      for (let i = 0; i < n; i++) {
+        const sx = x0 + rnd(i) * W, sy = y0 + rnd(i + 9) * H;
+        ctx.beginPath(); ctx.moveTo(sx, sy);
+        ctx.lineTo(sx + (rnd(i + 3) - 0.5) * W * 0.5, sy + (rnd(i + 5) - 0.5) * H * 0.6);
+        ctx.stroke();
+      }
+      ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = heavy ? 'rgba(60,40,30,0.5)' : 'rgba(80,60,45,0.28)';
+      for (let i = 0; i < n; i++) { const sx = x0 + rnd(i + 20) * W, sy = y0 + rnd(i + 30) * H; ctx.beginPath(); ctx.ellipse(sx, sy, W * 0.18, H * 0.16, 0, 0, 7); ctx.fill(); }
+    } else if (race === 'Z') {
+      // necrotic patches and ichor running down the shell
+      ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = heavy ? 'rgba(50,60,30,0.55)' : 'rgba(70,80,45,0.3)';
+      for (let i = 0; i < n; i++) { const sx = x0 + rnd(i) * W, sy = y0 + rnd(i + 7) * H; ctx.beginPath(); ctx.ellipse(sx, sy, W * 0.2, H * 0.18, 0, 0, 7); ctx.fill(); }
+      ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = heavy ? 'rgba(140,190,60,0.7)' : 'rgba(130,170,70,0.4)'; ctx.lineWidth = heavy ? 2.4 : 1.6;
+      for (let i = 0; i < n; i++) {
+        const sx = x0 + rnd(i + 11) * W, sy = y0 + rnd(i + 13) * H * 0.5;
+        const drip = (heavy ? 10 : 5) + ((f * 0.35 + i * 17 + u.id) % (heavy ? 14 : 8));
+        ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx, sy + drip); ctx.stroke();
+      }
+    } else {
+      // failed shielding: dark rents in the hull with plasma arcing across them
+      ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = heavy ? 'rgba(40,35,60,0.55)' : 'rgba(60,55,80,0.3)';
+      for (let i = 0; i < n; i++) { const sx = x0 + rnd(i) * W, sy = y0 + rnd(i + 4) * H; ctx.beginPath(); ctx.ellipse(sx, sy, W * 0.17, H * 0.15, 0, 0, 7); ctx.fill(); }
+      ctx.globalCompositeOperation = 'lighter';
+      const arcs = heavy ? 3 : 1;
+      for (let i = 0; i < arcs; i++) {
+        if (((f + u.id + i * 7) % (heavy ? 7 : 19)) > 2) continue; // arcs snap on briefly rather than glowing steadily
+        const sx = x0 + rnd(i + 15) * W, sy = y0 + rnd(i + 17) * H;
+        ctx.strokeStyle = 'rgba(150,200,255,0.9)'; ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.moveTo(sx, sy);
+        for (let k = 1; k <= 3; k++) ctx.lineTo(sx + (rnd(i * 4 + k) - 0.5) * W * 0.35, sy + (rnd(i * 4 + k + 40) - 0.5) * H * 0.35);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+    // smoke for everyone once it is serious; Terran already has fire from the simulation side
+    if (typeof FX !== 'undefined' && (f + u.id) % (heavy ? 12 : 34) === 0)
+      FX.smoke(x0 + W * (0.25 + rnd(f % 7) * 0.5), y0 + H * 0.3, 1, heavy ? 1.1 : 0.7);
   },
   drawConstruction(ctx, u, s, x0, y0, W, H) {
     const k = clamp(u.progress / u.def.time, 0, 1); const race = u.def.race;
