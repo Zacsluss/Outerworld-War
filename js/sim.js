@@ -38,6 +38,7 @@ class Player {
 }
 
 let UNIT_ID = 1;
+const setUnitId = n => { UNIT_ID = n; }; // snapshots restore the id counter so ids stay stable across a seek
 class Unit {
   constructor(defId, owner, x, y) {
     const def = DATA.all[defId];

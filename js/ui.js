@@ -20,7 +20,7 @@ const Sound = {
 const UI = {
   get consoleH() { return Math.round(clamp(Render.H * 0.26, 140, 196)); }, // a fixed height left no map at all in a short window
   selection: [], groups: {}, hover: null, mouse: { x: 0, y: 0, down: false, wx: 0, wy: 0, inside: false }, drag: null, dragging: false, pending: null, placing: null, menu: null, markers: [], pings: [], keys: {}, lastClick: 0, lastClickUnit: null, msgLog: [], camSaves: {}, showHelp: false, cardButtons: [], lastAlertPos: null, speedIdx: 6, accum: 0, lastT: 0, running: false, fps: 0, frames: 0, fpsT: 0,
-  SPEEDS: [0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1, 2, 4, 8], SPEED_NAMES: ['Slowest', 'Slower', 'Slow', 'Normal', 'Fast', 'Faster', 'Fastest', '2x', '4x', '8x'], mode: 'play', viewAll: false, chat: null, loading: null, prodOverlay: false, replayData: null, seeking: false,
+  SPEEDS: [0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1, 2, 4, 8], SPEED_NAMES: ['Slowest', 'Slower', 'Slow', 'Normal', 'Fast', 'Faster', 'Fastest', '2x', '4x', '8x'], mode: 'play', viewAll: false, chat: null, loading: null, prodOverlay: false, replayData: null, seeking: false, snaps: [], SNAP_EVERY: 24 * 30,
   speedName() { return this.SPEED_NAMES[this.speedIdx]; }, maxSpeedIdx() { return this.mode === 'replay' ? 9 : 6; },
   init() {
     const c = document.getElementById('game'); Render.init(c); Sound.init(); if (typeof Atlas !== 'undefined') Atlas.init();
@@ -50,12 +50,12 @@ const UI = {
     if (bad) { this.loading = null; if (typeof alert === 'function') alert(bad); else console.error(bad); return false; }
     const opts = { players: data.players, seed: data.seed, layout: data.layout, mission: data.mission || null, mode: mode === 'watch' ? 'replay' : 'play' };
     this.start(opts); G.pendingCmds = { list: data.cmds || [], i: 0 }; G.recording = mode === 'load';
-    if (mode === 'watch') { this.replayData = data; this.replayOpts = opts; this.viewAll = true; this.prodOverlay = true; } // an observer wants to see everything by default
+    if (mode === 'watch') { this.replayData = data; this.replayOpts = opts; this.viewAll = true; this.prodOverlay = true; this.snaps = []; } // an observer wants to see everything by default
     if (mode === 'load') this.fastForward(data.frame, () => { G.pendingCmds = null; if (data.cam) { Render.camX = data.cam.x; Render.camY = data.cam.y; this.clampCam(); } });
   },
   fastForward(target, done) {
     this.loading = { target, start: G.frame };
-    const step = () => { const t0 = performance.now(); while (G.frame < target && !G.over && performance.now() - t0 < 40) G.tick(); if (G.frame < target && !G.over) setTimeout(step, 0); else { this.loading = null; done(); } };
+    const step = () => { const t0 = performance.now(); while (G.frame < target && !G.over && performance.now() - t0 < 40) { G.tick(); this.keepSnapshot(); } if (G.frame < target && !G.over) setTimeout(step, 0); else { this.loading = null; done(); } };
     setTimeout(step, 0);
   },
   simStep() {
@@ -70,7 +70,7 @@ const UI = {
     if (this.mode === 'play' && G.frame > 0 && G.frame % (TPS * 120) === 0 && !(typeof Net !== 'undefined' && Net.active) && !this._autosaved) { this._autosaved = true; Replay.save(false); } else if (G.frame % (TPS * 120) !== 0) this._autosaved = false;
     const step = 1 / (TPS * this.SPEEDS[this.net ? 6 : this.speedIdx]); this.accum += dt; let n = 0;
     if (this.net && typeof Net !== 'undefined' && Net.active) { while (this.accum >= step && n < 8) { if (!Net.ready(G.frame)) { if (!Net.waitingSince) Net.waitingSince = performance.now(); this.accum = Math.min(this.accum, step); break; } Net.waitingSince = 0; Net.beforeTick(); G.tick(); this.accum -= step; n++; } return; }
-    while (this.accum >= step && n < 48) { G.tick(); this.accum -= step; n++; }
+    while (this.accum >= step && n < 48) { G.tick(); this.keepSnapshot(); this.accum -= step; n++; }
     if (n >= 48) this.accum = 0;
   },
   loop(t) {
@@ -95,12 +95,30 @@ const UI = {
   observePlayer(id) { if (this.mode !== 'replay') return; const n = G.players.length; G.human = ((id % n) + n) % n; this.selection = []; this.pending = null; this.placing = null; },
   cycleObserved(d) { this.observePlayer(G.human + d); const p = G.players[G.human]; if (p) p.msg('Watching ' + p.name + ' (' + RACE_INFO[p.race].name + ')', 'info'); },
   replayLength() { const d = this.replayData; if (!d) return 0; const last = d.cmds && d.cmds.length ? d.cmds[d.cmds.length - 1].f : 0; return Math.max(d.frame || 0, last); },
-  // Seeking forward just runs the sim on; seeking back has to restart and re-run, because a replay is a
-  // command log rather than a series of snapshots.
+  // Checkpoints so that seeking backwards does not have to re-run from frame 0. Thirty seconds of game
+  // time apart; past 80 of them (40 minutes) every second one is dropped, which halves the resolution of
+  // the distant past rather than letting memory grow without bound.
+  keepSnapshot() {
+    if (this.mode !== 'replay' || typeof Snapshot === 'undefined') return;
+    if (G.frame % this.SNAP_EVERY !== 0) return;
+    const last = this.snaps[this.snaps.length - 1];
+    if (last && last.f >= G.frame) return; // already have this point (we just seeked onto it)
+    this.snaps.push({ f: G.frame, s: Snapshot.take() });
+    if (this.snaps.length > 80) this.snaps = this.snaps.filter((x, i) => i % 2 === 0 || i > this.snaps.length - 20);
+  },
+  nearestSnapshot(frame) { let best = null; for (const c of this.snaps) if (c.f <= frame && (!best || c.f > best.f)) best = c; return best; },
+
+  // Seeking forward just runs the sim on. Seeking back restarts from the nearest checkpoint, or from frame 0
+  // if there is none, because a replay is a command log rather than a series of snapshots.
   seekTo(frame) {
     if (this.mode !== 'replay' || !this.replayData || this.seeking) return;
     const target = clamp(Math.round(frame), 0, this.replayLength()), watched = G.human, all = this.viewAll, ov = this.prodOverlay;
-    if (target < G.frame) { this.start(this.replayOpts); G.pendingCmds = { list: this.replayData.cmds || [], i: 0 }; this.viewAll = all; this.prodOverlay = ov; G.human = watched; }
+    if (target < G.frame) {
+      const cp = this.nearestSnapshot(target);
+      if (cp) Snapshot.restore(cp.s);
+      else { const keep = this.snaps; this.start(this.replayOpts); this.snaps = keep; G.pendingCmds = { list: this.replayData.cmds || [], i: 0 }; }
+      this.viewAll = all; this.prodOverlay = ov; G.human = watched; this.selection = [];
+    }
     if (target <= G.frame) return;
     this.seeking = true;
     this.fastForward(target, () => { this.seeking = false; G.human = watched; this.viewAll = all; this.prodOverlay = ov; });

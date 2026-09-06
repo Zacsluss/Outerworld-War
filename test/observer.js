@@ -15,7 +15,7 @@ const ctx = {
   requestAnimationFrame() { }, Image: function () { }, location: { protocol: 'http:', host: 'localhost' }, alert() { },
 };
 ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'missions', 'build', 'render', 'ui'])
+for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'missions', 'build', 'snapshot', 'render', 'ui'])
   vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
 
 const run = src => vm.runInContext(src, ctx);
@@ -98,6 +98,43 @@ const wait = () => new Promise(r => setTimeout(r, 5));
   while (run('UI.seeking')) await wait();
   ok('clicking the middle of the bar seeks to the middle of the replay', ctx.hit === true && Math.abs(run('G.frame') - 3600) < 60, 'frame=' + run('G.frame'));
   ok('clicks below the bar are not seeks', ctx.miss === false);
+
+  // ---- checkpoints: seeking back in a long replay must not re-run from frame 0 ----
+  // Record twenty minutes, watch it, then jump about.
+  run(`
+    UI.start({ players: [{ race: 'T', human: true, name: 'Zac', team: 1 }, { race: 'Z', human: false, difficulty: 'normal', name: 'Kerri', team: 2 }], seed: 9, layout: 'temple' });
+    for (let i = 0; i < 24 * 60 * 20; i++) G.tick();
+    this.long = Replay.data();
+  `);
+  run('UI.startFromLog(this.long, "watch");');
+  const LEN = run('UI.replayLength()'), LATE = LEN - 24 * 30, EARLY = LATE - 24 * 60;
+  const t0 = Date.now();
+  run('UI.seekTo(' + LATE + ');');
+  while (run('UI.seeking')) await wait();
+  ok('a long replay plays through to near the end', run('G.frame') === LATE, run('G.frame') + ' of ' + LEN);
+  ok('checkpoints were taken on the way', run('UI.snaps.length') > 10, run('UI.snaps.length') + ' checkpoints over ' + Math.round(LEN / 24) + 's of game time');
+
+  const t1 = Date.now();
+  run('UI.seekTo(' + EARLY + ');');
+  while (run('UI.seeking')) await wait();
+  const backMs = Date.now() - t1;
+  ok('seeking a minute back is quick', backMs < 1500, backMs + 'ms to frame ' + run('G.frame'));
+  ok('...and lands on the right frame', run('G.frame') === EARLY, String(run('G.frame')));
+
+  // the checkpoint path must give the same state as re-running from zero
+  run(`
+    this.viaCheckpoint = G.stateHash();
+    UI.snaps = [];                              // force the old restart-from-frame-0 path
+    UI.seekTo(0);
+  `);
+  while (run('UI.seeking')) await wait();
+  const t2 = Date.now();
+  run('UI.seekTo(' + EARLY + ');');
+  while (run('UI.seeking')) await wait();
+  const scratchMs = Date.now() - t2;
+  ok('a checkpointed seek matches re-running from frame 0 exactly', run('G.stateHash()') === ctx.viaCheckpoint, run('G.stateHash()') + ' vs ' + ctx.viaCheckpoint);
+  console.log('   seek back 1 min: ' + backMs + 'ms with checkpoints vs ' + scratchMs + 'ms re-running from frame 0');
+  ok('checkpoints make the seek much faster than re-running', backMs * 3 < scratchMs, backMs + 'ms vs ' + scratchMs + 'ms');
 
   ok('no JS errors', errors.length === 0, errors[0] || '');
   console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');
