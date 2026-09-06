@@ -113,6 +113,8 @@ Object.assign(UI, {
     if (this.mode === 'replay') HUD.text(ctx, 'REPLAY  ' + this.speedName() + '  (+/- speed, Ctrl+V perspective, F10 menu)', Render.W / 2, 23, '#ffe45a', 13, true, 'center');
     if (G.mission && !G.mission.done) { const d = G.mission.def; const left = d.minutes ? Math.max(0, d.minutes * 60 - Math.floor((G.frame - G.mission.start) / TPS)) : 0; HUD.text(ctx, 'Objective: ' + d.objective + (d.minutes ? `   ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : ''), 16, 66, '#ffe45a', 12); }
     if (this.net && Net.waitingSince && performance.now() - Net.waitingSince > 800) HUD.text(ctx, 'Waiting for other players...', Render.W / 2, 60, '#ffe45a', 14, true, 'center');
+    if (this.net && Net.desynced) HUD.text(ctx, 'DESYNC DETECTED at ' + Net.clock(Net.desyncFrame) + ' — command log saved to a download; the game is no longer in sync', Render.W / 2, 84, '#ff5050', 14, true, 'center');
+    if (this.net && !Net.connected && Net.active) HUD.text(ctx, 'Connection lost — leave with F10 and reconnect with the same name to rejoin', Render.W / 2, 108, '#ff5050', 14, true, 'center');
     if (this.pending) HUD.text(ctx, 'Select target: ' + (this.pending.kind === 'ability' ? DATA.abilities[this.pending.abil].name : this.pending.kind) + '  (right-click to cancel)', 16, 48, '#ffe45a', 12);
     if (this.showHelp) this.drawHelp(ctx);
   },
@@ -120,7 +122,7 @@ Object.assign(UI, {
     const ctx = Render.ctx, p = G.players[G.human];
     let y = Render.H - this.consoleH - 14; for (let i = p.msgs.length - 1; i >= 0; i--) { const m = p.msgs[i]; const age = G.frame - m.t; if (age > 24 * 8) continue; const col = m.kind === 'error' ? '#ff8a8a' : m.kind === 'attack' || m.kind === 'nuke' ? '#ff5050' : '#ffe45a'; ctx.globalAlpha = age > 24 * 6 ? 1 - (age - 144) / 48 : 1; HUD.text(ctx, m.text, 14, y, col, 13); ctx.globalAlpha = 1; y -= 18; }
     if (this.chat !== null && this.chat !== undefined) { HUD.bevel(ctx, 10, Render.H - this.consoleH - 40, 420, 24, false, 'rgba(8,10,14,0.9)'); HUD.text(ctx, '> ' + this.chat + (G.frame % 24 < 12 ? '_' : ''), 16, Render.H - this.consoleH - 23, '#e6eaf0', 13); }
-    if (this.loading) { const k = (G.frame - this.loading.start) / Math.max(1, this.loading.target - this.loading.start); HUD.bevel(ctx, Render.W / 2 - 160, Render.H / 2 - 30, 320, 60, true, 'rgba(10,12,16,0.95)'); HUD.text(ctx, 'Loading... re-simulating ' + Math.round(k * 100) + '%', Render.W / 2, Render.H / 2 - 6, '#ffe45a', 14, true, 'center'); ctx.fillStyle = '#3fe83f'; ctx.fillRect(Render.W / 2 - 140, Render.H / 2 + 6, 280 * k, 8); }
+    if (this.loading) { const k = (G.frame - this.loading.start) / Math.max(1, this.loading.target - this.loading.start); HUD.bevel(ctx, Render.W / 2 - 160, Render.H / 2 - 30, 320, 60, true, 'rgba(10,12,16,0.95)'); HUD.text(ctx, (this.loading.label || 'Loading... re-simulating') + ' ' + Math.round(k * 100) + '%', Render.W / 2, Render.H / 2 - 6, '#ffe45a', 14, true, 'center'); ctx.fillStyle = '#3fe83f'; ctx.fillRect(Render.W / 2 - 140, Render.H / 2 + 6, 280 * k, 8); }
     this.drawCursor(ctx);
   },
   drawCursor(ctx) {

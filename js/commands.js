@@ -36,6 +36,7 @@ const CMD = {
       case 'ability': { let ok = false; const tg = this.deref(c.tg); for (const u of this.units(c.u, own)) if (O.issue.call(Abilities, u, c.a, tg, c.x, c.y, c.s)) ok = true; return ok; }
       case 'merge': return O.merge.call(Abilities, this.units(c.u, own), c.a);
       case 'cheat': return O.cheat.call(G, c.code, own);
+      case 'stopall': for (const u of G.units) if (u.alive && u.owner === own && (!u.isBuilding || u.lifted)) O.stop.call(u); return true; // a dropped player's units stand down
     }
     return false;
   },
@@ -75,6 +76,15 @@ const CMD = {
     for (const n of ['queueUnit', 'larvaMorph', 'queueUpgrade', 'queueTech', 'queueAddon', 'queueMorph', 'cancelProd', 'cancelBuilding', 'setRally', 'liftBuilding', 'unloadAll', 'unloadCargo', 'cheat']) wrap(G, n, n);
     wrap(Abilities, 'issue', 'issue'); wrap(Abilities, 'merge', 'merge');
   },
+};
+// Deterministic digest of the simulation state (lockstep desync detection, tests).
+G.stateHash = function () {
+  let h = 0x811c9dc5 | 0; const mix = v => { h = Math.imul(h ^ (v | 0), 16777619); }; const str = s => { for (let i = 0; i < s.length; i++) mix(s.charCodeAt(i)); };
+  mix(this.frame); mix(RNG.s);
+  for (const u of this.units) { if (!u.alive) continue; mix(u.id); mix(u.owner); str(u.def.id); mix(Math.round(u.x * 16)); mix(Math.round(u.y * 16)); mix(Math.round(u.hp * 16)); mix(Math.round(u.sh * 16)); mix(Math.round(u.energy * 16)); str(u.order.type); mix(u.cooldown); mix(u.prod.length); mix(u.cargo.length); }
+  for (const p of this.players) { mix(Math.round(p.minerals)); mix(Math.round(p.gas)); mix(Math.round(p.supUsed * 2)); mix(p.supMax); mix(p.tech.size); mix(p.defeated ? 1 : 0); }
+  mix(this.fields.length); mix(this.projectiles.length);
+  return h >>> 0;
 };
 // Execute a command now (records it when recording). Used for local play, replay playback and network delivery.
 G.exec = function (c) { if (this.recording) this.log.push({ f: this.frame, c }); this.applying = true; try { return CMD.apply(c); } finally { this.applying = false; } };

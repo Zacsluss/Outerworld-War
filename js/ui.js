@@ -54,6 +54,12 @@ const UI = {
   },
   simStep() {
     if (!this.running) return; const now = performance.now(); const dt = Math.min(1, (now - this.lastT) / 1000); this.lastT = now;
+    if (this.net && typeof Net !== 'undefined' && Net.active && Net.catchingUp) { // rejoin: replay the relay's history as fast as possible, then go live
+      const t0 = performance.now(); while (Net.ready(G.frame) && performance.now() - t0 < 40) { Net.beforeTick(); G.tick(); }
+      if (!Net.ready(G.frame)) { Net.catchingUp = false; this.loading = null; this.accum = 0; this.menu = null; G.players[G.human].msg('Rejoined the game at ' + Net.clock(G.frame) + '.', 'info'); }
+      else if (this.loading) this.loading.target = Math.max(this.loading.target, G.frame + 1);
+      return;
+    }
     if (G.paused || this.menu || this.loading) return;
     if (this.mode === 'play' && G.frame > 0 && G.frame % (TPS * 120) === 0 && !(typeof Net !== 'undefined' && Net.active) && !this._autosaved) { this._autosaved = true; Replay.save(false); } else if (G.frame % (TPS * 120) !== 0) this._autosaved = false;
     const step = 1 / (TPS * this.SPEEDS[this.net ? 6 : this.speedIdx]); this.accum += dt; let n = 0;
@@ -359,6 +365,7 @@ const UI = {
   menuItems() {
     if (this.menu === 'brief' && G.mission) { const d = G.mission.def; return { title: d.title.toUpperCase(), lines: d.brief.concat(['', 'OBJECTIVE: ' + d.objective]), items: [['Begin mission', () => { this.menu = null; }]] }; }
     if (this.menu === 'waiting') return { title: 'WAITING FOR PLAYERS', lines: ['The game resumes when all players have caught up.'], items: [['Keep waiting', () => { this.menu = null; }], ['Leave game', () => { Net.disconnect(); this.toMenu(); }]] };
+    if (this.net && Net.active && !Net.connected) return { title: 'CONNECTION LOST', lines: ['The relay connection dropped.', 'Reconnect from the main menu with the same name to rejoin this game.'], items: [['Keep watching', () => { this.menu = null; }], ['Return to main menu', () => this.toMenu()]] };
     if (this.menu === 'over') { const hp = G.players[G.human]; const won = G.mission ? G.winner === G.human : (G.winTeam != null ? G.winTeam === hp.team : G.winner === G.human); const mins = Math.max(1, G.frame / TPS / 60); const apm = Math.round(G.log.filter(e => e.c.p === G.human).length / mins); const lines = [`Time ${Math.floor(G.frame / TPS / 60)}:${String(Math.floor(G.frame / TPS) % 60).padStart(2, '0')}   APM ${apm}`, '']; for (const q of G.players) { const s = q.stats; lines.push(`${q.name} (${RACE_INFO[q.race].name})  kills ${s.unitsKilled}/${s.buildingsKilled}  lost ${s.unitsLost}/${s.buildingsLost}  minerals ${s.mined}  gas ${s.gassed}${q.defeated ? '  ELIMINATED' : ''}`); } return { title: won ? 'VICTORY' : 'DEFEAT', lines, items: [['Continue playing', () => { this.menu = null; G.over = false; G.freePlay = true; }], ['Save replay', () => { Replay.saveReplay(); }], ['Return to main menu', () => this.toMenu()]] }; }
     if (this.mode === 'replay') return { title: 'REPLAY PAUSED', lines: ['Speed: ' + this.speedName()], items: [['Resume (Esc)', () => { this.menu = null; }], ['Toggle full map view', () => { this.viewAll = !this.viewAll; this.menu = null; }], ['Quit to menu', () => this.toMenu()]] };
     return { title: 'PAUSED', lines: [], items: [['Resume (Esc)', () => { this.menu = null; }], ['Save game (F5)', () => { Replay.save(true); this.menu = null; }], ['Save replay', () => { Replay.saveReplay(); this.menu = null; }], ['Restart', () => { this.start(this.lastOpts); }], ['Quit to menu', () => this.toMenu()]] };

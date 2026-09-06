@@ -25,7 +25,7 @@ Then open http://localhost:8765. The server also prints a LAN address for multip
 **Modes**
 - Single player vs 1-3 computer opponents (Easy/Normal/Hard) with **teams** (shared vision, allied victory).
 - **Campaign**: six scripted missions with briefings and custom objectives (hold out, nuke a base, escort to a beacon, infest a Command Center, and more).
-- **LAN multiplayer**: deterministic lockstep over a WebSocket relay built into serve.js. Everyone opens the LAN address, connects in the lobby, the host adds AI players if wanted and starts. In-game Enter is chat.
+- **LAN multiplayer**: deterministic lockstep over a WebSocket relay built into serve.js. Everyone opens the LAN address, connects in the lobby, the host adds AI players if wanted and starts. In-game Enter is chat. Clients exchange a state hash every two seconds; a mismatch shows a desync banner and both sides download their command logs. If someone drops, their units stop on a frame the relay picks and the game continues; connecting again with the same name rejoins the game by re-simulating the relay's command history.
 - **Replays**: every game records its command log. Save a replay from the menu, watch it later at up to 8x with Ctrl+V to see the whole map.
 - **Save/Load**: F5 saves (file + browser autosave), F8 loads the autosave; loading re-simulates the recorded commands, so saves are tiny and always consistent. Autosave runs every two minutes.
 - Three map layouts (Lost Ruins 4p, Blood Pit 4p, Twilight Valley 2p) with seeded variation, seven BW speed presets (Slowest to Fastest), Brood War or grid (QWE/ASD/ZXC) hotkeys, voice and music toggles.
@@ -55,6 +55,8 @@ Left click select, drag to box-select, right click for smart commands. `A` attac
 node broodwar/test/features.js      # 87 gameplay checks
 node broodwar/test/determinism.js   # identical runs match; replay reproduces the original
 node broodwar/test/smoke.js 16000 TZ temple   # AI vs AI on a layout
+node broodwar/test/playtest.js all          # scripted human plays TvZ, PvT, ZvP through the UI layer
+node broodwar/test/net.js                   # two lockstep clients + AI through the relay: hashes, drop, rejoin, desync detection
 ```
 
 ## Known gaps vs. the original
