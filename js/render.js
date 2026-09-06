@@ -5,7 +5,7 @@
 const Render = {
   canvas: null, ctx: null, W: 0, H: 0, camX: 0, camY: 0, viewW: 0, viewH: 0, fogCanvas: null, creepMask: null, creepLayer: null, built: false, lastFrameTime: 0, mini: null,
   init(canvas) { this.canvas = canvas; this.ctx = canvas.getContext('2d'); this.resize(); },
-  resize() { this.W = this.canvas.width = window.innerWidth; this.H = this.canvas.height = window.innerHeight; this.viewW = this.W; this.viewH = this.H - UI.consoleH; this.creepLayer = null; },
+  resize() { this.W = this.canvas.width = Math.max(1, window.innerWidth); this.H = this.canvas.height = Math.max(1, window.innerHeight); this.viewW = this.W; this.viewH = Math.max(1, this.H - UI.consoleH); this.creepLayer = null; }, // a hidden or unlaid-out canvas reports 0 and every drawImage of it throws
   reset() { Terrain.reset(G.map.seed); Sprites.clear(); FX.reset(); this.built = false; },
   buildStatic() {
     const m = G.map; this.fogCanvas = document.createElement('canvas'); this.fogCanvas.width = m.w; this.fogCanvas.height = m.h;
@@ -25,7 +25,7 @@ const Render = {
     ctx.globalAlpha = 0.9; ctx.drawImage(this.creepLayer, 0, 0); ctx.globalAlpha = 1;
   },
   frame(alpha) {
-    const ctx = this.ctx, m = G.map; if (!this.built) this.buildStatic();
+    const ctx = this.ctx, m = G.map; if (!ctx || this.viewW < 1 || this.viewH < 1) return; if (!this.built) this.buildStatic();
     const now = performance.now(); const dt = Math.min(0.1, (now - (this.lastFrameTime || now)) / 1000); this.lastFrameTime = now; if (!G.paused && !UI.menu) FX.update(dt);
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, this.viewW, this.viewH); ctx.clip();
     const cx = this.camX, cy = this.camY;
