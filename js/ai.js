@@ -23,7 +23,7 @@ const AI_RESEARCH = {
 };
 class AI {
   constructor(p, diff) {
-    this.p = p; this.diff = diff; this.step = 0; this.pending = {}; this.lastThink = 0; this.lastArmy = 0; this.state = 'gather'; this.target = null; this.attackN = 0; this.attackThreshold = (diff === 'easy' ? 40 : diff === 'hard' ? 24 : 30) + (p.race === 'Z' ? 4 : p.race === 'P' ? 6 : 2); this.waves = 0; this.scouted = false; this.dropOp = null; this.lastDrop = 0;
+    this.p = p; this.diff = diff; this.step = 0; this.pending = {}; this.lastThink = 0; this.lastArmy = 0; this.state = 'gather'; this.target = null; this.attackN = 0; this.attackThreshold = (diff === 'easy' ? 40 : diff === 'hard' ? 24 : 30) + 4; this.waves = 0; this.scouted = false; this.dropOp = null; this.lastDrop = 0;
     this.thinkEvery = diff === 'easy' ? 72 : diff === 'hard' ? 20 : 32; this.scriptIdx = 0; this.lastExpand = 0; this.rally = null; this.startedAttack = 0; this.reserveMin = 0; this.reserveGas = 0;
   }
   // money set aside for the building the script/expansion logic is waiting to afford; workers, supply and gas ignore it
@@ -61,7 +61,7 @@ class AI {
     const fields = G.map.resources.filter(r => r.type === 'mineral' && r.amount > 0 && halls.some(h => h.done && distPt(r.cx, r.cy, h.x, h.y) < 10 * TILE)).length; const want = Math.min(70, fields * 2 + gasB.length * 3 + 2);
     const larvaN = this.race === 'Z' ? this.mine(u => u.def.larva).length : 9;
     const armySup = this.armyUnits().reduce((s, u) => s + u.def.sup, 0); this.armySup = armySup;
-    if (this.count(RACE_INFO[p.race].worker) < want && (p.race !== 'Z' ? (larvaN >= 2 || workers.length < 12 || armySup >= workers.length * 0.4) : (workers.length < 14 || armySup >= workers.length * 0.45))) this.train(RACE_INFO[p.race].worker, 2); // drones only once the army keeps up
+    if (this.count(RACE_INFO[p.race].worker) < want && (p.race !== 'Z' ? (larvaN >= 2 || workers.length < 12 || armySup >= workers.length * 0.4) : (workers.length < 16 || armySup >= (workers.length - 16) * 1.5))) this.train(RACE_INFO[p.race].worker, 2); // drones only once the army keeps up
     // transfer workers from saturated to new bases
     if (G.frame % (24 * 10) < this.thinkEvery && halls.length > 1) {
       for (const h of halls) { const near = workers.filter(w => dist(w, h) < 12 * TILE); const fields = G.map.resources.filter(r => r.type === 'mineral' && distPt(r.cx, r.cy, h.x, h.y) < 10 * TILE).length; if (near.length > fields * 2 + 3) { const other = halls.find(o => o !== h && o.done && workers.filter(w => dist(w, o) < 12 * TILE).length < 8); if (other) { const m = G.map.resources.find(r => r.type === 'mineral' && distPt(r.cx, r.cy, other.x, other.y) < 10 * TILE); if (m) for (let i = 0; i < 4; i++) { const w = near.find(w => w.order.type === 'gather' && !w.carrying); if (w) w.applyOrder({ type: 'gather', target: m, phase: 'goto' }); } } } }
@@ -93,7 +93,9 @@ class AI {
     if (def.tier === 'addon') { this.addon(id); return; }
     if (def.tier === 'morph') { if (!this.mine(u => u.prod.some(it => it.kind === 'morph' && it.id === id)).length) this.morph(id); return; }
     if (this.count(id) > have) return; // already pending / in construction
-    if (this.underway() >= (def.depot ? 3 : 2)) return; // finish what is already going up first (the give-up timer keeps running)
+    // Static defence is cheap and time-critical, so it must not queue behind expansions: Zerg kept letting its
+    // scripted creep colonies time out while hatcheries were going up, and met the first push with no sunkens.
+    if (!(def.gw || def.aw || def.id === 'creep_colony') && this.underway() >= (def.depot ? 3 : 2)) return; // finish what is already going up first (the give-up timer keeps running)
     // gas-hungry tech waits until there is an army and enough production to use it
     const prodDone = this.mine(u => u.isBuilding && u.def.produces.length && !u.def.depot && u.done).length;
     if (def.gas >= 100 && !def.produces.length && (this.armySup || 0) < 16 && prodDone < 3) return;
@@ -104,7 +106,11 @@ class AI {
     const p = this.p, r = this.race; const halls = this.halls();
     // expansion when floating minerals or saturated
     const workers = this.mine(u => u.def.worker).length;
-    if (G.frame - this.lastExpand > 24 * 60 && (p.minerals > 500 || workers > halls.length * 16 || ((this.armySup || 0) >= 30 && halls.length < 3)) && this.count(RACE_INFO[r].hall) <= halls.length) { const hd = DATA.buildings[RACE_INFO[r].hall]; if (p.minerals < hd.min) { if (this.pickExpansion()) this.reserve(hd); } else if (this.build(RACE_INFO[r].hall, true)) this.lastExpand = G.frame; } // start saving as soon as a free base exists, or the army eats the money forever
+    // Expanding only on floating minerals rewards whoever spends worst: Zerg banks between larvae and takes
+    // a third base, while Protoss and Terran spend every mineral and sit on two forever. Keep a base-count
+    // floor that grows with the clock so every race keeps taking ground.
+    const wantHalls = Math.min(G.map.bases.length, 2 + Math.floor(G.frame / (24 * 60 * 3)));
+    if (G.frame - this.lastExpand > 24 * 45 && (p.minerals > 500 || workers > halls.length * 16 || halls.length < wantHalls || ((this.armySup || 0) >= 30 && halls.length < 3)) && this.count(RACE_INFO[r].hall) <= halls.length) { const hd = DATA.buildings[RACE_INFO[r].hall]; if (p.minerals < hd.min) { if (this.pickExpansion()) this.reserve(hd); } else if (this.build(RACE_INFO[r].hall, true)) this.lastExpand = G.frame; } // start saving as soon as a free base exists, or the army eats the money forever
     // more production when floating
     // production capacity should track income: roughly one production building per 4 workers
     const prodWant = Math.min(10, Math.max(2, Math.floor(workers / 4)));
@@ -119,7 +125,7 @@ class AI {
     if (this.scriptIdx >= 3 && workers > 5 * gasBuildings(this) && !(p.gas > 800 && p.minerals < 300)) for (const h of halls) { if (!h.done) continue; const base = G.map.bases.find(b => distPt(b.cx, b.cy, h.x, h.y) < 3 * TILE); if (base && base.geyser.amount > 0 && !(base.geyser.building && base.geyser.building.alive) && p.minerals >= 100 && this.count(RACE_INFO[r].gasB) <= this.mine(u => u.def.onGeyser).length) { this.buildAt(RACE_INFO[r].gasB, base.geyser.x, base.geyser.y, true); break; } } // gas pays for itself, never let the reserve block it
     // static defense at natural / detection
     if (this.scriptIdx >= 4 && p.minerals > 200) {
-      for (const nat of halls.slice(1, 3)) if (nat.done) { const defId = r === 'T' ? 'missile_turret' : r === 'P' ? 'photon_cannon' : 'creep_colony'; const px = nat.x + (G.map.w * TILE / 2 - nat.x) * 0.15, py = nat.y + (G.map.h * TILE / 2 - nat.y) * 0.15; const isDef = u => u.isBuilding && (u.def.id === defId || u.def.id === 'sunken_colony' || u.def.id === 'spore_colony'); const near = this.mine(u => isDef(u) && (dist(u, nat) < 16 * TILE || distPt(u.x, u.y, px, py) < 16 * TILE)).length; if (near < 2 && this.count(defId) <= this.mine(isDef).length && p.hasReq(DATA.buildings[defId])) { this.buildNear(defId, px, py); break; } }
+      for (const nat of halls.slice(1)) if (nat.done) { const defId = r === 'T' ? 'missile_turret' : r === 'P' ? 'photon_cannon' : 'creep_colony'; const px = nat.x + (G.map.w * TILE / 2 - nat.x) * 0.15, py = nat.y + (G.map.h * TILE / 2 - nat.y) * 0.15; const isDef = u => u.isBuilding && (u.def.id === defId || u.def.id === 'sunken_colony' || u.def.id === 'spore_colony'); const near = this.mine(u => isDef(u) && (dist(u, nat) < 16 * TILE || distPt(u.x, u.y, px, py) < 16 * TILE)).length; if (near < (r === 'Z' ? 4 : 2) && this.count(defId) <= this.mine(isDef).length && p.hasReq(DATA.buildings[defId])) { this.buildNear(defId, px, py); break; } }
     }
     // Zerg: morph creep colonies into sunkens
     if (r === 'Z') { const enemyAir = this.enemies().some(q => G.units.some(u => u.alive && u.owner === q.id && u.fly && (u.hasWeapon() || u.def.cargo))); const spores = this.mine(u => u.def.id === 'spore_colony').length, sunkens = this.mine(u => u.def.id === 'sunken_colony').length; for (const c of this.mine(u => u.def.id === 'creep_colony' && u.done && !u.prod.length)) G.queueMorph(c, p.hasBuilding('evolution_chamber') && (enemyAir ? spores < sunkens : spores < Math.floor(sunkens / 3)) ? 'spore_colony' : 'sunken_colony'); }
@@ -150,6 +156,15 @@ class AI {
     if (this.race === 'P') { const hts = this.mine(u => u.def.id === 'high_templar' && u.energy < 60 && u.order.type !== 'merge'); if (hts.length >= 2 && ((counts.high_templar || 0) > 3 || !p.hasTech('psi_storm_tech'))) Abilities.merge(hts, 'summon_archon'); }
     // Reaver scarabs / carrier interceptors
     for (const u of this.mine(u => (u.def.id === 'reaver' || u.def.id === 'carrier') && !u.prod.length)) { if (u.def.id === 'reaver' && u.scarabs < 5) G.queueUnit(u, 'scarab'); if (u.def.id === 'carrier' && u.interceptors < (p.hasTech('carrier_capacity') ? 8 : 4)) G.queueUnit(u, 'interceptor'); }
+    // The composition is a priority order, so spending on a cheaper unit every time the preferred one is a few
+    // minerals short ratchets the army towards the cheapest thing in the list (this is what turned Protoss into
+    // an all-zealot army while gas piled up). Bank for the top pick instead, but never stall on it for long.
+    const want = cands.find(([, id]) => this.canTrainSoon(id));
+    if (want) { const wd = DATA.units[want[1]];
+      const close = p.minerals >= wd.min * 0.7 && p.gas >= wd.gas * 0.7; // only wait when the money is nearly there; saving from nothing just idles production (and wastes Zerg larvae)
+      if ((p.minerals < wd.min || p.gas < wd.gas) && close) { if (this.holdFor !== want[1]) { this.holdFor = want[1]; this.holdT = G.frame; } if (G.frame - this.holdT < 24 * 8) return; }
+      else this.holdFor = null;
+    } else this.holdFor = null;
     let made = 0; for (const [, id] of cands) { if (this.train(id, 3)) { made++; if (made >= 3) break; } } // money is the real limit; every race gets the same number of tries
   }
   research() {
@@ -169,6 +184,8 @@ class AI {
     const bs = this.mine(u => u.isBuilding && u.done && !u.lifted && u.def.produces.includes(id) && u.prod.length < (maxQ || 2) && !(u.addon && !u.addon.done)); if (!bs.length) return false;
     bs.sort((a, b) => a.prod.length - b.prod.length); return G.queueUnit(bs[0], id);
   }
+  // could we train this if we had the money? (requirements, supply room and a production building with a free slot)
+  canTrainSoon(id) { const p = this.p, ud = DATA.units[id]; if (!ud || !p.hasReq(ud)) return false; if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) return false; if (ud.from === 'larva') return !!this.mine(u => u.def.larva).length; return !!this.mine(u => u.isBuilding && u.done && !u.lifted && u.def.produces.includes(id) && u.prod.length < 3 && !(u.addon && !u.addon.done)).length; }
   addon(id) { const p = this.p, ad = DATA.buildings[id]; if (!p.hasReq(ad)) return false; const b = this.mine(u => u.isBuilding && u.done && u.def.id === ad.parent && !u.addon && !u.prod.length)[0]; if (!b) return false; return G.queueAddon(b, id); }
   morph(id) { const p = this.p, nd = DATA.buildings[id]; const from = id === 'lair' ? 'hatchery' : id === 'hive' ? 'lair' : id === 'greater_spire' ? 'spire' : null; if (!from) return false; if (p.minerals < nd.min || p.gas < nd.gas) return false; const b = this.mine(u => u.isBuilding && u.done && u.def.id === from && !u.prod.length)[0]; if (!b) return false; return G.queueMorph(b, id); }
   // force: this is the building being saved for (script step, expansion, gas, urgent supply); otherwise the reserve applies
