@@ -19,7 +19,7 @@ const Sound = {
 
 const UI = {
   consoleH: 196, selection: [], groups: {}, hover: null, mouse: { x: 0, y: 0, down: false, wx: 0, wy: 0, inside: false }, drag: null, dragging: false, pending: null, placing: null, menu: null, markers: [], pings: [], keys: {}, lastClick: 0, lastClickUnit: null, msgLog: [], camSaves: {}, showHelp: false, cardButtons: [], lastAlertPos: null, speedIdx: 6, accum: 0, lastT: 0, running: false, fps: 0, frames: 0, fpsT: 0,
-  SPEEDS: [0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1, 2, 4, 8], SPEED_NAMES: ['Slowest', 'Slower', 'Slow', 'Normal', 'Fast', 'Faster', 'Fastest', '2x', '4x', '8x'], mode: 'play', viewAll: false, chat: null, loading: null,
+  SPEEDS: [0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1, 2, 4, 8], SPEED_NAMES: ['Slowest', 'Slower', 'Slow', 'Normal', 'Fast', 'Faster', 'Fastest', '2x', '4x', '8x'], mode: 'play', viewAll: false, chat: null, loading: null, prodOverlay: false, replayData: null, seeking: false,
   speedName() { return this.SPEED_NAMES[this.speedIdx]; }, maxSpeedIdx() { return this.mode === 'replay' ? 9 : 6; },
   init() {
     const c = document.getElementById('game'); Render.init(c); Sound.init(); if (typeof Atlas !== 'undefined') Atlas.init();
@@ -32,7 +32,7 @@ const UI = {
   },
   start(opts) {
     opts = Object.assign({}, opts, { players: opts.players.map(p => Object.assign({}, p, { race: p.race === 'R' ? ['T', 'Z', 'P'][Math.floor(Math.random() * 3)] : p.race })) });
-    this.lastOpts = opts; this.mode = opts.mode || 'play'; this.viewAll = false; this.chat = null; this.loading = null; if (this.speedIdx > this.maxSpeedIdx()) this.speedIdx = this.maxSpeedIdx();
+    this.lastOpts = opts; this.mode = opts.mode || 'play'; this.viewAll = false; this.prodOverlay = false; this.chat = null; this.loading = null; if (this.speedIdx > this.maxSpeedIdx()) this.speedIdx = this.maxSpeedIdx();
     G.init(opts); G.recording = this.mode === 'play'; G.log = []; G.pendingCmds = null; G.mission = null; if (opts.mission && typeof Missions !== 'undefined') Missions.begin(opts.mission);
     Render.reset(); if (typeof Music !== 'undefined' && Music.on) Music.start(); this.net = !!opts.net; if (this.net) G.paused = false; this.selection = []; this.groups = {}; this.pending = null; this.placing = null; this.menu = null; this.markers = []; this.pings = []; this.msgLog = []; if (G.mission) this.menu = 'brief';
     const hp = G.players[G.human]; Render.camX = hp.startX - Render.viewW / 2; Render.camY = hp.startY - Render.viewH / 2 + 40; this.clampCam();
@@ -49,6 +49,7 @@ const UI = {
     if (bad) { this.loading = null; if (typeof alert === 'function') alert(bad); else console.error(bad); return false; }
     const opts = { players: data.players, seed: data.seed, layout: data.layout, mission: data.mission || null, mode: mode === 'watch' ? 'replay' : 'play' };
     this.start(opts); G.pendingCmds = { list: data.cmds || [], i: 0 }; G.recording = mode === 'load';
+    if (mode === 'watch') { this.replayData = data; this.replayOpts = opts; this.viewAll = true; this.prodOverlay = true; } // an observer wants to see everything by default
     if (mode === 'load') this.fastForward(data.frame, () => { G.pendingCmds = null; if (data.cam) { Render.camX = data.cam.x; Render.camY = data.cam.y; this.clampCam(); } });
   },
   fastForward(target, done) {
@@ -82,10 +83,55 @@ const UI = {
     this.selection = this.selection.filter(u => u.alive && !u.inside);
     Render.frame(G.paused ? 1 : Math.min(1, this.accum / step));
     this.drawConsole(); this.drawTop(); this.drawMessages();
+    if (this.mode === 'replay') { this.drawTimeline(); if (this.prodOverlay) this.drawProdOverlay(); }
     if (G.over && !this.menu) this.menu = 'over';
     if (this.menu) this.drawMenu();
     this.frames++; if (t - this.fpsT > 1000) { this.fps = this.frames; this.frames = 0; this.fpsT = t; }
   },
+  // ---------------- observer / replay controls ----------------
+  // G.human only drives what is rendered (vision, the console, alerts) and the command wrappers are inert
+  // in replay mode, so pointing it at another player is a pure view change with no effect on the sim.
+  observePlayer(id) { if (this.mode !== 'replay') return; const n = G.players.length; G.human = ((id % n) + n) % n; this.selection = []; this.pending = null; this.placing = null; },
+  cycleObserved(d) { this.observePlayer(G.human + d); const p = G.players[G.human]; if (p) p.msg('Watching ' + p.name + ' (' + RACE_INFO[p.race].name + ')', 'info'); },
+  replayLength() { const d = this.replayData; if (!d) return 0; const last = d.cmds && d.cmds.length ? d.cmds[d.cmds.length - 1].f : 0; return Math.max(d.frame || 0, last); },
+  // Seeking forward just runs the sim on; seeking back has to restart and re-run, because a replay is a
+  // command log rather than a series of snapshots.
+  seekTo(frame) {
+    if (this.mode !== 'replay' || !this.replayData || this.seeking) return;
+    const target = clamp(Math.round(frame), 0, this.replayLength()), watched = G.human, all = this.viewAll, ov = this.prodOverlay;
+    if (target < G.frame) { this.start(this.replayOpts); G.pendingCmds = { list: this.replayData.cmds || [], i: 0 }; this.viewAll = all; this.prodOverlay = ov; G.human = watched; }
+    if (target <= G.frame) return;
+    this.seeking = true;
+    this.fastForward(target, () => { this.seeking = false; G.human = watched; this.viewAll = all; this.prodOverlay = ov; });
+  },
+  timelineRect() { return { x: 10, y: 34, w: Math.max(120, Render.W - 320), h: 12 }; },
+  timelineClick(x, y) {
+    if (this.mode !== 'replay' || !this.replayData) return false;
+    const r = this.timelineRect(); if (x < r.x - 4 || x > r.x + r.w + 4 || y < r.y - 6 || y > r.y + r.h + 6) return false;
+    this.seekTo((x - r.x) / r.w * this.replayLength()); return true;
+  },
+  // Per-player production, resources and research. Replay only: in a live game this would be a maphack.
+  prodRows() {
+    return G.players.map(p => {
+      const items = {}; let army = 0, workers = 0;
+      for (const u of G.units) {
+        if (!u.alive || u.owner !== p.id) continue;
+        if (u.def.worker) workers++;
+        else if (!u.isBuilding && !u.def.larva && !u.def.egg && u.hasWeapon()) army += u.def.sup || 0;
+        for (const it of u.prod) { const d = it.kind === 'unit' ? DATA.units[it.id] : DATA.buildings[it.id]; const k = d ? d.name : it.id; items[k] = (items[k] || 0) + 1; }
+      }
+      for (const t of p.researching) { const d = DATA.techs[t] || DATA.upgrades[t]; const k = d ? d.name : t; items[k] = (items[k] || 0) + 1; }
+      const top = Object.entries(items).sort((a, b) => b[1] - a[1]).slice(0, 4).map(kv => kv[1] > 1 ? kv[0] + ' x' + kv[1] : kv[0]);
+      return { p, workers, army: Math.round(army), making: top.join(', ') || 'nothing' };
+    });
+  },
+  prodRowRect(i) { return { x: 10, y: 66 + i * 20, w: 340, h: 18 }; },
+  prodClick(x, y) {
+    if (!this.prodOverlay || this.mode !== 'replay') return false;
+    for (let i = 0; i < G.players.length; i++) { const r = this.prodRowRect(i); if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) { this.observePlayer(i); this.viewAll = false; return true; } }
+    return false;
+  },
+
   // ---------------- camera ----------------
   clampCam() { Render.camX = clamp(Render.camX, 0, G.map.w * TILE - Render.viewW); Render.camY = clamp(Render.camY, 0, G.map.h * TILE - Render.viewH); },
   scrollCam(dt) {
@@ -130,6 +176,7 @@ const UI = {
     const m = this.mouse; m.x = e.clientX; m.y = e.clientY; [m.wx, m.wy] = this.screenToWorld(m.x, m.y);
     if (Sound.ctx && Sound.ctx.state === 'suspended') Sound.ctx.resume();
     if (this.menu) { this.menuClick(m.x, m.y); return; }
+    if (this.mode === 'replay' && e.button === 0 && (this.timelineClick(m.x, m.y) || this.prodClick(m.x, m.y))) return;
     if (m.y >= Render.H - this.consoleH) { this.consoleClick(m.x, m.y, e.button); return; }
     if (e.button === 0) {
       if (this.placing) { this.confirmPlacement(e.shiftKey); return; }
@@ -157,6 +204,14 @@ const UI = {
     if (k === 'F5') { e.preventDefault(); Replay.save(true); return; }
     if (k === 'F8') { e.preventDefault(); if (Replay.hasAutosave()) Replay.loadAutosave(); return; }
     if ((k === 'v' || k === 'V') && e.ctrlKey && this.mode === 'replay') { this.viewAll = !this.viewAll; e.preventDefault(); return; }
+    if (this.mode === 'replay') { // observer controls: whose vision, production overlay, scrubbing
+      if (k === '[') { this.cycleObserved(-1); this.viewAll = false; return; }
+      if (k === ']') { this.cycleObserved(1); this.viewAll = false; return; }
+      if (k === 'o' || k === 'O') { this.prodOverlay = !this.prodOverlay; return; }
+      if (k === 'ArrowLeft' && e.shiftKey) { e.preventDefault(); this.seekTo(G.frame - TPS * 30); return; }
+      if (k === 'ArrowRight' && e.shiftKey) { e.preventDefault(); this.seekTo(G.frame + TPS * 30); return; }
+      if (k === 'Home') { e.preventDefault(); this.seekTo(0); return; }
+    }
     if (k === 'F1') { this.showHelp = !this.showHelp; return; }
     if (k === 'Escape') { if (this.placing || this.pending || this.cardMenu) { this.placing = null; this.pending = null; this.cardMenu = null; } else if (this.selection.length === 1 && this.selection[0].isBuilding && !this.selection[0].done && this.selection[0].owner === G.human) G.cancelBuilding(this.selection[0]); else if (this.selection.length === 1 && this.selection[0].prod.length && this.selection[0].owner === G.human) G.cancelProd(this.selection[0], this.selection[0].prod.length - 1); return; }
     if (k === 'F9' || k === 'Pause') { if (!this.net) G.paused = !G.paused; return; }
@@ -357,6 +412,34 @@ const UI = {
     if (this.pending) { ctx.fillStyle = '#ff8'; ctx.fillText('Select target for ' + (this.pending.kind === 'ability' ? DATA.abilities[this.pending.abil].name : this.pending.kind) + ' (right-click to cancel)', 12, 44); }
     if (this.showHelp) this.drawHelp(ctx);
   },
+  // Replay scrubber. The bar spans the whole recording; the filled part is where we are, and clicking
+  // anywhere on it seeks (backwards means restarting and re-running, so it can take a moment on a long game).
+  drawTimeline() {
+    const ctx = Render.ctx, r = this.timelineRect(), total = this.replayLength(); if (!total) return;
+    const f = clamp(G.frame / total, 0, 1);
+    ctx.fillStyle = '#000a'; ctx.fillRect(r.x - 4, r.y - 4, r.w + 8, r.h + 8);
+    ctx.fillStyle = '#2c3340'; ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = this.seeking ? '#c8a23c' : '#4a7fb5'; ctx.fillRect(r.x, r.y, r.w * f, r.h);
+    ctx.fillStyle = '#e6eaf0'; ctx.fillRect(r.x + r.w * f - 1, r.y - 3, 3, r.h + 6);
+    const mm = t => Math.floor(t / TPS / 60) + ':' + String(Math.floor(t / TPS) % 60).padStart(2, '0');
+    ctx.font = '11px sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = '#9aa4b0';
+    ctx.fillText(mm(G.frame) + ' / ' + mm(total) + (this.seeking ? '  seeking...' : ''), r.x, r.y + r.h + 13);
+  },
+  // Per-player production, resources and research, with the player being watched highlighted.
+  drawProdOverlay() {
+    const ctx = Render.ctx, rows = this.prodRows();
+    ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i], q = this.prodRowRect(i), p = row.p;
+      ctx.fillStyle = p.id === G.human && !this.viewAll ? 'rgba(40,60,90,0.85)' : 'rgba(0,0,0,0.65)';
+      ctx.fillRect(q.x, q.y, q.w, q.h);
+      ctx.fillStyle = p.color; ctx.fillRect(q.x, q.y, 4, q.h);
+      ctx.fillStyle = p.defeated ? '#777' : '#e6eaf0';
+      ctx.fillText(p.name.slice(0, 9).padEnd(9) + ' ' + RACE_INFO[p.race].name[0] + '  ' + String(Math.floor(p.minerals)).padStart(4) + 'm ' + String(Math.floor(p.gas)).padStart(4) + 'g  ' + p.supUsed + '/' + p.supMax + '  w' + row.workers + ' a' + row.army, q.x + 8, q.y + 13);
+      ctx.fillStyle = '#9aa4b0'; ctx.fillText(row.making, q.x + q.w + 8, q.y + 13);
+    }
+    ctx.fillStyle = '#7b869a'; ctx.fillText('[ ] switch player   O hide   Ctrl+V all vision   Shift+arrows skip 30 s', 10, 66 + rows.length * 20 + 12);
+  },
   drawMessages() {
     const ctx = Render.ctx, p = G.players[G.human]; ctx.font = '13px sans-serif';
     let y = Render.H - this.consoleH - 12; for (let i = p.msgs.length - 1; i >= 0; i--) { const m = p.msgs[i]; const age = G.frame - m.t; if (age > 24 * 8) continue; ctx.fillStyle = m.kind === 'error' ? '#f77' : m.kind === 'attack' || m.kind === 'nuke' ? '#f55' : '#ff8'; ctx.globalAlpha = age > 24 * 6 ? 1 - (age - 144) / 48 : 1; ctx.fillText(m.text, 12, y); ctx.globalAlpha = 1; y -= 18; }
@@ -371,7 +454,7 @@ const UI = {
     if (this.menu === 'waiting') return { title: 'WAITING FOR PLAYERS', lines: ['The game resumes when all players have caught up.'], items: [['Keep waiting', () => { this.menu = null; }], ['Leave game', () => { Net.disconnect(); this.toMenu(); }]] };
     if (this.net && Net.active && !Net.connected) return { title: 'CONNECTION LOST', lines: ['The relay connection dropped.', 'Reconnect from the main menu with the same name to rejoin this game.'], items: [['Keep watching', () => { this.menu = null; }], ['Return to main menu', () => this.toMenu()]] };
     if (this.menu === 'over') { const hp = G.players[G.human]; const won = G.mission ? G.winner === G.human : (G.winTeam != null ? G.winTeam === hp.team : G.winner === G.human); const mins = Math.max(1, G.frame / TPS / 60); const apm = Math.round(G.log.filter(e => e.c.p === G.human).length / mins); const lines = [`Time ${Math.floor(G.frame / TPS / 60)}:${String(Math.floor(G.frame / TPS) % 60).padStart(2, '0')}   APM ${apm}`]; if (G.mission) { lines.push('Objective: ' + G.mission.def.objective + (G.mission.done ? (won ? '  — complete' : '  — failed') : '')); if (G.mission.summary) lines.push(G.mission.summary); } lines.push(''); for (const q of G.players) { const s = q.stats; lines.push(`${q.name} (${RACE_INFO[q.race].name})  kills ${s.unitsKilled}/${s.buildingsKilled}  lost ${s.unitsLost}/${s.buildingsLost}  minerals ${s.mined}  gas ${s.gassed}${q.defeated ? '  ELIMINATED' : ''}`); } return { title: won ? 'VICTORY' : 'DEFEAT', lines, items: [['Continue playing', () => { this.menu = null; G.over = false; G.freePlay = true; }], ['Save replay', () => { Replay.saveReplay(); }], ['Return to main menu', () => this.toMenu()]] }; }
-    if (this.mode === 'replay') return { title: 'REPLAY PAUSED', lines: ['Speed: ' + this.speedName()], items: [['Resume (Esc)', () => { this.menu = null; }], ['Toggle full map view', () => { this.viewAll = !this.viewAll; this.menu = null; }], ['Quit to menu', () => this.toMenu()]] };
+    if (this.mode === 'replay') return { title: 'REPLAY PAUSED', lines: ['Speed: ' + this.speedName(), 'Watching: ' + (this.viewAll ? 'everyone' : G.players[G.human].name), '', '[ and ] switch player, O production overlay', 'Shift+Left/Right skip 30 s, Home restarts, click the bar to seek'], items: [['Resume (Esc)', () => { this.menu = null; }], ['Toggle full map view (Ctrl+V)', () => { this.viewAll = !this.viewAll; this.menu = null; }], ['Next player (])', () => { this.cycleObserved(1); this.viewAll = false; this.menu = null; }], ['Toggle production overlay (O)', () => { this.prodOverlay = !this.prodOverlay; this.menu = null; }], ['Quit to menu', () => this.toMenu()]] };
     return { title: 'PAUSED', lines: [], items: [['Resume (Esc)', () => { this.menu = null; }], ['Save game (F5)', () => { Replay.save(true); this.menu = null; }], ['Save replay', () => { Replay.saveReplay(); this.menu = null; }], ['Restart', () => { this.start(this.lastOpts); }], ['Quit to menu', () => this.toMenu()]] };
   },
   drawMenu() {
