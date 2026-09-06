@@ -25,16 +25,20 @@ What M3 added on top of M2:
 
 **Read this before doing any more balance work.** Two things matter more than the numbers themselves:
 
-1. **The variance is much larger than M2 assumed.** A `--seeds=1,2,3,4,5,6` run is 36 games per matchup, and 36 binomial trials at p≈0.35 have a 2-sigma spread of roughly ±16 points. Two independent 108-game runs of the *same* code gave PvT 42% and PvT 25%. M2's "about 10 points" was optimistic; treat a single 108-game run as ±17 and do not tune against one.
+1. **The variance is much larger than M2 assumed.** A `--seeds=1,2,3,4,5,6` run is 36 games per matchup, and the 95% interval on 36 games is about 30 points wide. Two independent 108-game runs of the *same* code gave PvT 41.7% and 25.0% — and those two are further apart than binomial noise alone explains, so per-seed map structure adds variation on top. `test/balance.js` now prints the interval and reports "undecided" rather than a number you can tune against; **97 decided games per matchup** are needed for ±10 points, 385 for ±5.
 2. **The M3 task 1 commit message (48f7fc2) overstates the result.** It quotes the seeds 1–6 run only. The honest numbers, 216 games per configuration (12 seeds x 3 layouts x both sides), on Normal:
 
-| matchup | baseline (M2) | after M3 task 1 | verdict |
-|---|---|---|---|
-| Protoss vs Zerg | P 22 / Z 78 | **P 42 / Z 58** | fixed |
-| Protoss vs Terran | P 38 / T 63 | P 33 / T 67 | unchanged within noise, still outside |
-| Terran vs Zerg | T 63 / Z 38 | **T 76 / Z 24** | regressed |
+With 95% Wilson intervals (added in M4 task 2 — `node test/balance_stats.js`), 72 decided games per matchup per configuration:
 
-So M3 traded the worst matchup for the mildest one: three matchup sides outside 60/40 became two, but Terran vs Zerg went from marginal to bad. That is a real regression and it is the first thing M4 should look at.
+| matchup | baseline (M2) | after M3 task 1 |
+|---|---|---|
+| Protoss vs Zerg | P 22.2% [14.2–33.1] **outside** | P 41.7% [31.0–53.2] undecided |
+| Protoss vs Terran | P 37.5% [27.2–49.0] undecided | P 33.3% [23.5–44.8] undecided |
+| Terran vs Zerg | T 62.5% [51.0–72.8] undecided | T 76.1% [65.0–84.5] **outside** |
+
+Read that carefully, because it is not the story the task 1 commit tells. **Only two of those six cells are a result at all.** At the baseline, Protoss vs Zerg was the single *established* failure. After M3, it is no longer established — that is the genuine win — but Terran vs Zerg became one. Protoss vs Terran has never been established either way at this sample size; it leans Terran and always has, but 72 games cannot prove it.
+
+So M3 traded one established failure for another. Fixing Terran vs Zerg is the first thing M4 should do.
 
 **The structural finding.** Equal-supply controlled duels (48-54 supply a side, six seeds each) give **Terran–Zerg 3-3, Protoss beats Terran 6-0, Zerg beats Protoss 6-0**. Unit stats are sound. Every one of these games is decided by who brings more army supply to the fight, which makes this an AI macro problem end to end, not a balance-table problem.
 
@@ -97,7 +101,7 @@ Both targets were met at M2 and nothing in M3 touched the hot path. The infantry
 
 ## Known issues and rough edges
 
-- **Balance**: see the section above. TvZ is the regression to fix; PvT has never been inside 60/40.
+- **Balance**: see the section above. Terran vs Zerg is the one *established* failure (76.1% [65.0–84.5]) and is M3's regression. Protoss vs Terran leans Terran but has never been established either way at this sample size.
 - **An unreachable goal is never abandoned.** `Pathfinder.find` returns a best-effort partial path rather than failing, so a unit ordered somewhere it cannot reach walks into the obstacle and slides along it forever with a live order. `u.stuck` does not catch it because the unit *is* moving. A movement watchdog was written and measured during M3 (give up after ten seconds without getting closer, then let `follow`/`patrol`/`construct`/`load` drop the order); it fixed every case it was aimed at but made units go idle *inside* building footprints in `z1` and `z2`, which were clean before, so it was reverted. Worth another attempt alongside the push-out logic.
 - **Burrowed units silently ignore plain move orders.** `moveTo` returns false immediately for a burrowed unit and nothing cancels the order. Fixed for `load` (the unit surfaces); the general fix is to unburrow on any movement order as Brood War does, which needs `AI.army()` to skip burrowed units the way it already skips sieged ones, or Lurkers will surface and oscillate.
 - **Missions**: all eight resolve and are winnable. Driven by the scripted player, `t1`, `t2` and `p3` are won and the rest run to the frame cap; a human should try them before tuning.
@@ -113,8 +117,8 @@ Both targets were met at M2 and nothing in M3 touched the hot path. The infantry
 
 Nothing here is started. Do them in order; each is one commit with tests green.
 
-1. **Fix Terran vs Zerg, without giving back Protoss vs Zerg.** This is the M3 regression. Read the balance section first: the base-count floor couples the two matchups, so the useful move is to find a *different* way to make Protoss competitive so the floor can be relaxed for Zerg. Acceptance: all three matchups within 60/40 over **two independent 216-game runs** (`--seeds=1..6` and `--seeds=7..12`), not one — M3 was misled by exactly that.
-2. **Give the balance harness error bars.** `test/balance.js` should print a confidence interval per matchup and refuse to call a matchup "at target" when the interval crosses 60/40. Every wrong turn in M3 came from reading a single run as if it were precise. Acceptance: the tool reports intervals and a rerun of the same code lands inside them.
+1. ~~Give the balance harness error bars.~~ **Done** — `test/balance.js` prints 95% Wilson intervals and reports "undecided" when the interval crosses the 60/40 line; `test/balance_stats.js` checks the maths and pins the M3 numbers as a fixture.
+2. **Fix Terran vs Zerg, without giving back Protoss vs Zerg.** This is the M3 regression. Read the balance section first: the base-count floor couples the two matchups, so the useful move is to find a *different* way to make Protoss competitive so the floor can be relaxed for Zerg. Acceptance: all three matchups within 60/40 over **two independent 216-game runs** (`--seeds=1..6` and `--seeds=7..12`), not one — M3 was misled by exactly that.
 3. **Fix the unreachable-goal class of bug properly.** See the rough edges above; the watchdog plus the footprint push-out, together. Acceptance: `test/playtest.js all` and `test/playtest.js missions` stay at 0 stuck units, and a unit ordered onto an unreachable cliff gives up within a few seconds.
 4. **Replay snapshots.** Keep a state snapshot every couple of minutes so seeking backwards does not re-run from frame 0. Acceptance: seeking backwards in a 20-minute replay is under a second and `test/observer.js`'s bit-identical checks still pass.
 5. **Building damage states.** Terran buildings already burn below a third; give every race visible damage at two thresholds. Acceptance: side-by-side screenshots.
