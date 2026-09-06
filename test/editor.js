@@ -139,7 +139,7 @@ else {
     while (A.__G.frame < 4800 || B.__G.frame < 4800) { A.step(30); B.step(30); await sleep(0); if (Date.now() - t0 > 120000) break; }
     const common = Object.keys(A.__Net.myHashes).map(Number).filter(f => B.__Net.myHashes[f] !== undefined).sort((a, b) => b - a);
     check(common.length > 0 && A.__Net.myHashes[common[0]] === B.__Net.myHashes[common[0]], 'LAN game on the custom map stays in sync (frame ' + common[0] + ', ' + A.__G.frame + '/' + B.__G.frame + ' frames)');
-    check(!A.__Net.desynced && !B.__Net.desynced && !A.errors.length && !B.errors.length, 'no desync or errors in the LAN game');
+    check(!A.__Net.desynced && !B.__Net.desynced && !A.errors.length && !B.errors.length, 'no desync or errors in the LAN game' + (A.errors.length ? ' | A: ' + A.errors[0] : '') + (B.errors.length ? ' | B: ' + B.errors[0] : '') + (A.__Net.desynced ? ' | A desynced' : '') + (B.__Net.desynced ? ' | B desynced' : ''));
     console.log(fails ? 'FAILED ' + fails : 'ALL PASS'); process.exit(fails ? 1 : 0);
   })().catch(e => { console.error(e); process.exit(1); });
 }

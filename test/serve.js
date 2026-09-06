@@ -16,9 +16,9 @@ function frame(text) { const b = Buffer.from(text, 'utf8'); let h; if (b.length 
 function send(c, msg) { try { c.socket.write(frame(JSON.stringify(msg))); } catch (e) { } }
 function broadcast(msg, except) { for (const c of clients.values()) if (c !== except) send(c, msg); }
 function hostOf() { return lobby.players.find(q => !q.ai && !q.gone) || null; }
-function lobbyState() { const host = hostOf(); return { t: 'lobby', players: lobby.players.map(p => ({ id: p.id, name: p.name, race: p.race, team: p.team, ai: !!p.ai, difficulty: p.difficulty, gone: !!p.gone, host: host ? p.id === host.id : false })), layout: lobby.layout, state: lobby.state }; }
+function lobbyState() { const host = hostOf(); return { t: 'lobby', players: lobby.players.map(p => ({ id: p.id, name: p.name, race: p.race, team: p.team, ai: !!p.ai, difficulty: p.difficulty, gone: !!p.gone, host: host ? p.id === host.id : false })), layout: lobby.layout, state: lobby.state, speed: lobby.speed == null ? 6 : lobby.speed }; }
 function maxFrame() { let m = -1; for (const f of Object.values(lobby.lastF)) if (f > m) m = f; return m; }
-function startMsg(idx) { return { seed: lobby.seed, layout: lobby.layout, players: lobby.started, you: idx, delay: DELAY, gone: lobby.gone }; }
+function startMsg(idx) { return { seed: lobby.seed, layout: lobby.layout, players: lobby.started, you: idx, delay: DELAY, gone: lobby.gone, speed: lobby.speed == null ? 6 : lobby.speed }; }
 function onMessage(c, m) {
   const me = lobby.players.find(p => p.id === c.id); const host = hostOf(); const isHost = me && host === me;
   switch (m.t) {
@@ -34,7 +34,7 @@ function onMessage(c, m) {
       }
       if (!me) lobby.players.push({ id: c.id, name: String(m.name || 'Player').slice(0, 16), race: m.race || 'R', team: lobby.players.length + 1 }); broadcast(lobbyState()); break;
     }
-    case 'set': if (me) { if (m.race) me.race = m.race; if (m.team) me.team = m.team; if (isHost && m.layout) lobby.layout = m.layout; } broadcast(lobbyState()); break;
+    case 'set': if (me) { if (m.race) me.race = m.race; if (m.team) me.team = m.team; if (isHost && m.layout) lobby.layout = m.layout; if (isHost && m.speed != null) lobby.speed = Math.max(0, Math.min(6, m.speed | 0)); } broadcast(lobbyState()); break; // everyone must run the same speed or lockstep just makes the fast clients wait
     case 'addai': if (isHost && lobby.players.length < 8) { lobby.players.push({ id: -(nextId++), name: 'Computer ' + lobby.players.filter(p => p.ai).length, race: m.race || 'R', team: lobby.players.length + 1, ai: true, difficulty: m.difficulty || 'normal' }); broadcast(lobbyState()); } break;
     case 'kick': if (isHost && lobby.state === 'lobby') { lobby.players = lobby.players.filter(p => p.id !== m.id); broadcast(lobbyState()); } break;
     case 'start': {

@@ -60,11 +60,12 @@ const Editor = {
   template() {
     this.blank();
     const rect = (x0, y0, w, h, v) => { for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) if (this.inb(x, y)) this.height[this.idx(x, y)] = v; };
-    rect(6, 6, 34, 28, 2); rect(88, 94, 34, 28, 2);
-    rect(38, 30, 5, 6, 1); rect(85, 92, 5, 6, 1);           // ramps down from each main
-    this.addBase(12, 12, true); this.addBase(108, 106, true);
-    this.addBase(56, 56, false); this.addBase(60, 24, false); this.addBase(56, 92, false);
-    this.msgSay('New 2-player template. Paint terrain, then Save.');
+    const fx = f => Math.round(f * this.W / 128), fy = f => Math.round(f * this.H / 128); // the template is laid out in 128ths so it scales to any map size
+    rect(fx(6), fy(6), fx(34), fy(28), 2); rect(this.W - fx(40), this.H - fy(34), fx(34), fy(28), 2);
+    rect(fx(38), fy(30), fx(5), fy(6), 1); rect(this.W - fx(43), this.H - fy(36), fx(5), fy(6), 1);   // ramps down from each main
+    this.addBase(fx(12), fy(12), true); this.addBase(this.W - fx(20), this.H - fy(22), true);
+    this.addBase(fx(56), fy(56), false); this.addBase(fx(60), fy(24), false); this.addBase(fx(56), fy(92), false);
+    this.msgSay('New ' + this.W + 'x' + this.H + ' 2-player template. Paint terrain, then Save.');
   },
   // A base is a hall footprint plus a ring of minerals and one geyser, laid out clear of the hall.
   addBase(x, y, main) {
@@ -193,6 +194,7 @@ const Editor = {
     add('Undo', '^Z', () => this.undo());
     add('Redo', '^Y', () => this.redo());
     x += 14;
+    add('Size ' + this.W, '', () => { const sizes = [96, 128, 160, 192]; this.mark(); this.W = this.H = sizes[(sizes.indexOf(this.W) + 1) % sizes.length]; this.template(); this.msgSay('New ' + this.W + 'x' + this.H + ' map.'); });
     add('New', '', () => { this.mark(); this.template(); });
     add('Rename', '', () => { const n = prompt('Map name', this.name); if (n) { this.mark(); this.name = n.slice(0, 24); this.dirty = true; } });
     add('Check', '', () => { const p = this.problems(); this.msgSay(p.length ? 'Problems: ' + p.slice(0, 2).join('; ') : 'Map is valid and fully connected.'); });
@@ -297,7 +299,7 @@ const Editor = {
     ctx.fillStyle = '#151a22'; ctx.fillRect(0, H - 28, W, 28);
     ctx.fillStyle = '#9aa4b0'; ctx.font = '12px sans-serif';
     const mains = this.bases.filter(b => b.main).length;
-    ctx.fillText(`"${this.name}"${this.dirty ? ' *' : ''}   tile ${hx},${hy}   brush ${this.brush}   starts ${mains}   expansions ${this.bases.length - mains}   ${this.rectMode ? 'rectangle' : 'brush'}   mirror ${this.mirror === 'off' ? 'off' : this.mirror + 'p'}   Ctrl+Z undo, R rectangle, M mirror, right-drag erases`, 10, H - 10);
+    ctx.fillText(`"${this.name}"${this.dirty ? ' *' : ''}   tile ${hx},${hy}   brush ${this.brush}   starts ${mains}   expansions ${this.bases.length - mains}   ${this.W}x${this.H}   ${this.rectMode ? 'rectangle' : 'brush'}   mirror ${this.mirror === 'off' ? 'off' : this.mirror + 'p'}   Ctrl+Z undo, R rectangle, M mirror, right-drag erases`, 10, H - 10);
     if (this.msg && performance.now() - this.msgT < 6000) { ctx.fillStyle = '#ffe45a'; ctx.textAlign = 'right'; ctx.fillText(this.msg, W - 10, H - 10); ctx.textAlign = 'left'; }
   },
 };

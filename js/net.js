@@ -10,6 +10,9 @@
 // again with the same name: the relay sends the whole command history and
 // the client re-simulates from frame 0, then rejoins the lockstep.
 // ============================================================================
+// Speed names for the lobby. Duplicated from UI rather than referenced, because net.js is loaded
+// without ui.js in the headless harnesses and reaching into UI here threw for both clients.
+const NET_SPEED_NAMES = ['Slowest', 'Slower', 'Slow', 'Normal', 'Fast', 'Faster', 'Fastest'];
 const Net = {
   active: false, ws: null, me: -1, delay: 3, outbox: [], inbox: {}, sent: {}, gone: {}, players: [], lobby: null, connected: false, id: 0, waitingSince: 0, chatLog: [],
   HASH_EVERY: 48, myHashes: {}, theirHashes: {}, desynced: false, desyncFrame: -1, catchingUp: false, catchTarget: 0, serverState: 'lobby', name: 'Player', lastError: '',
@@ -46,11 +49,11 @@ const Net = {
     let h = '<div class="lobbyList">' + L.players.map(p => `<div class="lp">${p.host ? '★ ' : ''}${p.name}${p.ai ? ' (AI ' + p.difficulty + ')' : ''}${p.gone ? ' (dropped)' : ''} — ${{ T: 'Terran', Z: 'Zerg', P: 'Protoss', R: 'Random' }[p.race]} — Team ${p.team}${host && p.id !== this.id ? ` <a href="#" data-kick="${p.id}">✕</a>` : ''}</div>`).join('') + '</div>';
     if (L.state !== 'lobby') { h += '<div class="sub">Game in progress. Dropped players can rejoin by connecting with their name.</div>'; el.innerHTML = h; return; }
     if (meP) h += `<div class="row"><label>My race</label><select id="lbRace"><option value="R">Random</option><option value="T">Terran</option><option value="Z">Zerg</option><option value="P">Protoss</option></select><label>Team</label><select id="lbTeam">${[1, 2, 3, 4].map(t => `<option value="${t}">${t}</option>`).join('')}</select></div>`;
-    if (host) h += `<div class="row"><label>Map</label><select id="lbLayout"><option value="temple">Lost Ruins</option><option value="bloodbath">Blood Pit</option><option value="valley">Twilight Valley</option></select><button id="lbAddAi" class="small">ADD AI</button></div><button id="lbStart">START MULTIPLAYER GAME</button>`;
-    else h += '<div class="sub">Waiting for the host to start...</div>';
+    if (host) h += `<div class="row"><label>Map</label><select id="lbLayout"><option value="temple">Lost Ruins</option><option value="bloodbath">Blood Pit</option><option value="valley">Twilight Valley</option></select><button id="lbAddAi" class="small">ADD AI</button></div><div class="row"><label>Speed</label><select id="lbSpeed">` + NET_SPEED_NAMES.map((n, i) => `<option value="${i}">${n}</option>`).join('') + `</select></div><button id="lbStart">START MULTIPLAYER GAME</button>`;
+    else h += '<div class="sub">Waiting for the host to start... (speed: ' + NET_SPEED_NAMES[L.speed == null ? 6 : L.speed] + ')</div>';
     el.innerHTML = h;
     if (meP) { const r = document.getElementById('lbRace'), t = document.getElementById('lbTeam'); r.value = meP.race; t.value = meP.team; r.onchange = () => this.send({ t: 'set', race: r.value }); t.onchange = () => this.send({ t: 'set', team: parseInt(t.value) }); }
-    if (host) { const ly = document.getElementById('lbLayout'); ly.value = L.layout; ly.onchange = () => this.send({ t: 'set', layout: ly.value }); document.getElementById('lbAddAi').onclick = () => this.send({ t: 'addai', race: 'R', difficulty: 'normal' }); document.getElementById('lbStart').onclick = () => this.send({ t: 'start' }); }
+    if (host) { const ly = document.getElementById('lbLayout'); ly.value = L.layout; ly.onchange = () => this.send({ t: 'set', layout: ly.value }); const sp = document.getElementById('lbSpeed'); if (sp) { sp.value = String(L.speed == null ? 6 : L.speed); sp.onchange = () => this.send({ t: 'set', speed: +sp.value }); } document.getElementById('lbAddAi').onclick = () => this.send({ t: 'addai', race: 'R', difficulty: 'normal' }); document.getElementById('lbStart').onclick = () => this.send({ t: 'start' }); }
     el.querySelectorAll('[data-kick]').forEach(a => a.onclick = e => { e.preventDefault(); this.send({ t: 'kick', id: parseInt(a.dataset.kick) }); });
   },
   reset(m) {
@@ -60,11 +63,13 @@ const Net = {
   },
   startGame(m) {
     this.reset(m);
+    this.speed = m.speed == null ? 6 : m.speed; // agreed in the lobby; every client must pace the same or lockstep just makes the fast ones wait
     UI.start({ players: m.players.map(p => ({ race: p.race, human: p.human, name: p.name, difficulty: p.difficulty, team: p.team })), seed: m.seed, layout: m.layout, human: m.you, mode: 'play', net: true });
   },
   // Rejoin after a drop: the relay sends every command batch since the start; re-simulate from frame 0, then continue live.
   rejoinGame(m) {
     this.reset(m);
+    this.speed = m.speed == null ? 6 : m.speed;
     for (const h of (m.history || [])) { if (!this.inbox[h.f]) this.inbox[h.f] = {}; this.inbox[h.f][h.p] = h.c; if (h.p === this.me) this.sent[h.f] = true; }
     this.catchingUp = true; this.catchTarget = m.frame || 0;
     UI.start({ players: m.players.map(p => ({ race: p.race, human: p.human, name: p.name, difficulty: p.difficulty, team: p.team })), seed: m.seed, layout: m.layout, human: m.you, mode: 'play', net: true });

@@ -44,7 +44,12 @@ const MapCodec = {
 
 class GameMap {
   constructor(seed = 1, layout = 'temple') {
-    this.layout = layout; this.w = 128; this.h = 128;
+    this.layout = layout;
+    // Size comes from the layout so editor maps are not stuck at 128x128; the built-ins have no w/h and
+    // stay at the historical size. Clamped because the codec and the spatial hash both scale with area.
+    const LZ = MAP_LAYOUTS[layout] || MAP_LAYOUTS.temple;
+    const lim = v => Math.max(64, Math.min(256, v | 0));
+    this.w = lim((LZ.custom && LZ.w) || 128); this.h = lim((LZ.custom && LZ.h) || 128);
     const n = this.w * this.h;
     this.height = new Uint8Array(n);
     this.walk = new Uint8Array(n).fill(1);
