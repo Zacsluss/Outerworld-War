@@ -60,7 +60,7 @@ Object.assign(UI, {
     else { HUD.text(ctx, RACE_INFO[p.race].name + ' Command', ix + 12, y0 + 30, HUD.accent(), 13); HUD.text(ctx, 'F1 help  ·  F10 menu  ·  F5 save  ·  Enter chat  ·  speed ' + this.speedName() + ' (+/-)  ·  ' + this.fps + ' fps', ix + 12, y0 + 50, '#8a93a0', 11, false); HUD.text(ctx, 'Seed ' + G.map.seed + '   Frame ' + G.frame, ix + 12, y0 + 68, '#8a93a0', 11, false); }
     // ---- command card ----
     HUD.inset(ctx, cr.x, cr.y, cr.w, cr.h);
-    const btns = this.buildCard(); this.tooltip = null; if (this.gridKeys) for (const b of btns) if (b.hk !== 'Escape') b.hk = 'QWEASDZXC'[b.slot];
+    const btns = this.currentCard(); this.tooltip = null;
     for (const b of btns) {
       const bx = cr.x + 4 + (b.slot % 3) * (cr.bw + cr.gap), by = cr.y + 4 + Math.floor(b.slot / 3) * (cr.bh + cr.gap);
       const hov = this.mouse.x >= bx && this.mouse.x < bx + cr.bw && this.mouse.y >= by && this.mouse.y < by + cr.bh;

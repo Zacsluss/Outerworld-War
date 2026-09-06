@@ -9,7 +9,7 @@ const G = {
   nukeAlerts: [],
 
   init(opts) {
-    UNIT_ID = 1; this.seed = opts.seed || 1; this.layout = opts.layout || 'temple'; this.setup = opts; this.cheats = {}; this.log = []; this.pendingCmds = null; RNG.seed((this.seed * 7919 + 17) >>> 0); this._allVis = null;
+    UNIT_ID = 1; this.seed = opts.seed || 1; this.layout = opts.layout || 'temple'; this.setup = opts; this.cheats = {}; this.log = []; this.pendingCmds = null; RNG.seed((this.seed * 7919 + 17) >>> 0); this._allVis = null; this.freePlay = false; this.mission = null;
     this.map = new GameMap(opts.seed || 1, opts.layout || 'temple'); this.pf = new Pathfinder(this.map);
     this.units = []; this.byId = new Map(); this.effects = []; this.projectiles = []; this.fields = []; this.frame = 0; this.over = false; this.winner = -1;
     this.gw = Math.ceil(this.map.w * TILE / this.cell); this.gh = Math.ceil(this.map.h * TILE / this.cell);
@@ -167,7 +167,10 @@ const G = {
     u.prod = [{ kind: 'unit', id: toId, progress: 0, total: ud.time, reserved: true }];
   },
   mergeUnits(a, b, toId) { const x = (a.x + b.x) / 2, y = (a.y + b.y) / 2; this.kill(a, null, true); this.kill(b, null, true); const u = this.spawnUnit(toId, a.owner, x, y); u.morphT = 300; u.hp = u.maxHp; u.sh = u.maxSh; this.recomputeSupply(); },
-  landBuilding(b, tx, ty) { const err = this.map.canPlace(b.def, tx, ty, b.player, this.units, b); if (err) { b.player.msg(err, 'error'); b.order = { type: 'idle' }; return; } b.lifted = false; b.fly = false; b.tx = tx; b.ty = ty; b.x = (tx + b.def.w / 2) * TILE; b.y = (ty + b.def.h / 2) * TILE; this.map.block(tx, ty, b.def.w, b.def.h, b.id); b.order = { type: 'idle' }; for (const u of this.units) if (u.alive && !u.isBuilding && !u.fly) this.nudgeOut(u, b); this.recomputeSupply(); },
+  landBuilding(b, tx, ty) { const err = this.map.canPlace(b.def, tx, ty, b.player, this.units, b); if (err) { b.player.msg(err, 'error'); b.order = { type: 'idle' }; return; } b.lifted = false; b.fly = false; b.tx = tx; b.ty = ty; b.x = (tx + b.def.w / 2) * TILE; b.y = (ty + b.def.h / 2) * TILE; this.map.block(tx, ty, b.def.w, b.def.h, b.id); b.order = { type: 'idle' }; for (const u of this.units) if (u.alive && !u.isBuilding && !u.fly) this.nudgeOut(u, b);
+    // landing next to an orphaned add-on of the right type re-attaches it
+    const a = this.units.find(u => u.alive && u.isBuilding && u.owner === b.owner && u.def.tier === 'addon' && u.def.parent === b.def.id && !u.parent && u.done && u.tx === tx + b.def.w && u.ty === ty + b.def.h - 2); if (a) { a.parent = b; b.addon = a; }
+    this.recomputeSupply(); },
   liftBuilding(b) { if (!b.def.canLift || b.prod.length || (b.addon && !b.addon.done)) return; b.lifted = true; b.fly = true; this.map.unblock(b.tx, b.ty, b.def.w, b.def.h, b.id); b.order = { type: 'idle' }; if (b.addon) { b.addon.parent = null; b.addon = null; } this.recomputeSupply(); },
 
   // ---------------- transports ----------------
@@ -176,16 +179,16 @@ const G = {
     if (!t.alive || !u.alive || u.inside || u.isBuilding || u.fly) return false;
     const cap = t.def.cargo || (t.def.cargoTech && t.player.hasTech(t.def.cargoTech) ? 8 : 0); if (!cap) return false;
     if (t.def.bunker && !['marine', 'firebat', 'ghost', 'medic', 'scv'].includes(u.def.id)) return false;
-    if (this.cargoUsed(t) + (u.def.cargoSize || 1) > cap) { t.player.msg('Transport is full.', 'error'); u.nextOrder(); return false; }
+    if (this.cargoUsed(t) + (u.def.cargoSize || 1) > cap) { t.player.msg('Transport is full.', 'error'); return false; }
     if (u.order.type === 'gather' && u.order.target && u.order.target.miner === u) u.order.target.miner = null;
     u.inside = t; t.cargo.push(u); u.order = { type: 'idle' }; u.queue = []; u.path = null; u.target = null; u.sieged = false; u.burrowed = false; return true;
   },
   unloadOne(t) {
-    const u = t.cargo.shift(); if (!u) return;
+    const u = t.cargo.shift(); if (!u) return false;
     let x = t.x, y = t.y;
     if (t.isBuilding) { const s = this.freeSpotAround(t, false); x = s[0]; y = s[1]; }
-    else { const tl = this.map.findFreeTile(Math.floor(t.x / TILE), Math.floor(t.y / TILE), 4); if (!tl) { t.cargo.unshift(u); return; } x = (tl[0] + .5) * TILE; y = (tl[1] + .5) * TILE; }
-    u.inside = null; u.x = x; u.y = y; u.px = x; u.py = y; u.order = { type: 'idle' };
+    else { const tl = this.map.findFreeTile(Math.floor(t.x / TILE), Math.floor(t.y / TILE), 6); if (!tl) { t.cargo.unshift(u); return false; } x = (tl[0] + .5) * TILE; y = (tl[1] + .5) * TILE; }
+    u.inside = null; u.x = x; u.y = y; u.px = x; u.py = y; u.order = { type: 'idle' }; u.path = null; return true;
   },
   unloadAll(t) { if (t.isBuilding) { while (t.cargo.length) this.unloadOne(t); } else t.applyOrder({ type: 'unload', x: t.x, y: t.y }); },
 
@@ -357,6 +360,7 @@ const G = {
       const hasU = this.units.some(u => u.alive && u.owner === p.id && !u.isBuilding && !u.def.notUnit && !u.def.larva);
       if (!hasB && (!hasU || this.frame > 24 * 60 * 3) && !(this.cheats.alive && p.human)) { p.defeated = true; p.alive = false; for (const u of this.units) if (u.alive && u.owner === p.id) this.kill(u, null, true); for (const q of this.players) if (q.human) q.msg(p.name + ' has been eliminated.'); }
     }
+    if (this.freePlay) return; // player chose "continue playing" after the result screen
     const alive = this.players.filter(p => !p.defeated); const teams = new Set(alive.map(p => p.team));
     if (teams.size <= 1 && !(this.mission && !this.mission.done)) { this.over = true; this.winner = alive.length ? alive[0].id : -1; this.winTeam = alive.length ? alive[0].team : -1; }
   },

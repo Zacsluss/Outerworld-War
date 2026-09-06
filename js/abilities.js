@@ -150,7 +150,7 @@ const Abilities = {
       case 'plague': for (const o of G.near(x, y, 2 * TILE)) o.fx.plague = 600; ring(2, '#f80'); break;
       case 'consume': if (!t || t.owner !== u.owner || t.isBuilding || t.def.larva || t.def.egg || t === u) { p.msg('Invalid target.', 'error'); break; } G.kill(t, null, true); u.energy = Math.min(u.maxEnergy, u.energy + 50); break;
       case 'psi_storm': if (this.inField(x, y, 'storm')) { u.energy += 75; break; } G.fields.push({ kind: 'storm', x, y, r: 1.5, t: 64, owner: u.owner, tickT: 0 }); break;
-      case 'hallucination': for (let i = 0; i < 2; i++) { const h = G.spawnUnit(t.def.id, u.owner, t.x + (i ? 20 : -20), t.y); h.halluc = true; h.lifetime = 1000; h.hp = t.maxHp; h.sh = t.maxSh; h.energy = 0; h.maxEnergy = 0; } break;
+      case 'hallucination': if (t.isBuilding || t.def.larva || t.def.egg || t.def.notUnit) { p.msg('Invalid target.', 'error'); u.energy += 100; break; } for (let i = 0; i < 2; i++) { const h = G.spawnUnit(t.def.id, u.owner, t.x + (i ? 20 : -20), t.y); h.halluc = true; h.lifetime = 1000; h.hp = t.maxHp; h.sh = t.maxSh; h.energy = 0; h.maxEnergy = 0; } break;
       case 'feedback': if (!t.maxEnergy) { p.msg('Target has no energy.', 'error'); u.energy += 50; break; } { const e = t.energy; t.energy = 0; G.damageRaw(t, e, u); ring(0.5, '#f4f'); } break;
       case 'mind_control': if (t.isBuilding || t.owner === u.owner || t.def.larva || t.def.egg) { p.msg('Invalid target.', 'error'); u.energy += 150; break; } this.changeOwner(t, u.owner); u.sh = 0; ring(0.6, '#f4f'); break;
       case 'maelstrom': for (const o of G.near(x, y, 1.5 * TILE)) if (o.def.bio && !o.isBuilding) { o.fx.maelstrom = 144; o.path = null; } ring(1.5, '#f4f'); break;
@@ -160,7 +160,7 @@ const Abilities = {
       case 'nydus_exit': { const def = DATA.buildings.nydus_canal; const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); const err = G.map.canPlace(def, tx, ty, p, G.units, null); if (err) { p.msg(err, 'error'); break; } const e = G.placeBuilding(def, tx, ty, u.owner); e.nydusLink = u; u.nydusLink = e; break; }
     }
   },
-  changeOwner(t, pid) { const old = t.owner; t.owner = pid; t.order = { type: 'idle' }; t.queue = []; t.path = null; t.target = null; if (t.order.type === 'gather' && t.order.target) t.order.target.miner = null; G.recomputeSupply(); if (t.player.human) t.player.msg('Unit mind controlled.'); },
+  changeOwner(t, pid) { if (t.order.type === 'gather' && t.order.target && t.order.target.miner === t) t.order.target.miner = null; if (t.order.type === 'gather' && t.order.phase === 'inside' && t.order.target) { t.order.target.occupant = null; t.inside = null; } if (t.order.type === 'construct' && t.order.target && t.order.target.builder === t) t.order.target.builder = null; t.owner = pid; t.order = { type: 'idle' }; t.queue = []; t.path = null; t.target = null; t.carrying = null; t.wave = 0; if (typeof UI !== 'undefined' && UI.onUnitDied) UI.onUnitDied(t); G.recomputeSupply(); if (t.player.human) t.player.msg('Unit mind controlled.'); },
   nukeImpact(p) { },
   tickFields() {
     const fs = G.fields;

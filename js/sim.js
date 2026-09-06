@@ -145,7 +145,7 @@ class Unit {
     if (!this.done) {
       // construction
       let adv = false;
-      if (d.race === 'T' && !d.tier.startsWith('addon')) { const b = this.builder; adv = !!(b && b.alive && b.order.type === 'construct' && b.order.target === this && distPt(b.x, b.y, this.x, this.y) < this.r + 40); }
+      if (d.race === 'T' && !d.tier.startsWith('addon')) { const b = this.builder; adv = !!(b && b.alive && b.order.type === 'construct' && b.order.target === this && distPt(b.x, b.y, clamp(b.x, this.tx * TILE, (this.tx + d.w) * TILE), clamp(b.y, this.ty * TILE, (this.ty + d.h) * TILE)) <= b.r + 16); }
       else adv = true;
       if (adv) {
         this.progress += (G.cheats.cwal && p.human) ? 10 : 1;
@@ -216,6 +216,8 @@ class Unit {
       case 'attack': {
         if (!o.target || !o.target.alive || (o.target.inside) || (!G.targetable(this, o.target) && !o.target.isBuilding)) { this.nextOrder(); break; }
         if (!this.weaponFor(o.target)) { if (this.hasWeapon() || d.worker) { if (dist(this, o.target) > 48) this.moveTo(o.target.x, o.target.y, o.target); else this.nextOrder(); } else this.nextOrder(); break; }
+        // an immobile attacker (sieged tank, burrowed lurker) whose target is out of range keeps shooting whatever is in range
+        if ((this.sieged || (this.burrowed && !d.mine)) && !this.inRange(o.target)) { const t = this.autoTarget(true); if (t) this.fireAt(t); break; }
         this.engage(o.target); break;
       }
       case 'gather': this.tickGather(); break;
@@ -224,9 +226,9 @@ class Unit {
       case 'construct': { const b = o.target; if (!b || !b.alive || b.done) { this.nextOrder(); break; } if (b.builder && b.builder !== this && b.builder.alive && b.builder.order.target === b) { this.nextOrder(); break; } b.builder = this; if (this.moveToRect(b, 4)) { this.facing = Math.atan2(b.y - this.y, b.x - this.x); } break; }
       case 'repair': Abilities.repairTick(this); break;
       case 'ability': Abilities.orderTick(this); break;
-      case 'load': { const t = o.target; if (!t || !t.alive || t.owner !== this.owner) { this.nextOrder(); break; } if (dist(this, t) < this.r + t.r + 12) { G.loadUnit(t, this); } else this.moveTo(t.x, t.y, t); break; }
+      case 'load': { const t = o.target; if (!t || !t.alive || t.owner !== this.owner || this.fly || t.inside) { this.nextOrder(); break; } const near = t.isBuilding ? this.moveToRect(t, 8) : (dist(this, t) < this.r + t.r + 12 || this.moveTo(t.x, t.y, t)); if (near && !G.loadUnit(t, this)) this.nextOrder(); break; }
       case 'pickup': { const t = o.target; if (!t || !t.alive || t.inside) { this.nextOrder(); break; } if (dist(this, t) < this.r + t.r + 12) { G.loadUnit(this, t); this.nextOrder(); } else this.moveTo(t.x, t.y, t); break; }
-      case 'unload': { if (this.moveTo(o.x, o.y)) { if (this.cargo.length) { if ((G.frame & 7) === 0) G.unloadOne(this); } else this.nextOrder(); } break; }
+      case 'unload': { if (this.moveTo(o.x, o.y)) { if (this.cargo.length) { if ((G.frame & 7) === 0 && !G.unloadOne(this)) { this.player.msg('Cannot unload here.', 'error'); this.nextOrder(); } } else this.nextOrder(); } break; }
       case 'merge': { const t = o.partner; if (!t || !t.alive || t.order.type !== 'merge' || t.order.partner !== this) { this.nextOrder(); break; } if (dist(this, t) < 28) { if (this.id < t.id) G.mergeUnits(this, t, o.unit); } else this.moveTo(t.x, t.y, t); break; }
       case 'land': { if (this.moveTo((o.tx + d.w / 2) * TILE, (o.ty + d.h / 2) * TILE)) { G.landBuilding(this, o.tx, o.ty); } break; }
       case 'nydus': { const c = o.target; if (!c || !c.alive || !c.nydusLink || !c.nydusLink.alive || !c.nydusLink.done || this.fly) { this.nextOrder(); break; } if (this.moveToRect(c, 6)) { const e = c.nydusLink; const t = G.map.findFreeTile(e.tx + 1, e.ty + e.def.h + 1, 6); if (t) { this.x = (t[0] + .5) * TILE; this.y = (t[1] + .5) * TILE; this.px = this.x; this.py = this.y; this.path = null; G.effects.push({ kind: 'ring', x: this.x, y: this.y, r: 16, t: 10, color: '#c8f' }); } this.nextOrder(); } break; }
@@ -248,10 +250,11 @@ class Unit {
     const range = holdOnly ? this.maxRange() * TILE : Math.max(this.maxRange() + 1, 5) * TILE;
     return this.findTarget(range, holdOnly);
   }
+  // auto-acquisition never picks larvae or eggs (explicit attack orders still can)
   findTarget(rangePx, strict) {
     let best = null, bs = 1e9;
     for (const t of G.near(this.x, this.y, rangePx + 40)) {
-      if (t === this || !t.alive || t.inside || G.allied(this.owner, t.owner)) continue;
+      if (t === this || !t.alive || t.inside || G.allied(this.owner, t.owner) || t.def.larva || t.def.egg) continue;
       if (!G.targetable(this, t)) continue;
       const w = this.weaponFor(t); if (!w) continue;
       const dd = dist(this, t) - t.r - this.r; if (dd > rangePx) continue;
@@ -319,7 +322,9 @@ class Unit {
     let nx = this.x + Math.cos(ang) * step, ny = this.y + Math.sin(ang) * step;
     if (!this.fly) {
       if (!G.passable(nx, ny, this) && G.passable(this.x, this.y, this)) {
-        const tries = [[nx, this.y], [this.x, ny], [this.x + Math.cos(ang + 0.8) * step, this.y + Math.sin(ang + 0.8) * step], [this.x + Math.cos(ang - 0.8) * step, this.y + Math.sin(ang - 0.8) * step]];
+        // slide along the obstacle at full speed (axis-aligned first, then diagonals)
+        const sx = Math.sign(nx - this.x) || 1, sy = Math.sign(ny - this.y) || 1;
+        const tries = Math.abs(nx - this.x) >= Math.abs(ny - this.y) ? [[this.x + sx * step, this.y], [this.x, this.y + sy * step], [this.x + Math.cos(ang + 0.8) * step, this.y + Math.sin(ang + 0.8) * step], [this.x + Math.cos(ang - 0.8) * step, this.y + Math.sin(ang - 0.8) * step]] : [[this.x, this.y + sy * step], [this.x + sx * step, this.y], [this.x + Math.cos(ang + 0.8) * step, this.y + Math.sin(ang + 0.8) * step], [this.x + Math.cos(ang - 0.8) * step, this.y + Math.sin(ang - 0.8) * step]];
         let ok = false; for (const [ax, ay] of tries) if (G.passable(ax, ay, this)) { nx = ax; ny = ay; ok = true; break; }
         if (!ok) { this.stuck += 3; this.repathT = 0; if (this.stuck > 30) this.path = null; return false; }
       }
@@ -336,7 +341,12 @@ class Unit {
     const dd = distPt(this.x, this.y, cx, cy);
     if (dd <= this.r + pad) return true;
     // aim slightly outside the nearest edge point
-    const ax = cx + (this.x - cx) / (dd || 1) * (this.r + 2), ay = cy + (this.y - cy) / (dd || 1) * (this.r + 2);
+    let ax = cx + (this.x - cx) / (dd || 1) * (this.r + 2), ay = cy + (this.y - cy) / (dd || 1) * (this.r + 2);
+    if (!this.fly && !G.passable(ax, ay, this)) { // approach point blocked (another building touching this one): nearest passable spot around the perimeter
+      const off = this.r + 2; let best = null, bd = 1e9;
+      for (let t = 0; t <= 1.001; t += 0.125) for (const [px, py] of [[x0 + w * t, y0 - off], [x0 + w * t, y0 + h + off], [x0 - off, y0 + h * t], [x0 + w + off, y0 + h * t]]) { if (!G.passable(px, py, this)) continue; const d = distPt(this.x, this.y, px, py); if (d < bd) { bd = d; best = [px, py]; } }
+      if (best) { ax = best[0]; ay = best[1]; }
+    }
     if (this.moveTo(ax, ay)) return true;
     return distPt(this.x, this.y, clamp(this.x, x0, x0 + w), clamp(this.y, y0, y0 + h)) <= this.r + pad;
   }
@@ -369,6 +379,7 @@ class Unit {
     if (this.moveToRect(o.depot, 6)) {
       const p = this.player; if (this.carrying.type === 'mineral') { p.minerals += this.carrying.amt; p.stats.mined += this.carrying.amt; } else { p.gas += this.carrying.amt; p.stats.gassed += this.carrying.amt; }
       this.carrying = null;
+      if (this.queue.length) { this.nextOrder(); return; } // shift-queued orders run after the current trip
       if (o.then && ((o.then.type === 'mineral' && o.then.amount > 0) || (o.then.type === 'gas' && o.then.alive))) this.applyOrder({ type: 'gather', target: o.then, phase: 'goto' });
       else { const n = G.findNearestResource(this, 'mineral'); if (n) this.applyOrder({ type: 'gather', target: n, phase: 'goto' }); else this.nextOrder(); }
     }

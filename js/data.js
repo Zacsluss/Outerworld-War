@@ -102,7 +102,7 @@ const DATA = (() => {
     gw: W(30, 'normal', 2, 20, { upgKey: 'gW', upgDmg: 3, targets: 'both', splash: [0.5, 1, 1.5] }), upgA: 'gA' });
   U('dark_archon', { name: 'Dark Archon', race: 'P', hp: 25, sh: 200, armor: 1, size: 'large', sup: 4, time: 300, speed: 4.92, sight: 10, r: 16, bio: true, cargoSize: 4, energy: 200,
     abil: ['feedback', 'mind_control', 'maelstrom'], upgA: 'gA' });
-  U('reaver', { name: 'Reaver', race: 'P', hp: 100, sh: 80, size: 'large', min: 200, gas: 100, sup: 4, time: 1050, speed: 1.78, sight: 10, r: 18, hk: 'R', from: 'robotics_facility', req: ['robotics_support_bay'], mech: true, cargoSize: 4,
+  U('reaver', { name: 'Reaver', race: 'P', hp: 100, sh: 80, size: 'large', min: 200, gas: 100, sup: 4, time: 1050, speed: 1.78, sight: 10, r: 18, hk: 'V', from: 'robotics_facility', req: ['robotics_support_bay'], mech: true, cargoSize: 4,
     gw: W(100, 'normal', 8, 60, { upgKey: null, scarab: true, splash: [0.6, 1.2, 1.8], dmgTech: ['scarab_damage', 25] }), abil: ['build_scarab'], upgA: 'gA', scarabs: 0, scarabTech: ['reaver_capacity', 10] });
   U('shuttle', { name: 'Shuttle', race: 'P', hp: 80, sh: 60, armor: 1, size: 'large', min: 200, sup: 2, time: 900, speed: 4.44, sight: 8, r: 16, hk: 'S', from: 'robotics_facility', mech: true, fly: true, cargo: 8,
     abil: ['unload'], upgA: 'airA', speedTech: ['gravitic_drive', 6.67] });
@@ -151,7 +151,7 @@ const DATA = (() => {
   B('extractor', { name: 'Extractor', race: 'Z', hp: 750, w: 4, h: 2, min: 50, time: 600, hk: 'E', tier: 'basic', onGeyser: true, creep: 3 });
   B('spawning_pool', { name: 'Spawning Pool', race: 'Z', hp: 750, w: 3, h: 2, min: 200, time: 1200, hk: 'S', tier: 'basic', req: ['hatchery'], needsCreep: true, tech: ['metabolic', 'adrenal'] });
   B('evolution_chamber', { name: 'Evolution Chamber', race: 'Z', hp: 750, w: 3, h: 2, min: 75, time: 600, hk: 'V', tier: 'basic', req: ['hatchery'], needsCreep: true, upg: ['meleeW', 'missW', 'carapace'] });
-  B('hydralisk_den', { name: 'Hydralisk Den', race: 'Z', hp: 850, w: 3, h: 2, min: 100, gas: 50, time: 600, hk: 'H', tier: 'basic', req: ['spawning_pool'], needsCreep: true, tech: ['muscular', 'grooved', 'lurker_aspect'] });
+  B('hydralisk_den', { name: 'Hydralisk Den', race: 'Z', hp: 850, w: 3, h: 2, min: 100, gas: 50, time: 600, hk: 'D', tier: 'basic', req: ['spawning_pool'], needsCreep: true, tech: ['muscular', 'grooved', 'lurker_aspect'] });
   B('spire', { name: 'Spire', race: 'Z', hp: 600, w: 2, h: 2, min: 200, gas: 150, time: 1800, hk: 'S', tier: 'adv', req: ['lair'], needsCreep: true, upg: ['flyW', 'flyA'], morphTo: 'greater_spire' });
   B('greater_spire', { name: 'Greater Spire', race: 'Z', hp: 1000, w: 2, h: 2, min: 100, gas: 150, time: 1800, hk: 'G', tier: 'morph', req: ['hive'], upg: ['flyW', 'flyA'] });
   B('queens_nest', { name: "Queen's Nest", race: 'Z', hp: 850, w: 3, h: 2, min: 150, gas: 100, time: 900, hk: 'Q', tier: 'adv', req: ['lair'], needsCreep: true, tech: ['ensnare_tech', 'spawn_broodling_tech', 'gamete'] });
@@ -278,7 +278,7 @@ const DATA = (() => {
   A('morph_menu', 'Morph', 'M', 'menu');
   A('unload', 'Unload All', 'U', 'instant');
   A('stim', 'Stim Pack', 'T', 'instant', { tech: 'stim' });
-  A('heal', 'Heal', 'H', 'unit', { energy: 0, auto: true });
+  A('heal', 'Heal', 'E', 'unit', { energy: 0, auto: true });
   A('restoration', 'Restoration', 'R', 'unit', { energy: 50, tech: 'restoration_tech' });
   A('optical_flare', 'Optical Flare', 'F', 'unit', { energy: 75, tech: 'optical_flare_tech' });
   A('lockdown', 'Lockdown', 'L', 'unit', { energy: 100, tech: 'lockdown_tech', range: 8 });
@@ -306,12 +306,12 @@ const DATA = (() => {
   A('infest', 'Infest Command Center', 'I', 'unit', { range: 1 });
   A('psi_storm', 'Psionic Storm', 'T', 'point', { energy: 75, tech: 'psi_storm_tech', range: 9 });
   A('hallucination', 'Hallucination', 'L', 'unit', { energy: 100, tech: 'hallucination_tech', range: 9 });
-  A('summon_archon', 'Summon Archon', 'S', 'merge', { unit: 'archon' });
-  A('summon_dark_archon', 'Summon Dark Archon', 'S', 'merge', { unit: 'dark_archon' });
+  A('summon_archon', 'Summon Archon', 'W', 'merge', { unit: 'archon' });
+  A('summon_dark_archon', 'Summon Dark Archon', 'W', 'merge', { unit: 'dark_archon' });
   A('feedback', 'Feedback', 'F', 'unit', { energy: 50, range: 10 });
   A('mind_control', 'Mind Control', 'C', 'unit', { energy: 150, tech: 'mind_control_tech', range: 8 });
   A('maelstrom', 'Maelstrom', 'E', 'point', { energy: 100, tech: 'maelstrom_tech', range: 10 });
-  A('build_scarab', 'Build Scarab', 'S', 'produce', { unit: 'scarab' });
+  A('build_scarab', 'Build Scarab', 'B', 'produce', { unit: 'scarab' });
   A('build_interceptor', 'Build Interceptor', 'I', 'produce', { unit: 'interceptor' });
   A('disruption_web', 'Disruption Web', 'D', 'point', { energy: 125, tech: 'disruption_web_tech', range: 9 });
   A('recall', 'Recall', 'R', 'point', { energy: 150, tech: 'recall_tech', range: 999 });

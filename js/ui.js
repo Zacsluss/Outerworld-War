@@ -155,8 +155,10 @@ const UI = {
     if (/^[0-9]$/.test(k)) { if (e.ctrlKey) { this.groups[k] = this.selection.slice(); e.preventDefault(); } else if (e.shiftKey) { this.groups[k] = (this.groups[k] || []).concat(this.selection.filter(u => !(this.groups[k] || []).includes(u))).slice(0, 12); } else if (this.groups[k] && this.groups[k].length) { const g = this.groups[k].filter(u => u.alive); if (this.lastGroupKey === k && performance.now() - this.lastGroupT < 400) this.centerOn(g[0].x, g[0].y); this.selection = g; this.pending = null; this.placing = null; this.cardMenu = null; this.lastGroupKey = k; this.lastGroupT = performance.now(); } return; }
     if (/^F[2-8]$/.test(k)) { if (e.shiftKey) this.camSaves[k] = { x: Render.camX, y: Render.camY }; else if (this.camSaves[k]) { Render.camX = this.camSaves[k].x; Render.camY = this.camSaves[k].y; } return; }
     const up = k.length === 1 ? k.toUpperCase() : k;
-    for (const b of this.cardButtons) if (b.hk === up && b.enabled !== false) { b.fn(); Sound.click(); return; }
+    for (const b of this.currentCard()) if (b.hk === up && b.enabled !== false) { b.fn(); Sound.click(); return; }
   },
+  // the command card as the player sees it right now (rebuilt on demand so input never depends on render timing)
+  currentCard() { const btns = this.buildCard(); if (this.gridKeys) for (const b of btns) if (b.hk !== 'Escape') b.hk = 'QWEASDZXC'[b.slot]; return btns; },
   // ---------------- commands ----------------
   ownSel() { return this.selection.filter(u => u.owner === G.human && u.alive); },
   marker(x, y, color) { this.markers.push({ x, y, t: 20, color }); },
@@ -179,6 +181,7 @@ const UI = {
         else if ((t.def.cargo || t.def.bunker || (t.def.cargoTech && t.player.hasTech(t.def.cargoTech))) && !u.fly && !u.isBuilding && t !== u) u.setOrder({ type: 'load', target: t }, shift);
         else if ((u.def.cargo || (u.def.cargoTech && u.player.hasTech(u.def.cargoTech))) && !t.fly && !t.isBuilding) u.setOrder({ type: 'pickup', target: t }, shift);
         else if (t.def.nydus && t.nydusLink && t.nydusLink.alive && !u.fly) u.setOrder({ type: 'nydus', target: t }, shift);
+        else if (t.isBuilding && !t.lifted) u.setOrder({ type: 'move', x: wx, y: wy }, shift);
         else u.setOrder({ type: 'follow', target: t }, shift);
       } else if (res && u.def.worker) { if (res.type === 'geyser') { const b = res.building; if (b && b.alive && b.done && b.owner === G.human) u.setOrder({ type: 'gather', target: b, phase: 'goto' }, shift); else u.setOrder({ type: 'move', x: wx, y: wy }, shift); } else u.setOrder({ type: 'gather', target: res, phase: 'goto' }, shift); }
       else u.setOrder({ type: 'move', x: wx, y: wy }, shift);
@@ -187,10 +190,11 @@ const UI = {
     this.marker(wx, wy, t && t.owner !== G.human ? '255,60,60' : '80,255,80');
   },
   execPending(t, wx, wy, shift) {
-    const p = this.pending; const sel = this.ownSel(); this.pending = null; if (!sel.length) return;
+    const p = this.pending; let sel = this.ownSel(); this.pending = null; if (!sel.length) return;
     if (p.kind === 'rally') { const b = sel[0]; G.setRally(b, wx, wy, t); return; }
+    if (p.caster && p.caster.alive) sel = [p.caster]; // ability offered on a parent's card but cast by its add-on (Comsat on a Command Center)
     for (const u of sel) {
-      if (u.isBuilding && !u.lifted) continue;
+      if (u.isBuilding && !u.lifted && p.kind !== 'ability') continue;
       switch (p.kind) {
         case 'move': if (t) u.setOrder({ type: 'follow', target: t }, shift); else u.setOrder({ type: 'move', x: wx, y: wy }, shift); break;
         case 'attack': if (t && t.owner !== G.human) u.setOrder({ type: 'attack', target: t }, shift); else if (t) u.setOrder({ type: 'attackmove', x: wx, y: wy }, shift); else u.setOrder({ type: 'attackmove', x: wx, y: wy }, shift); break;
@@ -206,6 +210,7 @@ const UI = {
   confirmPlacement(shift) {
     const pl = this.placing; const p = G.players[G.human]; const err = G.map.canPlace(pl.def, pl.tx, pl.ty, p, G.units, pl.builder);
     if (err) { p.msg(err, 'error'); return; }
+    if (pl.land) { pl.builder.setOrder({ type: 'land', tx: pl.tx, ty: pl.ty }, shift); Sound.ack(pl.builder); this.placing = null; this.cardMenu = null; return; }
     if (!p.canAfford(pl.def.min, pl.def.gas)) return;
     pl.builder.setOrder({ type: 'build', def: pl.def, tx: pl.tx, ty: pl.ty }, shift); Sound.ack(pl.builder);
     if (!shift) { this.placing = null; this.cardMenu = null; }
@@ -231,7 +236,7 @@ const UI = {
       if (d.id === 'reaver' || d.id === 'carrier') { }
       for (const id of d.upg) { const ud = DATA.upgrades[id]; const lvl = p.upgLevel(id); if (lvl >= 3) continue; const rq = ud.req[lvl]; const ok = !rq || p.hasBuilding(rq); B(i++, ud.name + ' L' + (lvl + 1), ud.hk, () => G.queueUpgrade(u, id), { cost: { min: ud.min[lvl], gas: ud.gas[lvl], time: ud.time[lvl] }, enabled: ok && !p.researching.has(id), dim: !ok || p.researching.has(id) }); }
       for (const id of d.tech) { const td = DATA.techs[id]; if (p.tech.has(id)) continue; const ok = !td.req || p.hasReq(td); B(i++, td.name, td.hk, () => G.queueTech(u, id), { cost: td, enabled: ok && !p.researching.has(id), dim: !ok || p.researching.has(id) }); }
-      if (u.addon && u.addon.done) { for (const id of (u.addon.def.tech || [])) { const td = DATA.techs[id]; if (p.tech.has(id)) continue; B(i++, td.name, td.hk, () => G.queueTech(u.addon, id), { cost: td, enabled: !p.researching.has(id) }); } if (u.addon.def.abil) for (const id of u.addon.def.abil) { const ab = DATA.abilities[id]; B(i++, ab.name, ab.hk, () => { this.pending = { kind: 'ability', abil: id }; }, { energy: ab.energy }); } if (u.addon.def.produces.length) for (const id of u.addon.def.produces) { const ud = DATA.units[id]; B(i++, ud.name, ud.hk, () => G.queueUnit(u.addon, id), { cost: ud, enabled: !u.addon.hasNuke }); } }
+      if (u.addon && u.addon.done) { for (const id of (u.addon.def.tech || [])) { const td = DATA.techs[id]; if (p.tech.has(id)) continue; B(i++, td.name, td.hk, () => G.queueTech(u.addon, id), { cost: td, enabled: !p.researching.has(id) }); } if (u.addon.def.abil) for (const id of u.addon.def.abil) { const ab = DATA.abilities[id]; const addon = u.addon; const taken = btns.some(b => b.hk === ab.hk); B(i++, ab.name, taken ? '' : ab.hk, () => { this.pending = { kind: 'ability', abil: id, caster: addon }; }, { energy: ab.energy }); } if (u.addon.def.produces.length) for (const id of u.addon.def.produces) { const ud = DATA.units[id]; B(i++, ud.name, ud.hk, () => G.queueUnit(u.addon, id), { cost: ud, enabled: !u.addon.hasNuke }); } }
       if (!u.addon) for (const id of d.addons) { const ad = DATA.buildings[id]; const ok = p.hasReq(ad); B(i++, ad.name, ad.hk, () => G.queueAddon(u, id), { cost: ad, enabled: ok, dim: !ok }); }
       if (d.morphTo) { const nd = DATA.buildings[d.morphTo]; const ok = p.hasReq(nd); B(i++, nd.name, nd.hk, () => G.queueMorph(u, d.morphTo), { cost: nd, enabled: ok, dim: !ok }); }
       if (d.morphOptions) for (const id of d.morphOptions) { const nd = DATA.buildings[id]; const ok = p.hasReq(nd); B(i++, nd.name, nd.hk, () => G.queueMorph(u, id), { cost: nd, enabled: ok, dim: !ok }); }
@@ -260,14 +265,16 @@ const UI = {
     const abils = (mobile[0].def.abil || []).filter(id => Abilities.available(mobile[0], id) && all(x => (x.def.abil || []).includes(id) || x.def.id === mobile[0].def.id));
     for (const id of abils) {
       if (i > 8) break; const ab = DATA.abilities[id]; const label = Abilities.label(mobile[0], id);
-      if (ab.kind === 'toggle' || ab.kind === 'instant') B(i++, label, ab.hk, () => mobile.forEach(x => Abilities.issue(x, id)));
+      if (id === 'unload') B(i++, 'Unload', 'U', setPending('unload')); // targeted unload (click a spot); the cargo wireframes unload single units
+      else if (ab.kind === 'toggle' || ab.kind === 'instant') B(i++, label, ab.hk, () => mobile.forEach(x => Abilities.issue(x, id)));
       else if (ab.kind === 'morph') B(i++, label, ab.hk, () => mobile.forEach(x => Abilities.issue(x, id)), { cost: DATA.units[ab.unit] });
       else if (ab.kind === 'merge') B(i++, label, ab.hk, () => Abilities.merge(mobile, id));
       else if (ab.kind === 'produce') B(i++, label, ab.hk, () => mobile.forEach(x => G.queueUnit(x, ab.unit)), { cost: DATA.units[ab.unit] });
-      else if (id === 'unload') B(i++, 'Unload', 'U', setPending('unload'));
       else B(i++, label, ab.hk, () => { this.pending = { kind: 'ability', abil: id }; }, { energy: ab.energy });
     }
     if (mobile.some(x => x.cargo.length) && !abils.includes('unload')) B(Math.min(8, i++), 'Unload', 'U', setPending('unload'));
+    // mixed selections still get the merge buttons when at least two templar of a kind are selected
+    for (const [id, want] of [['summon_archon', 'high_templar'], ['summon_dark_archon', 'dark_templar']]) if (!abils.includes(id) && i <= 8 && mobile.filter(x => x.def.id === want && !x.disabled).length >= 2) { const ab = DATA.abilities[id]; B(i++, ab.name, ab.hk, () => Abilities.merge(mobile, id)); }
     return btns;
   },
   cardRect() { const w = 3 * 66 + 8, h = 3 * 52 + 8; return { x: Render.W - w - 10, y: Render.H - this.consoleH + 6, w, h, bw: 62, bh: 48 }; },
@@ -275,7 +282,7 @@ const UI = {
     if (this.inMinimap(x, y)) { const [wx, wy] = this.miniToWorld(x, y); if (button === 2) { const t = this.unitAt(wx, wy); if (this.pending) this.execPending(t, wx, wy, false); else this.smartCommand(t, wx, wy, this.keys.Shift); } else if (this.pending) { this.execPending(null, wx, wy, false); } else { this.centerOn(wx, wy); this.miniDrag = true; } return; }
     if (button !== 0) return;
     const cr = this.cardRect();
-    for (const b of this.cardButtons) { const bx = cr.x + 4 + (b.slot % 3) * 66, by = cr.y + 4 + Math.floor(b.slot / 3) * 52; if (x >= bx && x < bx + cr.bw && y >= by && y < by + cr.bh) { if (b.enabled !== false) { b.fn(); Sound.click(); } return; } }
+    for (const b of this.currentCard()) { const gap = cr.gap !== undefined ? cr.gap : 4; const bx = cr.x + 4 + (b.slot % 3) * (cr.bw + gap), by = cr.y + 4 + Math.floor(b.slot / 3) * (cr.bh + gap); if (x >= bx && x < bx + cr.bw && y >= by && y < by + cr.bh) { if (b.enabled !== false) { b.fn(); Sound.click(); } return; } }
     // info panel: selection wireframes / queue / cargo
     for (const h of this.hotspots) if (x >= h.x && x < h.x + h.w && y >= h.y && y < h.y + h.h) { h.fn(); Sound.click(); return; }
   },
@@ -302,7 +309,7 @@ const UI = {
     else { ctx.fillStyle = '#667'; ctx.font = '12px sans-serif'; ctx.fillText('F1: help   F10: menu   Speed ' + this.SPEEDS[this.speedIdx] + 'x (+/-)   ' + this.fps + ' fps', ix + 10, y0 + 24); ctx.fillText('Map seed ' + G.map.seed + '   Frame ' + G.frame, ix + 10, y0 + 44); }
     // command card
     const cr = this.cardRect(); ctx.fillStyle = '#12151a'; ctx.fillRect(cr.x, cr.y, cr.w, cr.h);
-    const btns = this.buildCard(); const p = G.players[G.human];
+    const btns = this.currentCard(); const p = G.players[G.human];
     for (const b of btns) { const bx = cr.x + 4 + (b.slot % 3) * 66, by = cr.y + 4 + Math.floor(b.slot / 3) * 52; const hov = this.mouse.x >= bx && this.mouse.x < bx + cr.bw && this.mouse.y >= by && this.mouse.y < by + cr.bh; const active = this.pending && ((this.pending.kind === 'ability' && b.label === (DATA.abilities[this.pending.abil] || {}).name) || (this.pending.kind !== 'ability' && b.label.toLowerCase().startsWith(this.pending.kind))); ctx.fillStyle = active ? '#3a5a3a' : hov ? '#38404c' : b.dim ? '#1c2026' : '#262c36'; ctx.fillRect(bx, by, cr.bw, cr.bh); ctx.strokeStyle = b.dim ? '#333' : '#556'; ctx.strokeRect(bx + .5, by + .5, cr.bw - 1, cr.bh - 1); ctx.fillStyle = b.dim ? '#666' : '#eee'; ctx.font = '10px sans-serif'; const words = b.label.split(' '); let ly = by + 14; let line = ''; for (const w of words) { if ((line + ' ' + w).trim().length > 11 && line) { ctx.fillText(line, bx + 3, ly); ly += 11; line = w; } else line = (line + ' ' + w).trim(); } ctx.fillText(line, bx + 3, ly); ctx.fillStyle = '#ff5'; ctx.font = 'bold 10px sans-serif'; ctx.fillText(b.hk === 'Escape' ? 'Esc' : b.hk, bx + cr.bw - 14, by + cr.bh - 4); if (b.cost && b.cost.min !== undefined) { ctx.fillStyle = p.minerals >= b.cost.min ? '#5df' : '#f55'; ctx.font = '9px sans-serif'; ctx.fillText(b.cost.min, bx + 3, by + cr.bh - 4); if (b.cost.gas) { ctx.fillStyle = p.gas >= b.cost.gas ? '#6d5' : '#f55'; ctx.fillText(b.cost.gas, bx + 24, by + cr.bh - 4); } } if (b.energy) { ctx.fillStyle = '#c6f'; ctx.font = '9px sans-serif'; ctx.fillText(b.energy + 'e', bx + 3, by + cr.bh - 4); }
       if (hov && b.cost) { this.tooltip = { text: b.label + (b.cost.min !== undefined ? `  ${b.cost.min}m ${b.cost.gas ? b.cost.gas + 'g ' : ''}${b.cost.sup ? b.cost.sup + 's ' : ''}${b.cost.time ? Math.round(b.cost.time / TPS) + 's' : ''}` : ''), x: bx, y: by - 8 }; } }
     if (this.tooltip) { ctx.font = '11px sans-serif'; const tw = ctx.measureText(this.tooltip.text).width + 10; ctx.fillStyle = '#000c'; ctx.fillRect(this.tooltip.x - tw + 60, this.tooltip.y - 14, tw, 18); ctx.fillStyle = '#fff'; ctx.fillText(this.tooltip.text, this.tooltip.x - tw + 65, this.tooltip.y - 1); this.tooltip = null; }
@@ -352,7 +359,7 @@ const UI = {
   menuItems() {
     if (this.menu === 'brief' && G.mission) { const d = G.mission.def; return { title: d.title.toUpperCase(), lines: d.brief.concat(['', 'OBJECTIVE: ' + d.objective]), items: [['Begin mission', () => { this.menu = null; }]] }; }
     if (this.menu === 'waiting') return { title: 'WAITING FOR PLAYERS', lines: ['The game resumes when all players have caught up.'], items: [['Keep waiting', () => { this.menu = null; }], ['Leave game', () => { Net.disconnect(); this.toMenu(); }]] };
-    if (this.menu === 'over') { const hp = G.players[G.human]; const won = G.mission ? G.winner === G.human : (G.winTeam != null ? G.winTeam === hp.team : G.winner === G.human); const mins = Math.max(1, G.frame / TPS / 60); const apm = Math.round(G.log.filter(e => e.c.p === G.human).length / mins); const lines = [`Time ${Math.floor(G.frame / TPS / 60)}:${String(Math.floor(G.frame / TPS) % 60).padStart(2, '0')}   APM ${apm}`, '']; for (const q of G.players) { const s = q.stats; lines.push(`${q.name} (${RACE_INFO[q.race].name})  kills ${s.unitsKilled}/${s.buildingsKilled}  lost ${s.unitsLost}/${s.buildingsLost}  minerals ${s.mined}  gas ${s.gassed}${q.defeated ? '  ELIMINATED' : ''}`); } return { title: won ? 'VICTORY' : 'DEFEAT', lines, items: [['Continue playing', () => { this.menu = null; G.over = false; }], ['Save replay', () => { Replay.saveReplay(); }], ['Return to main menu', () => this.toMenu()]] }; }
+    if (this.menu === 'over') { const hp = G.players[G.human]; const won = G.mission ? G.winner === G.human : (G.winTeam != null ? G.winTeam === hp.team : G.winner === G.human); const mins = Math.max(1, G.frame / TPS / 60); const apm = Math.round(G.log.filter(e => e.c.p === G.human).length / mins); const lines = [`Time ${Math.floor(G.frame / TPS / 60)}:${String(Math.floor(G.frame / TPS) % 60).padStart(2, '0')}   APM ${apm}`, '']; for (const q of G.players) { const s = q.stats; lines.push(`${q.name} (${RACE_INFO[q.race].name})  kills ${s.unitsKilled}/${s.buildingsKilled}  lost ${s.unitsLost}/${s.buildingsLost}  minerals ${s.mined}  gas ${s.gassed}${q.defeated ? '  ELIMINATED' : ''}`); } return { title: won ? 'VICTORY' : 'DEFEAT', lines, items: [['Continue playing', () => { this.menu = null; G.over = false; G.freePlay = true; }], ['Save replay', () => { Replay.saveReplay(); }], ['Return to main menu', () => this.toMenu()]] }; }
     if (this.mode === 'replay') return { title: 'REPLAY PAUSED', lines: ['Speed: ' + this.speedName()], items: [['Resume (Esc)', () => { this.menu = null; }], ['Toggle full map view', () => { this.viewAll = !this.viewAll; this.menu = null; }], ['Quit to menu', () => this.toMenu()]] };
     return { title: 'PAUSED', lines: [], items: [['Resume (Esc)', () => { this.menu = null; }], ['Save game (F5)', () => { Replay.save(true); this.menu = null; }], ['Save replay', () => { Replay.saveReplay(); this.menu = null; }], ['Restart', () => { this.start(this.lastOpts); }], ['Quit to menu', () => this.toMenu()]] };
   },
