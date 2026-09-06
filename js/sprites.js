@@ -11,7 +11,7 @@ const Sprites = {
   light(c, S, strength = 1) { // fixed-direction lighting over painted pixels
     c.globalCompositeOperation = 'source-atop'; const g = c.createLinearGradient(-S / 2, -S / 2, S / 2, S / 2); g.addColorStop(0, `rgba(255,255,255,${0.26 * strength})`); g.addColorStop(0.45, 'rgba(255,255,255,0)'); g.addColorStop(0.6, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${0.42 * strength})`); c.fillStyle = g; c.fillRect(-S / 2, -S / 2, S, S); c.globalCompositeOperation = 'source-over';
   },
-  WALK_FRAMES: 8, ATK_FRAMES: 5,
+  WALK_FRAMES: 8, ATK_FRAMES: 5, IDLE_FRAMES: 4,
   draw(ctx, s, x, y) { if (s.sub) ctx.drawImage(s.cv, s.sx, s.sy, s.S, s.S, x - s.ox, y - s.oy, s.S, s.S); else ctx.drawImage(s.cv, x - s.ox, y - s.oy); },
   unit(u, dir, anim = 'i') {
     const id = u.def.id, color = G.players[u.owner].color, v = this.variant(u); const aid = v === 's' ? id + '_s' : id;
@@ -21,7 +21,7 @@ const Sprites = {
     const r = u.r; const S = Math.ceil(r * 4.2) + 12; const cv = document.createElement('canvas'); cv.width = S; cv.height = S; const c = cv.getContext('2d');
     c.translate(S / 2, S / 2); c.rotate(dir * Math.PI * 2 / this.DIRS);
     const painter = UNIT_PAINTERS[id] || UNIT_PAINTERS.marine; const h = PaintHelpers(c);
-    const st = { sieged: v === 's', walk: null, atk: null }; if (anim[0] === 'w') st.walk = parseInt(anim.slice(1)) / this.WALK_FRAMES; else if (anim[0] === 'a') st.atk = (parseInt(anim.slice(1)) + 0.5) / this.ATK_FRAMES;
+    const st = { sieged: v === 's', walk: null, atk: null, idle: null }; if (anim[0] === 'w') st.walk = parseInt(anim.slice(1)) / this.WALK_FRAMES; else if (anim[0] === 'a') st.atk = (parseInt(anim.slice(1)) + 0.5) / this.ATK_FRAMES; else st.idle = parseInt(anim.slice(1) || '0') / this.IDLE_FRAMES;
     c.lineJoin = 'round'; painter(h, r, color, shade(color, 0.6), st);
     c.setTransform(1, 0, 0, 1, S / 2, S / 2); this.light(c, S, 1);
     s = { cv, S, ox: S / 2, oy: S / 2 }; this.cache.set(key, s); return s;

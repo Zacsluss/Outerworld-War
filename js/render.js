@@ -116,7 +116,9 @@ const Render = {
     if (ANIM_KIND.winged.has(id)) { const rate = id === 'overlord' ? 0.12 : id === 'cocoon' ? 0.08 : id === 'scourge' ? 0.9 : 0.45; return 'w' + (Math.floor(G.frame * rate + u.id) % Sprites.WALK_FRAMES); }
     if (ANIM_KIND.engine.has(id)) return 'w' + (Math.floor(G.frame * 0.3 + u.id) % Sprites.WALK_FRAMES);
     if (u.moving || (u.def.larva && (G.frame + u.id) % 90 < 30)) { const cycle = u.def.larva ? 30 : Math.max(20, u.r * 2.2); const d = u.def.larva ? G.frame : (u.walkDist || 0); return 'w' + (Math.floor((d / cycle) * Sprites.WALK_FRAMES) % Sprites.WALK_FRAMES); }
-    return 'i';
+    // Idle loop, offset per unit so a group does not breathe in lockstep. Render-only: G.frame drives it,
+    // nothing here feeds back into the simulation.
+    return 'i' + (Math.floor(G.frame / 14 + u.id * 1.7) % Sprites.IDLE_FRAMES);
   },
   drawStatus(ctx, u, x, y) {
     const r = u.r;

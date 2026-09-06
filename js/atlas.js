@@ -29,6 +29,7 @@ const Atlas = {
     const key = id + '|' + color + '|' + dir + '|' + anim; let f = this.frames.get(key); if (f) return f;
     const a = this.data.units[id]; const cv = this.sheet('u', id, color); const S = a.S;
     let row = 0; if (anim[0] === 'w') row = a.rows.w + (parseInt(anim.slice(1)) % this.data.walk); else if (anim[0] === 'a') row = a.rows.a + Math.min(this.data.atk - 1, parseInt(anim.slice(1)));
+    else row = a.rows.i + (parseInt(anim.slice(1) || '0') % (this.data.idle || 1)); // sheets baked before idle animation have a single idle row
     f = { cv, sx: dir * S, sy: row * S, S, ox: S / 2, oy: S / 2, sub: true }; this.frames.set(key, f); return f;
   },
   buildingImage(id, color) { const a = this.data.buildings[id]; return { cv: this.sheet('b', id, color), M: a.M, T: a.T, W: a.W, H: a.H }; },

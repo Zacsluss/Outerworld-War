@@ -20,6 +20,11 @@ const flap = (amp, sign = 1) => st => ({ rot: [st.walk == null ? 0 : sign * amp 
 const recoil = k => st => ({ pos: [st.atk == null ? 0 : -k * Math.max(0, 1 - st.atk * 1.5), 0, 0] });
 const lunge = k => st => ({ pos: [st.atk == null ? 0 : k * Math.sin(st.atk * Math.PI), 0, 0] });
 const AK = st => st.atk == null ? 0 : Math.sin(st.atk * Math.PI);
+// Idle channel: 0..1 around a loop, null while walking or attacking. Keep the amplitudes small - at
+// 1:1 an infantry sprite is about 24 px tall, so anything larger reads as a twitch rather than breathing.
+const IDLE = st => st.idle == null ? 0 : Math.sin(st.idle * Math.PI * 2);
+const breathe = (amp, phase = 0) => st => ({ pos: [0, st.idle == null ? 0 : amp * Math.sin(st.idle * Math.PI * 2 + phase), 0] });
+const sway = (amp, phase = 0) => st => ({ rot: [0, 0, st.idle == null ? 0 : amp * Math.sin(st.idle * Math.PI * 2 + phase)] });
 const cylX = (len, w, pos, mat, extra) => P('cyl', [w, len, w], pos, mat, Object.assign({ rot: [0, 0, -Math.PI / 2] }, extra || {})); // cylinder along +X centred at pos
 
 // ---------------- rigs ----------------
@@ -28,7 +33,7 @@ const RIG = {
     const legLen = o.legLen || 0.55, lw = o.legW || 0.22, torsoH = o.torsoH || 0.75, torsoW = o.torsoW || 0.95, torsoD = o.torsoD || 0.8, headR = o.headR || 0.5;
     const root = N([0, 0, 0]); const suit = o.suit || C.metal, dark = o.dark || C.metalD;
     for (const s of [-1, 1]) { const leg = N([0, legLen, s * 0.3], { anim: swing(o.stride == null ? 0.6 : o.stride, 0, s) }); leg.children.push(P('cyl', [lw, legLen, lw], [0, -legLen / 2, 0], m(dark))); leg.children.push(P('sphere', [lw * 1.5, lw * 1.2, lw * 1.5], [0.05, -legLen * 0.45, 0], m(o.suit || C.metal, { spec: 0.5 }))); leg.children.push(P('box', [0.42, 0.14, 0.3], [0.08, -legLen + 0.07, 0], m(dark))); root.children.push(leg); }
-    const torso = N([0, legLen + torsoH / 2, 0], { anim: recoil(o.recoil || 0.12) }); root.children.push(torso);
+    const torso = N([0, legLen + torsoH / 2, 0], { anim: st => ({ pos: [st.atk == null ? 0 : -(o.recoil || 0.12) * Math.max(0, 1 - st.atk * 1.5), (o.idleAmp == null ? 0.045 : o.idleAmp) * IDLE(st), 0], rot: [0, 0, 0.035 * IDLE(st)] }) }); root.children.push(torso);
     torso.children.push(P('sphere', [torsoD, torsoH, torsoW], [0, 0, 0], m(suit, { spec: 0.4 })));
     if (o.pads !== false) for (const s of [-1, 1]) torso.children.push(P('sphere', [0.45, 0.35, 0.5], [-0.05, torsoH * 0.35, s * torsoW * 0.5], o.padMat || TEAM));
     if (o.pack !== false) torso.children.push(P('box', [0.3, torsoH * 0.8, torsoW * 0.7], [-torsoD * 0.5, 0, 0], m(dark)));
@@ -42,7 +47,7 @@ const RIG = {
   },
   bug(o) {
     const root = N([0, 0, 0]); const segs = o.segs || [[0, 0.5, 1.6, 0.9, 1.1]]; const bodyY = o.bodyY || 0.45; const legs = o.legs || 2, legLen = o.legLen || 0.9, lw = o.legW || 0.12;
-    const body = N([0, bodyY, 0], { anim: lunge(o.lunge || 0.08) }); root.children.push(body);
+    const body = N([0, bodyY, 0], { anim: st => ({ pos: [st.atk == null ? 0 : (o.lunge || 0.08) * Math.sin(st.atk * Math.PI), (o.idleAmp == null ? 0.05 : o.idleAmp) * IDLE(st), 0], rot: [0, 0, 0.05 * IDLE(st)] }) }); root.children.push(body);
     segs.forEach(([x, y, sx, sy, sz], i) => body.children.push(P('sphere', [sx, sy, sz], [x, y, 0], m(i === 0 ? (o.color || C.flesh) : (o.color2 || C.carapace), { spec: 0.35 }))));
     if (o.teamSpot !== false) body.children.push(P('sphere', [0.5, 0.25, 0.4], [o.teamX == null ? -0.2 : o.teamX, 0.32, 0], TEAM));
     for (let i = 0; i < legs; i++) { const x = (o.legX0 == null ? 0.35 : o.legX0) - i * (o.legGap || 0.5); for (const s of [-1, 1]) { const hip = N([x, bodyY * 0.8, s * 0.4], { anim: yaw(o.legSwing == null ? 0.35 : o.legSwing, i * Math.PI, s) }); const up = N([0, 0, 0], { rot: [s * 0.9, 0, 0] }); up.children.push(P('cyl', [lw, legLen * 0.6, lw], [0, legLen * 0.3, 0], m(o.legColor || C.fleshD))); const knee = N([0, legLen * 0.6, 0], { rot: [-s * 1.9, 0, 0] }); knee.children.push(P('cyl', [lw * 0.8, legLen * 0.7, lw * 0.8], [0, legLen * 0.35, 0], m(o.legColor || C.fleshD))); up.children.push(knee); hip.children.push(up); root.children.push(hip); } }
