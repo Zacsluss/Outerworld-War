@@ -77,7 +77,13 @@ const G = {
       }
     }
   },
-  nudgeOut(u, b) { const x0 = b.tx * TILE, y0 = b.ty * TILE, x1 = x0 + b.def.w * TILE, y1 = y0 + b.def.h * TILE; if (u.x > x0 - u.r && u.x < x1 + u.r && u.y > y0 - u.r && u.y < y1 + u.r) { const t = this.map.findFreeTile(Math.floor(u.x / TILE), Math.floor(u.y / TILE), 8, (x, y) => this.passable((x + .5) * TILE, (y + .5) * TILE, u)); if (t) { u.x = (t[0] + .5) * TILE; u.y = (t[1] + .5) * TILE; u.px = u.x; u.py = u.y; u.path = null; if (u.def.larva) { u.wx = u.x; u.wy = u.y; } } } },
+  nudgeOut(u, b) { const x0 = b.tx * TILE, y0 = b.ty * TILE, x1 = x0 + b.def.w * TILE, y1 = y0 + b.def.h * TILE; if (u.x > x0 - u.r && u.x < x1 + u.r && u.y > y0 - u.r && u.y < y1 + u.r) { const cx = Math.floor(u.x / TILE), cy = Math.floor(u.y / TILE);
+    // the candidate must actually be clear of this building, or findFreeTile happily returns the tile we are
+    // already standing on (its centre is walkable) and the unit shuffles a few pixels and stays wedged
+    const clearOf = (x, y) => { const px = (x + .5) * TILE, py = (y + .5) * TILE; return !(px > x0 - u.r && px < x1 + u.r && py > y0 - u.r && py < y1 + u.r); };
+    let t = this.map.findFreeTile(cx, cy, 14, (x, y) => clearOf(x, y) && this.passable((x + .5) * TILE, (y + .5) * TILE, u));
+    if (!t) t = this.map.findFreeTile(cx, cy, 20, clearOf); // wedged with nowhere roomy to go: anywhere out is better than in
+    if (t) { u.x = (t[0] + .5) * TILE; u.y = (t[1] + .5) * TILE; u.px = u.x; u.py = u.y; u.path = null; if (u.def.larva) { u.wx = u.x; u.wy = u.y; } } } },
 
   // ---------------- visibility ----------------
   visible(pid, tx, ty) { const p = this.players[pid]; return p && p.vis[ty * this.map.w + tx] === 2; },
@@ -348,7 +354,16 @@ const G = {
     for (const u of this.units) { if (u.alive) { try { u.tick(); } catch (e) { console.error(e, u.def.id); } } }
     this.separate();
     // self-heal: a ground unit whose centre tile ended up inside a building footprint is pushed out
-    if (this.frame % 16 === 0) for (const u of this.units) { if (!u.alive || u.isBuilding || u.fly || u.inside || u.burrowed || u.def.larva) continue; const b = this.map.blocked[this.map.idx(clamp(Math.floor(u.x / TILE), 0, this.map.w - 1), clamp(Math.floor(u.y / TILE), 0, this.map.h - 1))]; if (b < 0) continue; const bb = this.byId.get(b); if (bb && bb.alive && bb.isBuilding && !bb.lifted) this.nudgeOut(u, bb); }
+    if (this.frame % 16 === 0) for (const u of this.units) {
+      if (!u.alive || u.isBuilding || u.fly || u.inside || u.burrowed || u.def.larva) continue;
+      // Check the unit's own extent, not just its centre tile: an Ultralisk (r 20) straddles a footprint
+      // edge with its centre outside, so the centre-tile test never fired and it stayed wedged for good.
+      const m = this.map, x0 = clamp(Math.floor((u.x - u.r * 0.7) / TILE), 0, m.w - 1), x1 = clamp(Math.floor((u.x + u.r * 0.7) / TILE), 0, m.w - 1);
+      const y0 = clamp(Math.floor((u.y - u.r * 0.7) / TILE), 0, m.h - 1), y1 = clamp(Math.floor((u.y + u.r * 0.7) / TILE), 0, m.h - 1);
+      let hit = null;
+      for (let ty = y0; ty <= y1 && !hit; ty++) for (let tx = x0; tx <= x1; tx++) { const b = m.blocked[m.idx(tx, ty)]; if (b < 0) continue; const bb = this.byId.get(b); if (bb && bb.alive && bb.isBuilding && !bb.lifted) { hit = bb; break; } }
+      if (hit) this.nudgeOut(u, hit);
+    }
     Combat.tickProjectiles(); Abilities.tickFields();
     for (const p of this.players) if (p.ai && this.frame % 4 === p.id % 4) p.ai.tick();
     if (this.frame % 8 === 0) this.recomputeSupply();

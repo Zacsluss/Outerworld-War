@@ -259,9 +259,9 @@ class AI {
     // defense
     const attacked = this.mine(u => u.owner === p.id && G.frame - u.lastHit < 72 && u.lastHitBy && !G.allied(u.lastHitBy.owner, p.id) && (u.isBuilding || u.def.worker));
     if (attacked.length) { const t = attacked[0]; this.state = 'defend'; this.defendPt = { x: t.x, y: t.y }; this.defendT = G.frame; }
-    if (this.state === 'defend') { if (G.frame - this.defendT > 24 * 20) this.state = 'gather'; else { for (const u of army) if (u.order.type !== 'attack' && distPt(u.x, u.y, this.defendPt.x, this.defendPt.y) > 6 * TILE) u.setOrder({ type: 'attackmove', x: this.defendPt.x, y: this.defendPt.y }); for (const u of this.supportUnits()) if (u.order.type === 'idle') u.setOrder({ type: 'follow', target: army[0] || u }); return; } }
+    if (this.state === 'defend') { if (G.frame - this.defendT > 24 * 20) this.state = 'gather'; else { for (const u of army) if (u.order.type !== 'attack' && !u.burrowed && distPt(u.x, u.y, this.defendPt.x, this.defendPt.y) > 6 * TILE) u.setOrder({ type: 'attackmove', x: this.defendPt.x, y: this.defendPt.y }); for (const u of this.supportUnits()) if (u.order.type === 'idle') u.setOrder({ type: 'follow', target: army[0] || u }); return; } }
     if (this.state === 'gather') {
-      for (const u of army) if (u.order.type === 'idle' && distPt(u.x, u.y, rally.x, rally.y) > 5 * TILE) u.setOrder({ type: 'attackmove', x: rally.x + (G.rand() - .5) * 96, y: rally.y + (G.rand() - .5) * 96 });
+      for (const u of army) if (u.order.type === 'idle' && !u.burrowed && distPt(u.x, u.y, rally.x, rally.y) > 5 * TILE) u.setOrder({ type: 'attackmove', x: rally.x + (G.rand() - .5) * 96, y: rally.y + (G.rand() - .5) * 96 });
       for (const u of this.supportUnits()) if (u.order.type === 'idle' && distPt(u.x, u.y, rally.x, rally.y) > 6 * TILE) u.setOrder({ type: 'move', x: rally.x, y: rally.y });
       const threshold = Math.max(this.attackThreshold + this.waves * 8 + (p.supUsed > 150 ? -20 : 0), this.seenEnemyArmy() * 1.25);
       if (sup >= threshold || p.supUsed >= 190) { this.state = 'attack'; this.waves++; this.startedAttack = G.frame; const wave = army.filter(u => distPt(u.x, u.y, rally.x, rally.y) < 14 * TILE || this.waves > 1); for (const u of wave) u.wave = this.waves; this.attackN = wave.length; this.target = this.pickTarget(rally); }
@@ -275,7 +275,7 @@ class AI {
       // reinforce: send gathered units as a group when enough have collected
       const gathered = rest.filter(u => distPt(u.x, u.y, rally.x, rally.y) < 8 * TILE); if (gathered.reduce((s, u) => s + u.def.sup, 0) >= 16) for (const u of gathered) u.wave = this.waves;
       const t = this.target;
-      for (const u of waveUnits) { if (u.order.type === 'attack' || u.order.type === 'ability') continue; if (u.order.type === 'attackmove' && distPt(u.order.x, u.order.y, t.x, t.y) < 3 * TILE) continue; if (u.sieged) continue; u.setOrder({ type: 'attackmove', x: t.x, y: t.y }); }
+      for (const u of waveUnits) { if (u.order.type === 'attack' || u.order.type === 'ability') continue; if (u.order.type === 'attackmove' && distPt(u.order.x, u.order.y, t.x, t.y) < 3 * TILE) continue; if (u.sieged || u.burrowed) continue; u.setOrder({ type: 'attackmove', x: t.x, y: t.y }); }
       for (const u of this.supportUnits()) { if (u.def.id === 'high_templar' || u.def.id === 'defiler') { if (u.order.type !== 'ability' && u.order.type !== 'follow') u.setOrder({ type: 'follow', target: army[0] || u }); } else if (u.order.type === 'idle' || u.order.type === 'move') u.setOrder({ type: 'follow', target: army[Math.floor(G.rand() * army.length)] || u }); }
       // scourge / overlords stay home
       if (G.frame - this.startedAttack > 24 * 240) { this.state = 'gather'; for (const u of army) u.wave = 0; }

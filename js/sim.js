@@ -7,6 +7,9 @@ const SIEGE_W = { dmg: 70, type: 'explosive', range: 12, minRange: 2, cd: 75, hi
 const EQUIV = { hatchery: ['lair', 'hive'], lair: ['hive'], spire: ['greater_spire'], command_center: [], nexus: [] };
 const MINE_TIME = 75, GAS_TIME = 37, LARVA_TIME = 342, MAX_QUEUE = 5;
 // turn rate (rad/frame) for ground units that must rotate before moving; acceleration (px/frame^2) for flyers
+// Orders that require actually relocating: a burrowed unit given one of these digs itself out first.
+// Deliberately excludes hold, attack and ability, so a burrowed Lurker keeps firing from where it is.
+const BURROW_SURFACES = new Set(['move', 'attackmove', 'patrol', 'follow', 'load', 'pickup', 'gather', 'return', 'build', 'construct', 'repair', 'land', 'nydus', 'merge']);
 const TURN = { vulture: 0.22, siege_tank: 0.12, goliath: 0.28, dragoon: 0.25, reaver: 0.15, ultralisk: 0.2, archon: 0.3, dark_archon: 0.3, lurker: 0.3, hydralisk: 0.4, defiler: 0.35 };
 const ACCEL = { wraith: 0.35, scout: 0.35, corsair: 0.5, mutalisk: 0.6, scourge: 0.9, queen: 0.5, guardian: 0.15, devourer: 0.3, overlord: 0.05, battlecruiser: 0.06, carrier: 0.1, arbiter: 0.2, valkyrie: 0.35, dropship: 0.3, shuttle: 0.3, observer: 0.3, science_vessel: 0.25, interceptor: 1.5, cocoon: 0.1 };
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -195,14 +198,16 @@ class Unit {
   tickOrder() {
     const o = this.order, d = this.def;
     this.moving = false;
-    if (this.burrowed && !d.mine && o.type !== 'idle' && o.type !== 'hold' && o.type !== 'ability') { if (o.type === 'move' || o.type === 'attackmove' || o.type === 'attack' || o.type === 'gather' || o.type === 'build') { this.burrowed = false; this.transT = 20; } }
+    // Surface for anything that means "go somewhere". moveTo refuses to move a burrowed unit, so an order
+    // missing from this list can never complete and the unit sits on it forever (load was the one that bit).
+    if (this.burrowed && !d.mine && BURROW_SURFACES.has(o.type)) { this.burrowed = false; this.transT = 20; this.path = null; }
     if (this.sieged && (o.type === 'move' || o.type === 'attackmove' || o.type === 'patrol')) { /* sieged tanks can't move; ignore */ this.nextOrder(); return; }
     if (d.mine) { Abilities.mineTick(this); return; }
     switch (o.type) {
       case 'idle': this.tickIdle(); break;
       case 'hold': { const t = this.autoTarget(true); if (t) this.fireAt(t); break; }
       case 'move': if (this.moveTo(o.x, o.y, o.target)) this.nextOrder(); break;
-      case 'follow': if (!o.target.alive) { this.nextOrder(); break; } if (dist(this, o.target) > this.r + o.target.r + 24) this.moveTo(o.target.x, o.target.y, o.target); break;
+      case 'follow': if (!o.target.alive) { this.nextOrder(); break; } if (dist(this, o.target) > this.r + o.target.r + 24) { this.moveTo(o.target.x, o.target.y, o.target); if (this.moveFailed) this.nextOrder(); } break;
       case 'attackmove': {
         if (!o.target || !o.target.alive || !G.targetable(this, o.target)) o.target = this.autoTarget(false);
         if (o.target) { this.engage(o.target); } else if (this.moveTo(o.x, o.y)) this.nextOrder();
@@ -210,7 +215,7 @@ class Unit {
       }
       case 'patrol': {
         if (!o.target || !o.target.alive || !G.targetable(this, o.target)) o.target = this.autoTarget(false);
-        if (o.target) this.engage(o.target); else if (this.moveTo(o.x, o.y)) { const t = o.x, u = o.y; o.x = o.ox; o.y = o.oy; o.ox = t; o.oy = u; this.path = null; }
+        if (o.target) this.engage(o.target); else if (this.moveTo(o.x, o.y)) { if (this.moveFailed) { this.nextOrder(); break; } const t = o.x, u = o.y; o.x = o.ox; o.y = o.oy; o.ox = t; o.oy = u; this.path = null; }
         break;
       }
       case 'attack': {
@@ -223,12 +228,11 @@ class Unit {
       case 'gather': this.tickGather(); break;
       case 'return': this.tickReturn(); break;
       case 'build': this.tickBuild(); break;
-      case 'construct': { const b = o.target; if (!b || !b.alive || b.done) { this.nextOrder(); break; } if (b.builder && b.builder !== this && b.builder.alive && b.builder.order.target === b) { this.nextOrder(); break; } b.builder = this; if (this.moveToRect(b, 4)) { this.facing = Math.atan2(b.y - this.y, b.x - this.x); } break; }
+      case 'construct': { const b = o.target; if (!b || !b.alive || b.done) { this.nextOrder(); break; } if (b.builder && b.builder !== this && b.builder.alive && b.builder.order.target === b) { this.nextOrder(); break; } b.builder = this; if (this.moveToRect(b, 4)) { if (this.moveFailed) { if (b.builder === this) b.builder = null; this.nextOrder(); break; } this.facing = Math.atan2(b.y - this.y, b.x - this.x); } break; }
       case 'repair': Abilities.repairTick(this); break;
       case 'ability': Abilities.orderTick(this); break;
       case 'load': { const t = o.target; if (!t || !t.alive || t.owner !== this.owner || this.fly || t.inside) { this.nextOrder(); break; }
-        if (this.burrowed) { if (this.transT <= 0) { this.burrowed = false; this.transT = 24; this.path = null; } break; } // a burrowed unit cannot board, and moveTo refuses to move it: surface first and keep the order rather than sitting on it forever
-        const near = t.isBuilding ? this.moveToRect(t, 8) : (dist(this, t) < this.r + t.r + 12 || this.moveTo(t.x, t.y, t)); if (near && !G.loadUnit(t, this)) this.nextOrder(); break; }
+        const near = t.isBuilding ? this.moveToRect(t, 8) : (dist(this, t) < this.r + t.r + 12 || this.moveTo(t.x, t.y, t)); if (near && (this.moveFailed || !G.loadUnit(t, this))) this.nextOrder(); break; }
       case 'pickup': { const t = o.target; if (!t || !t.alive || t.inside) { this.nextOrder(); break; } if (dist(this, t) < this.r + t.r + 12) { G.loadUnit(this, t); this.nextOrder(); } else this.moveTo(t.x, t.y, t); break; }
       case 'unload': { if (this.moveTo(o.x, o.y)) { if (this.cargo.length) { if ((G.frame & 7) === 0 && !G.unloadOne(this)) { this.player.msg('Cannot unload here.', 'error'); this.nextOrder(); } } else this.nextOrder(); } break; }
       case 'merge': { const t = o.partner; if (!t || !t.alive || t.order.type !== 'merge' || t.order.partner !== this) { this.nextOrder(); break; } if (dist(this, t) < 28) { if (this.id < t.id) G.mergeUnits(this, t, o.unit); } else this.moveTo(t.x, t.y, t); break; }
@@ -296,12 +300,20 @@ class Unit {
   // ---------------- movement ----------------
   moveTo(x, y, targetUnit) {
     if (!this.canMove || this.speed <= 0 || this.transT > 0 && this.def.id === 'siege_tank') return distPt(this.x, this.y, x, y) < 8;
-    if (this.burrowed && !this.def.mine) return false;
+    if (this.burrowed && !this.def.mine) { this.moveFailed = true; return false; }
     const m = G.map; const spd = this.speed;
+    this.moveFailed = false; // set when we return true without actually arriving, so callers can drop the order
     const dd = distPt(this.x, this.y, x, y);
     const arriveR = targetUnit ? Math.max(6, this.r + targetUnit.r - 4) : Math.max(4, spd);
-    if (dd <= arriveR) return true;
+    if (dd <= arriveR) { this.noProgT = 0; return true; }
     if (this.stuck > 40 && dd < 140) { this.stuck = 0; return true; }
+    // Movement watchdog. A* returns a best-effort path, so an unreachable goal never fails - the unit just
+    // grinds into the obstacle with an order that can never complete. Sliding along a wall still counts as
+    // progress to u.stuck, so that does not catch it either. Ten seconds without getting any closer means
+    // give up and let the caller drop the order. A goal that moves (a follow target) restarts the clock.
+    if (!this.progG || distPt(this.progG[0], this.progG[1], x, y) > 2 * TILE) { this.progG = [x, y]; this.bestDD = dd; this.noProgT = 0; }
+    else if (dd < this.bestDD - 4) { this.bestDD = dd; this.noProgT = 0; }
+    else if (++this.noProgT > 240) { this.noProgT = 0; this.stuck = 0; this.moveFailed = true; return true; }
     let gx = x, gy = y;
     if (!this.fly) {
       const [sx, sy] = this.tile(); const tx = clamp(Math.floor(x / TILE), 0, m.w - 1), ty = clamp(Math.floor(y / TILE), 0, m.h - 1);
@@ -341,6 +353,7 @@ class Unit {
     const w = (b.def ? b.def.w : b.w) * TILE, h = (b.def ? b.def.h : b.h) * TILE;
     const cx = clamp(this.x, x0, x0 + w), cy = clamp(this.y, y0, y0 + h);
     const dd = distPt(this.x, this.y, cx, cy);
+    this.moveFailed = false; // moveToRect can report success without calling moveTo, so do not leave a stale flag
     if (dd <= this.r + pad) return true;
     // aim slightly outside the nearest edge point
     let ax = cx + (this.x - cx) / (dd || 1) * (this.r + 2), ay = cy + (this.y - cy) / (dd || 1) * (this.r + 2);

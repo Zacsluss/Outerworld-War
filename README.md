@@ -56,6 +56,7 @@ Left click select, drag to box-select, right click for smart commands. `A` attac
 node broodwar/test/features.js      # 87 gameplay checks
 node broodwar/test/determinism.js   # identical runs match; replay reproduces the original
 node broodwar/test/version.js        # saves carry a build stamp; a save from another build is refused
+node broodwar/test/movement.js       # unreachable goals, wedged units, burrowed units
 node broodwar/test/observer.js       # replay observer: vision switching, production overlay, seeking
 node broodwar/test/smoke.js 16000 TZ temple   # AI vs AI on a layout
 node broodwar/test/playtest.js all          # scripted human plays TvZ, PvT, ZvP through the UI layer
