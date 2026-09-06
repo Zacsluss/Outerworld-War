@@ -10,9 +10,9 @@ const HUD = {
   frame(ctx, x, y, w, h) { const g = ctx.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, '#2a303b'); g.addColorStop(1, '#151920'); ctx.fillStyle = g; ctx.fillRect(x, y, w, h); this.bevel(ctx, x + 2, y + 2, w - 4, h - 4, true, 'rgba(0,0,0,0)'); const a = this.accent(); ctx.fillStyle = a; ctx.globalAlpha = 0.6; ctx.fillRect(x, y, w, 2); ctx.globalAlpha = 1; for (const [rx, ry] of [[x + 6, y + 6], [x + w - 8, y + 6], [x + 6, y + h - 8], [x + w - 8, y + h - 8]]) { ctx.fillStyle = '#0b0d11'; ctx.beginPath(); ctx.arc(rx, ry, 2.5, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.beginPath(); ctx.arc(rx - .7, ry - .7, 1.2, 0, 7); ctx.fill(); } },
   inset(ctx, x, y, w, h) { ctx.fillStyle = '#07090c'; ctx.fillRect(x, y, w, h); this.bevel(ctx, x, y, w, h, false, 'rgba(0,0,0,0)'); },
   text(ctx, s, x, y, color = '#d8dde4', sz = 12, bold = true, align = 'left') { ctx.font = this.font(sz, bold); ctx.textAlign = align; ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillText(s, x + 1, y + 1); ctx.fillStyle = color; ctx.fillText(s, x, y); ctx.textAlign = 'left'; },
-  hotLabel(ctx, label, hk, x, y, w, color = '#e6eaf0') { // label with hotkey letter highlighted
-    ctx.font = this.font(10); const words = label.split(' '); const lines = []; let cur = ''; for (const wd of words) { if (ctx.measureText((cur + ' ' + wd).trim()).width > w - 6 && cur) { lines.push(cur); cur = wd; } else cur = (cur + ' ' + wd).trim(); } lines.push(cur);
-    let hkDone = false; lines.forEach((ln, i) => { let lx = x + w / 2 - ctx.measureText(ln).width / 2, ly = y + i * 11; if (!hkDone && hk && hk.length === 1) { const idx = ln.toUpperCase().indexOf(hk.toUpperCase()); if (idx >= 0) { const a = ln.slice(0, idx), b = ln[idx], c = ln.slice(idx + 1); ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillText(ln, lx + 1, ly + 1); ctx.fillStyle = color; ctx.fillText(a, lx, ly); lx += ctx.measureText(a).width; ctx.fillStyle = '#ffe45a'; ctx.fillText(b, lx, ly); lx += ctx.measureText(b).width; ctx.fillStyle = color; ctx.fillText(c, lx, ly); hkDone = true; return; } } ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillText(ln, lx + 1, ly + 1); ctx.fillStyle = color; ctx.fillText(ln, lx, ly); });
+  hotLabel(ctx, label, hk, x, y, w, color = '#e6eaf0', fs = 10) { // label with hotkey letter highlighted
+    ctx.font = this.font(fs); const words = label.split(' '); const lines = []; let cur = ''; for (const wd of words) { if (ctx.measureText((cur + ' ' + wd).trim()).width > w - 6 && cur) { lines.push(cur); cur = wd; } else cur = (cur + ' ' + wd).trim(); } lines.push(cur);
+    let hkDone = false; lines.forEach((ln, i) => { let lx = x + w / 2 - ctx.measureText(ln).width / 2, ly = y + i * (fs + 1); if (!hkDone && hk && hk.length === 1) { const idx = ln.toUpperCase().indexOf(hk.toUpperCase()); if (idx >= 0) { const a = ln.slice(0, idx), b = ln[idx], c = ln.slice(idx + 1); ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillText(ln, lx + 1, ly + 1); ctx.fillStyle = color; ctx.fillText(a, lx, ly); lx += ctx.measureText(a).width; ctx.fillStyle = '#ffe45a'; ctx.fillText(b, lx, ly); lx += ctx.measureText(b).width; ctx.fillStyle = color; ctx.fillText(c, lx, ly); hkDone = true; return; } } ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillText(ln, lx + 1, ly + 1); ctx.fillStyle = color; ctx.fillText(ln, lx, ly); });
   },
   iconFor(b) { if (b.icon) return b.icon; const l = b.label; const map = { 'Move': 'move', 'Stop': 'stop', 'Attack': 'attack', 'Patrol': 'patrol', 'Hold Position': 'hold', 'Gather': 'gather', 'Return Cargo': 'gather', 'Repair': 'repair', 'Build': 'build', 'Build Advanced': 'build2', 'Cancel': 'cancel', 'Set Rally': 'rally', 'Lift Off': 'lift', 'Land': 'land', 'Unload': 'unload', 'Unload All': 'unload' }; return map[l] || null; },
   glyph(ctx, kind, x, y, s, color) { ctx.save(); ctx.translate(x, y); ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -37,7 +37,8 @@ const HUD = {
 
 Object.assign(UI, {
   miniRect() { return { x: 12, y: Render.H - this.consoleH + 10, s: this.consoleH - 22 }; },
-  cardRect() { const bw = 64, bh = 54, gap = 4; const w = 3 * (bw + gap) + 8, h = 3 * (bh + gap) + 8; return { x: Render.W - w - 12, y: Render.H - this.consoleH + 8, w, h, bw, bh, gap }; },
+  // The card shrinks with the console so a short window still shows all nine slots and the click boxes stay on them.
+  cardRect() { const ch = this.consoleH, k = Math.min(1, (ch - 16) / 182); const bw = Math.round(64 * k), bh = Math.round(54 * k), gap = Math.max(2, Math.round(4 * k)); const w = 3 * (bw + gap) + 8, h = 3 * (bh + gap) + 8; return { x: Render.W - w - 12, y: Render.H - ch + 8, w, h, bw, bh, gap, k }; },
   drawConsole() {
     const ctx = Render.ctx, W = Render.W, H = Render.H, ch = this.consoleH, y0 = H - ch; const p = G.players[G.human];
     HUD.frame(ctx, 0, y0, W, ch);
@@ -69,11 +70,12 @@ Object.assign(UI, {
       // icon
       const defId = b.cost && b.cost.id && DATA.all[b.cost.id] ? b.cost.id : null; const gl = HUD.iconFor(b);
       ctx.save(); if (b.dim) ctx.globalAlpha = 0.4;
-      if (defId) ctx.drawImage(Sprites.icon(defId, G.players[G.human].color, 32), bx + cr.bw / 2 - 16, by + 3);
-      else if (gl) HUD.glyph(ctx, gl, bx + cr.bw / 2, by + 18, 14, '#cfd6de');
-      else { ctx.save(); ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(bx + cr.bw / 2, by + 18, 1, bx + cr.bw / 2, by + 18, 14); g.addColorStop(0, b.energy ? 'rgba(200,120,255,0.9)' : 'rgba(255,200,80,0.9)'); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(bx + cr.bw / 2, by + 18, 14, 0, 7); ctx.fill(); ctx.restore(); }
+      const ik = Math.round(32 * cr.k);
+      if (defId) ctx.drawImage(Sprites.icon(defId, G.players[G.human].color, ik), bx + cr.bw / 2 - ik / 2, by + Math.round(3 * cr.k));
+      else if (gl) HUD.glyph(ctx, gl, bx + cr.bw / 2, by + Math.round(18 * cr.k), Math.round(14 * cr.k), '#cfd6de');
+      else { ctx.save(); ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(bx + cr.bw / 2, by + Math.round(18 * cr.k), 1, bx + cr.bw / 2, by + Math.round(18 * cr.k), 14 * cr.k); g.addColorStop(0, b.energy ? 'rgba(200,120,255,0.9)' : 'rgba(255,200,80,0.9)'); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(bx + cr.bw / 2, by + Math.round(18 * cr.k), 14 * cr.k, 0, 7); ctx.fill(); ctx.restore(); }
       ctx.restore();
-      HUD.hotLabel(ctx, b.label, this.gridKeys ? '' : b.hk, bx, by + 44, cr.bw, b.dim ? '#7a828c' : '#e6eaf0'); if (this.gridKeys && b.hk !== 'Escape') { ctx.font = HUD.font(9); ctx.fillStyle = '#ffe45a'; ctx.fillText(b.hk, bx + 3, by + 10); }
+      HUD.hotLabel(ctx, b.label, this.gridKeys ? '' : b.hk, bx, by + cr.bh - Math.round(10 * cr.k), cr.bw, b.dim ? '#7a828c' : '#e6eaf0', Math.max(8, Math.round(10 * cr.k))); if (this.gridKeys && b.hk !== 'Escape') { ctx.font = HUD.font(9); ctx.fillStyle = '#ffe45a'; ctx.fillText(b.hk, bx + 3, by + 10); }
       if (b.hk === 'Escape') { ctx.font = HUD.font(8); ctx.fillStyle = '#ffe45a'; ctx.fillText('ESC', bx + cr.bw - 20, by + 10); }
       if (hov && (b.cost || b.energy)) { const parts = [b.label]; if (b.cost && b.cost.min !== undefined) { parts.push(b.cost.min + ' minerals'); if (b.cost.gas) parts.push(b.cost.gas + ' gas'); if (b.cost.sup) parts.push(b.cost.sup + ' supply'); if (b.cost.time) parts.push(Math.round(b.cost.time / TPS) + 's'); } if (b.energy) parts.push(b.energy + ' energy'); this.tooltip = { lines: parts, x: bx, y: by }; }
     }
@@ -138,10 +140,17 @@ Object.assign(UI, {
     HUD.bevel(ctx, Render.W / 2 - 340, 60, 680, 20 * lines.length + 24, true, 'rgba(10,12,16,0.94)'); lines.forEach((l, i) => HUD.text(ctx, l, Render.W / 2 - 326, 86 + i * 20, i ? '#d0d6de' : '#ffe45a', 13, i === 0));
   },
   drawMenu() {
-    const ctx = Render.ctx, m = this.menuItems(); const w = 440, h = 130 + m.lines.length * 22 + m.items.length * 46, x = Render.W / 2 - w / 2, y = Render.H / 2 - h / 2;
+    const ctx = Render.ctx, m = this.menuItems();
+    // Size the panel to its widest line instead of a fixed 440: mission briefings are long enough to be
+    // clipped at both edges otherwise, and shrink the text if even the full window is not wide enough.
+    ctx.font = '14px sans-serif';
+    const widest = m.lines.reduce((n, l) => Math.max(n, ctx.measureText(l).width), 0);
+    const w = clamp(Math.ceil(widest) + 80, 440, Render.W - 40);
+    const fs = widest + 80 > w ? Math.max(10, Math.floor(14 * (w - 80) / widest)) : 14;
+    const h = 130 + m.lines.length * 22 + m.items.length * 46, x = Render.W / 2 - w / 2, y = Render.H / 2 - h / 2;
     ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(0, 0, Render.W, Render.H); HUD.frame(ctx, x, y, w, h);
     HUD.text(ctx, m.title, Render.W / 2, y + 48, m.title === 'VICTORY' ? '#ffe45a' : m.title === 'DEFEAT' ? '#ff5050' : '#e6eaf0', 28, true, 'center');
-    m.lines.forEach((l, i) => HUD.text(ctx, l, Render.W / 2, y + 80 + i * 22, '#c8d0d8', 14, false, 'center'));
+    m.lines.forEach((l, i) => HUD.text(ctx, l, Render.W / 2, y + 80 + i * 22, '#c8d0d8', fs, false, 'center'));
     this.menuRects = []; m.items.forEach((it, i) => { const by = y + 96 + m.lines.length * 22 + i * 46; const hov = this.mouse.x >= x + 60 && this.mouse.x < x + w - 60 && this.mouse.y >= by && this.mouse.y < by + 38; HUD.bevel(ctx, x + 60, by, w - 120, 38, !hov, hov ? '#2f3a4c' : '#1e2530'); HUD.text(ctx, it[0], Render.W / 2, by + 25, '#e6eaf0', 15, true, 'center'); this.menuRects.push({ x: x + 60, y: by, w: w - 120, h: 38, fn: it[1] }); });
     this.drawCursor(ctx);
   },
