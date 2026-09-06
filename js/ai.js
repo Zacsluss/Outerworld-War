@@ -258,7 +258,14 @@ class AI {
     for (const b of this.mine(u => u.isBuilding && (u.def.produces.length || u.def.spawnsLarva))) b.rally = { x: rally.x + (G.rand() - .5) * 64, y: rally.y + (G.rand() - .5) * 64 };
     // defense
     const attacked = this.mine(u => u.owner === p.id && G.frame - u.lastHit < 72 && u.lastHitBy && !G.allied(u.lastHitBy.owner, p.id) && (u.isBuilding || u.def.worker));
-    if (attacked.length) { const t = attacked[0]; this.state = 'defend'; this.defendPt = { x: t.x, y: t.y }; this.defendT = G.frame; }
+    if (attacked.length) {
+      // Stay where we are already defending while it is still being hit, and otherwise go to whichever
+      // cluster has the most things under attack. Taking whatever was hit most recently made the army
+      // ping-pong between two bases whenever a scout poked each of them in turn.
+      let t = this.defendPt && attacked.find(u => distPt(u.x, u.y, this.defendPt.x, this.defendPt.y) < 12 * TILE);
+      if (!t) { let bestN = -1; for (const u of attacked) { const n = attacked.reduce((c, o) => c + (distPt(o.x, o.y, u.x, u.y) < 12 * TILE ? 1 : 0), 0); if (n > bestN) { bestN = n; t = u; } } }
+      this.state = 'defend'; this.defendPt = { x: t.x, y: t.y }; this.defendT = G.frame;
+    }
     if (this.state === 'defend') { if (G.frame - this.defendT > 24 * 20) this.state = 'gather'; else { for (const u of army) if (u.order.type !== 'attack' && !u.burrowed && distPt(u.x, u.y, this.defendPt.x, this.defendPt.y) > 6 * TILE) u.setOrder({ type: 'attackmove', x: this.defendPt.x, y: this.defendPt.y }); for (const u of this.supportUnits()) if (u.order.type === 'idle') u.setOrder({ type: 'follow', target: army[0] || u }); return; } }
     if (this.state === 'gather') {
       for (const u of army) if (u.order.type === 'idle' && !u.burrowed && distPt(u.x, u.y, rally.x, rally.y) > 5 * TILE) u.setOrder({ type: 'attackmove', x: rally.x + (G.rand() - .5) * 96, y: rally.y + (G.rand() - .5) * 96 });
@@ -320,7 +327,13 @@ class AI {
     const p = this.p; const op = this.dropOp;
     if (op) {
       const t = op.transport; if (!t || !t.alive) { this.dropOp = null; return; }
-      if (op.phase === 'load') { const left = op.units.filter(u => u.alive && !u.inside); if (!left.length || G.frame - op.t0 > 24 * 25) { op.phase = 'fly'; t.setOrder({ type: 'move', x: op.x, y: op.y }); op.t0 = G.frame; } else for (const u of left) if (u.order.type !== 'load') u.setOrder({ type: 'load', target: t }); }
+      if (op.phase === 'load') {
+        const left = op.units.filter(u => u.alive && !u.inside);
+        if (!left.length || G.frame - op.t0 > 24 * 25) {
+          if (!t.cargo.length) { this.dropOp = null; this.lastDrop = G.frame; t.setOrder({ type: 'move', x: this.rally ? this.rally.x : p.startX, y: this.rally ? this.rally.y : p.startY }); return; } // nothing boarded: flying an empty transport into their base just donates it
+          op.phase = 'fly'; t.setOrder({ type: 'move', x: op.x, y: op.y }); op.t0 = G.frame;
+        } else for (const u of left) if (u.order.type !== 'load') u.setOrder({ type: 'load', target: t });
+      }
       else if (op.phase === 'fly') { if (distPt(t.x, t.y, op.x, op.y) < 3 * TILE || G.frame - op.t0 > 24 * 90) { t.setOrder({ type: 'unload', x: op.x, y: op.y }); op.phase = 'unload'; op.t0 = G.frame; } else if (t.order.type === 'idle') t.setOrder({ type: 'move', x: op.x, y: op.y }); }
       else if (op.phase === 'unload') { if (!t.cargo.length || G.frame - op.t0 > 24 * 15) { for (const u of op.units) if (u.alive && !u.inside) u.setOrder({ type: 'attackmove', x: op.tx, y: op.ty }); t.setOrder({ type: 'move', x: this.rally ? this.rally.x : p.startX, y: this.rally ? this.rally.y : p.startY }); this.dropOp = null; this.lastDrop = G.frame; } }
       return;
