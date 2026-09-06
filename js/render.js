@@ -8,17 +8,21 @@ const Render = {
   resize() { this.W = this.canvas.width = Math.max(1, window.innerWidth); this.H = this.canvas.height = Math.max(1, window.innerHeight); this.viewW = this.W; this.viewH = Math.max(1, this.H - UI.consoleH); this.creepLayer = null; }, // a hidden or unlaid-out canvas reports 0 and every drawImage of it throws
   reset() { Terrain.reset(G.map.seed); Sprites.clear(); FX.reset(); this.built = false; },
   buildStatic() {
-    const m = G.map; this.fogCanvas = document.createElement('canvas'); this.fogCanvas.width = m.w; this.fogCanvas.height = m.h;
+    const m = G.map; this.fogCanvas = document.createElement('canvas'); this.fogCanvas.width = m.w; this.fogCanvas.height = m.h; this.fogImg = null; this.creepBounds = undefined;
     this.creepMask = document.createElement('canvas'); this.creepMask.width = m.w * 2; this.creepMask.height = m.h * 2;
     this.mini = Terrain.buildMini(); this.built = true; this.creepFrame = -1;
   },
   drawCreepMask() {
     const m = G.map, c = this.creepMask.getContext('2d'); c.clearRect(0, 0, m.w * 2, m.h * 2); c.fillStyle = '#fff';
-    for (let ty = 0; ty < m.h; ty++) for (let tx = 0; tx < m.w; tx++) if (m.creep[m.idx(tx, ty)]) c.fillRect(tx * 2 - 1, ty * 2 - 1, 4, 4);
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (let ty = 0; ty < m.h; ty++) for (let tx = 0; tx < m.w; tx++) if (m.creep[m.idx(tx, ty)]) { c.fillRect(tx * 2 - 1, ty * 2 - 1, 4, 4); if (tx < x0) x0 = tx; if (tx > x1) x1 = tx; if (ty < y0) y0 = ty; if (ty > y1) y1 = ty; }
+    this.creepBounds = x1 < x0 ? null : { x0: x0 * TILE, y0: y0 * TILE, x1: (x1 + 1) * TILE, y1: (y1 + 1) * TILE }; // so a creep-free view can skip the whole pass
   },
   drawCreep(ctx) {
     if (!this.creepLayer || this.creepLayer.width !== this.viewW || this.creepLayer.height !== this.viewH) { this.creepLayer = document.createElement('canvas'); this.creepLayer.width = this.viewW; this.creepLayer.height = this.viewH; }
-    if (this.creepFrame !== G.frame && G.frame % 12 === 0) { this.drawCreepMask(); this.creepFrame = G.frame; }
+    if (this.creepFrame !== G.frame && (G.frame % 12 === 0 || this.creepBounds === undefined)) { this.drawCreepMask(); this.creepFrame = G.frame; }
+    const b = this.creepBounds; if (b === null) return; // no creep anywhere
+    if (b && (b.x1 < this.camX || b.x0 > this.camX + this.viewW || b.y1 < this.camY || b.y0 > this.camY + this.viewH)) return; // none of it on screen
     const l = this.creepLayer.getContext('2d'); l.clearRect(0, 0, this.viewW, this.viewH);
     l.imageSmoothingEnabled = true; l.drawImage(this.creepMask, this.camX / 16, this.camY / 16, this.viewW / 16, this.viewH / 16, 0, 0, this.viewW, this.viewH);
     l.globalCompositeOperation = 'source-in'; l.save(); l.translate(-this.camX % 192, -this.camY % 192); l.fillStyle = Terrain.creepPattern(l); l.fillRect(-192, -192, this.viewW + 384, this.viewH + 384); l.restore(); l.globalCompositeOperation = 'source-over';
@@ -71,7 +75,9 @@ const Render = {
     if (UI.drag && UI.dragging) { const d = UI.drag; ctx.strokeStyle = '#4f4'; ctx.lineWidth = 1; ctx.strokeRect(Math.min(d.x0, d.x1) + .5, Math.min(d.y0, d.y1) + .5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0)); }
   },
   drawFog(ctx, vis, cx, cy) {
-    const m = G.map; const fc = this.fogCanvas.getContext('2d'); const img = fc.createImageData(m.w, m.h); const d = img.data;
+    const m = G.map; const fc = this.fogCanvas.getContext('2d');
+    if (!this.fogImg || this.fogImg.width !== m.w) this.fogImg = fc.createImageData(m.w, m.h); // one buffer for the whole game instead of one per frame
+    const img = this.fogImg; const d = img.data;
     for (let i = 0; i < vis.length; i++) { const v = vis[i]; const o = i * 4; d[o] = 4; d[o + 1] = 6; d[o + 2] = 10; d[o + 3] = v === 2 ? 0 : v === 1 ? 140 : 255; }
     fc.putImageData(img, 0, 0);
     ctx.save(); ctx.imageSmoothingEnabled = true; ctx.drawImage(this.fogCanvas, cx / TILE - 0.5, cy / TILE - 0.5, this.viewW / TILE, this.viewH / TILE, cx, cy, this.viewW, this.viewH); ctx.restore();

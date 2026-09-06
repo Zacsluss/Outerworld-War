@@ -43,10 +43,11 @@ const G = {
 
   // ---------------- spatial ----------------
   rebuildGrid() { for (const c of this.grid) c.length = 0; for (const u of this.units) { if (!u.alive || u.inside) continue; const cx = clamp((u.x / this.cell) | 0, 0, this.gw - 1), cy = clamp((u.y / this.cell) | 0, 0, this.gh - 1); this.grid[cy * this.gw + cx].push(u); } },
-  near(x, y, r) {
-    const out = []; const x0 = clamp(((x - r) / this.cell) | 0, 0, this.gw - 1), x1 = clamp(((x + r) / this.cell) | 0, 0, this.gw - 1), y0 = clamp(((y - r) / this.cell) | 0, 0, this.gh - 1), y1 = clamp(((y + r) / this.cell) | 0, 0, this.gh - 1);
-    for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) for (const u of this.grid[cy * this.gw + cx]) { if (u.alive && distPt(u.x, u.y, x, y) <= r + u.r) out.push(u); }
-    return out;
+  near(x, y, r) { const out = []; this.nearEach(x, y, r, u => out.push(u)); return out; },
+  // same visit order as near() but without building an array; the hot paths (separation, target search) use this
+  nearEach(x, y, r, fn) {
+    const x0 = clamp(((x - r) / this.cell) | 0, 0, this.gw - 1), x1 = clamp(((x + r) / this.cell) | 0, 0, this.gw - 1), y0 = clamp(((y - r) / this.cell) | 0, 0, this.gh - 1), y1 = clamp(((y + r) / this.cell) | 0, 0, this.gh - 1);
+    for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) { const cell = this.grid[cy * this.gw + cx]; for (let i = 0; i < cell.length; i++) { const u = cell[i]; if (u.alive && distPt(u.x, u.y, x, y) <= r + u.r) fn(u); } }
   },
   allied(a, b) { if (a === b) return true; const pa = this.players[a], pb = this.players[b]; return !!(pa && pb && pa.team === pb.team); },
   allVis() { if (!this._allVis) { this._allVis = new Uint8Array(this.map.w * this.map.h).fill(2); } return this._allVis; },
@@ -63,16 +64,16 @@ const G = {
       if (cell.length < 2) continue;
       for (let i = 0; i < cell.length; i++) {
         const a = cell[i]; if (a.isBuilding || a.def.larva || a.burrowed || a.fly) continue;
-        for (const b of this.near(a.x, a.y, a.r)) {
-          if (b === a || b.isBuilding || b.def.larva || b.burrowed || b.fly || b.id < a.id) continue;
+        this.nearEach(a.x, a.y, a.r, b => {
+          if (b === a || b.isBuilding || b.def.larva || b.burrowed || b.fly || b.id < a.id) return;
           const dx = b.x - a.x, dy = b.y - a.y; let d = Math.hypot(dx, dy); const min = (a.r + b.r) * 0.85;
-          if (d >= min) continue; if (d < 0.01) { d = 0.01; }
+          if (d >= min) return; if (d < 0.01) { d = 0.01; }
           const push = (min - d) * 0.5 * 0.6; const ux = dx / d, uy = dy / d;
           const am = a.sieged ? 0 : 1, bm = b.sieged ? 0 : 1;
           const ax = a.x - ux * push * am, ay = a.y - uy * push * am, bx = b.x + ux * push * bm, by = b.y + uy * push * bm;
           if (am && this.passable(ax, ay, a)) { a.x = ax; a.y = ay; }
           if (bm && this.passable(bx, by, b)) { b.x = bx; b.y = by; }
-        }
+        });
       }
     }
   },
@@ -90,6 +91,7 @@ const G = {
   updateVision() {
     const m = this.map;
     for (const p of this.players) {
+      if (p.defeated && !p.human) continue; // a defeated computer player has nothing to see
       const v = p.vis; for (let i = 0; i < v.length; i++) if (v[i] === 2) v[i] = 1;
       const mark = (ux, uy, r, uh) => { const tx = Math.floor(ux / TILE), ty = Math.floor(uy / TILE); for (const [dx, dy] of this.circle(r)) { const x = tx + dx, y = ty + dy; if (x < 0 || y < 0 || x >= m.w || y >= m.h) continue; const i = y * m.w + x; if (m.height[i] <= uh || (m.height[i] === 2 && uh === 1 && false)) v[i] = 2; } };
       for (const u of this.units) { if (!u.alive || u.inside) continue; if (this.allied(u.owner, p.id) || u.fx.parasite === p.id) mark(u.x, u.y, u.sight, u.heightLevel()); }

@@ -5,8 +5,9 @@
 // ============================================================================
 const FX = {
   particles: [], decals: [], seen: new WeakSet(), rnd: Math.random,
+  MAX_PARTICLES: 700, MAX_DECALS: 260, // render-side only; a 200-supply brawl otherwise spawns thousands and the frame cost doubles
   reset() { this.particles = []; this.decals = []; this.seen = new WeakSet(); },
-  p(o) { this.particles.push(Object.assign({ vx: 0, vy: 0, life: 0.5, max: 0.5, size: 3, col: [255, 200, 80], add: true, grav: 0, kind: 'dot', shrink: true }, o)); },
+  p(o) { const ps = this.particles; if (ps.length >= this.MAX_PARTICLES) { let worst = 0; for (let i = 1; i < 8; i++) if (ps[i] && ps[i].life < ps[worst].life) worst = i; ps[worst] = ps[ps.length - 1]; ps.pop(); } ps.push(Object.assign({ vx: 0, vy: 0, life: 0.5, max: 0.5, size: 3, col: [255, 200, 80], add: true, grav: 0, kind: 'dot', shrink: true }, o)); },
   burst(x, y, n, spd, o) { for (let i = 0; i < n; i++) { const a = this.rnd() * Math.PI * 2, s = spd * (0.3 + this.rnd() * 0.7); this.p(Object.assign({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s }, o, { life: o.life * (0.6 + this.rnd() * 0.6), max: o.life })); } },
   fire(x, y, n, spd, r = 1) { this.burst(x, y, n, spd, { life: 0.35 * r, size: 5 * r, col: [255, 170, 60], add: true }); this.burst(x, y, Math.ceil(n / 2), spd * 0.6, { life: 0.45 * r, size: 7 * r, col: [255, 80, 20], add: true }); },
   smoke(x, y, n, r = 1) { for (let i = 0; i < n; i++) this.p({ x: x + (this.rnd() - .5) * 10 * r, y: y + (this.rnd() - .5) * 10 * r, vx: (this.rnd() - .5) * 20, vy: -20 - this.rnd() * 30, life: 0.9 * r + this.rnd() * 0.5, max: 1.2 * r, size: 6 * r, col: [70, 70, 70], add: false, kind: 'smoke', shrink: false }); },
@@ -31,7 +32,7 @@ const FX = {
   update(dt) {
     const ps = this.particles;
     for (let i = ps.length - 1; i >= 0; i--) { const p = ps[i]; p.life -= dt; if (p.life <= 0) { ps[i] = ps[ps.length - 1]; ps.pop(); continue; } p.vy += p.grav * dt; p.x += p.vx * dt; p.y += p.vy * dt; if (p.kind === 'smoke') { p.size += 14 * dt; p.vx *= 0.98; } else if (p.kind === 'debris' && p.grav && p.vy > 0 && this.rnd() < 0.02) { p.vy = 0; p.grav = 0; p.vx = 0; } }
-    if (G.frame % 24 === 0) { const ds = this.decals; for (let i = ds.length - 1; i >= 0; i--) { ds[i].t += 24; if (ds[i].t > ds[i].max) ds.splice(i, 1); } }
+    if (G.frame % 24 === 0) { const ds = this.decals; for (let i = ds.length - 1; i >= 0; i--) { ds[i].t += 24; if (ds[i].t > ds[i].max) ds.splice(i, 1); } if (ds.length > this.MAX_DECALS) ds.splice(0, ds.length - this.MAX_DECALS); }
   },
   drawParticles(ctx) {
     const ps = this.particles; ctx.save();
