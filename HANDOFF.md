@@ -6,11 +6,20 @@ Read this first in a fresh chat. It says where the build is, how it is wired, wh
 
 Open a chat in `Default Project/broodwar/` and paste:
 
-> Read HANDOFF.md and README.md, run the tests, then do Milestone M4 from HANDOFF.md. Work through the tasks in order, keep the determinism tests green after every change, commit at each task, and update HANDOFF.md at the end.
+> Read HANDOFF.md and README.md, run the tests, then do Milestone M5 from HANDOFF.md. Work through the tasks in order, keep the determinism tests green after every change, commit at each task, and update HANDOFF.md at the end.
 
-## Status (as of commit d3230ea, 2026-09-06)
+## Status (as of commit 065f8ad, 2026-09-06)
 
-Milestone M3 is complete: all six tasks are done and committed, one of them (task 1, balance) short of its acceptance bar — read the balance section below before trusting any number in it.
+Milestone M4 is complete except for its balance task, which is documented as **not achievable with the levers tried** — read the balance section before spending time there. M3 is complete.
+
+What M4 added on top of M3:
+
+- **Confidence intervals in the balance harness.** `test/balance.js` reports "at target", "OUTSIDE 60/40" or "undecided" with a 95% Wilson interval, and says how many more games a verdict needs. This is the most valuable thing in the milestone: it retro-invalidates several M3 conclusions.
+- **Three classes of never-completing order fixed** — unreachable goals, units wedged in building footprints, and burrowed units. Together these were the last source of stuck units.
+- **Simulation snapshots.** Replay seeking backwards is 236 ms instead of 2438 ms, via `js/snapshot.js`.
+- **Building damage states** for all three races at two thresholds.
+- **Multiplayer speed selection**, editor map sizes, the console and menu fitting small windows.
+- **An AI audit tool** (`test/aiaudit.js`) that counts things a human would never do, and a supply fix it found.
 
 What M3 added on top of M2:
 
@@ -21,9 +30,51 @@ What M3 added on top of M2:
 - **Infantry art pass.** Marines, zerglings and zealots are about 27% larger, and every unit has a four-frame idle loop instead of one static pose.
 - **Observer and replay controls.** Per-player vision switching, a production overlay and a timeline scrubber.
 
-### Where the balance actually landed
+### Where the balance actually landed — read this before touching it
 
-**Read this before doing any more balance work.** Two things matter more than the numbers themselves:
+**M4 task 1 (fix Terran vs Zerg) was not achieved, and I do not think it is achievable by tuning.** Final state over 216 games (12 seeds x 3 layouts x both sides), 95% Wilson intervals:
+
+| matchup | result | verdict |
+|---|---|---|
+| Protoss vs Zerg | P 51% [39–62] | undecided, i.e. even as far as this can tell |
+| Protoss vs Terran | P 28% [19–40] | **outside** |
+| Terran vs Zerg | T 84% [73–91] | **outside** |
+
+**Roughly forty configurations have now been measured across M3 and M4.** Everything below is evidence, not opinion. The single most useful thing for M5 is to not repeat any of it.
+
+**The structural finding.** Equal-supply controlled duels (48–54 supply a side, six seeds each) give **Terran–Zerg 3–3, Protoss beats Terran 6–0, Zerg beats Protoss 6–0**. The unit tables are fine. Every game is decided by who brings more army supply to the fight.
+
+**The pattern that defeats tuning.** *Every general improvement to the AI helps Terran most.* The composition hold, the base-count floor, the movement fixes, the Lurker fix, the supply fix — each was measured, each was a genuine improvement in AI quality, and each left Terran further ahead. Terran converts macro quality into delivered supply better than the other two because marines are cheap, mass instantly and never path badly. So "make the AI better" is not a route to balance here; it moves the wrong way.
+
+**What was measured and did not work** (each a full run, most 216 games):
+
+| tried | result |
+|---|---|
+| Terran comp off marines (6→4) onto tanks (4→5) | TvZ 80% [70–88] — unchanged |
+| More Zerg Lurkers (morph ratio 1.5 → 0.8) | TvZ 79% [68–87] — unchanged |
+| Zerg drones→army earlier (ramp from 16 → 12 workers) | TvZ 91% — much worse |
+| Zerg early sunkens on a supply curve | TvZ 90% — much worse |
+| Relaxing the base-count floor for Zerg only | TvZ 65% but PvZ collapses to 11% |
+| Earlier Protoss gas | no change at all (M2's handoff recommended this) |
+| Earlier Psionic Storm, in the script and the research order | no change at all (also recommended by M2) |
+| Earlier Lurkers in the research order | no change |
+| More Zerg macro hatcheries | larvae but no minerals |
+| Cost-aware research gate | helps Terran more; TvZ 97% |
+| Gas vs mineral worker rebalancing | worse across the board |
+| Reacting to a sighted push rather than one that landed | no improvement |
+| Steeper or gentler Zerg drone ramps than the committed one | both worse |
+
+**What I would try next, in order.** All of these change *what the game asks of the AI* rather than how well it plays:
+
+1. **Make the first timing push survivable.** Every one of these games is decided by one fight around the eight-to-eleven minute mark, and the loser never recovers. Anything that softens that — a real retreat behaviour, reinforcement that arrives as a group, static defence that is actually placed on the attack path — changes the shape of the game rather than nudging a number. Zerg loses that fight in TvZ and Protoss loses it in PvT.
+2. **Give Terran something to get wrong.** Marines are strictly the best thing the AI can do with minerals. If the AI had to hold a third base to afford its army, or if bio needed upgrades to stay efficient, Terran's macro edge would cost something.
+3. **Only then tune.** With the interval tool, a real 10-point move needs 97 decided games per matchup to confirm — about nine minutes per configuration. Budget accordingly.
+
+**Known asymmetry, still unexploited.** By ten minutes in TvZ, Terran has finished five techs (siege, stim, u238, mines, thrusters) and Zerg has finished none. Zerg's minerals and gas are anti-correlated early — 470 minerals with 32 gas, then 114 minerals with 359 gas — so the flat research gate almost never opens for it. The obvious fix (a cost-aware gate) backfired because it helped Terran more, but the observation still looks like the biggest single lever on TvZ if approached from the Zerg side only.
+
+### How M3's balance work landed (kept for context)
+
+Two things matter more than the M3 numbers themselves:
 
 1. **The variance is much larger than M2 assumed.** A `--seeds=1,2,3,4,5,6` run is 36 games per matchup, and the 95% interval on 36 games is about 30 points wide. Two independent 108-game runs of the *same* code gave PvT 41.7% and 25.0% — and those two are further apart than binomial noise alone explains, so per-seed map structure adds variation on top. `test/balance.js` now prints the interval and reports "undecided" rather than a number you can tune against; **97 decided games per matchup** are needed for ±10 points, 385 for ±5.
 2. **The M3 task 1 commit message (48f7fc2) overstates the result.** It quotes the seeds 1–6 run only. Here is the same comparison over 216 games per configuration (12 seeds x 3 layouts x both sides, so 72 decided games per matchup) with 95% Wilson intervals:
@@ -68,6 +119,7 @@ So M3 traded one established failure for another. Fixing Terran vs Zerg is the f
 | `js/commands.js` | `RNG`, `G.rand`, `G.stateHash`, command packers/dispatcher (`CMD`), wrappers that intercept every player action, `G.exec`, cheats, `Replay`. Loaded after abilities.js. |
 | `js/ai.js` | Computer players: scripts, macro, money reservation, production, research, army waves, scouting, drops, micro. |
 | `js/missions.js` | Eight scenarios, the mission runner (fallback victory, score line) and helpers (`G.hallOf`, `G.givePlayer`, `G.placeDone`). |
+| `js/snapshot.js` | Simulation snapshots: reflective capture and restore of the whole sim state, used for replay seeking. Reflective on purpose — a hand-written field list would silently desync the first time someone added a field. |
 | `js/build.js` | Build stamp. Reflection over the sim's data tables and function source; saves and replays carry it and a mismatch is refused. Render code is deliberately excluded. |
 | `js/net.js` | LAN lockstep client: hash exchange, desync detection, drop and rejoin. `test/serve.js` is the static server + relay (no npm deps). |
 | `js/editor.js` | Map editor: terrain brush, rectangle fill, mirrored painting, undo/redo, minimap, base placement, validation, localStorage and JSON import/export. |
@@ -99,28 +151,27 @@ Both targets were met at M2 and nothing in M3 touched the hot path. The infantry
 
 ## Known issues and rough edges
 
-- **Balance**: see the section above. Terran vs Zerg is the one *established* failure (76.1% [65.0–84.5]) and is M3's regression. Protoss vs Terran leans Terran but has never been established either way at this sample size.
-- **An unreachable goal is never abandoned.** `Pathfinder.find` returns a best-effort partial path rather than failing, so a unit ordered somewhere it cannot reach walks into the obstacle and slides along it forever with a live order. `u.stuck` does not catch it because the unit *is* moving. A movement watchdog was written and measured during M3 (give up after ten seconds without getting closer, then let `follow`/`patrol`/`construct`/`load` drop the order); it fixed every case it was aimed at but made units go idle *inside* building footprints in `z1` and `z2`, which were clean before, so it was reverted. Worth another attempt alongside the push-out logic.
-- **Burrowed units silently ignore plain move orders.** `moveTo` returns false immediately for a burrowed unit and nothing cancels the order. Fixed for `load` (the unit surfaces); the general fix is to unburrow on any movement order as Brood War does, which needs `AI.army()` to skip burrowed units the way it already skips sieged ones, or Lurkers will surface and oscillate.
+- **Balance**: see the section above. Terran vs Zerg (T 84%) and Protoss vs Terran (P 28%) are both established failures; Protoss vs Zerg is even. This is the open problem.
+- **The AI leaves production buildings idle about a fifth of the time**, measured by `test/aiaudit.js`. Some of that is the deliberate composition hold, not all. It is the largest remaining number in the audit.
+- **The AI is supply blocked about 10% of the time**, down from 13% but still far more than a human.
 - **Missions**: all eight resolve and are winnable. Driven by the scripted player, `t1`, `t2` and `p3` are won and the rest run to the frame cap; a human should try them before tuning.
-- **Multiplayer**: rejoin re-simulates from frame 0, so joining a very long game takes a while. There is no host migration. Speed is locked to Fastest. Tested with two clients plus AI, not more.
-- **Replay seeking backwards** restarts and re-runs from frame 0, so scrubbing back in a long game pauses for a moment. Snapshots every few minutes would fix it.
-- **AI `defend` state** can ping-pong when harassed; drop ops occasionally wait the full timeout with an empty transport.
-- **Editor**: maps are always 128x128 and the brush is a circle (rectangle fill is a separate mode).
-- **UI**: mission briefing text overflows the panel on a narrow window, and below roughly 900x600 the fixed-height console leaves almost no map viewport.
-- **Art**: buildings have no damage states; one terrain tileset.
-- The desktop browser pane logs a `SyntaxError: Unexpected token ','` on load that does not come from any project file (all pass `node --check`); ignore it there, but confirm it does not appear in a normal browser.
+- **Multiplayer**: rejoin still re-simulates from frame 0, so joining a long game takes a while — `js/snapshot.js` now exists and would fix this, but the relay would have to ship a snapshot rather than the whole command history. Tested with two clients plus AI, not more.
+- **Replay backward-seek** restarts from a checkpoint 30 s back, so it is fast but not instant; checkpoints past 40 minutes are thinned to every 60 s.
+- **Editor**: the brush is a circle only (rectangle fill is a separate mode). Map size cycles 96/128/160/192 and the engine accepts 64–256, but the size button is the only way to change it.
+- **Art**: one terrain tileset.
+- **Host migration** is not a thing that needs building: the relay picks the first non-dropped human as host, so if the host leaves the next player takes over, and mid-game there is no authority to transfer because the relay routes everything.
+- The `SyntaxError: Unexpected token ','` that the desktop browser pane logged since M2 **no longer reproduces** — the console is clean on load and every project file passes `node --check`.
 
-## Milestone M4 — proposed
+## Milestone M5 — proposed
 
 Nothing here is started. Do them in order; each is one commit with tests green.
 
-1. ~~Give the balance harness error bars.~~ **Done** — `test/balance.js` prints 95% Wilson intervals and reports "undecided" when the interval crosses the 60/40 line; `test/balance_stats.js` checks the maths and pins the M3 numbers as a fixture.
-2. **Fix Terran vs Zerg, without giving back Protoss vs Zerg.** This is the M3 regression. Read the balance section first: the base-count floor couples the two matchups, so the useful move is to find a *different* way to make Protoss competitive so the floor can be relaxed for Zerg. Acceptance: all three matchups within 60/40 over **two independent 216-game runs** (`--seeds=1..6` and `--seeds=7..12`), not one — M3 was misled by exactly that.
-3. **Fix the unreachable-goal class of bug properly.** See the rough edges above; the watchdog plus the footprint push-out, together. Acceptance: `test/playtest.js all` and `test/playtest.js missions` stay at 0 stuck units, and a unit ordered onto an unreachable cliff gives up within a few seconds.
-4. **Replay snapshots.** Keep a state snapshot every couple of minutes so seeking backwards does not re-run from frame 0. Acceptance: seeking backwards in a 20-minute replay is under a second and `test/observer.js`'s bit-identical checks still pass.
-5. **Building damage states.** Terran buildings already burn below a third; give every race visible damage at two thresholds. Acceptance: side-by-side screenshots.
-6. **Human play-test round three (stretch).** Now that the AI macros properly and observer controls exist, watch a few AI-vs-AI replays and log what the AI does that a human never would. That is likely to be worth more than another tuning pass.
+1. **Make one lost fight not lose the game.** Every AI-vs-AI game is decided by a single engagement around minute eight to eleven, and the loser never rebuilds. Give the AI a retreat (pull out below some army-strength ratio rather than feeding units in), reinforcement that arrives as a group instead of in ones, and static defence placed on the path an attack actually takes. This is the prerequisite for the balance work, not a nice-to-have — see the balance section for why tuning cannot get there.
+2. **Then re-measure balance.** Two independent 216-game runs, using the interval verdicts rather than the raw percentages. Acceptance: no matchup reported OUTSIDE 60/40. Do not chase "undecided" — that is the tool telling you the run cannot decide, not a failure.
+3. **Close the idle-production gap.** `test/aiaudit.js` says production buildings sit idle about a fifth of the time with the money to fill them banked. Work out how much of that is the composition hold and fix the rest. Acceptance: the audit number roughly halves and balance does not move.
+4. **Ship snapshots to rejoining clients.** The relay currently replays the entire command history to a rejoiner, which is slow and gets slower. `js/snapshot.js` already captures everything needed; the work is transferring it and trusting it. Acceptance: rejoining a 20-minute game is under a few seconds and `test/net.js` still passes.
+5. **A second terrain tileset.** One more biome through the existing procedural pipeline, selectable per map in the editor. Acceptance: side-by-side screenshots and a game played on each.
+6. **Human play-test round four (stretch).** With the observer controls and the audit tool, watch a few games and log what the numbers do not catch.
 
 ## How to run everything
 
@@ -130,6 +181,10 @@ node test/features.js            # 87 gameplay checks
 node test/determinism.js         # identical runs match; replay reproduces the original
 node test/version.js             # build stamp: a save from another build is refused
 node test/observer.js            # replay observer: vision switching, production overlay, seeking
+node test/snapshot.js            # a restored simulation snapshot re-simulates bit-identically
+node test/movement.js            # unreachable goals, wedged units, burrowed units
+node test/balance_stats.js       # the statistics behind the balance harness (runs no games)
+node test/aiaudit.js             # counts things the AI does that a human never would
 node test/playtest.js all        # scripted human drives TvZ, PvT, ZvP through the UI layer
 node test/playtest.js missions   # the same scripted human plays all eight campaign missions
 node test/net.js                 # two lockstep clients + AI: hashes, drop, rejoin, desync detection
