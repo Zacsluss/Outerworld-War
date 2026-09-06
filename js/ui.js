@@ -43,6 +43,10 @@ const UI = {
     if (!this.simTimer) this.simTimer = setInterval(() => this.simStep(), 1000 / 60);
   },
   startFromLog(data, mode) {
+    // A save is a seed plus a command log, so a different build re-simulates it into a different game and
+    // drifts away silently. Refuse it with the reason instead.
+    const bad = Replay.versionError(data, mode === 'watch' ? 'replay' : 'save');
+    if (bad) { this.loading = null; if (typeof alert === 'function') alert(bad); else console.error(bad); return false; }
     const opts = { players: data.players, seed: data.seed, layout: data.layout, mission: data.mission || null, mode: mode === 'watch' ? 'replay' : 'play' };
     this.start(opts); G.pendingCmds = { list: data.cmds || [], i: 0 }; G.recording = mode === 'load';
     if (mode === 'load') this.fastForward(data.frame, () => { G.pendingCmds = null; if (data.cam) { Render.camX = data.cam.x; Render.camY = data.cam.y; this.clampCam(); } });

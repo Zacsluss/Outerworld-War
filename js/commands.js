@@ -117,12 +117,14 @@ G.cheat = function (code, p) {
 // Replay / save-game: seed + settings + command log; loading re-simulates.
 // ============================================================================
 const Replay = {
-  data() { return { ver: 2, seed: G.seed, layout: G.layout, players: G.setup.players, human: G.human, cmds: G.log.slice(), frame: G.frame, cam: { x: Render.camX, y: Render.camY }, mission: G.setup.mission || null }; },
+  data() { return { ver: 2, build: typeof BUILD !== 'undefined' ? BUILD.hash() : null, seed: G.seed, layout: G.layout, players: G.setup.players, human: G.human, cmds: G.log.slice(), frame: G.frame, cam: typeof Render !== 'undefined' ? { x: Render.camX, y: Render.camY } : null, mission: G.setup.mission || null }; },
   download(obj, name) { const blob = new Blob([JSON.stringify(obj)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); },
   save(toFile = true) { if (UI.mode !== 'play' || (typeof Net !== 'undefined' && Net.active)) return; const d = this.data(); try { localStorage.setItem('bw_save', JSON.stringify(d)); } catch (e) { } if (toFile) this.download(d, 'broodwar-save-' + Math.floor(G.frame / TPS) + 's.json'); G.players[G.human].msg('Game saved.', 'info'); },
   saveReplay() { const d = this.data(); this.download(d, 'broodwar-replay-' + Date.now() + '.json'); },
   hasAutosave() { try { return !!localStorage.getItem('bw_save'); } catch (e) { return false; } },
   loadAutosave() { try { const d = JSON.parse(localStorage.getItem('bw_save')); if (d) UI.startFromLog(d, 'load'); } catch (e) { console.error(e); } },
+  // null when the log can be trusted, otherwise a sentence explaining the mismatch
+  versionError(d, what) { return typeof BUILD !== 'undefined' ? BUILD.check(d, what) : null; },
   fromFile(file, mode) { const r = new FileReader(); r.onload = () => { try { UI.startFromLog(JSON.parse(r.result), mode); } catch (e) { alert('Could not read that file: ' + e.message); } }; r.readAsText(file); },
   // apply all logged commands scheduled for the current frame
   applyPending() { const q = G.pendingCmds; if (!q) return; while (q.i < q.list.length && q.list[q.i].f <= G.frame) { const e = q.list[q.i++]; G.applying = true; try { CMD.apply(e.c); } finally { G.applying = false; } if (G.recording) G.log.push({ f: G.frame, c: e.c }); } },
