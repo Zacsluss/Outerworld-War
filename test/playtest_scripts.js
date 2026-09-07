@@ -57,8 +57,9 @@ const T = {
     if (Bot.defend(army)) return; const rally = { x: p.startX + (G.map.w * TILE / 2 - p.startX) * 0.25, y: p.startY + (G.map.h * TILE / 2 - p.startY) * 0.25 };
     if (f % 8 === 0 && army.length) Bot.group(1, army.slice(0, 12));
     const sup = army.reduce((a, u) => a + u.def.sup, 0);
-    if (!this.attacking && sup >= 28) { this.attacking = f; const t = Bot.enemyTarget(); if (t) { Bot.key('1'); Bot.key('a'); Bot.lclick(t.x, t.y); const rest = army.filter(u => !UI.selection.includes(u)); Bot.attackMove(rest.slice(0, 12), t.x, t.y); Bot.log('ATTACK with ' + army.length); } }
+    if (!this.attacking && sup >= 28) { this.attacking = f; const t = Bot.enemyTarget(); if (t) { Bot.key('1'); Bot.key('a'); Bot.lclick(t.x, t.y); Bot.attackAll(army.filter(u => !UI.selection.includes(u)), t.x, t.y); Bot.log('ATTACK with ' + army.length); } }
     else if (this.attacking && f - this.attacking > 24 * 120) { this.attacking = 0; }
+    else if (this.attacking && f % 24 === 0) { const t = Bot.enemyTarget(); if (t) Bot.reinforce(army, t.x, t.y); }
     else if (!this.attacking) { const idle = army.filter(u => u.order.type === 'idle' && distPt(u.x, u.y, rally.x, rally.y) > 5 * TILE); if (idle.length) { Bot.attackMove(idle.slice(0, 12), rally.x + (R.next() - .5) * 96, rally.y + (R.next() - .5) * 96); if (f % 3 === 0) { Bot.select(idle.slice(0, 3)); Bot.key('h'); } } }
     // random human fidgeting: patrol / shift-queue / stop / rally / cancel last queued
     if (f % 9 === 0) { const u = Bot.pick(army); if (u) { Bot.select([u]); Bot.key('p'); Bot.lclick(u.x + 100, u.y); Bot.rclick(u.x + 60, u.y + 60, true); Bot.rclick(u.x, u.y, true); } }
@@ -107,8 +108,9 @@ const P = {
     const army = Bot.army().filter(u => u.def.id !== 'interceptor' && u.def.id !== 'scarab'); if (Bot.defend(army)) return; const rally = { x: p.startX + (G.map.w * TILE / 2 - p.startX) * 0.25, y: p.startY + (G.map.h * TILE / 2 - p.startY) * 0.25 };
     if (f % 8 === 0 && army.length) Bot.group(1, army.slice(0, 12));
     const sup = army.reduce((a, u) => a + u.def.sup, 0);
-    if (!this.attacking && sup >= 30) { this.attacking = f; const t = Bot.enemyTarget(); if (t) { Bot.key('1'); Bot.key('a'); Bot.lclick(t.x, t.y); Bot.attackMove(army.filter(u => !UI.selection.includes(u)).slice(0, 12), t.x, t.y); for (const ht of Bot.mine(u => u.def.id === 'high_templar' || u.def.id === 'dark_archon' || u.def.id === 'arbiter')) { Bot.select([ht]); Bot.rclickOn(army[0]); } Bot.log('ATTACK with ' + army.length); } }
+    if (!this.attacking && sup >= 30) { this.attacking = f; const t = Bot.enemyTarget(); if (t) { Bot.key('1'); Bot.key('a'); Bot.lclick(t.x, t.y); Bot.attackAll(army.filter(u => !UI.selection.includes(u)), t.x, t.y); for (const ht of Bot.mine(u => u.def.id === 'high_templar' || u.def.id === 'dark_archon' || u.def.id === 'arbiter')) { Bot.select([ht]); Bot.rclickOn(army[0]); } Bot.log('ATTACK with ' + army.length); } }
     else if (this.attacking && f - this.attacking > 24 * 120) this.attacking = 0;
+    else if (this.attacking && f % 24 === 0) { const t = Bot.enemyTarget(); if (t) Bot.reinforce(army, t.x, t.y); }
     else if (!this.attacking) { const idle = army.filter(u => u.order.type === 'idle' && distPt(u.x, u.y, rally.x, rally.y) > 5 * TILE); if (idle.length) Bot.attackMove(idle.slice(0, 12), rally.x + (R.next() - .5) * 96, rally.y + (R.next() - .5) * 96); }
     if (f % 9 === 0) { const u = Bot.pick(army); if (u) { Bot.select([u]); Bot.key('p'); Bot.lclick(u.x + 100, u.y); Bot.rclick(u.x + 60, u.y + 60, true); Bot.key('s'); } }
     if (f % 11 === 0) { const b = Bot.mine(u => u.isBuilding && u.done && u.def.produces.length)[0]; if (b) { Bot.select([b]); Bot.rclick(rally.x, rally.y); } }
@@ -158,8 +160,9 @@ const Z = {
     const army = Bot.army().filter(u => u.def.id !== 'broodling'); if (Bot.defend(army)) return; const rally = { x: p.startX + (G.map.w * TILE / 2 - p.startX) * 0.25, y: p.startY + (G.map.h * TILE / 2 - p.startY) * 0.25 };
     if (f % 8 === 0 && army.length) Bot.group(1, army.slice(0, 12));
     const sup = army.reduce((a, u) => a + u.def.sup, 0);
-    if (!this.attacking && sup >= 30) { this.attacking = f; const t = Bot.enemyTarget(); if (t) { Bot.key('1'); Bot.key('a'); Bot.lclick(t.x, t.y); Bot.attackMove(army.filter(u => !UI.selection.includes(u) && !u.burrowed).slice(0, 12), t.x, t.y); for (const c of Bot.mine(u => u.def.id === 'defiler' || u.def.id === 'queen')) { Bot.select([c]); Bot.rclickOn(army[0]); } Bot.log('ATTACK with ' + army.length); } }
+    if (!this.attacking && sup >= 30) { this.attacking = f; const t = Bot.enemyTarget(); if (t) { Bot.key('1'); Bot.key('a'); Bot.lclick(t.x, t.y); Bot.attackAll(army.filter(u => !UI.selection.includes(u) && !u.burrowed), t.x, t.y); for (const c of Bot.mine(u => u.def.id === 'defiler' || u.def.id === 'queen')) { Bot.select([c]); Bot.rclickOn(army[0]); } Bot.log('ATTACK with ' + army.length); } }
     else if (this.attacking && f - this.attacking > 24 * 120) this.attacking = 0;
+    else if (this.attacking && f % 24 === 0) { const t = Bot.enemyTarget(); if (t) Bot.reinforce(army, t.x, t.y); }
     else if (!this.attacking) { const idle = army.filter(u => u.order.type === 'idle' && !u.burrowed && distPt(u.x, u.y, rally.x, rally.y) > 5 * TILE); if (idle.length) Bot.attackMove(idle.slice(0, 12), rally.x + (R.next() - .5) * 96, rally.y + (R.next() - .5) * 96); }
     if (f % 9 === 0) { const u = Bot.pick(army.filter(x => !x.burrowed)); if (u) { Bot.select([u]); Bot.key('p'); Bot.lclick(u.x + 100, u.y); Bot.rclick(u.x + 60, u.y + 60, true); } }
     if (f % 11 === 0) { const b = Bot.mine(u => u.isBuilding && u.done && u.def.spawnsLarva)[0]; if (b) { Bot.select([b]); Bot.rclick(rally.x, rally.y); } }

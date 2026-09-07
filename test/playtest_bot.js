@@ -52,6 +52,12 @@ const Bot = {
   // base under attack: send the army there (returns true while defending)
   defend(army) { const hit = this.mine(u => (u.isBuilding || u.def.worker) && G.frame - u.lastHit < 72 && u.lastHitBy && u.lastHitBy.owner !== G.human && !G.allied(u.lastHitBy.owner, G.human))[0]; if (!hit) { if (this.defending && G.frame - this.defending > 24 * 20) this.defending = 0; return !!this.defending; } this.defending = G.frame; const far = army.filter(u => u.order.type !== 'attack' && distPt(u.x, u.y, hit.x, hit.y) > 6 * TILE && !u.sieged && !u.burrowed); if (far.length) { this.attackMove(far.slice(0, 12), hit.x, hit.y); if (far.length > 12) this.attackMove(far.slice(12, 24), hit.x, hit.y); } return true; },
   attackMove(units, x, y, shift) { if (!units.length) return; this.select(units); this.key('a'); this.lclick(x, y, shift); },
+  // Selection is capped at 12, and the scripts used to send exactly two selections -- 24 units out of an
+  // army of ninety -- and then leave the rest standing at home for two minutes. A human uses control
+  // groups and sends the lot; this walks the army in twelves the way that actually looks on screen.
+  attackAll(units, x, y, max) { for (let i = 0; i < units.length && i < (max || 96); i += 12) this.attackMove(units.slice(i, i + 12), x, y); },
+  // units that finished training after the push left, or that fell out of it
+  reinforce(units, x, y) { const idle = units.filter(u => u.order.type === 'idle' && !u.sieged && !u.burrowed && !u.inside); if (idle.length) this.attackAll(idle, x, y, 36); },
   move(units, x, y, shift) { if (!units.length) return; this.select(units); this.rclick(x, y, shift); },
   ability(u, id, target, x, y) { const ab = DATA.abilities[id]; if (!ab) return false; this.select([u]); const bs = UI.buildCard(); const b = bs.find(b => b.label === Abilities.label(u, id)); if (!b) return false; b.fn(); if (ab.kind === 'unit' || ab.kind === 'point') { if (!UI.pending) return false; if (target) this.lclickOn(target); else this.lclick(x, y); } return true; },
 };
