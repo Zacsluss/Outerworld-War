@@ -76,4 +76,4 @@ node broodwar/test/editor.js                # builds a custom map, then plays an
 
 - No online matchmaking (LAN only), no original campaign story, no hand-painted art or recorded voice acting.
 - Exact BW pathfinding quirks, collision boxes and animation timings are approximations.
-- Balance is tuned by AI-vs-AI runs, not by human ladder play. No matchup is outside 60/40: Protoss vs Zerg 52%, Protoss vs Terran 52%, Terran vs Zerg 61% over 378 decided games. Terran vs Zerg is even on Lost Ruins and 67/33 on the other two layouts, so what is left is a map difference rather than a unit one (see HANDOFF.md).
+- Balance is tuned by AI-vs-AI runs, not by human ladder play. Protoss vs Zerg 52% and Protoss vs Terran 52% are at target; **Terran vs Zerg is not**, at 70% [65-74] over 375 decided games after M6, up from 61% before it. Fixing a bug that stopped Medics healing is what moved it, isolated by running the same 66 seeds with that one change reverted (see HANDOFF.md). Terran vs Zerg was even on Lost Ruins and 67/33 on the other two layouts before that; it is now Terran-favoured on all three.

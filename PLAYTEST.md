@@ -179,3 +179,107 @@ Shape of the game, measured over twelve games (`retreats / army wipes / recoveri
 - **`test/net.js` failed two checks once** while a 216-game balance run was saturating every core, and
   passed five times in a row afterwards, including immediately after the same batch of tests. Its
   rejoin phase is timing-sensitive under load.
+
+## Round five: M6 task 6
+
+The first round since M2 played through the browser pane again rather than only measured, and that is the
+whole finding: **the audit watches the AI, and M6's alerts are for the human, so nothing was watching the
+thing M6 had just built.** Nine AI-vs-AI games say nothing about what the console looks like to a person.
+
+One game was played in the browser pane as Terran vs a Normal Zerg on Lost Ruins, seed 11, driven
+through the real UI (`UI.select` / command card / hotkeys / placement, the same entry points
+`test/playtest_bot.js` uses) with the project's own scripted human loaded into the page. It was played
+deliberately badly in the four ways the M6 alerts exist for: depots always a beat late, the barracks
+ignored from 6:00 to 9:00, and a third base taken with nothing guarding it.
+
+### The measured half, for continuity with rounds three and four
+
+`node test/aiaudit.js 24000 1,2,3` — nine games, 131 game-minutes, on the shipping code:
+
+| what a human would never do | M4 | M5 | M6 |
+|---|---|---|---|
+| production buildings idle with the money banked (per minute, both players) | 203.1 | 105.7 | **86.7** |
+| spellcasters sitting on a full energy bar | 24.2/min | 36.4/min, 23% of caster-seconds | **21.0/min, 11%** |
+| army idle while its own base is being hit (per minute) | 3.1 | 2.2 | **1.3** |
+| idle workers (per minute) | 6.4 | 5.9 | 6.4 |
+| share of time over 700 minerals unspent | 2% | 1% | **0%** |
+| share of time supply blocked | 7% | 9% | 9% |
+| share of time attacking into 2+ static defences | 2% | 1% | **0%** |
+
+Better on five of seven and no worse on the other two. The energy row is M6 task 2's headline holding up
+on a different set of seeds, and the breakdown is still the same two units doing all of it: medics 77% of
+the waste (11% full, down from 23%) and comsats 23% (25% full, down from 43%).
+
+Two units appear in the breakdown that had **zero** caster-seconds when M6 task 2 measured it: science
+vessel at 99s and wraith at 67s. Both are tiny and the seeds differ, so treat it as noise until someone
+measures it on purpose — but Defiler, Arbiter, Queen, Ghost, Battlecruiser and Dark Archon are still
+absent from the table entirely, which is the finding that matters.
+
+### The alerts themselves are right
+
+Every alert fired at a moment a player would agree with, and none fired when it should not have:
+
+| | fired at | true? |
+|---|---|---|
+| supply | 1:06, 2:53, 3:49, 4:48, 5:41 | yes -- on the cap every time, with 274 to 724 minerals banked |
+| idle production | 5:14, 6:27, 7:12 | yes -- 560, then 1266, then 1948 minerals with the barracks empty |
+| expansion undefended | scenario | fires on the first pass, pings the base, Space centres the camera on it |
+| carrier | not reachable as Terran | covered by `test/alerts.js` |
+
+The ping and the camera jump were checked end to end: an undefended expansion under attack raises one
+console line, drops a minimap ping on the building's own coordinates, and Space moves the camera to it.
+
+### 28. The supply line drowned the console, and the audit could not see it
+
+**Fixed.** 48 console lines in eight minutes and **41 of them were "Additional supply depots required."**,
+one every three seconds from 2:53 to 6:20. The console holds six, so for three and a half minutes it held
+six copies of one sentence -- burying "Stim Packs research complete", both "Your forces are under attack"
+lines and all three idle-production alerts. The voice line rides the same path, so it also said it aloud
+41 times.
+
+M6 task 3 fixed half of this: it silenced `Unit.tickProduction`, the path for a unit already queued that
+cannot start. It left `G.queueUnit`, `G.larvaMorph` and the Zerg morph in `abilities.js`, which speak on
+every *refused click* and ran on `Player.msg`'s own 72-frame de-dupe rather than the alert's 40-second
+cooldown. The refusal does have to say something -- otherwise the button silently does nothing -- so what
+was wrong was two cooldowns for one condition. `G.supplyRefused` speaks through the alert's own slot.
+Same game replayed: **48 lines down to 14, the supply line 41 down to 6**, and the eight lines that carry
+information are all visible.
+
+Why four rounds of auditing missed it: `test/alerts.js` plays the human seat with the ordinary AI, and
+the AI checks its supply before it queues, so it never makes a refused click. **The entire class of
+"player asks for something the game refuses" is unaudited**, because the audit's player never asks for
+anything it cannot have. The new check in `test/alerts.js` leans on the button for five minutes -- 2880
+refused clicks -- and requires the console lines to fit the alert cooldown; against the old code it
+reports 41 lines where 4 are allowed, which is the number the played game produced.
+
+### 29. At 200/200 the game asked for supply depots
+
+**Fixed.** Found while checking the fix above, by asking when else the refusal speaks. At the 200 cap
+`G.queueUnit` refuses, and it said "Additional supply depots required." — telling the player to build
+something that cannot help, which is the one thing an alert must never do. `tickAlerts` already knew
+better: its `blocked` test is gated on `supMax < 200`, so the alert pass stays quiet at the cap and only
+the refusal spoke. It now says "Maximum supply reached." instead. Two checks in `test/alerts.js` cover
+it, because the cap is reachable in any long game and the old line is the kind of thing a player learns
+to ignore the whole alert for.
+
+### What the audit still cannot see
+
+- **Anything about the console.** It counts what the AI does, not what the player is shown. A second
+  source for a message, a line that scrolls past unread, a ping on a spot the player cannot see -- none
+  of it is countable by watching the AI play itself.
+- **Refused actions.** See above. The audit's human is an AI that never clicks something it cannot
+  afford, cannot supply, or cannot place.
+- **Whether the player acted on it.** The idle-production alert fired at 5:14 with 560 minerals banked,
+  again at 6:27 with 1266 and again at 7:12 with 1948 — as often as its 45-second cooldown allows, from
+  the first eight seconds the condition held. The alert did its job three times and the bank still grew,
+  because the scripted player was written to ignore it. Nothing in the alert pass or the audit can tell
+  "the player was not told" from "the player was told and did nothing", and only the second of those is
+  the game working correctly.
+
+### Known, measured, not fixed
+
+- **The AI never fields an advanced caster**, unchanged from M6 task 2's finding: 28 of the 30 spells
+  have working code and a working autocast and are never reached in a normal-length game. Composition
+  and tech timing, not energy.
+- **`test/net.js` is not timing-sensitive under load.** Round four recorded that reading and it was
+  wrong. See HANDOFF.md: two real bugs, both now fixed.
