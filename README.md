@@ -68,6 +68,7 @@ node broodwar/test/net.js                   # two lockstep clients + AI through 
 node broodwar/test/missions.js              # every campaign mission: setup, placement, objective resolves
 node broodwar/test/balance.js               # AI-vs-AI win-rate matrix across matchups, layouts and seeds
 node broodwar/test/perf.js 600 4 --sustain  # 4-player 200-supply battle, per-tick cost by phase
+node broodwar/test/perf_render.js           # the same battle's draw pass at 1080p; open the URL it prints
 node broodwar/test/editor.js                # builds a custom map, then plays an AI game and a LAN game on it
 ```
 
