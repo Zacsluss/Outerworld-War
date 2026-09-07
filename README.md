@@ -35,7 +35,7 @@ Then open http://localhost:8765. The server also prints a LAN address for multip
 
 **AI**: scripted openings per race, macro (workers, supply, gas saturation, expansions, production, add-ons, static defence), research priorities, scouting, wave attacks with grouping and reinforcement, drop play with transports, kiting for vultures/mutalisks/dragoons, siege/unsiege, stim, lurker burrow, storm, plague/swarm, irradiate, broodlings, stasis, mines and nukes.
 
-**Presentation**: procedural Badlands-style terrain with cliffs, ramps, boulders and doodads; sprites baked from 3D models (16 facings, 4 idle, 8 walk and 5 attack frames, consistent lighting, team colours, death collapse); animated building parts; damage states at two thresholds for every race (Terran scorch and buckled plating, Zerg necrosis and ichor, Protoss hull rents with plasma arcs); additive particle effects, blood, scorch marks and lingering corpses; BW-style bevelled console with icon buttons, portrait, wireframes and a custom cursor; score screen with per-player stats and APM.
+**Presentation**: procedural terrain with cliffs, ramps, boulders and doodads in three tilesets (Badlands, Jungle, Ice); sprites baked from 3D models (16 facings, 4 idle, 8 walk and 5 attack frames, consistent lighting, team colours, death collapse); animated building parts; damage states at two thresholds for every race (Terran scorch and buckled plating, Zerg necrosis and ichor, Protoss hull rents with plasma arcs); additive particle effects, blood, scorch marks and lingering corpses; BW-style bevelled console with icon buttons, portrait, wireframes and a custom cursor; score screen with per-player stats and APM.
 
 ## Art pipeline
 
@@ -75,4 +75,4 @@ node broodwar/test/editor.js                # builds a custom map, then plays an
 
 - No online matchmaking (LAN only), no original campaign story, no hand-painted art or recorded voice acting.
 - Exact BW pathfinding quirks, collision boxes and animation timings are approximations.
-- Balance is tuned by AI-vs-AI runs, not by human ladder play. As of M5 no matchup is outside 60/40 over 432 games: Protoss vs Zerg 52%, Protoss vs Terran 52%, Terran vs Zerg 60% and still leaning Terran (see HANDOFF.md).
+- Balance is tuned by AI-vs-AI runs, not by human ladder play. No matchup is outside 60/40: Protoss vs Zerg 52%, Protoss vs Terran 52%, Terran vs Zerg 61% over 378 decided games. Terran vs Zerg is even on Lost Ruins and 67/33 on the other two layouts, so what is left is a map difference rather than a unit one (see HANDOFF.md).
