@@ -39,6 +39,23 @@ const TILESETS = {
     flora: 'rgba(120,190,70,0.85)',
     crater: ['rgba(18,30,16,0.55)', 'rgba(34,52,30,0.4)', 'rgba(170,210,140,0.28)'],
   },
+  ice: {
+    name: 'Ice',
+    // Shadowed blue ice below, wind-packed snow above. Snow is nearly white, so the low ground has to
+    // carry all the colour: the gap between the two is in value, not saturation, or the whole map reads
+    // as one flat sheet with the cliffs invisible.
+    low: (n, c) => { let r = 84 + n * 34, g = 110 + n * 38, b = 140 + n * 40; const crev = c > 0.9 ? (c - 0.9) * 6 : 0; return [r - crev * 46, g - crev * 40, b - crev * 26]; },
+    high: (n, c) => { let r = 188 + n * 42, g = 202 + n * 40, b = 218 + n * 34; const drift = c > 0.93 ? (c - 0.93) * 8 : 0; return [r - drift * 30, g - drift * 26, b - drift * 16]; },
+    ramp: n => [156 + n * 34, 172 + n * 32, 194 + n * 30],
+    rock: k => [52 * k + 30, 66 * k + 40, 86 * k + 56],
+    slope: k => [110 * k + 40, 130 * k + 52, 156 * k + 70],
+    face: ['rgba(206,228,246,0.6)', 'rgba(96,132,170,0.4)', 'rgba(14,26,44,0.78)'],
+    crack: 'rgba(18,40,70,0.5)', rim: 'rgba(255,255,255,0.4)',
+    rubbleShade: 'rgba(24,44,72,0.55)', rubble: k => 'rgb(' + (150 + k * 14) + ',' + (176 + k * 14) + ',' + (202 + k * 12) + ')',
+    boulder: ['#cfe4f2', '#3a5170'], pebble: '#b6cadb',
+    flora: 'rgba(70,110,90,0.7)',
+    crater: ['rgba(28,50,78,0.5)', 'rgba(60,92,126,0.35)', 'rgba(240,250,255,0.3)'],
+  },
 };
 const Terrain = {
   CH: 8, chunks: new Map(), seed: 1, creepPat: null, mini: null, setId: 'badlands',
