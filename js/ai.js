@@ -126,9 +126,10 @@ class AI {
     if (r === 'Z' && ((p.minerals > 300 && !this.mine(u => u.def.larva).length) || p.minerals > 550) && workers >= 5 * this.mine(u => u.isBuilding && u.def.spawnsLarva).length && this.count('hatchery') <= this.halls().length && this.mine(u => u.isBuilding && u.def.spawnsLarva).length < 6 && halls.length) { const h = halls[Math.floor(G.rand() * halls.length)]; this.buildNear('hatchery', h.x, h.y); } // macro hatcheries go next to a base we already hold; real expansions come from the shared rule below
     // gas: one per base with hall
     if (this.scriptIdx >= 3 && workers > 5 * gasBuildings(this) && !(p.gas > 800 && p.minerals < 300)) for (const h of halls) { if (!h.done) continue; const base = G.map.bases.find(b => distPt(b.cx, b.cy, h.x, h.y) < 3 * TILE); if (base && base.geyser.amount > 0 && !(base.geyser.building && base.geyser.building.alive) && p.minerals >= 100 && this.count(RACE_INFO[r].gasB) <= this.mine(u => u.def.onGeyser).length) { this.buildAt(RACE_INFO[r].gasB, base.geyser.x, base.geyser.y, true); break; } } // gas pays for itself, never let the reserve block it
-    // static defense at natural / detection
+    // Static defence at the natural, placed on the line the enemy actually comes down rather than
+    // towards the middle of the map, so an attack meets it instead of walking round it.
     if (this.scriptIdx >= 4 && p.minerals > 200) {
-      for (const nat of halls.slice(1)) if (nat.done) { const defId = r === 'T' ? 'missile_turret' : r === 'P' ? 'photon_cannon' : 'creep_colony'; const px = nat.x + (G.map.w * TILE / 2 - nat.x) * 0.15, py = nat.y + (G.map.h * TILE / 2 - nat.y) * 0.15; const isDef = u => u.isBuilding && (u.def.id === defId || u.def.id === 'sunken_colony' || u.def.id === 'spore_colony'); const near = this.mine(u => isDef(u) && (dist(u, nat) < 16 * TILE || distPt(u.x, u.y, px, py) < 16 * TILE)).length; if (near < (r === 'Z' ? 4 : 2) && this.count(defId) <= this.mine(isDef).length && p.hasReq(DATA.buildings[defId])) { this.buildNear(defId, px, py); break; } }
+      for (const nat of halls.slice(1)) if (nat.done) { const defId = r === 'T' ? 'missile_turret' : r === 'P' ? 'photon_cannon' : 'creep_colony'; const en = this.enemies()[0]; const tox = en && en.startX != null ? en.startX : G.map.w * TILE / 2, toy = en && en.startY != null ? en.startY : G.map.h * TILE / 2; const px = nat.x + (tox - nat.x) * 0.15, py = nat.y + (toy - nat.y) * 0.15; const isDef = u => u.isBuilding && (u.def.id === defId || u.def.id === 'sunken_colony' || u.def.id === 'spore_colony'); const near = this.mine(u => isDef(u) && (dist(u, nat) < 16 * TILE || distPt(u.x, u.y, px, py) < 16 * TILE)).length; if (near < (r === 'Z' ? 4 : 2) && this.count(defId) <= this.mine(isDef).length && p.hasReq(DATA.buildings[defId])) { this.buildNear(defId, px, py); break; } }
     }
     // Zerg: morph creep colonies into sunkens
     if (r === 'Z') { const enemyAir = this.enemies().some(q => G.units.some(u => u.alive && u.owner === q.id && u.fly && (u.hasWeapon() || u.def.cargo))); const spores = this.mine(u => u.def.id === 'spore_colony').length, sunkens = this.mine(u => u.def.id === 'sunken_colony').length; for (const c of this.mine(u => u.def.id === 'creep_colony' && u.done && !u.prod.length)) G.queueMorph(c, p.hasBuilding('evolution_chamber') && (enemyAir ? spores < sunkens : spores < Math.floor(sunkens / 3)) ? 'spore_colony' : 'sunken_colony'); }
@@ -248,6 +249,19 @@ class AI {
     const cx = G.map.w * TILE / 2, cy = G.map.h * TILE / 2; const d = distPt(nat.x, nat.y, cx, cy);
     return { x: nat.x + (cx - nat.x) / d * 7 * TILE, y: nat.y + (cy - nat.y) / d * 7 * TILE };
   }
+  // Enemy strength inside a radius, counting static defence as the army it is worth. Used to decide
+  // whether a fight is worth staying in - unlike seenEnemyArmy this is about here and now, not the game.
+  enemyStrengthNear(x, y, r) {
+    let sup = 0;
+    for (const u of G.near(x, y, r)) {
+      if (!u.alive || G.allied(u.owner, this.p.id)) continue;
+      if (u.isBuilding) { if ((u.def.gw || u.def.aw) && u.done) sup += 4; continue; }
+      if (!u.hasWeapon() || u.def.worker) continue;
+      sup += u.def.sup || 1;
+    }
+    return sup;
+  }
+  centroid(us) { let x = 0, y = 0; for (const u of us) { x += u.x; y += u.y; } return us.length ? { x: x / us.length, y: y / us.length } : null; }
   // biggest enemy army supply we have actually seen, decayed slowly so old sightings stop mattering
   seenEnemyArmy() {
     let sup = 0;
@@ -274,18 +288,48 @@ class AI {
       for (const u of army) if (u.order.type === 'idle' && !u.burrowed && distPt(u.x, u.y, rally.x, rally.y) > 5 * TILE) u.setOrder({ type: 'attackmove', x: rally.x + (G.rand() - .5) * 96, y: rally.y + (G.rand() - .5) * 96 });
       for (const u of this.supportUnits()) if (u.order.type === 'idle' && distPt(u.x, u.y, rally.x, rally.y) > 6 * TILE) u.setOrder({ type: 'move', x: rally.x, y: rally.y });
       const threshold = Math.max(this.attackThreshold + this.waves * 8 + (p.supUsed > 150 ? -20 : 0), this.seenEnemyArmy() * 1.25);
-      if (sup >= threshold || p.supUsed >= 190) { this.state = 'attack'; this.waves++; this.startedAttack = G.frame; const wave = army.filter(u => distPt(u.x, u.y, rally.x, rally.y) < 14 * TILE || this.waves > 1); for (const u of wave) u.wave = this.waves; this.attackN = wave.length; this.target = this.pickTarget(rally); }
+      // After a retreat, rebuild before walking back into the same fight. Without this the AI turned
+      // straight round and fed the survivors in one at a time.
+      if ((sup >= threshold || p.supUsed >= 190) && G.frame >= (this.regroupUntil || 0)) {
+        this.state = 'attack'; this.waves++; this.startedAttack = G.frame;
+        const wave = army.filter(u => distPt(u.x, u.y, rally.x, rally.y) < 14 * TILE || this.waves > 1);
+        for (const u of wave) u.wave = this.waves;
+        this.attackN = wave.length; this.waveSup0 = wave.reduce((a, u) => a + (u.def.sup || 0), 0);
+        this.target = this.pickTarget(rally);
+      }
     }
     if (this.state === 'attack') {
       if (!this.target || !this.target.alive) this.target = this.pickTarget(rally);
       if (!this.target) { this.state = 'gather'; return; }
       const waveUnits = army.filter(u => u.wave === this.waves), rest = army.filter(u => u.wave !== this.waves);
-      if (waveUnits.length < this.attackN * 0.35 && G.frame - this.startedAttack > 24 * 20) { this.state = 'gather'; for (const u of army) { u.wave = 0; u.setOrder({ type: 'move', x: rally.x, y: rally.y }); } return; }
+      const waveSup = waveUnits.reduce((a, u) => a + (u.def.sup || 0), 0);
+      const head = this.centroid(waveUnits);
+      // Retreat. Losing half the wave, or being outgunned where we are standing, both mean the fight is
+      // already lost; the old rule waited until 65% of the units were dead, by which point the army was
+      // gone and the game with it. Pull back, rebuild, come again.
+      const local = head ? this.enemyStrengthNear(head.x, head.y, 10 * TILE) : 0;
+      const gutted = this.waveSup0 && waveSup < this.waveSup0 * 0.7;
+      const outgunned = local > 0 && waveSup < local * 0.7 && waveUnits.some(u => G.frame - u.lastHit < 48);
+      if ((gutted || outgunned) && G.frame - this.startedAttack > 24 * 6) {
+        this.state = 'gather'; this.regroupUntil = G.frame + 24 * 25;
+        const home = this.halls()[0] || { x: p.startX, y: p.startY };
+        for (const u of army) { u.wave = 0; if (!u.burrowed) u.setOrder({ type: 'move', x: home.x, y: home.y }); }
+        return;
+      }
       for (const u of rest) if (u.order.type === 'idle' && distPt(u.x, u.y, rally.x, rally.y) > 5 * TILE) u.setOrder({ type: 'attackmove', x: rally.x + (G.rand() - .5) * 96, y: rally.y + (G.rand() - .5) * 96 });
       // reinforce: send gathered units as a group when enough have collected
       const gathered = rest.filter(u => distPt(u.x, u.y, rally.x, rally.y) < 8 * TILE); if (gathered.reduce((s, u) => s + u.def.sup, 0) >= 16) for (const u of gathered) u.wave = this.waves;
       const t = this.target;
-      for (const u of waveUnits) { if (u.order.type === 'attack' || u.order.type === 'ability') continue; if (u.order.type === 'attackmove' && distPt(u.order.x, u.order.y, t.x, t.y) < 3 * TILE) continue; if (u.sieged || u.burrowed) continue; u.setOrder({ type: 'attackmove', x: t.x, y: t.y }); }
+      // Keep the wave together. Every unit attack-moving straight at the target means the fast ones
+      // arrive first and die first; anything trailing the pack regroups on it instead of running ahead.
+      for (const u of waveUnits) {
+        if (u.order.type === 'attack' || u.order.type === 'ability') continue;
+        if (u.sieged || u.burrowed) continue;
+        const lagging = head && distPt(u.x, u.y, head.x, head.y) > 13 * TILE && distPt(u.x, u.y, t.x, t.y) > distPt(head.x, head.y, t.x, t.y);
+        const gx = lagging ? head.x : t.x, gy = lagging ? head.y : t.y;
+        if (u.order.type === 'attackmove' && distPt(u.order.x, u.order.y, gx, gy) < 3 * TILE) continue;
+        u.setOrder({ type: 'attackmove', x: gx, y: gy });
+      }
       for (const u of this.supportUnits()) { if (u.def.id === 'high_templar' || u.def.id === 'defiler') { if (u.order.type !== 'ability' && u.order.type !== 'follow') u.setOrder({ type: 'follow', target: army[0] || u }); } else if (u.order.type === 'idle' || u.order.type === 'move') u.setOrder({ type: 'follow', target: army[Math.floor(G.rand() * army.length)] || u }); }
       // scourge / overlords stay home
       if (G.frame - this.startedAttack > 24 * 240) { this.state = 'gather'; for (const u of army) u.wave = 0; }
