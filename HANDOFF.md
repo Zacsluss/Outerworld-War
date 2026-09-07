@@ -8,8 +8,12 @@ exactly what is left to do.
 Open a chat in `Default Project/broodwar/` and paste:
 
 > Read HANDOFF.md and README.md, run the tests, then work through the "M8 — what to do next" section in
-> order. Keep the determinism tests green after every change, commit at each item, and update HANDOFF.md
-> at the end.
+> order, starting with task 0. Keep the determinism tests green after every change, commit at each item,
+> and update HANDOFF.md at the end.
+>
+> Two things are already decided and are not open questions: `91e4195` stays even though it put Terran vs
+> Zerg outside 60/40, and task 2 (the graphics overhaul) happens regardless of how task 1 goes. If the
+> balance work stalls the way M4's and M7's did, say so and move to task 2 rather than grinding on it.
 
 ## Status (2026-09-07, M7 complete)
 
@@ -167,7 +171,37 @@ Two real defects were found and fixed on the way:
 
 ## M8 — what to do next
 
-### 1. Terran vs Zerg is outside 60/40 and the cause is measured
+Four tasks, decided with the project owner at the end of M7. Task 2 does not depend on task 1 and does
+not touch the simulation at all; if the balance work stalls the way M4's and M7's did, go and do task 2
+rather than grinding on it. **Task 0 is not optional and comes first: it is what makes task 1 affordable.**
+
+### 0. A cheap proxy for the balance number, validated for free
+
+Every balance claim in this project costs a 40-to-90-minute run, and M7 spent about 3,100 games. That is
+why so few ideas ever get tried. Build a fast signal that predicts the *direction* of a change, and spend
+the full runs only confirming what the proxy flags.
+
+**Validate it without running a single new game.** Six labelled logs are already on disk (see "Balance"
+below), four of them paired on identical seeds with known verdicts of +13, +5, 0 and 0. A proxy worth
+having has to reproduce those four calls. Candidates, in the order M7's measurements make them look
+promising:
+
+- **Upgrades finished per side at ten minutes.** M6 measured the asymmetry (Terran five techs by ten
+  minutes, Zerg none) and M7's fix plausibly widened it. Cheapest of the three and closest to the
+  suspected mechanism.
+- **Army supply at first contact**, which is what M5 established actually decides these games.
+- **Equal-supply duel outcomes** from `test/micro.js`, which M3 found to be Terran-Zerg 3-3 and therefore
+  probably *not* where the difference lives — worth including precisely because it should show nothing.
+
+A proxy that gets three of four right is worth more than one that gets four of four by being tuned to
+them. Keep the validation honest and say which calls it misses.
+
+### 1. Terran vs Zerg is outside 60/40 — fix it from the Zerg side
+
+**The decision is made: `91e4195` stays.** A build order that abandons its own steps and amputates its
+own tech tree is a bug, in the same way a medic that does not heal and an A* closed set that does not
+close were bugs; M6 kept both and reported what they cost, and that precedent is the reason the balance
+figures in this project can be trusted. Do not revert it to make the number look better.
 
 **TvZ is 77% [73-81] over 376 decided games.** The full chain, all 66 seeds, three layouts, both sides,
 each row paired against the one above it on identical seeds:
@@ -179,73 +213,95 @@ each row paired against the one above it on identical seeds:
 | + the Zerg research gate | 83% [78-86] | 72 to T, 53 away of 360 | p = 0.107, reverted anyway |
 | M7 as shipped, `2802b31` | **77% [73-81]** | 39 to T, 40 away of 365 | p = 1.000, neutral |
 
-PvT and PvZ were measured on the M6 code and were at target; they were re-measured on M7 task 2 and
-still are (52% [47-57] and 46% [41-51], both p > 0.35 against their own baselines). **TvZ is the only
-matchup out of band, and every point of the move is attributable to one commit, `91e4195`.**
+PvT and PvZ are at target and stayed there through the change (52% [47-57] and 46% [41-51], p = 0.512
+and p = 0.359). **TvZ is the only matchup out of band, and every point of the move is one commit.**
 
-Three things are worth saying before anyone starts:
+The first thing to check, and half the reason task 0 exists: **the fix gave both sides their build order
+back, and only Terran's build order converts into its army's upgrades.** Terran's engineering bay and
+armory drive `infW`/`infA`/`vehW`/`vehA` on a bio ball that already heals. Zerg's evolution chamber is
+built at script step 9, but `AI_RESEARCH.Z` spends its early gate on `metabolic`, `flyW` and
+`lurker_aspect` first, and the flat 200/150 gate then almost never opens again. So the asymmetry may not
+be "Terran got more buildings" at all; it may be "both got their buildings and only one of them turns
+buildings into upgrades". Count finished upgrades per side at ten minutes, before and after `91e4195`,
+and find out in an hour.
 
-- **Do not revert `AI.script()` to fix the number.** A build order that abandons its own steps and
-  amputates its own tech tree is a bug, in the same way that a medic that does not heal and an A* closed
-  set that does not close were bugs. M6 kept both of those and reported what they cost. The precedent is
-  deliberate and it is the reason the balance figures in this project can be trusted.
-- **Do not tune `js/data.js`.** The table of things already tried is below, and it is now four
-  milestones long.
-- **The lever is what Zerg does with fifteen minutes, not what a hydralisk costs.** Every change that
-  has ever moved this matchup has been structural: how armies retreat (M5, 24 points), how they path
-  (M6, 6 points), what the build order actually builds (M7, 13 points). Nothing in `js/data.js` has ever
-  moved it at all.
+Then, in rough order of how much M7's measurements support them:
 
-The one thing M7 would try next, if it had another run in it: **the fix gave both sides their build
-order back, and only Terran's build order contains its army's upgrades.** Terran's engineering bay and
-armory drive `infW`/`infA`/`vehW`/`vehA` on a bio ball that already heals. Zerg's equivalent -- the
-evolution chamber at script step 9, driving `carapace` and `missW` -- is built, but `AI_RESEARCH.Z`
-spends its early gate on `metabolic`, `flyW` and `lurker_aspect` first, and the flat 200/150 gate then
-almost never opens again (see the known asymmetry below). So the asymmetry may not be "Terran got more
-buildings" at all; it may be "both got their buildings and only one of them converts buildings into
-upgrades". That is checkable in an hour with `test/diag.js` before anyone spends forty minutes on a
-balance run: count finished upgrades per side at ten minutes, before and after `91e4195`.
+- **Give Zerg a gas budget.** `AI_COMP` is a supply-share ratio and gas is invisible to it, so a defiler
+  at 50/150 competes with a lurker morph at 50/100 and always loses. That is why Dark Swarm never fires
+  even now that the mound is finished by 8:04. It is the clearest unexploited mechanism left in the AI.
+- **Reorder `AI_RESEARCH.Z`** so carapace and missile attacks come before `flyW`. Note this is a
+  different change from relaxing the research gate, which was tried for all races in M4 and for Zerg
+  alone in M7 and helped Terran both times.
+- **Do not tune `js/data.js`.** The table of things already tried is below and it is five milestones
+  long. Nothing in it has ever moved this matchup. Every change that has moved it has been structural:
+  how armies retreat (M5, 24 points), how they path (M6, 6 points), what the build order actually builds
+  (M7, 13 points).
 
-### 2. Games end at 15.9 minutes, and that is why no caster ever matters
+### 2. The graphics overhaul
 
-This has been on the list since M4 as "the AI never fields an advanced caster" and M7 has taken it as
-far as the scripts can take it. The scripts are fixed; the buildings arrive; the casters still do not.
-The numbers that say why, over nine games:
+The largest piece of M8 and the only part that adds something a human notices. It touches no simulation
+file, so it cannot break determinism or balance — **and `test/version.js` proves that, because the build
+stamp must not move for a render-only change (invariant 6).** That check is the safety net; run it after
+every step.
 
-- The enabling buildings now finish at **8:00 to 12:00** — in **one to four games of six**.
-- The units are still barely trained. A defiler first exists at 15:18 in one game of six, with 57
-  caster-seconds, and never reaches the 100 energy Dark Swarm costs.
-- Zerg's gas goes to lurkers (50/100 a morph) and mutalisks (100/100) long before a defiler (50/150).
-  `AI_COMP` has no notion of a gas budget; it is a supply-share ratio and gas is invisible to it.
+There is a lot of performance headroom to spend: the draw pass is 1.60 ms at 290 units and 2.30 ms at 491
+against a 6 ms budget at 1080p. Fidelity is affordable here in a way it is not in the sim.
 
-So the question has changed shape. It is no longer "why does the AI not build the tech" — it does now.
-It is **"why is an AI-vs-AI game only 15.9 minutes long, and should it be?"** A game that ended at 25
-minutes would let every one of the 28 unused spells matter, and it would change what balance even means
-here. That is a bigger and more interesting question than the one it replaces, and it is the first thing
-in this project where the right answer might be to change the harness rather than the AI.
+What already exists, so none of it gets rebuilt by accident: units and buildings are 3D models assembled
+from primitives in `tools/models.js` on reusable rigs, rendered by a software rasterizer in
+`tools/raster.js` (oblique 50-degree camera, Gouraud lighting, ambient occlusion, supersampling, outline
+pass) and baked by `tools/bake.js` into sprite sheets plus team-colour masks the game multiplies with the
+player colour at load. Terrain is procedural, and a biome is one palette entry in `TILESETS` in
+`js/terrain.js` plus an id in `TILESET_IDS` in `js/map.js` and nothing else. `js/fx.js` is render-only
+particles and decals. `js/hud.js` overrides `UI`'s drawing methods.
 
-If the answer turns out to be "the games are the right length", then the honest next step is a gas-aware
-`AI_COMP`, so a defiler is not competing with four lurkers for the same 150 gas.
+Directions, roughly by value for effort:
 
-### 3. The genuine 30-a-minute of idle production
+- **Two more tilesets.** Desert and Space Platform are the Brood War biomes missing, and they would take
+  the game from three to five. `node tools/tilesets.js` renders every entry through the game's own
+  `Terrain.draw` and writes a contact sheet, so the whole set can be compared at a glance.
+- **Sprite fidelity.** The bake is 16 facings with 4 idle, 8 walk and 5 attack frames. The cheapest wins
+  are a proper shadow pass under every unit and a rim light so units read against dark terrain. More
+  attack and death frames are the expensive win.
+- **Terrain readability.** Cliff edge transitions, ramp blending, creep edges and doodad variety are all
+  in the procedural painter and all currently plain.
+- **Effects.** Explosions, muzzle flashes, shield-hit flashes, weather. `js/fx.js` is the right home and
+  invariant 3 is what keeps it safe: nothing in it may ever be read by the sim.
+- **HUD.** The bevelled console, portraits and wireframes work but are simple.
 
-With the town halls named and set aside, the remaining causes are small and specific. The largest is
-"saving for a building" at 12%, which is `afford()` holding every mineral once 40% of the target is
-banked. That is a defensible rule — a human does stop making units to afford an expansion — and it has
-already been tuned twice (a quarter was too eager, 40% is the current value). Before touching it, decide
-whether 30 idle-building-seconds a minute across two players is actually a defect at all. It may not be,
-in which case the honest move is to write that down and take the metric off the list.
+Two rules that are easy to break here: **never hand-edit a PNG** — edit `tools/models.js` and rebake
+(`node tools/bake.js`, about twenty seconds; `--only marine,hatchery` for a subset) — and **never let
+render state reach the simulation**, which is what makes replays and network play safe.
 
-### 4. `test/net.js` phase 3 times out on a loaded machine
+### 3. The things nobody has tried
 
-Phase 3 (rejoin and catch up) gets a 120-second wall-clock budget where every other phase gets 240. It
-failed once during M7 while a twelve-job balance run was saturating the machine, with both clients
-healthy and progressing — 18876 of a 19203-frame target when the budget ran out. The assertion that
-rejoin is *fast* is a separate check that passed (`inbox` under 100 batches, not a replay from frame 0),
-so the 120-second budget is measuring the machine rather than the code. On an unloaded machine it passes
-all eleven checks, including phase 4 detecting its injected divergence at exactly 19248/19248. Either
-raise the budget to 240 to match the others, or say why phase 3 deserves a tighter one — but do not
-spend an afternoon looking for a desync, which is what M5 did with the same symptom.
+All of this is untested territory rather than known-broken, which means the first job in each case is to
+write the test and find out.
+
+- **More than two clients.** `test/net.js` runs two lockstep clients plus AI. Three or four humans, and
+  the drop/rejoin logic with more than one player gone at once, have never been exercised.
+- **Host migration in practice.** The relay picks the first non-dropped human as host, so it should work
+  by construction — but "should work by construction" is exactly what M5 believed about the A* closed
+  set, which had been dead since the 256th search of every game.
+- **Long games.** Replay checkpoints thin to every 60 s past 40 minutes and nothing has ever run that
+  long. A 60-minute game is one `test/smoke.js` invocation away.
+- **Bigger maps and more players.** `MAP_LAYOUTS` has 4p and 2p layouts and the engine accepts 64 to 256
+  tiles, but nothing has run 8 players, and the AI's expansion logic has never seen that many bases.
+- **Save/load edges.** Saving mid-nuke, mid-morph, mid-Recall, and during a rejoin.
+
+### 4. Leftovers
+
+- **`test/net.js` phase 3 gets a 120-second wall-clock budget where every other phase gets 240.** It
+  failed once in M7 under a twelve-job balance run with both clients healthy and progressing, and passes
+  all eleven checks on an unloaded machine. The assertion that rejoin is *fast* is a separate check that
+  passed, so the budget is measuring the machine rather than the code. Raise it to 240 or justify the
+  tighter one — but do not go looking for a desync, which is what M5 did with this symptom.
+- **The genuine 30-a-minute of idle production.** With town halls named and set aside (M7 task 3), the
+  largest remaining cause is "saving for a building" at 12%, which is `afford()` holding every mineral
+  once 40% of the target is banked. It has been tuned twice already. Before touching it, decide whether
+  30 idle-building-seconds a minute across two players is a defect at all; it may not be, and the honest
+  move would be to write that down and take the metric off the list.
 
 ## Architecture map
 
