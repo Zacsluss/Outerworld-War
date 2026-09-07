@@ -73,7 +73,7 @@ const clock = f => Math.floor(f / 24 / 60) + ':' + String(Math.floor(f / 24) % 6
 const med = a => { if (!a || !a.length) return null; const s = a.slice().sort((x, y) => x - y); return s[s.length >> 1]; };
 const gamesPerRace = Math.round(games * 2 / 3);        // each race plays two of the three matchups
 console.log('caster audit over ' + games + ' games, ' + minutes.toFixed(0) + ' game-minutes, cap ' + FRAMES + ' frames\n');
-console.log('  race caster            enabler    first  caster-s   games  casts');
+console.log('  race caster            enabler  games    first  caster-s  games  casts');
 let kinds = 0, fieldedAdv = 0, castingAdv = 0;
 for (const [race, ids] of Object.entries(CASTERS)) {
   for (const id of ids) {
@@ -84,7 +84,9 @@ for (const [race, ids] of Object.entries(CASTERS)) {
     const b = med(T.bld[bk]), fr = med(T.first[k]);
     if (fr !== null) fieldedAdv++;
     if (n) castingAdv++;
-    console.log('  ' + race + '    ' + id.padEnd(16) + (b === null ? '  never' : clock(b).padStart(7)) + (fr === null ? '    never' : clock(fr).padStart(9)) + String(T.secs[k] || 0).padStart(10) + String(fielded[k] || 0).padStart(7) + '/' + gamesPerRace + '  ' + (n ? casts.map(([ck, v]) => ck.slice(2) + ' x' + v).join(', ') : '-'));
+    // The enabler's own game count matters as much as its median: "11:43" over one game of six is a
+    // different statement from "11:43" over six, and the median alone cannot tell them apart.
+    console.log('  ' + race + '    ' + id.padEnd(16) + (b === null ? '  never' : clock(b).padStart(7)) + String((T.bld[bk] || []).length).padStart(6) + '/' + gamesPerRace + (fr === null ? '    never' : clock(fr).padStart(9)) + String(T.secs[k] || 0).padStart(10) + String(fielded[k] || 0).padStart(6) + '/' + gamesPerRace + '  ' + (n ? casts.map(([ck, v]) => ck.slice(2) + ' x' + v).join(', ') : '-'));
   }
 }
 const allCasts = Object.entries(T.casts).sort((a, b) => b[1] - a[1]);

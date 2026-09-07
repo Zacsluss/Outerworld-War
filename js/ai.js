@@ -3,9 +3,9 @@
 // Computer opponent: scripted opening, macro loop, army control, basic micro.
 // ============================================================================
 const AI_SCRIPTS = {
-  T: [[9, 'supply_depot'], [11, 'barracks'], [12, 'refinery'], [15, 'supply_depot'], [16, 'factory'], [19, 'supply_depot'], [20, 'machine_shop'], [22, 'academy'], [23, 'command_center'], [24, 'engineering_bay'], [26, 'supply_depot'], [28, 'factory'], [30, 'comsat_station'], [32, 'armory'], [34, 'supply_depot'], [36, 'starport'], [38, 'barracks'], [40, 'machine_shop'], [42, 'control_tower'], [44, 'science_facility'], [46, 'command_center'], [50, 'factory'], [56, 'missile_turret'], [60, 'physics_lab'], [64, 'starport'], [70, 'barracks'], [80, 'factory']],
-  Z: [[11, 'spawning_pool'], [12, 'hatchery'], [13, 'extractor'], [16, 'hydralisk_den'], [18, 'creep_colony'], [20, 'lair'], [22, 'extractor'], [24, 'hatchery'], [26, 'spire'], [28, 'evolution_chamber'], [30, 'creep_colony'], [34, 'hatchery'], [38, 'creep_colony'], [44, 'queens_nest'], [48, 'extractor'], [52, 'hive'], [56, 'creep_colony'], [60, 'ultralisk_cavern'], [64, 'hatchery'], [66, 'defiler_mound'], [70, 'greater_spire'], [80, 'hatchery']],
-  P: [[8, 'pylon'], [10, 'gateway'], [12, 'assimilator'], [14, 'cybernetics_core'], [15, 'pylon'], [18, 'gateway'], [20, 'nexus'], [22, 'pylon'], [24, 'citadel_of_adun'], [26, 'forge'], [27, 'pylon'], [28, 'robotics_facility'], [30, 'observatory'], [32, 'templar_archives'], [34, 'gateway'], [36, 'pylon'], [38, 'photon_cannon'], [40, 'gateway'], [42, 'stargate'], [44, 'nexus'], [46, 'pylon'], [48, 'robotics_support_bay'], [52, 'fleet_beacon'], [56, 'gateway'], [60, 'arbiter_tribunal'], [66, 'gateway'], [72, 'stargate'], [80, 'nexus']],
+  T: [[9, 'supply_depot'], [11, 'barracks'], [12, 'refinery'], [15, 'supply_depot'], [16, 'factory'], [19, 'supply_depot'], [20, 'machine_shop'], [22, 'academy'], [23, 'command_center'], [24, 'engineering_bay'], [26, 'supply_depot'], [28, 'factory'], [30, 'comsat_station'], [32, 'armory'], [34, 'supply_depot'], [36, 'starport'], [38, 'science_facility'], [40, 'machine_shop'], [42, 'control_tower'], [44, 'barracks'], [46, 'command_center'], [50, 'factory'], [56, 'missile_turret'], [60, 'physics_lab'], [64, 'starport'], [70, 'barracks'], [80, 'factory']],
+  Z: [[11, 'spawning_pool'], [12, 'hatchery'], [13, 'extractor'], [16, 'hydralisk_den'], [18, 'creep_colony'], [20, 'lair'], [22, 'extractor'], [24, 'hatchery'], [26, 'spire'], [28, 'evolution_chamber'], [30, 'creep_colony'], [34, 'hatchery'], [38, 'creep_colony'], [44, 'queens_nest'], [48, 'extractor'], [52, 'hive'], [54, 'defiler_mound'], [56, 'creep_colony'], [60, 'ultralisk_cavern'], [64, 'hatchery'], [70, 'greater_spire'], [80, 'hatchery']],
+  P: [[8, 'pylon'], [10, 'gateway'], [12, 'assimilator'], [14, 'cybernetics_core'], [15, 'pylon'], [18, 'gateway'], [20, 'nexus'], [22, 'pylon'], [24, 'citadel_of_adun'], [26, 'forge'], [27, 'pylon'], [28, 'robotics_facility'], [30, 'observatory'], [32, 'templar_archives'], [34, 'gateway'], [36, 'pylon'], [38, 'photon_cannon'], [40, 'gateway'], [42, 'stargate'], [44, 'nexus'], [46, 'arbiter_tribunal'], [48, 'pylon'], [50, 'robotics_support_bay'], [52, 'fleet_beacon'], [56, 'gateway'], [66, 'gateway'], [72, 'stargate'], [80, 'nexus']],
 };
 const gasBuildings = ai => ai.mine(u => u.def.onGeyser).length + 1;
 const AI_COMP = {
@@ -170,8 +170,15 @@ class AI {
     // Zerg morphs: hydras -> lurkers, mutas -> guardians
     if (this.race === 'Z' && p.hasTech('lurker_aspect') && (counts.lurker || 0) < (counts.hydralisk || 0) / 1.5 && p.minerals >= 50 && p.gas >= 100) { const h = this.mine(u => u.def.id === 'hydralisk' && u.order.type !== 'attack' && u.done); if (h.length) { Abilities.morph(h[0], 'lurker'); return; } }
     if (this.race === 'Z' && p.hasBuilding('greater_spire') && (counts.guardian || 0) < 4 && p.minerals >= 50 && p.gas >= 100) { const m = this.mine(u => u.def.id === 'mutalisk'); if (m.length > 4) { Abilities.morph(m[0], 'guardian'); return; } }
-    // Protoss: merge archons when HTs have low energy and storm not researched or many HTs
-    if (this.race === 'P') { const hts = this.mine(u => u.def.id === 'high_templar' && u.energy < 60 && u.order.type !== 'merge'); if (hts.length >= 2 && ((counts.high_templar || 0) > 3 || !p.hasTech('psi_storm_tech'))) Abilities.merge(hts, 'summon_archon'); }
+    // A high templar is built to cast storm; an archon is what a spent one becomes. Merging any pair
+    // under 60 energy while storm was unresearched merged every templar on sight -- a fresh one starts
+    // at 50 -- so no templar ever lived to see the tech land. Merge only what cannot storm: the spent
+    // ones while storm is in or on the way, all of them once it is neither.
+    if (this.race === 'P') {
+      const stormable = p.hasTech('psi_storm_tech') || p.researching.has('psi_storm_tech');
+      const hts = this.mine(u => u.def.id === 'high_templar' && u.order.type !== 'merge' && (!stormable || u.energy < DATA.abilities.psi_storm.energy));
+      if (hts.length >= 2 && (!stormable || (counts.high_templar || 0) > 3)) Abilities.merge(hts, 'summon_archon');
+    }
     // Reaver scarabs / carrier interceptors
     for (const u of this.mine(u => (u.def.id === 'reaver' || u.def.id === 'carrier') && !u.prod.length)) { if (u.def.id === 'reaver' && u.scarabs < 5) G.queueUnit(u, 'scarab'); if (u.def.id === 'carrier' && u.interceptors < (p.hasTech('carrier_capacity') ? 8 : 4)) G.queueUnit(u, 'interceptor'); }
     // The composition is a priority order, so spending on a cheaper unit every time the preferred one is a few
