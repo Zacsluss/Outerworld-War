@@ -82,28 +82,42 @@ class AI {
   }
   // how many buildings are being built or walked to right now (a human never starts five things at once)
   underway() { return this.mine(u => (u.isBuilding && !u.done && u.def.tier !== 'addon') || (u.def.worker && u.order.type === 'build' && u.order.def)).length; }
+  // how many of a scripted building we already own; a morph counts as the thing it grew out of
+  scriptHave(cnt, id) { return (cnt[id] || 0) + (id === 'hatchery' ? (cnt.lair || 0) + (cnt.hive || 0) : id === 'lair' ? (cnt.hive || 0) : id === 'spire' ? (cnt.greater_spire || 0) : id === 'creep_colony' ? (cnt.sunken_colony || 0) + (cnt.spore_colony || 0) : 0); }
+  // A build order is not a queue. It used to be run strictly at the head: one step that could not be
+  // started froze everything behind it until a 200-second timer threw the step away for good, and the
+  // steps that needed it were then thrown away in turn on `req`. Over nine games that abandoned 29 steps
+  // and amputated the tech tree -- Protoss finished templar archives in none of six games, so no Protoss
+  // caster was ever fielded and 23 of the 28 spells never fired once (test/casters.js). A human whose
+  // next building is unaffordable starts the one after it, so scan forward instead: `scriptIdx` still
+  // means "the first thing we still owe", and the timer only runs when nothing in reach can be started.
   script() {
-    const s = AI_SCRIPTS[this.race]; if (this.scriptIdx >= s.length) return;
-    const [at, id] = s[this.scriptIdx]; const p = this.p;
-    if (p.supUsed < at) { this.stepT = G.frame; return; }
-    const def = DATA.buildings[id];
-    let need = 0; for (let i = 0; i <= this.scriptIdx; i++) if (s[i][1] === id) need++;
-    const have = this.mine(u => u.def.id === id || (id === 'hatchery' && (u.def.id === 'lair' || u.def.id === 'hive')) || (id === 'lair' && u.def.id === 'hive') || (id === 'spire' && u.def.id === 'greater_spire') || (id === 'creep_colony' && (u.def.id === 'sunken_colony' || u.def.id === 'spore_colony'))).length;
-    if (have >= need) { this.scriptIdx++; this.stepT = G.frame; return; }
+    const s = AI_SCRIPTS[this.race], p = this.p;
+    const cnt = {}; for (const u of G.units) if (u.alive && u.owner === p.id) cnt[u.def.id] = (cnt[u.def.id] || 0) + 1;
+    const need = i => { let n = 0; for (let k = 0; k <= i; k++) if (s[k][1] === s[i][1]) n++; return n; };
+    const met = i => this.scriptHave(cnt, s[i][1]) >= need(i);
+    while (this.scriptIdx < s.length && met(this.scriptIdx)) { this.scriptIdx++; this.stepT = G.frame; }
+    if (this.scriptIdx >= s.length) return;
     if (this.stepT === undefined) this.stepT = G.frame;
-    if (G.frame - this.stepT > 24 * 200) { this.scriptIdx++; this.stepT = G.frame; return; } // give up on a step we cannot afford or place
-    if (!p.hasReq(def)) return;
-    if (def.tier === 'addon') { this.addon(id); return; }
-    if (def.tier === 'morph') { if (!this.mine(u => u.prod.some(it => it.kind === 'morph' && it.id === id)).length) this.morph(id); return; }
-    if (this.count(id) > have) return; // already pending / in construction
-    // Static defence is cheap and time-critical, so it must not queue behind expansions: Zerg kept letting its
-    // scripted creep colonies time out while hatcheries were going up, and met the first push with no sunkens.
-    if (!(def.gw || def.aw || def.id === 'creep_colony') && this.underway() >= (def.depot ? 3 : 2)) return; // finish what is already going up first (the give-up timer keeps running)
-    // gas-hungry tech waits until there is an army and enough production to use it
-    const prodDone = this.mine(u => u.isBuilding && u.def.produces.length && !u.def.depot && u.done).length;
-    if (def.gas >= 100 && !def.produces.length && (this.armySup || 0) < 16 && prodDone < 3) return;
-    if (p.minerals < def.min || p.gas < def.gas) { this.reserve(def); return; } // save up for it instead of spending on units
-    this.build(id, !this.mine(u => u.def.worker && u.order.type === 'build' && u.order.def).length); // a worker already walking to a site keeps its money
+    if (p.supUsed < s[this.scriptIdx][0]) { this.stepT = G.frame; return; }
+    const under = this.underway(); const prodDone = this.mine(u => u.isBuilding && u.def.produces.length && !u.def.depot && u.done).length;
+    for (let i = this.scriptIdx; i < s.length; i++) {
+      if (p.supUsed < s[i][0]) break;                                    // not time for this one, nor for anything after it
+      if (met(i)) continue;
+      const id = s[i][1], def = DATA.buildings[id];
+      if (!p.hasReq(def)) continue;
+      if (def.tier === 'addon') { if (this.addon(id)) { this.stepT = G.frame; return; } continue; }
+      if (def.tier === 'morph') { if (this.mine(u => u.prod.some(it => it.kind === 'morph' && it.id === id)).length) continue; if (this.morph(id)) { this.stepT = G.frame; return; } continue; }
+      if (this.count(id) > this.scriptHave(cnt, id)) continue;           // already pending / in construction
+      // Static defence is cheap and time-critical, so it must not queue behind expansions: Zerg kept letting its
+      // scripted creep colonies time out while hatcheries were going up, and met the first push with no sunkens.
+      if (!(def.gw || def.aw || def.id === 'creep_colony') && under >= (def.depot ? 3 : 2)) continue; // finish what is already going up first
+      // gas-hungry tech waits until there is an army and enough production to use it
+      if (def.gas >= 100 && !def.produces.length && (this.armySup || 0) < 16 && prodDone < 3) continue;
+      if (p.minerals < def.min || p.gas < def.gas) { if (i === this.scriptIdx) this.reserve(def); continue; } // save up for the head step instead of spending on units
+      if (this.build(id, !this.mine(u => u.def.worker && u.order.type === 'build' && u.order.def).length)) { this.stepT = G.frame; return; } // a worker already walking to a site keeps its money
+    }
+    if (G.frame - this.stepT > 24 * 200) { this.scriptIdx++; this.stepT = G.frame; } // nothing in the whole order was startable for that long: stop asking for the head
   }
   macro() {
     const p = this.p, r = this.race; const halls = this.halls();
