@@ -73,4 +73,4 @@ node broodwar/test/editor.js                # builds a custom map, then plays an
 
 - No online matchmaking (LAN only), no original campaign story, no hand-painted art or recorded voice acting.
 - Exact BW pathfinding quirks, collision boxes and animation timings are approximations.
-- Balance is tuned by AI-vs-AI runs, not by human ladder play. Terran and Zerg are close to even; Protoss currently loses about 64/36 to both (see HANDOFF.md).
+- Balance is tuned by AI-vs-AI runs, not by human ladder play. As of M5 no matchup is outside 60/40 over 432 games: Protoss vs Zerg 52%, Protoss vs Terran 52%, Terran vs Zerg 60% and still leaning Terran (see HANDOFF.md).
