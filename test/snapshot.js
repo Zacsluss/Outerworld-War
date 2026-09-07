@@ -6,10 +6,16 @@ let pass = 0, fail = 0;
 const ok = (name, cond, extra) => { if (cond) { pass++; console.log('PASS ' + name); } else { fail++; console.log('FAIL ' + name + (extra ? '  ' + extra : '')); } };
 
 const errors = [];
-const ctx = { console: { log() { }, warn() { }, error: (...a) => errors.push(String(a[0])) }, Math, performance, addEventListener() { }, setTimeout, document: { getElementById: () => ({ style: {}, addEventListener() { } }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { } };
-ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'missions', 'snapshot'])
-  vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
+// A whole sim in its own context. Built by a function because the rejoin check at the bottom needs a
+// second one that has never played the game -- which is the only way to see what a fresh process lacks.
+function mkContext(errs) {
+  const c = { console: { log() { }, warn() { }, error: (...a) => errs.push(String(a[0])) }, Math, performance, addEventListener() { }, setTimeout, document: { getElementById: () => ({ style: {}, addEventListener() { } }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { } };
+  c.window = c; c.__errors = errs; vm.createContext(c);
+  for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'missions', 'snapshot'])
+    vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), c, { filename: f + '.js' });
+  return c;
+}
+const ctx = mkContext(errors);
 const run = src => vm.runInContext('(() => {' + src + '})();', ctx);
 
 const START = `G.init({ players: [{ race: 'T', human: false, difficulty: 'normal', name: 'A' }, { race: 'Z', human: false, difficulty: 'normal', name: 'B' }, { race: 'P', human: false, difficulty: 'normal', name: 'C' }], seed: 6, layout: 'temple' });`;
@@ -103,6 +109,39 @@ run(`
 `);
 ok('taking a snapshot does not perturb the simulation', ctx.noPerturb === true);
 ok('...including its effect on later frames', ctx.noPerturbLater === ctx.ref[4500] || true);
+
+// ---- what a rejoin does: JSON over the wire, into a process that has not played the game ----
+// The checks above all restore into a context that has already played, which hides a whole class of bug:
+// G.units is reaped of the dead once a second while G.byId never forgets, so a played context still has
+// the corpses the simulation points at (AI.think reads lastHitBy.owner without asking if the attacker is
+// alive) and a fresh one does not. Restoring only G.units turned those references into null and the
+// restored AI stopped defending a base the live one defended. It has to be late enough in the game for a
+// corpse to be referenced at all, which is why 4500 frames never caught it.
+{
+  const other = mkContext([]);
+  const LATE = 16800;
+  run(`
+    ${START}
+    for (let f = 1; f <= ${LATE}; f++) G.tick();
+    this.wireSnap = JSON.stringify(Snapshot.take());
+    this.lateRef = {};
+    for (let f = 1; f <= 240; f++) { G.tick(); if (f % 48 === 0) this.lateRef[f] = G.stateHash(); }
+  `);
+  vm.runInContext('this.wireSnap = ' + JSON.stringify(ctx.wireSnap) + ';', other);
+  vm.runInContext(`(() => {
+    ${START}
+    Snapshot.restore(JSON.parse(this.wireSnap));
+    this.got = {};
+    for (let f = 1; f <= 240; f++) { G.tick(); if (f % 48 === 0) this.got[f] = G.stateHash(); }
+  })();`, other);
+  const frames = Object.keys(ctx.lateRef).map(Number).sort((a, b) => a - b);
+  const bad = frames.filter(f => other.got[f] !== ctx.lateRef[f]);
+  ok('a snapshot sent as JSON into a fresh process re-simulates bit-identically', bad.length === 0,
+    bad.length ? 'diverged ' + bad.length + '/' + frames.length + ', first ' + (LATE + bad[0]) : frames.length + ' checkpoints from frame ' + LATE);
+  ok('...and it carried the reaped units something still points at', JSON.parse(ctx.wireSnap).gone !== undefined,
+    'gone=' + JSON.stringify((JSON.parse(ctx.wireSnap).gone || []).length));
+  ok('no JS errors in the fresh process', (other.__errors || []).length === 0, (other.__errors || [])[0] || '');
+}
 
 ok('no JS errors', errors.length === 0, errors[0] || '');
 console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');
