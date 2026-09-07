@@ -347,7 +347,12 @@ class AI {
   micro() {
     const p = this.p;
     // Terran: scan where our units are being hit by something we cannot see (burrowed lurkers, cloaked units)
-    if (p.race === 'T' && (G.frame + p.id) % 48 === 0) { const cs = this.mine(u => u.def.id === 'comsat_station' && u.done && u.energy >= 50)[0]; if (cs) { const hit = this.mine(u => !u.isBuilding && G.frame - u.lastHit < 24 && u.lastHitBy && u.lastHitBy.alive && u.lastHitBy.isCloaked && !G.detected(u.lastHitBy, p.id))[0]; if (hit) Abilities.issue(cs, 'scanner_sweep', null, hit.lastHitBy.x, hit.lastHitBy.y); } }
+    if (p.race === 'T' && (G.frame + p.id) % 48 === 0) { const cs = this.mine(u => u.def.id === 'comsat_station' && u.done && u.energy >= 50)[0]; if (cs) { const hit = this.mine(u => !u.isBuilding && G.frame - u.lastHit < 24 && u.lastHitBy && u.lastHitBy.alive && u.lastHitBy.isCloaked && !G.detected(u.lastHitBy, p.id))[0];
+      if (hit) Abilities.issue(cs, 'scanner_sweep', null, hit.lastHitBy.x, hit.lastHitBy.y);
+      // A comsat parked at 200/200 is four scans thrown away, and it was the second largest pool of
+      // unspent energy in the audit. Once the bar is nearly full the regeneration is wasted anyway, so
+      // buy vision on what we are about to walk into.
+      else if (cs.energy >= 180 && this.state === 'attack' && this.target && this.target.alive && !G.visibleAt(p.id, this.target.x, this.target.y)) Abilities.issue(cs, 'scanner_sweep', null, this.target.x, this.target.y); } }
     for (const u of G.units) {
       if (!u.alive || u.owner !== p.id || u.isBuilding || u.inside) continue;
       const d = u.def.id;

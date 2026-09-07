@@ -84,12 +84,20 @@ const Abilities = {
   },
   medicAuto(u) {
     if (u.energy < 1 || u.disabled) return;
-    if (!(u.order.type === 'idle' || u.order.type === 'attackmove' || u.order.type === 'follow' || u.order.type === 'hold')) return;
+    const o = u.order.type;
+    if (!(o === 'idle' || o === 'attackmove' || o === 'follow' || o === 'hold' || o === 'move')) return;
     let best = null, bd = 1e9;
     for (const t of G.near(u.x, u.y, 6 * TILE)) { if (t === u || t.owner !== u.owner || !t.def.bio || t.isBuilding || t.hp >= t.maxHp || t.inside || t.def.egg || t.def.larva) continue; const d = dist(u, t); if (d < bd) { bd = d; best = t; } }
     if (!best) return;
-    if (u.order.type === 'idle') { u.applyOrder({ type: 'ability', abil: 'heal', target: best, x: best.x, y: best.y }); return; }
-    if (bd <= u.r + best.r + TILE) { const amt = Math.min(4, best.maxHp - best.hp); best.hp += amt; u.energy -= amt / 2; G.effects.push({ kind: 'heal', x: best.x, y: best.y - 8, t: 6 }); }
+    if (bd <= u.r + best.r + TILE) { const amt = Math.min(4, best.maxHp - best.hp); best.hp += amt; u.energy -= amt / 2; G.effects.push({ kind: 'heal', x: best.x, y: best.y - 8, t: 6 }); return; }
+    if (o === 'hold') return;                                    // hold means stay put, even for a medic
+    if (o === 'idle') { u.applyOrder({ type: 'ability', abil: 'heal', target: best, x: best.x, y: best.y }); return; }
+    // Out of touch range on the move: walk over, heal, then carry on. Without this a medic only ever
+    // healed what it happened to bump into, which is why medics alone were three quarters of all the
+    // energy the AI never spent (test/aiaudit.js --casters).
+    const prev = u.order;
+    u.applyOrder({ type: 'ability', abil: 'heal', target: best, x: best.x, y: best.y });
+    u.queue.unshift(prev); if (u.queue.length > 8) u.queue.length = 8;
   },
   batteryAuto(b) {
     if (b.unpowered) return; let best = null, bd = 1e9;

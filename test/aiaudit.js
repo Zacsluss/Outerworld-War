@@ -18,7 +18,7 @@ function ctxFor() {
 
 const AUDIT = `
   const S = { minutes: 0, idleProd: 0, idleWorkers: 0, floatMin: 0, floatGas: 0, supplyBlocked: 0,
-              armyIdleWhileBaseHit: 0, attackIntoDefence: 0, unusedEnergy: 0, casters: 0, samples: 0 };
+              armyIdleWhileBaseHit: 0, attackIntoDefence: 0, unusedEnergy: 0, casters: 0, samples: 0, by: {} };
   for (let f = 0; f < ${FRAMES} && !G.over; f++) {
     G.tick();
     if (f % 24 !== 0) continue;                       // sample once a second
@@ -43,7 +43,12 @@ const AUDIT = `
       // spellcasters sitting on a full energy bar
       // count casters too, so "full energy" can be read as a share rather than a raw rate: more casters
       // alive is not the same thing as casters being wasted
-      for (const u of G.units) { if (!u.alive || u.owner !== p.id || !u.maxEnergy || u.isBuilding) continue; S.casters++; if (u.energy >= u.maxEnergy - 1) S.unusedEnergy++; }
+      for (const u of G.units) { if (!u.alive || u.owner !== p.id || !u.maxEnergy) continue;
+        // broken down by unit as well as totalled: "casters idle 23% of the time" is not actionable,
+        // "medics are three quarters of it because heal never walks to anyone" is
+        const b = S.by[u.def.id] = S.by[u.def.id] || { n: 0, full: 0, e: 0 };
+        b.n++; b.e += u.energy; if (u.energy >= u.maxEnergy - 1) b.full++;
+        if (u.isBuilding) continue; S.casters++; if (u.energy >= u.maxEnergy - 1) S.unusedEnergy++; }
       // our base is being hit and the army is standing somewhere else doing nothing
       const hit = G.units.find(u => u.alive && u.owner === p.id && u.isBuilding && G.frame - u.lastHit < 48);
       if (hit) {
@@ -64,13 +69,14 @@ const AUDIT = `
   this.stats = S; this.over = G.over; this.frames = G.frame;
 `;
 
-const totals = {};
+const totals = {}, byUnit = {};
 for (const mu of MATCHUPS) for (const seed of SEEDS) {
   const c = ctxFor();
   const layout = mu === 'TZ' ? 'temple' : mu === 'TP' ? 'valley' : 'bloodbath';
   vm.runInContext(`G.init({ players: [{ race: '${mu[0]}', human: false, difficulty: 'normal', name: 'A' }, { race: '${mu[1]}', human: false, difficulty: 'normal', name: 'B' }], seed: ${seed}, layout: '${layout}' });` + AUDIT, c);
   const S = c.stats;
-  for (const k of Object.keys(S)) totals[k] = (totals[k] || 0) + S[k];
+  for (const k of Object.keys(S)) { if (k === 'by') continue; totals[k] = (totals[k] || 0) + S[k]; }
+  for (const [k, v] of Object.entries(S.by)) { const b = byUnit[k] = byUnit[k] || { n: 0, full: 0, e: 0 }; b.n += v.n; b.full += v.full; b.e += v.e; }
   if (c.errors.length) console.log('  errors in ' + mu + ' seed ' + seed + ': ' + c.errors[0]);
 }
 
@@ -86,3 +92,9 @@ console.log('  share of time over 700 minerals unspent                         '
 console.log('  share of time over 700 gas unspent                              ' + pctOfTime(totals.floatGas));
 console.log('  share of time supply blocked                                    ' + pctOfTime(totals.supplyBlocked));
 console.log('  share of time attacking into 2+ static defences                 ' + pctOfTime(totals.attackIntoDefence));
+const rows = Object.entries(byUnit).sort((a, b) => b[1].full - a[1].full).filter(r => r[1].n >= 30);
+if (rows.length) {
+  const waste = rows.reduce((s, r) => s + r[1].full, 0);
+  console.log('\n  where the unspent energy is (caster-seconds, buildings included):');
+  for (const [k, v] of rows) console.log('    ' + k.padEnd(18) + String(v.n).padStart(7) + 's' + (100 * v.full / v.n).toFixed(0).padStart(5) + '% full' + (waste ? (100 * v.full / waste).toFixed(0).padStart(6) + '% of the waste' : '') + '   avg ' + (v.e / v.n).toFixed(0) + ' energy');
+}
