@@ -184,13 +184,19 @@ class AI {
     // The composition is a priority order, so spending on a cheaper unit every time the preferred one is a few
     // minerals short ratchets the army towards the cheapest thing in the list (this is what turned Protoss into
     // an all-zealot army while gas piled up). Bank for the top pick instead, but never stall on it for long.
+    // ...and hold only the buildings that could make it. Holding all of them left a Protoss robotics
+    // facility and stargate idle for eight seconds because a gateway was saving for a dragoon; the hold
+    // was a seventh of every idle-production-building-second the audit counts (test/aiaudit.js). For
+    // Zerg every unit comes off larva, so a Zerg hold still holds everything, which is right: larva is
+    // the shared resource being saved.
+    let holding = null;
     const want = cands.find(([, id]) => this.canTrainSoon(id));
     if (want) { const wd = DATA.units[want[1]];
       const close = p.minerals >= wd.min * 0.7 && p.gas >= wd.gas * 0.7; // only wait when the money is nearly there; saving from nothing just idles production (and wastes Zerg larvae)
-      if ((p.minerals < wd.min || p.gas < wd.gas) && close) { if (this.holdFor !== want[1]) { this.holdFor = want[1]; this.holdT = G.frame; } if (G.frame - this.holdT < 24 * 8) return; }
+      if ((p.minerals < wd.min || p.gas < wd.gas) && close) { if (this.holdFor !== want[1]) { this.holdFor = want[1]; this.holdT = G.frame; } if (G.frame - this.holdT < 24 * 8) holding = wd.from; }
       else this.holdFor = null;
     } else this.holdFor = null;
-    let made = 0; for (const [, id] of cands) { if (this.train(id, 3)) { made++; if (made >= 3) break; } } // money is the real limit; every race gets the same number of tries
+    let made = 0; for (const [, id] of cands) { if (holding && DATA.units[id].from === holding) continue; if (this.train(id, 3)) { made++; if (made >= 3) break; } } // money is the real limit; every race gets the same number of tries
   }
   research() {
     const p = this.p; if (p.minerals < 200 || p.gas < 150) return;
