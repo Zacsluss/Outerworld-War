@@ -28,8 +28,9 @@ it.** All three tasks are done. The one-line summary a reader needs before touch
 | `a23d92b` | M7 task 2 (rest) — the caster tech earlier, and templars that live to cast |
 | `aaa716e` | M7 task 3 (part) — the composition hold held buildings it had no business holding |
 | `07836c6` | M7 task 3 (rest) — two thirds of "idle production" was never a defect |
-| `2802b31` | M7 task 1 — the Zerg-side answer, and what it was worth |
-| this commit | M7 close-out: this handoff |
+| `2802b31` | M7 task 1 — the Zerg-side answer, and what each half of it was worth |
+| `48bbfac` | M7 close-out — the shipping balance, the README's claims, this handoff |
+| `4022e24` | the sim tick re-measured rather than asserted |
 
 ## Task 1's answer: PvT and PvZ were fine all along
 
