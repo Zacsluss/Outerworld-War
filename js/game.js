@@ -3,6 +3,16 @@
 // Game state container G: units, players, spatial hash, vision, production,
 // spawning/killing, supply, victory.
 // ============================================================================
+// How long a condition has to hold before the player is told, and how long the alert then stays quiet.
+// hold is in alert passes (one a second), cool in frames. These are the numbers that decide whether an
+// alert is useful or noise, so they live where they can be found rather than inline.
+const ALERTS = {
+  supply:   { hold: 4, cool: 24 * 40 },  // long enough to survive the moment between finishing a unit and starting a depot
+  idleProd: { hold: 8, cool: 24 * 45 },  // a queue empties for a second all the time; eight is a player not looking
+  carrier:  { hold: 3, cool: 24 * 45 },
+  expo:     { hold: 1, cool: 24 * 30 },  // this one is urgent: fire on the first pass that sees it
+};
+
 const G = {
   map: null, pf: null, players: [], units: [], byId: new Map(), effects: [], projectiles: [], fields: [], frame: 0,
   pathBudget: 40, over: false, winner: -1, speed: 1, paused: false, human: 0, cell: 64, grid: null, gw: 0, gh: 0, alliances: null,
@@ -241,7 +251,11 @@ const G = {
   onHit(t, src) {
     t.lastHit = this.frame; if (src) t.lastHitBy = src;
     const p = this.players[t.owner];
-    if (p.human && src && src.owner !== t.owner) { if (this.frame - (p.lastAttackAlert || -9999) > 24 * 20) { p.lastAttackAlert = this.frame; p.msg(t.isBuilding || t.def.worker ? 'Your base is under attack.' : 'Your forces are under attack.', 'attack'); if (typeof UI !== 'undefined') UI.ping(t.x, t.y); } }
+    // A building out at an expansion is left to tickAlerts, which can see whether anything is defending
+    // it and say so; saying "your base is under attack" about a lone undefended nexus is the alert that
+    // taught players to ignore alerts.
+    const far = t.isBuilding && distPt(t.x, t.y, p.startX, p.startY) >= 16 * TILE;
+    if (p.human && src && src.owner !== t.owner && !far) { if (this.frame - (p.lastAttackAlert || -9999) > 24 * 20) { p.lastAttackAlert = this.frame; p.msg(t.isBuilding || t.def.worker ? 'Your base is under attack.' : 'Your forces are under attack.', 'attack'); if (typeof UI !== 'undefined' && t.owner === this.human) UI.ping(t.x, t.y); } }
     // auto-retaliate: idle units that get hit attack back
     if (src && t.idle && !t.isBuilding && t.hasWeapon() && !t.def.worker && t.weaponFor(src) && this.targetable(t, src)) t.applyOrder({ type: 'attack', target: src, auto: true });
     // workers flee when attacked (mining)
@@ -368,9 +382,81 @@ const G = {
     for (const p of this.players) if (p.ai && this.frame % 4 === p.id % 4) p.ai.tick();
     if (this.frame % 8 === 0) this.recomputeSupply();
     if (this.frame % 24 === 0) { this.units = this.units.filter(u => u.alive); this.checkVictory(); }
+    if (this.frame % 24 === 12) this.tickAlerts();
     for (let i = this.effects.length - 1; i >= 0; i--) { if (--this.effects[i].t <= 0) this.effects.splice(i, 1); }
     if (this.mission && this.frame % 24 === 0) this.mission.tick();
     this.inTick = false;
+  },
+  // ---------------- alerts ----------------
+  // The simulation knew all of these and told the player none of them. Every alert has to hold for a
+  // few seconds before it fires and then goes quiet for a while, because an alert that cries wolf is
+  // worse than no alert at all -- which is the whole of the acceptance test for this.
+  // hold is in passes (one a second); cool is in frames.
+  alert(p, key, on, text, kind, x, y) {
+    const T = p.alertT || (p.alertT = {}), A = p.alertAt || (p.alertAt = {}), cfg = ALERTS[key];
+    if (!on) { T[key] = 0; return false; }
+    if ((T[key] = (T[key] || 0) + 1) < cfg.hold) return false;
+    if (this.frame - (A[key] || -9999) < cfg.cool) return false;
+    A[key] = this.frame; T[key] = 0;
+    p.msg(text, kind || 'info');
+    if (x !== undefined && typeof UI !== 'undefined' && p.id === this.human) UI.ping(x, y);
+    return true;
+  },
+  tickAlerts() {
+    for (const p of this.players) {
+      if (!p.human || p.defeated) continue;
+      // "blocked" is not only sitting on the cap: a queued unit that needs two supply with one free is
+      // stalled just as hard, and that is the case the production tick used to announce over and over.
+      let stalled = false;
+      if (p.supMax < 200 && p.supUsed < p.supMax) for (const u of this.units) {
+        if (!u.alive || u.owner !== p.id || !u.prod.length) continue;
+        const it = u.prod[0]; if (it.kind !== 'unit' || it.started || it.reserved) continue;
+        const ud = DATA.units[it.id]; if (ud && ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) { stalled = true; break; }
+      }
+      const blocked = p.supMax < 200 && (p.supUsed >= p.supMax || stalled);
+      // 1. supply blocked. Checked first because it also explains away idle production: a barracks with
+      //    the money but no supply room is not the player forgetting to click it.
+      this.alert(p, 'supply', blocked, RACE_INFO[p.race].supplyMsg, 'error');
+      // 2. production standing empty with the money to fill it
+      let idle = null;
+      if (!blocked) for (const u of this.units) {
+        if (!u.alive || u.owner !== p.id || !u.isBuilding || !u.done || u.lifted) continue;
+        if (u.def.spawnsLarva) { if (u.larvae.length && p.minerals >= 50) { idle = u; break; } continue; }
+        if (!u.def.produces.length || u.prod.length) continue;
+        for (const id of u.def.produces) {
+          const d = DATA.units[id]; if (!d || !p.hasReq(d)) continue;
+          if (p.minerals < d.min || p.gas < d.gas) continue;
+          if (d.sup && p.supUsed + d.sup * (d.pair ? 2 : 1) > p.supMax) continue;
+          idle = u; break;
+        }
+        if (idle) break;
+      }
+      this.alert(p, 'idleProd', !!idle, 'Production facilities are idle.', 'info', idle && idle.x, idle && idle.y);
+      // 3. a Carrier trying to fight with an empty hangar. Brood War leaves it inert and says nothing;
+      //    the answer is still to build interceptors, but a human should at least be told.
+      let empty = null;
+      for (const u of this.units) {
+        if (!u.alive || u.owner !== p.id || u.def.id !== 'carrier' || !u.done || u.prod.length) continue;
+        if (u.interceptors > 0 || (u.launched && u.launched.some(i => i.alive))) continue;
+        const fighting = u.order.type === 'attack' || (u.order.type === 'attackmove' && u.order.target) || (u.order.type === 'hold' && u.target);
+        if (fighting) { empty = u; break; }
+      }
+      this.alert(p, 'carrier', !!empty, 'Carrier has no interceptors.', 'error', empty && empty.x, empty && empty.y);
+      // 4. an outlying base being hit with nothing defending it
+      let bare = null, held = null;
+      for (const u of this.units) {
+        if (!u.alive || u.owner !== p.id || !u.isBuilding || this.frame - u.lastHit > 48) continue;
+        if (distPt(u.x, u.y, p.startX, p.startY) < 16 * TILE) continue;
+        let guarded = false;
+        for (const o of this.near(u.x, u.y, 10 * TILE)) {
+          if (!o.alive || o.owner !== p.id) continue;
+          if (o.isBuilding ? (o.done && (o.def.gw || o.def.aw)) : (!o.def.worker && o.hasWeapon())) { guarded = true; break; }
+        }
+        if (guarded) { if (!held) held = u; } else { bare = u; break; }
+      }
+      if (this.alert(p, 'expo', !!bare, 'Your expansion is undefended and under attack.', 'attack', bare && bare.x, bare && bare.y)) p.lastAttackAlert = this.frame;
+      else if (held && this.frame - (p.lastAttackAlert || -9999) > 24 * 20) { p.lastAttackAlert = this.frame; p.msg('Your base is under attack.', 'attack'); if (typeof UI !== 'undefined' && p.id === this.human) UI.ping(held.x, held.y); }
+    }
   },
   checkVictory() {
     for (const p of this.players) {

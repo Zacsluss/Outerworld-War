@@ -1,0 +1,186 @@
+// Player alerts: idle production, supply block, an empty Carrier, an undefended expansion under attack.
+//   node test/alerts.js
+// Two halves, because an alert has two ways to be wrong. The first half builds the situation and checks
+// the alert arrives. The second half plays a full game competently and checks that every alert that
+// fired was true at the moment it fired, and that none of them fired more often than its cooldown
+// allows -- an alert that cries wolf is the reason players stop reading alerts.
+const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
+let pass = 0, fail = 0;
+const ok = (name, cond, extra) => { if (cond) { pass++; console.log('PASS ' + name); } else { fail++; console.log('FAIL ' + name + (extra ? '  ' + extra : '')); } };
+
+const errors = [];
+const ctx = { console: { log() { }, warn() { }, error: (...a) => errors.push(String(a[0])) }, Math, performance, addEventListener() { }, setTimeout, document: { getElementById: () => ({ style: {}, addEventListener() { } }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { } };
+ctx.window = ctx; vm.createContext(ctx);
+for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
+const run = src => vm.runInContext(src, ctx);
+
+run(`(() => {
+  this.spawn = (id, owner, x, y) => { G.applying = true; try { return G.spawnUnit(id, owner, x, y); } finally { G.applying = false; } };
+  this.order = (u, o) => { G.applying = true; try { u.setOrder(o); } finally { G.applying = false; } };
+  // a bare sandbox: one human, one computer that is switched off, so nothing but the scenario moves
+  this.sandbox = (race, seed) => {
+    G.init({ players: [{ race, human: true, name: 'A' }, { race: 'Z', human: false, difficulty: 'easy', name: 'B' }], seed: seed || 2, layout: 'temple' });
+    for (const p of G.players) p.ai = null;
+    return G.players[0];
+  };
+  // run until the message shows up, or give up; returns the frame it arrived on
+  this.waitFor = (p, text, frames) => { for (let i = 0; i < frames; i++) { G.tick(); if (p.msgs.some(m => m.text === text)) return i; } return -1; };
+})();`);
+
+// ---------------- 1. each alert fires when it should ----------------
+
+// supply block: sit at the cap and wait
+run(`(() => {
+  const p = this.sandbox('T');
+  for (const u of G.units) if (u.alive && u.owner === 0 && u.def.id === 'supply_depot') G.kill(u, null, true);
+  p.minerals = 500;
+  for (let i = 0; i < 400 && p.supUsed < p.supMax; i++) { this.spawn('marine', 0, p.startX + 40, p.startY + 40); G.recomputeSupply(); }
+  this.supply = { blocked: p.supUsed >= p.supMax, at: this.waitFor(p, RACE_INFO.T.supplyMsg, 24 * 20) };
+})();`);
+const supply = ctx.supply;
+ok('a supply block is announced', supply.at >= 0, JSON.stringify(supply));
+ok('...and it waits a few seconds first, rather than on the frame the cap is hit', supply.at >= 24 * 3, 'fired at frame ' + supply.at);
+
+// idle production: a finished barracks, money in the bank, supply room, and nobody clicking it
+run(`(() => {
+  const p = this.sandbox('T');
+  const b = this.spawn('barracks', 0, p.startX + 120, p.startY);
+  b.done = true; b.hp = b.maxHp; p.minerals = 800; p.gas = 400;
+  G.recomputeSupply();
+  this.idle = { room: p.supMax - p.supUsed, at: this.waitFor(p, 'Production facilities are idle.', 24 * 30) };
+})();`);
+const idle = ctx.idle;
+ok('an idle production building with the money to fill it is announced', idle.at >= 0, JSON.stringify(idle));
+ok('...after eight seconds, not the instant a queue empties', idle.at >= 24 * 7, 'fired at frame ' + idle.at);
+
+// ...and it stays quiet when the reason the barracks is empty is supply, not the player
+run(`(() => {
+  const p = this.sandbox('T');
+  for (const u of G.units) if (u.alive && u.owner === 0 && u.def.id === 'supply_depot') G.kill(u, null, true);
+  const b = this.spawn('barracks', 0, p.startX + 120, p.startY);
+  b.done = true; b.hp = b.maxHp; p.minerals = 800;
+  for (let i = 0; i < 400 && p.supUsed < p.supMax; i++) { this.spawn('marine', 0, p.startX + 40, p.startY + 40); G.recomputeSupply(); }
+  this.idleBlocked = { at: this.waitFor(p, 'Production facilities are idle.', 24 * 40) };
+})();`);
+ok('a supply-blocked player is not also told its production is idle', ctx.idleBlocked.at < 0, 'fired at frame ' + ctx.idleBlocked.at);
+
+// carrier with an empty hangar, ordered to attack something
+run(`(() => {
+  const p = this.sandbox('P');
+  const c = this.spawn('carrier', 0, p.startX + 100, p.startY);
+  c.done = true; c.hp = c.maxHp; c.interceptors = 0; c.launched = [];
+  const foe = this.spawn('zergling', 1, c.x + 40, c.y);
+  this.order(c, { type: 'attack', target: foe });
+  this.carrier = { at: this.waitFor(p, 'Carrier has no interceptors.', 24 * 20) };
+})();`);
+ok('a Carrier fighting with an empty hangar is announced', ctx.carrier.at >= 0, JSON.stringify(ctx.carrier));
+
+// ...but not a Carrier that has just been built and is filling its hangar
+run(`(() => {
+  const p = this.sandbox('P');
+  const c = this.spawn('carrier', 0, p.startX + 100, p.startY);
+  c.done = true; c.hp = c.maxHp; c.interceptors = 0; c.launched = [];
+  p.minerals = 500; G.applying = true; try { G.queueUnit(c, 'interceptor'); } finally { G.applying = false; }
+  const foe = this.spawn('zergling', 1, c.x + 40, c.y);
+  this.order(c, { type: 'attack', target: foe });
+  this.carrierBuilding = { queued: c.prod.length, at: this.waitFor(p, 'Carrier has no interceptors.', 24 * 20) };
+})();`);
+ok('a Carrier already building interceptors is left alone', ctx.carrierBuilding.queued > 0 && ctx.carrierBuilding.at < 0, JSON.stringify(ctx.carrierBuilding));
+
+// an expansion under attack with nothing defending it
+run(`(() => {
+  const p = this.sandbox('T');
+  const base = G.map.bases.filter(b => distPt(b.cx, b.cy, p.startX, p.startY) > 20 * TILE)[0];
+  const cc = this.spawn('command_center', 0, base.cx, base.cy);
+  cc.done = true; cc.hp = cc.maxHp;
+  const foe = this.spawn('hydralisk', 1, cc.x + 60, cc.y);
+  this.order(foe, { type: 'attack', target: cc });
+  this.expo = { dist: Math.round(distPt(cc.x, cc.y, p.startX, p.startY) / TILE), at: this.waitFor(p, 'Your expansion is undefended and under attack.', 24 * 30) };
+})();`);
+ok('an undefended expansion under attack is announced as such', ctx.expo.at >= 0, JSON.stringify(ctx.expo));
+
+// ...and a defended one gets the ordinary line instead, not the undefended one
+run(`(() => {
+  const p = this.sandbox('T');
+  const base = G.map.bases.filter(b => distPt(b.cx, b.cy, p.startX, p.startY) > 20 * TILE)[0];
+  const cc = this.spawn('command_center', 0, base.cx, base.cy);
+  cc.done = true; cc.hp = cc.maxHp;
+  const guard = this.spawn('siege_tank', 0, cc.x - 60, cc.y); guard.done = true;
+  const foe = this.spawn('hydralisk', 1, cc.x + 60, cc.y);
+  this.order(foe, { type: 'attack', target: cc });
+  let generic = -1, bare = -1;
+  for (let i = 0; i < 24 * 20; i++) { G.tick(); if (bare < 0 && p.msgs.some(m => m.text === 'Your expansion is undefended and under attack.')) bare = i; if (generic < 0 && p.msgs.some(m => m.text === 'Your base is under attack.')) generic = i; }
+  this.expoHeld = { generic, bare };
+})();`);
+ok('a defended expansion gets the ordinary attack line, not the undefended one', ctx.expoHeld.generic >= 0 && ctx.expoHeld.bare < 0, JSON.stringify(ctx.expoHeld));
+
+// ---------------- 2. nothing fires spuriously in a real game ----------------
+// The human seat is played by the ordinary AI, so this is a competently played game rather than a
+// player standing still. Every alert it raises is checked against the state of the world on the frame
+// it was raised.
+run(`(() => {
+  const TEXTS = { supply: null, idleProd: 'Production facilities are idle.', carrier: 'Carrier has no interceptors.', expo: 'Your expansion is undefended and under attack.' };
+  const fired = { supply: [], idleProd: [], carrier: [], expo: [] }, claims = [], tooSoon = [];
+  let mins = 0;
+  // three games rather than one: the point of this half is the absence of a false alert, and one game
+  // is not much evidence of an absence.
+  for (const g of [['P', 'T', 5, 'valley'], ['T', 'Z', 9, 'temple'], ['Z', 'P', 4, 'bloodbath']]) {
+    G.init({ players: [{ race: g[0], human: true, name: 'A' }, { race: g[1], human: false, difficulty: 'normal', name: 'B' }], seed: g[2], layout: g[3] });
+    const p = G.players[0];
+    p.ai = new AI(p, 'normal');                     // a human seat that plays: alerts should be rare and always earned
+    TEXTS.supply = RACE_INFO[g[0]].supplyMsg;
+    const last = {};
+    // the ground truth for each alert, recomputed here independently of the code under test
+    const truth = () => {
+      let stalled = false;
+      if (p.supMax < 200 && p.supUsed < p.supMax) for (const u of G.units) {
+        if (!u.alive || u.owner !== p.id || !u.prod.length) continue;
+        const it = u.prod[0]; if (it.kind !== 'unit' || it.started || it.reserved) continue;
+        const ud = DATA.units[it.id]; if (ud && ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) { stalled = true; break; }
+      }
+      const blocked = p.supMax < 200 && (p.supUsed >= p.supMax || stalled);
+      let idleB = false;
+      if (!blocked) for (const u of G.units) {
+        if (!u.alive || u.owner !== p.id || !u.isBuilding || !u.done || u.lifted) continue;
+        if (u.def.spawnsLarva) { if (u.larvae.length && p.minerals >= 50) { idleB = true; break; } continue; }
+        if (!u.def.produces.length || u.prod.length) continue;
+        for (const id of u.def.produces) { const d = DATA.units[id]; if (!d || !p.hasReq(d)) continue; if (p.minerals < d.min || p.gas < d.gas) continue; if (d.sup && p.supUsed + d.sup * (d.pair ? 2 : 1) > p.supMax) continue; idleB = true; break; }
+        if (idleB) break;
+      }
+      let emptyCarrier = false;
+      for (const u of G.units) { if (!u.alive || u.owner !== p.id || u.def.id !== 'carrier' || !u.done || u.prod.length) continue; if (u.interceptors > 0 || (u.launched && u.launched.some(i => i.alive))) continue; emptyCarrier = true; break; }
+      let bareHit = false;
+      for (const u of G.units) {
+        if (!u.alive || u.owner !== p.id || !u.isBuilding || G.frame - u.lastHit > 48) continue;
+        if (distPt(u.x, u.y, p.startX, p.startY) < 16 * TILE) continue;
+        let guarded = false;
+        for (const o of G.near(u.x, u.y, 10 * TILE)) { if (!o.alive || o.owner !== p.id) continue; if (o.isBuilding ? (o.done && (o.def.gw || o.def.aw)) : (!o.def.worker && o.hasWeapon())) { guarded = true; break; } }
+        if (!guarded) { bareHit = true; break; }
+      }
+      return { supply: blocked, idleProd: idleB, carrier: emptyCarrier, expo: bareHit };
+    };
+    for (let f = 0; f < 28800 && !G.over; f++) {
+      G.tick();
+      const m = p.msgs[p.msgs.length - 1];
+      if (!m || m.t !== G.frame) continue;
+      for (const [key, text] of Object.entries(TEXTS)) if (m.text === text) {
+        fired[key].push(G.frame); claims.push({ key, frame: G.frame, mu: g[0] + g[1], true_: truth()[key] });
+        if (last[key] !== undefined && G.frame - last[key] < ALERTS[key].cool) tooSoon.push({ key, mu: g[0] + g[1], gap: G.frame - last[key] });
+        last[key] = G.frame;
+      }
+    }
+    mins += G.frame / 24 / 60;
+  }
+  this.live = { fired, claims, tooSoon, lies: claims.filter(c => !c.true_), total: claims.length, mins: +mins.toFixed(1) };
+})();`);
+const live = ctx.live;
+const counts = Object.entries(live.fired).map(([k, f]) => k + ' ' + f.length).join(', ');
+console.log('\n  three competently played games, ' + live.mins + ' minutes in all, raised ' + live.total + ' alerts: ' + counts);
+ok('every alert raised in a real game was true when it was raised', live.lies.length === 0, JSON.stringify(live.lies.slice(0, 4)));
+ok('no alert repeats inside its own cooldown', live.tooSoon.length === 0, JSON.stringify(live.tooSoon.slice(0, 4)));
+ok('the games are not drowned in alerts', live.total / Math.max(1, live.mins) < 6, live.total + ' in ' + live.mins + ' minutes');
+ok('an unprompted game raises the two the AI is genuinely bad at', live.fired.idleProd.length > 0 && live.fired.supply.length > 0, counts);
+
+ok('no JS errors', errors.length === 0, errors[0]);
+console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');
+process.exit(fail ? 1 : 0);

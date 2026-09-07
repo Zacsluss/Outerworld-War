@@ -30,6 +30,7 @@ Then open http://localhost:8765. The server also prints a LAN address for multip
 - **Save/Load**: F5 saves (file + browser autosave), F8 loads the autosave; loading re-simulates the recorded commands, so saves are tiny and always consistent. Autosave runs every two minutes. Every save and replay carries a digest of the simulation code, and one written by a different build is refused with the reason rather than quietly drifting out of sync.
 - Three map layouts (Lost Ruins 4p, Blood Pit 4p, Twilight Valley 2p) with seeded variation, seven BW speed presets (Slowest to Fastest), Brood War or grid (QWE/ASD/ZXC) hotkeys, voice and music toggles.
 - **Map editor**: paint terrain height, ramps and rocks, drop start locations and expansions, check the map for unreachable bases, then save it. Undo/redo (Ctrl+Z / Ctrl+Y), a rectangle-fill mode (R), 2- and 4-player mirrored painting (M) that turns one stroke into a symmetric map, and a minimap you can click to jump across the 128x128 canvas. Custom maps appear in the map list next to the built-ins, work in single player and LAN, and export/import as small JSON files.
+- **Alerts**: the console, a minimap ping and a voice line tell you when production is standing idle with money in the bank, when you are supply blocked, when a Carrier is fighting with an empty hangar, and when an expansion is being attacked with nothing defending it. Space jumps the camera to the last one.
 - Classic cheat codes in single player: press Enter and type `show me the money`, `black sheep wall`, `operation cwal`, `power overwhelming`, `food for thought`, `the gathering`, `modify the phase variance`, `staying alive`, `medieval man`, `something for nothing`, `war aint what it used to be`, `there is no cow level`, `game over man`.
 
 **AI**: scripted openings per race, macro (workers, supply, gas saturation, expansions, production, add-ons, static defence), research priorities, scouting, wave attacks with grouping and reinforcement, drop play with transports, kiting for vultures/mutalisks/dragoons, siege/unsiege, stim, lurker burrow, storm, plague/swarm, irradiate, broodlings, stasis, mines and nukes.
@@ -57,6 +58,7 @@ node broodwar/test/features.js      # 87 gameplay checks
 node broodwar/test/determinism.js   # identical runs match; replay reproduces the original
 node broodwar/test/version.js        # saves carry a build stamp; a save from another build is refused
 node broodwar/test/movement.js       # unreachable goals, wedged units, burrowed units
+node broodwar/test/alerts.js         # the four player alerts fire when they should and never when they should not
 node broodwar/test/observer.js       # replay observer: vision switching, production overlay, seeking
 node broodwar/test/snapshot.js       # a restored simulation snapshot re-simulates bit-identically
 node broodwar/test/aiaudit.js        # counts things the AI does that a human never would
