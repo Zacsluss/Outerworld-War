@@ -61,7 +61,8 @@ node broodwar/test/movement.js       # unreachable goals, wedged units, burrowed
 node broodwar/test/alerts.js         # the four player alerts fire when they should and never when they should not
 node broodwar/test/observer.js       # replay observer: vision switching, production overlay, seeking
 node broodwar/test/snapshot.js       # a restored simulation snapshot re-simulates bit-identically
-node broodwar/test/aiaudit.js        # counts things the AI does that a human never would
+node broodwar/test/aiaudit.js        # counts things the AI does that a human never would, and why
+node broodwar/test/casters.js        # which spells the AI ever casts, and when the tech that unlocks them lands
 node broodwar/test/smoke.js 16000 TZ temple   # AI vs AI on a layout
 node broodwar/test/playtest.js all          # scripted human plays TvZ, PvT, ZvP through the UI layer
 node broodwar/test/net.js                   # two lockstep clients + AI through the relay: hashes, drop, rejoin, desync detection

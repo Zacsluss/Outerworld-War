@@ -18,7 +18,7 @@ function ctxFor() {
 
 const AUDIT = `
   const S = { minutes: 0, idleProd: 0, idleWorkers: 0, floatMin: 0, floatGas: 0, supplyBlocked: 0,
-              armyIdleWhileBaseHit: 0, attackIntoDefence: 0, unusedEnergy: 0, casters: 0, samples: 0, by: {} };
+              armyIdleWhileBaseHit: 0, attackIntoDefence: 0, idleAfford: 0, unusedEnergy: 0, casters: 0, samples: 0, by: {}, idleWhy: {} };
   for (let f = 0; f < ${FRAMES} && !G.over; f++) {
     G.tick();
     if (f % 24 !== 0) continue;                       // sample once a second
@@ -26,14 +26,45 @@ const AUDIT = `
     for (const p of G.players) {
       if (p.defeated) continue;
       // production buildings standing empty while the money to fill them is in the bank
-      let idle = 0, cheapest = 1e9;
+      let idle = 0, cheapest = 1e9; const idleB = [];
       for (const u of G.units) {
         if (!u.alive || u.owner !== p.id || !u.isBuilding || !u.done || u.lifted) continue;
         if (!u.def.produces.length && !u.def.spawnsLarva) continue;
-        if (u.def.spawnsLarva) { if (u.larvae && u.larvae.length && p.minerals >= 50) idle++; continue; }
-        if (!u.prod.length) { for (const id of u.def.produces) { const d = DATA.units[id]; if (d && p.hasReq(d) && d.min < cheapest) cheapest = d.min; } if (p.minerals >= 50) idle++; }
+        if (u.def.spawnsLarva) { if (u.larvae && u.larvae.length && p.minerals >= 50) { idle++; idleB.push(u); } continue; }
+        if (!u.prod.length) { for (const id of u.def.produces) { const d = DATA.units[id]; if (d && p.hasReq(d) && d.min < cheapest) cheapest = d.min; } if (p.minerals >= 50) { idle++; idleB.push(u); } }
       }
-      if (p.minerals >= cheapest && idle) S.idleProd += idle;
+      // ...and why, because the raw count has been "improving without being solved" for three
+      // milestones and cannot say which part of it is a defect. A human does stop making units to
+      // afford an expansion; a human does not leave a stargate idle because a gateway is saving for a
+      // dragoon. The question has to be asked of each idle building on its own -- an idle starport with
+      // 400 minerals and no gas is "cannot afford", even though a marine was affordable somewhere else.
+      if (p.minerals >= cheapest && idle) {
+        S.idleProd += idle;
+        // The count above is idle capacity, not lost production: ten empty barracks and sixty minerals
+        // is ten, though nine of them could not have been filled whatever the AI did. This is the part
+        // the money was actually there for, and it is the number a change should be judged on.
+        S.idleAfford += Math.min(idle, Math.floor(p.minerals / cheapest));
+        const a = p.ai, held = a && a.holdFor && G.frame - a.holdT < 24 * 8 ? a.holdFor : null;
+        for (const u of idleB) {
+          let why = 'no ai';
+          if (a) {
+            // what this building could put in its own queue, army units only: workers and supply are
+            // economy()'s and supply()'s business, not production()'s
+            const makes = (u.def.spawnsLarva ? DATA.larvaMorphs : u.def.produces).map(id => DATA.units[id]).filter(d => d && !d.worker && !d.supGive);
+            const unlocked = makes.filter(d => p.hasReq(d));
+            const room = unlocked.filter(d => !(d.sup && p.supUsed + d.sup * (d.pair ? 2 : 1) > p.supMax));
+            const rich = room.filter(d => p.minerals >= d.min && p.gas >= d.gas);
+            why = !makes.length ? 'only makes workers, and the AI has enough'   // a saturated town hall: economy()'s business, and not a defect
+              : held && makes.some(d => d.id === held) ? 'composition hold'
+              : !unlocked.length ? 'nothing this building makes is unlocked'
+              : !room.length ? 'supply blocked'
+              : !rich.length ? 'cannot afford anything this building makes'
+              : !rich.some(d => a.afford(d.min, d.gas)) ? 'saving for a building'
+              : 'unexplained';                            // money, supply and requirements were all there
+          }
+          S.idleWhy[why] = (S.idleWhy[why] || 0) + 1;
+        }
+      }
       // workers doing nothing at all
       for (const u of G.units) if (u.alive && u.owner === p.id && u.def.worker && u.order.type === 'idle' && !u.inside) S.idleWorkers++;
       // money piling up unspent
@@ -69,13 +100,14 @@ const AUDIT = `
   this.stats = S; this.over = G.over; this.frames = G.frame;
 `;
 
-const totals = {}, byUnit = {};
+const totals = {}, byUnit = {}, idleWhy = {};
 for (const mu of MATCHUPS) for (const seed of SEEDS) {
   const c = ctxFor();
   const layout = mu === 'TZ' ? 'temple' : mu === 'TP' ? 'valley' : 'bloodbath';
   vm.runInContext(`G.init({ players: [{ race: '${mu[0]}', human: false, difficulty: 'normal', name: 'A' }, { race: '${mu[1]}', human: false, difficulty: 'normal', name: 'B' }], seed: ${seed}, layout: '${layout}' });` + AUDIT, c);
   const S = c.stats;
-  for (const k of Object.keys(S)) { if (k === 'by') continue; totals[k] = (totals[k] || 0) + S[k]; }
+  for (const k of Object.keys(S)) { if (k === 'by' || k === 'idleWhy') continue; totals[k] = (totals[k] || 0) + S[k]; }
+  for (const [k, v] of Object.entries(S.idleWhy)) idleWhy[k] = (idleWhy[k] || 0) + v;
   for (const [k, v] of Object.entries(S.by)) { const b = byUnit[k] = byUnit[k] || { n: 0, full: 0, e: 0 }; b.n += v.n; b.full += v.full; b.e += v.e; }
   if (c.errors.length) console.log('  errors in ' + mu + ' seed ' + seed + ': ' + c.errors[0]);
 }
@@ -85,6 +117,8 @@ const per = (n) => (n / mins).toFixed(1);
 const pctOfTime = (n) => (100 * n / samples).toFixed(0) + '%';
 console.log('AI audit over ' + (MATCHUPS.length * SEEDS.length) + ' games, ' + mins.toFixed(0) + ' game-minutes\n');
 console.log('  idle production buildings (per minute, summed over both players) ' + per(totals.idleProd));
+for (const [k, v] of Object.entries(idleWhy).sort((a, b) => b[1] - a[1])) console.log('      ' + (100 * v / totals.idleProd).toFixed(0).padStart(3) + '% ' + k);
+console.log('  ...of which the money was there to fill (per minute)             ' + per(totals.idleAfford));
 console.log('  idle workers (per minute)                                       ' + per(totals.idleWorkers));
 console.log('  spellcasters at full energy (per minute)                        ' + per(totals.unusedEnergy) + '   (' + (totals.casters ? (100 * totals.unusedEnergy / totals.casters).toFixed(0) : '0') + '% of caster-seconds, ' + per(totals.casters) + ' casters/min)');
 console.log('  army idle while its own base is being hit (per minute)          ' + per(totals.armyIdleWhileBaseHit));

@@ -115,7 +115,9 @@ class AI {
       // gas-hungry tech waits until there is an army and enough production to use it
       if (def.gas >= 100 && !def.produces.length && (this.armySup || 0) < 16 && prodDone < 3) continue;
       if (p.minerals < def.min || p.gas < def.gas) { if (i === this.scriptIdx) this.reserve(def); continue; } // save up for the head step instead of spending on units
-      if (this.build(id, !this.mine(u => u.def.worker && u.order.type === 'build' && u.order.def).length)) { this.stepT = G.frame; return; } // a worker already walking to a site keeps its money
+      // Only the head step may spend past the reserve; a step reached by scanning ahead must not eat the
+      // money the step in front of it is saving for, or it would starve the thing it jumped over.
+      if (this.build(id, i === this.scriptIdx && !this.mine(u => u.def.worker && u.order.type === 'build' && u.order.def).length)) { this.stepT = G.frame; return; } // a worker already walking to a site keeps its money
     }
     if (G.frame - this.stepT > 24 * 200) { this.scriptIdx++; this.stepT = G.frame; } // nothing in the whole order was startable for that long: stop asking for the head
   }
@@ -163,7 +165,7 @@ class AI {
       if (id === 'observer' && (counts.observer || 0) >= (foe && foe.race === 'Z' ? 3 : 2)) continue;
       let w = wgt; if (this.race === 'Z' && id === 'hydralisk' && p.hasTech('lurker_aspect')) w += 2;
       if (ud.from !== 'larva' && !this.mine(b => b.isBuilding && b.done && b.def.produces.includes(id)).length) continue;
-      const sup = (ud.sup || 1) * (ud.pair ? 2 : 1); cands.push([((counts[id] || 0) * sup + sup) / w, id]); // weights are a share of army supply, so cheap units cannot crowd out the rest
+      const sup = (ud.sup || 1) * (ud.pair ? 2 : 1); cands.push([((counts[id] || 0) * sup + sup) / w, id, w, sup]); // weights are a share of army supply, so cheap units cannot crowd out the rest; w and sup ride along so the score can be recomputed after a train
     }
     cands.sort((a, b) => a[0] - b[0]);
     if (!cands.length) return;
@@ -196,7 +198,19 @@ class AI {
       if ((p.minerals < wd.min || p.gas < wd.gas) && close) { if (this.holdFor !== want[1]) { this.holdFor = want[1]; this.holdT = G.frame; } if (G.frame - this.holdT < 24 * 8) holding = wd.from; }
       else this.holdFor = null;
     } else this.holdFor = null;
-    let made = 0; for (const [, id] of cands) { if (holding && DATA.units[id].from === holding) continue; if (this.train(id, 3)) { made++; if (made >= 3) break; } } // money is the real limit; every race gets the same number of tries
+    // One pass over the composition queues at most one of each unit, so a Terran with six idle barracks
+    // needed six thinks -- eight seconds -- to fill them, and the audit counted every one of those
+    // building-seconds as idle production. It was 58% of the whole count and nothing in the audit could
+    // name it. Keep going while something can still be trained, re-scoring the unit just trained so the
+    // composition ratios still decide the order. train() applies the money reserve on every call, so
+    // this cannot empty the bank into units.
+    let made = 0, pick;
+    do {                                                  // a think is 1.3 s at normal; twelve is far more than income can pay for
+      pick = null;
+      for (const c of cands) { if (holding && DATA.units[c[1]].from === holding) continue; if (this.train(c[1], 3)) { pick = c; break; } }
+      if (!pick) break;
+      const [, id, w, sup] = pick; counts[id] = (counts[id] || 0) + 1; pick[0] = (counts[id] * sup + sup) / w; cands.sort((a, b) => a[0] - b[0]); made++;
+    } while (made < 12);
   }
   research() {
     const p = this.p; if (p.minerals < 200 || p.gas < 150) return;
