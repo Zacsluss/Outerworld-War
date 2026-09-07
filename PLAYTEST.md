@@ -126,3 +126,56 @@ Baseline over 125 game-minutes, and after the supply fix below:
 - **Supply still blocked 10% of the time.** Better, not solved.
 - **Six or seven idle workers per minute.** Usually workers whose mineral patch was mined out, or who
   were bumped off a build site.
+
+## Round four: M5 task 6
+
+Same instrument as round three (`test/aiaudit.js`), now that the AI retreats and the money reserve has
+been loosened. Nine AI-vs-AI games, sampled once a game-second.
+
+| what a human would never do | M4 | M5 |
+|---|---|---|
+| production buildings idle with the money banked (per minute, both players) | 203.1 | **105.7** |
+| spellcasters sitting on a full energy bar | 24.2/min | 36.4/min, i.e. **23% of caster-seconds** |
+| army idle while its own base is being hit (per minute) | 3.1 | 2.2 |
+| idle workers (per minute) | 6.4 | 5.9 |
+| share of time over 700 minerals unspent | 2% | 1% |
+| share of time supply blocked | 7% | 9% |
+| share of time attacking into 2+ static defences | 2% | 1% |
+
+The caster number needed a second look: as a raw rate it appears to have got worse, but the AI now fields
+161 casters per minute against far fewer before, so it is reported as a share of caster-seconds instead.
+23% of the time a caster has a full bar is a real inefficiency, not a regression.
+
+Shape of the game, measured over twelve games (`retreats / army wipes / recoveries`):
+
+| | M4 | M5 |
+|---|---|---|
+| games decided before the frame cap | 11 of 12 | 10 of 12 |
+| mean game length | 14.4 min | 15.9 min |
+| retreats | 0 | 66 |
+| recoveries after an army wipe | 33% | 35% |
+
+### Fixed
+
+31. **A patrol between two points it could not path to swapped endpoints every tick and stood still.**
+    `moveTo` returns true both when a unit arrives and when it gives up because the path ended short, and
+    only the first of those is an arrival. The give-up now sets `moveFailed`, which patrol already checks,
+    so the unit drops the order instead of looking busy while going nowhere for the rest of the game.
+32. **The stuck-unit check measured displacement, not distance walked.** A unit patrolling between two
+    nearby points, or circling a target, ends each sample near where it started and was reported as stuck
+    when it was moving perfectly well. It now uses `u.walkDist`.
+33. **A Carrier hovering while its interceptors fight was reported as stuck.** It is not: the interceptors
+    are doing the work. The check exempts a unit with interceptors out.
+
+### Known, measured, not fixed
+
+- **A Carrier with no interceptors left is inert.** It holds position in range of its target and does
+  nothing, with no feedback to the player. This is what Brood War does too, and the answer is to build
+  interceptors, but a human would at least be told. It is the one remaining stuck-unit report in the
+  ladder suite (1 of 3 games); the missions suite is clean.
+- **Production buildings are still idle about an eighth of the time.** Halved from M4, not solved. The
+  composition hold accounts for 7.9% of production calls; the money reserve, now at 40%, for most of the
+  rest.
+- **`test/net.js` failed two checks once** while a 216-game balance run was saturating every core, and
+  passed five times in a row afterwards, including immediately after the same batch of tests. Its
+  rejoin phase is timing-sensitive under load.

@@ -18,7 +18,7 @@ function ctxFor() {
 
 const AUDIT = `
   const S = { minutes: 0, idleProd: 0, idleWorkers: 0, floatMin: 0, floatGas: 0, supplyBlocked: 0,
-              armyIdleWhileBaseHit: 0, attackIntoDefence: 0, unusedEnergy: 0, samples: 0 };
+              armyIdleWhileBaseHit: 0, attackIntoDefence: 0, unusedEnergy: 0, casters: 0, samples: 0 };
   for (let f = 0; f < ${FRAMES} && !G.over; f++) {
     G.tick();
     if (f % 24 !== 0) continue;                       // sample once a second
@@ -41,7 +41,9 @@ const AUDIT = `
       if (p.gas > 700) S.floatGas++;
       if (p.supUsed >= p.supMax && p.supMax < 200) S.supplyBlocked++;
       // spellcasters sitting on a full energy bar
-      for (const u of G.units) if (u.alive && u.owner === p.id && u.maxEnergy && u.energy >= u.maxEnergy - 1 && !u.isBuilding) S.unusedEnergy++;
+      // count casters too, so "full energy" can be read as a share rather than a raw rate: more casters
+      // alive is not the same thing as casters being wasted
+      for (const u of G.units) { if (!u.alive || u.owner !== p.id || !u.maxEnergy || u.isBuilding) continue; S.casters++; if (u.energy >= u.maxEnergy - 1) S.unusedEnergy++; }
       // our base is being hit and the army is standing somewhere else doing nothing
       const hit = G.units.find(u => u.alive && u.owner === p.id && u.isBuilding && G.frame - u.lastHit < 48);
       if (hit) {
@@ -78,7 +80,7 @@ const pctOfTime = (n) => (100 * n / samples).toFixed(0) + '%';
 console.log('AI audit over ' + (MATCHUPS.length * SEEDS.length) + ' games, ' + mins.toFixed(0) + ' game-minutes\n');
 console.log('  idle production buildings (per minute, summed over both players) ' + per(totals.idleProd));
 console.log('  idle workers (per minute)                                       ' + per(totals.idleWorkers));
-console.log('  spellcasters at full energy (per minute)                        ' + per(totals.unusedEnergy));
+console.log('  spellcasters at full energy (per minute)                        ' + per(totals.unusedEnergy) + '   (' + (totals.casters ? (100 * totals.unusedEnergy / totals.casters).toFixed(0) : '0') + '% of caster-seconds, ' + per(totals.casters) + ' casters/min)');
 console.log('  army idle while its own base is being hit (per minute)          ' + per(totals.armyIdleWhileBaseHit));
 console.log('  share of time over 700 minerals unspent                         ' + pctOfTime(totals.floatMin));
 console.log('  share of time over 700 gas unspent                              ' + pctOfTime(totals.floatGas));

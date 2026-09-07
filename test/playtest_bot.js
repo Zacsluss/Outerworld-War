@@ -73,13 +73,16 @@ const Check = {
       // ground unit standing inside a building footprint
       if (!u.isBuilding && !u.fly && !u.burrowed && !u.def.larva) { const b = G.map.blocked[G.map.idx(Math.floor(u.x / TILE), Math.floor(u.y / TILE))]; if (b >= 0) { const bb = G.byId.get(b); if (bb && bb.alive && bb.isBuilding && !bb.lifted) { const key = 'in-footprint:' + u.def.id + '#' + u.id; if (!this.stuckSeen.has(key)) { this.stuckSeen.add(key); out.push('unit inside footprint ' + u.def.id + '#' + u.id + ' in ' + bb.def.id + ' (' + u.order.type + ')'); } } } }
       // stuck: movement order, far from goal, no displacement for 10 s
-      const g = this.goalOf(u); const rec = this.last.get(u.id) || { x: u.x, y: u.y, f, type: u.order.type, far: f };
-      const moved = distPt(u.x, u.y, rec.x, rec.y) > 6 || rec.type !== u.order.type;
-      if (moved) { rec.x = u.x; rec.y = u.y; rec.f = f; rec.type = u.order.type; }
+      const g = this.goalOf(u); const rec = this.last.get(u.id) || { x: u.x, y: u.y, f, type: u.order.type, far: f, walk: u.walkDist || 0 };
+      // Distance actually walked, not displacement: a unit patrolling between two nearby points, or circling
+      // a target, ends each sample near where it started and used to be reported as stuck when it was not.
+      const moved = (u.walkDist || 0) - rec.walk > 8 || distPt(u.x, u.y, rec.x, rec.y) > 6 || rec.type !== u.order.type;
+      if (moved) { rec.x = u.x; rec.y = u.y; rec.f = f; rec.type = u.order.type; rec.walk = u.walkDist || 0; }
       const farNow = g && distPt(u.x, u.y, g[0], g[1]) > 3 * TILE + (u.order.type === 'follow' && u.order.target ? u.r + u.order.target.r : 0); if (!farNow) rec.far = f; // the goal must have been out of reach for the whole window
       const crowd = u.order.type === 'attack' && u.order.target && u.order.target.isBuilding && G.near(u.x, u.y, 96).filter(o => o.owner === u.owner && !o.isBuilding && o !== u).length >= 4; // waiting behind allies around a building
+      const fightingByProxy = !!(u.launched && u.launched.length); // a Carrier hovers while its interceptors do the killing; that is not stuck
       this.last.set(u.id, rec);
-      if (g && !moved && !crowd && f - rec.f > ((u.order.type === 'attack' || u.order.type === 'attackmove' || u.order.type === 'patrol') ? 600 : 240) && f - rec.far > 240 && farNow && !u.disabled && !(u.sieged) && !(u.isBuilding && !u.lifted) && !(u.order.target && u.order.target.def && u.inRange(u.order.target)) && !(u.order.type === 'gather' && u.order.phase !== 'goto')) {
+      if (g && !moved && !crowd && !fightingByProxy && f - rec.f > ((u.order.type === 'attack' || u.order.type === 'attackmove' || u.order.type === 'patrol') ? 600 : 240) && f - rec.far > 240 && farNow && !u.disabled && !(u.sieged) && !(u.isBuilding && !u.lifted) && !(u.order.target && u.order.target.def && u.inRange(u.order.target)) && !(u.order.type === 'gather' && u.order.phase !== 'goto')) {
         const key = u.id + ':' + u.order.type; if (!this.stuckSeen.has(key)) { this.stuckSeen.add(key); out.push('STUCK ' + u.def.id + '#' + u.id + ' order ' + u.order.type + ' at ' + Math.round(u.x) + ',' + Math.round(u.y) + ' goal ' + Math.round(g[0]) + ',' + Math.round(g[1]) + ' stuck=' + u.stuck + ' path=' + (u.path ? u.path.length + '/' + u.pathI : 'none') + (u.order.target ? ' tgt=' + (u.order.target.def ? u.order.target.def.id : u.order.target.type) : '') + ' map=' + this.around(u)); }
       }
     }
