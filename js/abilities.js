@@ -47,7 +47,7 @@ const Abilities = {
     const p = u.player, ud = DATA.units[toId];
     if (!p.hasReq(ud)) { p.msg('Requires ' + p.missingReq(ud), 'error'); return false; }
     if (!p.canAfford(ud.min, ud.gas)) return false;
-    const extra = ud.sup - u.def.sup; if (extra > 0 && p.supUsed + extra > p.supMax && !(G.cheats.food && p.human)) { p.msg(RACE_INFO.Z.supplyMsg, 'error'); return false; }
+    const extra = ud.sup - u.def.sup; if (extra > 0 && p.supUsed + extra > p.supMax && !(G.cheats.food && p.human)) { G.supplyRefused(p); return false; } // one voice for being supply blocked; see G.supplyRefused
     p.minerals -= ud.min; p.gas -= ud.gas; G.morphUnit(u, toId); return true;
   },
   // Pair up selected units for Archon / Dark Archon merging

@@ -289,7 +289,7 @@ const G = {
     if (!p.hasReq(ud)) { p.msg('Requires ' + p.missingReq(ud), 'error'); return false; }
     if (uid === 'nuke' && b.hasNuke) return false;
     if (!p.canAfford(ud.min, ud.gas)) return false;
-    if (ud.sup && !ud.notUnit && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax && !(this.cheats.food && p.human)) { p.msg(RACE_INFO[p.race].supplyMsg, 'error'); return false; }
+    if (ud.sup && !ud.notUnit && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax && !(this.cheats.food && p.human)) { this.supplyRefused(p); return false; }
     p.minerals -= ud.min; p.gas -= ud.gas;
     b.prod.push({ kind: 'unit', id: uid, progress: 0, total: ud.time }); this.recomputeSupply(); return true;
   },
@@ -298,7 +298,7 @@ const G = {
     if (!l.alive || !l.def.larva) return false;
     if (!p.hasReq(ud)) { p.msg('Requires ' + p.missingReq(ud), 'error'); return false; }
     if (!p.canAfford(ud.min, ud.gas)) return false;
-    if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax && !(this.cheats.food && p.human)) { p.msg(RACE_INFO[p.race].supplyMsg, 'error'); return false; }
+    if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax && !(this.cheats.food && p.human)) { this.supplyRefused(p); return false; }
     p.minerals -= ud.min; p.gas -= ud.gas;
     const h = l.hatch; if (h) { const i = h.larvae.indexOf(l); if (i >= 0) h.larvae.splice(i, 1); }
     l.hatch = null; l.rallyFrom = h; const ed = DATA.units.egg; l.def = ed; l.maxHp = ed.hp; l.hp = ed.hp; l.r = ed.r; l.prod = [{ kind: 'unit', id: uid, progress: 0, total: ud.time, reserved: true }];
@@ -400,6 +400,21 @@ const G = {
     A[key] = this.frame; T[key] = 0;
     p.msg(text, kind || 'info');
     if (x !== undefined && typeof UI !== 'undefined' && p.id === this.human) UI.ping(x, y);
+    return true;
+  },
+  // A click refused for supply has to say why -- otherwise the button just does nothing -- but it says
+  // the same sentence the supply alert says, and it used to say it on Player.msg's own 72-frame de-dupe.
+  // A player leaning on the hotkey while blocked therefore got it every three seconds: in an eight-minute
+  // game, 41 of the 48 console lines, which buried the research line, both attack lines and all three
+  // idle-production alerts in a console that holds six. One condition gets one voice, so the refusal
+  // speaks through the alert's cooldown -- at once when the alert has not just spoken, and silently
+  // otherwise. tickAlerts drives the AI in test/alerts.js and the AI never makes a refused click, which
+  // is why this survived task 3.
+  supplyRefused(p) {
+    const A = p.alertAt || (p.alertAt = {});
+    if (this.frame - (A.supply || -9999) < ALERTS.supply.cool) return false;
+    A.supply = this.frame; (p.alertT || (p.alertT = {})).supply = 0;
+    p.msg(RACE_INFO[p.race].supplyMsg, 'error');
     return true;
   },
   tickAlerts() {

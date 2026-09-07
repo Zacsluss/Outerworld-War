@@ -114,6 +114,33 @@ run(`(() => {
 })();`);
 ok('a defended expansion gets the ordinary attack line, not the undefended one', ctx.expoHeld.generic >= 0 && ctx.expoHeld.bare < 0, JSON.stringify(ctx.expoHeld));
 
+// A player who keeps pressing the button while blocked. This is the case section 2 cannot reach: it
+// plays the human seat with the AI, and the AI checks its supply before it queues, so it never makes a
+// refused click. A human does -- and the refusal says the same sentence the alert says, so without a
+// shared cooldown the console fills with it. Found in play-test round five: 41 of 48 console lines in
+// one eight-minute game, which buried the research line, both attack lines and every idle-production
+// alert in a console that holds six.
+run(`(() => {
+  const p = this.sandbox('T');
+  for (const u of G.units) if (u.alive && u.owner === 0 && u.def.id === 'supply_depot') G.kill(u, null, true);
+  p.minerals = 9000;
+  for (let i = 0; i < 400 && p.supUsed < p.supMax; i++) { this.spawn('marine', 0, p.startX + 40, p.startY + 40); G.recomputeSupply(); }
+  const cc = G.units.find(u => u.alive && u.owner === 0 && u.def.id === 'command_center');
+  const text = RACE_INFO.T.supplyMsg;
+  let lines = 0, refusals = 0, seen = -1;
+  for (let i = 0; i < 24 * 120; i++) {
+    G.applying = true; try { if (G.queueUnit(cc, 'scv') === false) refusals++; } finally { G.applying = false; }  // leaning on the hotkey
+    G.tick();
+    const m = p.msgs.filter(m => m.text === text).sort((a, b) => b.t - a.t)[0];
+    if (m && m.t !== seen) { seen = m.t; lines++; }
+  }
+  this.mash = { refusals, lines, blocked: p.supUsed >= p.supMax, frames: 24 * 120, cool: ALERTS.supply.cool };
+})();`);
+const mash = ctx.mash;
+const allowed = Math.ceil(mash.frames / mash.cool) + 1;
+ok('a player leaning on a button while supply blocked still gets told once', mash.blocked && mash.refusals > 100 && mash.lines >= 1, JSON.stringify(mash));
+ok('...and the refused clicks speak on the alert cooldown, not their own', mash.lines <= allowed, mash.refusals + ' refused clicks produced ' + mash.lines + ' console lines in ' + mash.frames + ' frames (at most ' + allowed + ' on a ' + mash.cool + '-frame cooldown)');
+
 // ---------------- 2. nothing fires spuriously in a real game ----------------
 // The human seat is played by the ordinary AI, so this is a competently played game rather than a
 // player standing still. Every alert it raises is checked against the state of the world on the frame
