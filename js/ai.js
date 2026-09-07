@@ -27,7 +27,7 @@ class AI {
     this.thinkEvery = diff === 'easy' ? 72 : diff === 'hard' ? 20 : 32; this.scriptIdx = 0; this.lastExpand = 0; this.rally = null; this.startedAttack = 0; this.reserveMin = 0; this.reserveGas = 0;
   }
   // money set aside for the building the script/expansion logic is waiting to afford; workers, supply and gas ignore it
-  afford(min, gas) { const m = this.p.minerals, g = this.p.gas; if (min && this.reserveMin && m >= this.reserveMin * 0.25 && m - this.reserveMin < min) return false; if (gas && this.reserveGas && g >= this.reserveGas * 0.25 && g - this.reserveGas < gas) return false; return m >= min && g >= gas; } // once a quarter of the target is banked, stop spending until it is affordable
+  afford(min, gas) { const m = this.p.minerals, g = this.p.gas; if (min && this.reserveMin && m >= this.reserveMin * 0.4 && m - this.reserveMin < min) return false; if (gas && this.reserveGas && g >= this.reserveGas * 0.4 && g - this.reserveGas < gas) return false; return m >= min && g >= gas; } // once 40% of the target is banked, stop spending until it is affordable. A quarter was too eager: it froze unit production for a fifth of the game while a hall was being saved for, which is the single largest cause of idle production buildings
   reserve(def) { this.reserveMin = Math.max(this.reserveMin, def.min); this.reserveGas = Math.max(this.reserveGas, def.gas); } // hold back the single most expensive thing we are saving for, not the sum
   get race() { return this.p.race; }
   mine(pred) { const out = []; for (const u of G.units) if (u.alive && u.owner === this.p.id && pred(u)) out.push(u); return out; }

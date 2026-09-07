@@ -42,6 +42,11 @@ const MapCodec = {
   decode(s, len) { const out = new Uint8Array(len); if (!s) return out; let i = 0; for (const part of String(s).split(',')) { const [v, n] = part.split('x'); const val = +v, cnt = +n; for (let k = 0; k < cnt && i < len; k++) out[i++] = val; } return out; },
 };
 
+// Tilesets a map can declare. The palettes themselves live in js/terrain.js, but the list belongs here
+// so the editor and the headless harnesses can offer them without loading the renderer.
+const TILESET_IDS = ['badlands', 'jungle'];
+const TILESET_NAMES = { badlands: 'Badlands', jungle: 'Jungle' };
+
 class GameMap {
   constructor(seed = 1, layout = 'temple') {
     this.layout = layout;
@@ -87,7 +92,7 @@ class GameMap {
     const rock = (x, y) => { this.walk[this.idx(x, y)] = 0; this.cliff[this.idx(x, y)] = 2; };
     const ramp = (x, y) => { const i = this.idx(x, y); this.walk[i] = 1; this.cliff[i] = 0; this.height[i] = 1; };
     const L = MAP_LAYOUTS[this.layout] || MAP_LAYOUTS.temple;
-    this.name = L.name; this.players = L.players;
+    this.name = L.name; this.players = L.players; this.tileset = TILESET_IDS.includes(L.tileset) ? L.tileset : 'badlands';
     if (L.custom) return this.generateCustom(L);
     // --- high ground ---
     for (const [kind, ...a] of L.high) { if (kind === 'rect') this.rect(a[0], a[1], a[2], a[3], (x, y) => this.sym(x, y, setH(2))); else this.ellipse(a[0], a[1], a[2], a[3], (x, y) => this.sym(x, y, setH(2))); }

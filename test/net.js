@@ -17,7 +17,7 @@ function makeClient(name) {
   const el = () => ({ style: {}, addEventListener() { }, click() { }, remove() { }, getContext: () => null, value: '', appendChild() { }, textContent: '', querySelectorAll: () => [] });
   const ctx = { console: { log() { }, warn() { }, error: (...a) => errors.push(a.map(x => x && x.stack ? x.stack.split('\n').slice(0, 2).join(' | ') : String(x)).join(' ')) }, Math, performance, setTimeout, clearTimeout, setInterval() { return 0; }, WebSocket, location: { protocol: 'http:', host: 'localhost:' + PORT }, localStorage: { getItem() { return null; }, setItem() { } }, document: { getElementById: el, createElement: el, addEventListener() { }, hasFocus: () => true, body: null, querySelectorAll: () => [] }, addEventListener() { }, requestAnimationFrame() { }, Image: function () { } };
   ctx.window = ctx; vm.createContext(ctx);
-  for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'net']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
+  for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'snapshot', 'net']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
   vm.runInContext(`this.__Net = Net; this.__G = G; this.UI = { mode: 'play', net: true, loading: null, menu: null, selection: [], ping() {}, onUnitDied() {}, started: false, start(opts) { G.init(opts); G.recording = true; G.log = []; G.pendingCmds = null; G.mission = null; this.started = true; } };
     this.step = max => { let n = 0; while (n < max && Net.active && !G.over && Net.ready(G.frame)) { Net.beforeTick(); G.tick(); n++; } return n; };
     this.orderSomething = () => { const mine = G.units.filter(u => u.alive && u.owner === G.human && !u.isBuilding && !u.def.larva && !u.def.egg); if (!mine.length) return; const u = mine[0]; const t = mine[(G.frame * 7 + u.id) % mine.length]; t.setOrder({ type: 'move', x: t.x + ((G.frame % 5) - 2) * 60, y: t.y + ((G.frame % 3) - 1) * 60 }); };`, ctx);
@@ -48,6 +48,9 @@ async function main() {
   // ---- phase 3: Bob rejoins and catches up
   const B2 = makeClient('Bob'); B2.connect(); await until(() => B2.ctx.UI.started, 8000, 'Bob rejoin start');
   check(B2.Net.catchingUp && B2.Net.me === 1, 'phase 3: relay accepted the rejoin with the history (' + Object.keys(B2.Net.inbox).length + ' frames of batches)');
+  // A rejoin used to replay the entire game; with a snapshot from a live player it replays only the tail,
+  // so this must stay tiny however long the game has been running.
+  check(Object.keys(B2.Net.inbox).length < 100 && B2.frame() >= 16000, 'phase 3: rejoin started from a snapshot, not from frame 0 (frame ' + B2.frame() + ', ' + Object.keys(B2.Net.inbox).length + ' batches to replay)');
   const t0 = Date.now(); while (B2.Net.catchingUp) { const n = B2.step(400); if (!n) { if (!B2.Net.ready(B2.frame())) B2.Net.catchingUp = false; } A.step(30); await sleep(0); if (Date.now() - t0 > 120000) throw new Error('rejoin catch-up timeout'); }
   console.log('  Bob caught up to frame ' + B2.frame() + ' (Alice at ' + A.frame() + ')');
   await run([A, B2], A.frame() + 2400, 'phase 3');

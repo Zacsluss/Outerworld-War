@@ -99,6 +99,31 @@ check(play4.startsUsed === 4, 'four players get four distinct start locations');
 check(play4.sup.every(s => s > 20) && play4.halls.every(h => h >= 1), '4-player game on it runs: supply ' + play4.sup.join('/') + ', halls ' + play4.halls.join('/'));
 check(play4.errors.length === 0, 'no errors in the 4-player game' + (play4.errors.length ? ': ' + play4.errors[0] : ''));
 
+// ---------- a second tileset is selectable per map and plays ----------
+const tiles = makeCtx(false);
+vm.runInContext(`
+  Editor.canvas = { width: 1280, height: 720 }; Editor.template(); Editor.name = 'Jungle Arena';
+  this.sets = TILESET_IDS.slice();
+  Editor.tileset = 'jungle';
+  this.layout = Editor.toLayout();
+  this.problems = Editor.problems();
+`, tiles);
+check(tiles.sets.length >= 2 && tiles.sets.includes('jungle'), 'more than one tileset is available (' + tiles.sets.join(', ') + ')');
+check(tiles.layout.tileset === 'jungle', 'the editor saves the chosen tileset with the map');
+check(tiles.problems.length === 0, 'a jungle map validates' + (tiles.problems.length ? ': ' + tiles.problems.slice(0, 2).join('; ') : ''));
+
+const playJ = makeCtx(false);
+playJ.jungle = tiles.layout;
+vm.runInContext(`
+  MAP_LAYOUTS['custom:Jungle Arena'] = this.jungle;
+  G.init({ players: [{ race: 'T', human: false, difficulty: 'normal', name: 'A' }, { race: 'Z', human: false, difficulty: 'normal', name: 'B' }], seed: 3, layout: 'custom:Jungle Arena' });
+  this.tileset = G.map.tileset;
+  for (let i = 0; i < 7200 && !G.over; i++) G.tick();
+  this.sup = G.players.map(p => p.supUsed);
+`, playJ);
+check(playJ.tileset === 'jungle', 'the map carries its tileset through to the game (' + playJ.tileset + ')');
+check(playJ.sup.every(s => s > 15) && playJ.errors.length === 0, 'a game runs on the jungle map: supply ' + playJ.sup.join('/') + (playJ.errors.length ? ' | ' + playJ.errors[0] : ''));
+
 // round trip through JSON, as export/import does
 const rt = makeCtx(false);
 vm.runInContext(`MAP_LAYOUTS['custom:rt'] = ${JSON.stringify(layout)}; const m = new GameMap(1, 'custom:rt');

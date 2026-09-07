@@ -18,6 +18,12 @@ function broadcast(msg, except) { for (const c of clients.values()) if (c !== ex
 function hostOf() { return lobby.players.find(q => !q.ai && !q.gone) || null; }
 function lobbyState() { const host = hostOf(); return { t: 'lobby', players: lobby.players.map(p => ({ id: p.id, name: p.name, race: p.race, team: p.team, ai: !!p.ai, difficulty: p.difficulty, gone: !!p.gone, host: host ? p.id === host.id : false })), layout: lobby.layout, state: lobby.state, speed: lobby.speed == null ? 6 : lobby.speed }; }
 function maxFrame() { let m = -1; for (const f of Object.values(lobby.lastF)) if (f > m) m = f; return m; }
+function sendRejoin(c, idx, snap, snapFrame) {
+  // only the commands the snapshot has not already accounted for
+  const hist = snap ? lobby.history.filter(h => h.f >= snapFrame) : lobby.history;
+  send(c, Object.assign({ t: 'rejoin', history: hist, frame: Math.max(0, maxFrame() - DELAY), snap, snapFrame }, startMsg(idx)));
+  console.log('  rejoin sent ' + (snap ? 'from a snapshot at frame ' + snapFrame + ' plus ' + hist.length + ' commands' : 'as ' + hist.length + ' commands from frame 0'));
+}
 function startMsg(idx) { return { seed: lobby.seed, layout: lobby.layout, players: lobby.started, you: idx, delay: DELAY, gone: lobby.gone, speed: lobby.speed == null ? 6 : lobby.speed }; }
 function onMessage(c, m) {
   const me = lobby.players.find(p => p.id === c.id); const host = hostOf(); const isHost = me && host === me;
@@ -28,7 +34,15 @@ function onMessage(c, m) {
         if (idx < 0) { send(c, { t: 'error', msg: 'Game already in progress' + (name ? ' and no dropped player is called ' + name : '') + '.' }); return; }
         const slot = lobby.players[idx]; slot.id = c.id; slot.gone = false;
         const R = Math.max(maxFrame() + 1, DELAY); lobby.gone[idx].to = R;
-        send(c, Object.assign({ t: 'rejoin', history: lobby.history, frame: Math.max(0, maxFrame() - DELAY) }, startMsg(idx)));
+        const donor = [...clients.values()].find(x => x !== c && lobby.players.some(p => p.id === x.id && !p.gone && !p.ai));
+        if (donor) {
+          // ask a live client for a state snapshot; the rejoiner waits rather than re-simulating the game
+          lobby.pendingSnap = { want: c.id, idx, at: Date.now() };
+          send(donor, { t: 'needsnap' });
+          setTimeout(() => { // donor did not answer: fall back to replaying the whole history
+            if (lobby.pendingSnap && lobby.pendingSnap.want === c.id) { lobby.pendingSnap = null; sendRejoin(c, idx, null, 0); }
+          }, 4000);
+        } else sendRejoin(c, idx, null, 0);
         broadcast({ t: 'rejoined', p: idx, f: R }, c); broadcast(lobbyState()); console.log(name + ' rejoined as player ' + idx + ', live again from frame ' + R);
         return;
       }
@@ -44,6 +58,12 @@ function onMessage(c, m) {
       lobby.history = []; lobby.lastF = {}; lobby.gone = {};
       for (const cl of clients.values()) { const idx = lobby.players.findIndex(p => p.id === cl.id); if (idx >= 0) send(cl, Object.assign({ t: 'start' }, startMsg(idx))); }
       console.log('game started: ' + lobby.started.map(p => p.name + '/' + p.race).join(', ') + ' on ' + lobby.layout + ' seed ' + lobby.seed);
+      break;
+    }
+    case 'snap': {
+      const ps = lobby.pendingSnap; if (!ps) break;
+      const target = clients.get(ps.want); lobby.pendingSnap = null;
+      if (target) sendRejoin(target, ps.idx, m.snap, m.frame | 0);
       break;
     }
     case 'cmds': { const idx = lobby.players.findIndex(p => p.id === c.id); if (idx >= 0 && lobby.state === 'playing') { const f = m.f | 0; lobby.history.push({ p: idx, f, c: m.c }); if (!(lobby.lastF[idx] >= f)) lobby.lastF[idx] = f; broadcast({ t: 'cmds', p: idx, f, c: m.c }, c); } break; }

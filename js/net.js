@@ -35,6 +35,7 @@ const Net = {
       case 'error': this.lastError = m.msg; this.status(m.msg); break;
       case 'start': this.startGame(m); break;
       case 'rejoin': this.rejoinGame(m); break;
+      case 'needsnap': if (this.active && typeof Snapshot !== 'undefined') { try { this.send({ t: 'snap', frame: G.frame, snap: Snapshot.take() }); } catch (e) { console.error('snapshot for rejoin failed', e); } } break;
       case 'cmds': if (this.active && m.f >= G.frame) { if (!this.inbox[m.f]) this.inbox[m.f] = {}; this.inbox[m.f][m.p] = m.c; } break;
       case 'hash': this.onHash(m); break;
       case 'left': { this.gone[m.p] = { from: m.f, to: Infinity }; if (typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg(this.playerName(m.p) + ' dropped. Their units stop at ' + this.clock(m.f) + '; the game continues.', 'info'); break; }
@@ -73,7 +74,14 @@ const Net = {
     for (const h of (m.history || [])) { if (!this.inbox[h.f]) this.inbox[h.f] = {}; this.inbox[h.f][h.p] = h.c; if (h.p === this.me) this.sent[h.f] = true; }
     this.catchingUp = true; this.catchTarget = m.frame || 0;
     UI.start({ players: m.players.map(p => ({ race: p.race, human: p.human, name: p.name, difficulty: p.difficulty, team: p.team })), seed: m.seed, layout: m.layout, human: m.you, mode: 'play', net: true });
-    UI.loading = { target: this.catchTarget, start: 0, label: 'Rejoining... re-simulating' };
+    // A snapshot from a live player skips straight to their state; only the commands after it get replayed.
+    // Without one this re-simulates the whole game, which gets slower the longer the game has run.
+    let from = 0;
+    if (m.snap && typeof Snapshot !== 'undefined') {
+      try { Snapshot.restore(m.snap); from = G.frame; this.appliedFrame = G.frame - 1; }
+      catch (e) { console.error('rejoin snapshot rejected, re-simulating instead', e); }
+    }
+    UI.loading = { target: this.catchTarget, start: from, label: m.snap ? 'Rejoining... catching up' : 'Rejoining... re-simulating' };
   },
   queue(c) { c.p = this.me; this.outbox.push(c); },
   isGone(i, f) { const g = this.gone[i]; return !!g && f >= g.from && f < g.to; },
@@ -82,6 +90,10 @@ const Net = {
   // send my batch for F+delay and apply everyone's batch for F
   beforeTick() {
     const f = G.frame, tf = f + this.delay;
+    // Catching up ends at the target frame, not when the inbox runs dry. Restoring from a snapshot lands
+    // us at the target already, and the other players keep feeding us commands, so waiting for an empty
+    // inbox would mean catching up forever.
+    if (this.catchingUp && f >= this.catchTarget) this.catchingUp = false;
     if (!this.sent[tf]) { const c = this.outbox; this.outbox = []; this.send({ t: 'cmds', f: tf, c }); if (!this.inbox[tf]) this.inbox[tf] = {}; this.inbox[tf][this.me] = c; this.sent[tf] = true; }
     if (this.appliedFrame === f) return; this.appliedFrame = f; // a finished (or paused) game must never apply a frame's batch twice
     for (let i = 0; i < this.players.length; i++) { const g = this.gone[i]; if (g && g.from === f) G.exec({ t: 'stopall', p: i }); }

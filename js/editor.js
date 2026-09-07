@@ -9,7 +9,7 @@ const Editor = {
   W: 128, H: 128, active: false, name: 'My Map',
   height: null, rocks: null, bases: [], tool: 'high', brush: 2, camX: 0, camY: 0, zoom: 6,
   painting: false, msg: '', msgT: 0, hoverTile: [0, 0], dirty: false,
-  rectMode: false, rectStart: null, mirror: 'off', undoStack: [], redoStack: [],
+  rectMode: false, rectStart: null, mirror: 'off', undoStack: [], redoStack: [], tileset: 'badlands',
 
   // ---------------- storage ----------------
   store: {
@@ -48,10 +48,10 @@ const Editor = {
   },
   // Turn the painted grids into a layout object the engine can generate from.
   toLayout() {
-    return { name: this.name, players: Math.max(2, this.bases.filter(b => b.main).length), custom: true, w: this.W, h: this.H, height: MapCodec.encode(this.height), rocks: MapCodec.encode(this.rocks), bases: this.bases.map(b => ({ x: b.x, y: b.y, main: !!b.main, natural: !!b.natural, minerals: b.minerals.slice(), geyser: b.geyser ? b.geyser.slice() : null })) };
+    return { name: this.name, players: Math.max(2, this.bases.filter(b => b.main).length), custom: true, tileset: this.tileset, w: this.W, h: this.H, height: MapCodec.encode(this.height), rocks: MapCodec.encode(this.rocks), bases: this.bases.map(b => ({ x: b.x, y: b.y, main: !!b.main, natural: !!b.natural, minerals: b.minerals.slice(), geyser: b.geyser ? b.geyser.slice() : null })) };
   },
   fromLayout(l) {
-    this.W = l.w || 128; this.H = l.h || 128; this.name = l.name || 'My Map';
+    this.W = l.w || 128; this.H = l.h || 128; this.name = l.name || 'My Map'; this.tileset = l.tileset || 'badlands';
     this.height = MapCodec.decode(l.height, this.W * this.H); this.rocks = MapCodec.decode(l.rocks, this.W * this.H);
     this.bases = (l.bases || []).map(b => ({ x: b.x, y: b.y, main: !!b.main, natural: !!b.natural, minerals: (b.minerals || []).map(m => m.slice()), geyser: b.geyser ? b.geyser.slice() : null }));
     this.dirty = false;
@@ -195,6 +195,7 @@ const Editor = {
     add('Redo', '^Y', () => this.redo());
     x += 14;
     add('Size ' + this.W, '', () => { const sizes = [96, 128, 160, 192]; this.mark(); this.W = this.H = sizes[(sizes.indexOf(this.W) + 1) % sizes.length]; this.template(); this.msgSay('New ' + this.W + 'x' + this.H + ' map.'); });
+    add('Tiles: ' + (TILESET_NAMES[this.tileset] || this.tileset), '', () => { this.mark(); this.tileset = TILESET_IDS[(TILESET_IDS.indexOf(this.tileset) + 1) % TILESET_IDS.length]; this.dirty = true; this.msgSay('Tileset: ' + (TILESET_NAMES[this.tileset] || this.tileset) + '.'); });
     add('New', '', () => { this.mark(); this.template(); });
     add('Rename', '', () => { const n = prompt('Map name', this.name); if (n) { this.mark(); this.name = n.slice(0, 24); this.dirty = true; } });
     add('Check', '', () => { const p = this.problems(); this.msgSay(p.length ? 'Problems: ' + p.slice(0, 2).join('; ') : 'Map is valid and fully connected.'); });
