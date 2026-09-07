@@ -302,15 +302,18 @@ spend an afternoon looking for a desync, which is what M5 did with the same symp
 
 ### Performance
 
-| metric | M2 baseline | M6 | target | |
-|---|---|---|---|---|
-| sim tick mean | 2.75 ms | 2.89 ms | under 8 ms | pass |
-| sim tick p95 | 5.64 ms | 6.03 ms | — | |
-| render median, 1080p, 290 units drawn | 3.7 ms | 1.60 ms | under 6 ms | pass |
-| render median, 1080p, 491 units drawn | — | 2.30 ms | under 6 ms | pass |
+| metric | M2 baseline | M6 | M7 | target | |
+|---|---|---|---|---|---|
+| sim tick mean | 2.75 ms | 2.89 ms | 3.07 ms | under 8 ms | pass |
+| sim tick p95 | 5.64 ms | 6.03 ms | 6.14 ms | — | |
+| render median, 1080p, 290 units drawn | 3.7 ms | 1.60 ms | — | under 6 ms | pass |
+| render median, 1080p, 491 units drawn | — | 2.30 ms | — | under 6 ms | pass |
 
-Not re-measured in M7; nothing M7 changed runs per unit or per frame. `AI.script()` walks `G.units` once
-more per think than it used to, which is once every 32 frames per AI.
+M7 costs about 0.18 ms a tick at 513 units and 204 supply a side, which is `AI.script()` walking
+`G.units` once more per think and `production()` being allowed to keep training rather than stopping at
+three units. The whole AI phase is 0.16 ms of a 3.07 ms tick; the tick is still dominated by unit
+separation at 0.92 ms. The render rows are M6's and stand: M7 did not touch a render file, and
+`test/version.js` confirms the build stamp moved only for the sim.
 
 `node test/perf.js 600 4 temple --sustain` for the simulation; `node test/perf_render.js` then open the
 URL it prints for the draw pass. **Pace the draws.** Drawing in a tight loop outruns the compositor and
