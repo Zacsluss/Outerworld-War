@@ -4,7 +4,7 @@
 // ============================================================================
 const AI_SCRIPTS = {
   T: [[9, 'supply_depot'], [11, 'barracks'], [12, 'refinery'], [15, 'supply_depot'], [16, 'factory'], [19, 'supply_depot'], [20, 'machine_shop'], [22, 'academy'], [23, 'command_center'], [24, 'engineering_bay'], [26, 'supply_depot'], [28, 'factory'], [30, 'comsat_station'], [32, 'armory'], [34, 'supply_depot'], [36, 'starport'], [38, 'science_facility'], [40, 'machine_shop'], [42, 'control_tower'], [44, 'barracks'], [46, 'command_center'], [50, 'factory'], [56, 'missile_turret'], [60, 'physics_lab'], [64, 'starport'], [70, 'barracks'], [80, 'factory']],
-  Z: [[11, 'spawning_pool'], [12, 'hatchery'], [13, 'extractor'], [16, 'hydralisk_den'], [18, 'creep_colony'], [20, 'lair'], [22, 'extractor'], [24, 'hatchery'], [26, 'spire'], [28, 'evolution_chamber'], [30, 'creep_colony'], [34, 'hatchery'], [38, 'creep_colony'], [44, 'queens_nest'], [48, 'extractor'], [52, 'hive'], [54, 'defiler_mound'], [56, 'creep_colony'], [60, 'ultralisk_cavern'], [64, 'hatchery'], [70, 'greater_spire'], [80, 'hatchery']],
+  Z: [[11, 'spawning_pool'], [12, 'hatchery'], [13, 'extractor'], [16, 'hydralisk_den'], [18, 'creep_colony'], [20, 'lair'], [22, 'extractor'], [24, 'hatchery'], [26, 'spire'], [28, 'evolution_chamber'], [30, 'creep_colony'], [32, 'defiler_mound'], [34, 'hatchery'], [38, 'creep_colony'], [44, 'queens_nest'], [48, 'extractor'], [52, 'hive'], [56, 'creep_colony'], [60, 'ultralisk_cavern'], [64, 'hatchery'], [70, 'greater_spire'], [80, 'hatchery']],
   P: [[8, 'pylon'], [10, 'gateway'], [12, 'assimilator'], [14, 'cybernetics_core'], [15, 'pylon'], [18, 'gateway'], [20, 'nexus'], [22, 'pylon'], [24, 'citadel_of_adun'], [26, 'forge'], [27, 'pylon'], [28, 'robotics_facility'], [30, 'observatory'], [32, 'templar_archives'], [34, 'gateway'], [36, 'pylon'], [38, 'photon_cannon'], [40, 'gateway'], [42, 'stargate'], [44, 'nexus'], [46, 'arbiter_tribunal'], [48, 'pylon'], [50, 'robotics_support_bay'], [52, 'fleet_beacon'], [56, 'gateway'], [66, 'gateway'], [72, 'stargate'], [80, 'nexus']],
 };
 const gasBuildings = ai => ai.mine(u => u.def.onGeyser).length + 1;
@@ -212,6 +212,9 @@ class AI {
       const [, id, w, sup] = pick; counts[id] = (counts[id] || 0) + 1; pick[0] = (counts[id] * sup + sup) / w; cands.sort((a, b) => a[0] - b[0]); made++;
     } while (made < 12);
   }
+  // The flat gate stays. M4 tried a cost-aware one for every race (TvZ 97%) and M7 tried it for Zerg
+  // alone, which is the form M6's handoff called "a real lever if approached from the Zerg side only":
+  // it was worth +5 points to Terran over 360 paired seeds. Zerg buys upgrades it does not live to use.
   research() {
     const p = this.p; if (p.minerals < 200 || p.gas < 150) return;
     for (const id of AI_RESEARCH[this.race]) {
@@ -402,7 +405,10 @@ class AI {
       else if ((d === 'marine' || d === 'firebat') && p.hasTech('stim') && u.stim <= 0 && u.hp > 25 && u.order.type === 'attack' && u.order.target && dist(u, u.order.target) < 6 * TILE) Abilities.instant(u, 'stim');
       else if (d === 'lurker' && u.transT <= 0) { const near = G.near(u.x, u.y, 7 * TILE).some(o => o.owner !== p.id && !o.fly && o.alive && !o.def.larva); if (near && !u.burrowed && (G.frame + u.id) % 12 === 0) Abilities.instant(u, 'burrow'); else if (u.burrowed && !near && (G.frame + u.id) % 72 === 0 && this.state !== 'gather') Abilities.instant(u, 'burrow'); }
       else if (d === 'high_templar' && u.energy >= 75 && p.hasTech('psi_storm_tech') && (G.frame + u.id) % 16 === 0) { const c = this.cluster(u, 9, 3, o => o.owner !== p.id && !o.isBuilding); if (c) Abilities.issue(u, 'psi_storm', null, c.x, c.y); }
-      else if (d === 'defiler' && u.energy >= 100 && (G.frame + u.id) % 16 === 0 && this.state === 'attack') { const c = this.cluster(u, 9, 3, o => o.owner === p.id && !o.fly && !o.isBuilding && o.hasWeapon() && G.frame - o.lastHit < 48); if (c && !Abilities.inField(c.x, c.y, 'swarm')) Abilities.issue(u, 'dark_swarm', null, c.x, c.y); else if (p.hasTech('plague_tech') && u.energy >= 150) { const e = this.cluster(u, 9, 4, o => o.owner !== p.id); if (e) Abilities.issue(u, 'plague', null, e.x, e.y); } }
+      // Dark Swarm is as much a defensive spell as an offensive one, and the cluster test below already
+      // says "our ground units are being shot at". Gating it on the army being on the attack meant the
+      // Zerg AI, which spends most of a losing game in `defend`, never cast it when it needed it most.
+      else if (d === 'defiler' && u.energy >= 100 && (G.frame + u.id) % 16 === 0) { const c = this.cluster(u, 9, 3, o => o.owner === p.id && !o.fly && !o.isBuilding && o.hasWeapon() && G.frame - o.lastHit < 48); if (c && !Abilities.inField(c.x, c.y, 'swarm')) Abilities.issue(u, 'dark_swarm', null, c.x, c.y); else if (p.hasTech('plague_tech') && u.energy >= 150) { const e = this.cluster(u, 9, 4, o => o.owner !== p.id); if (e) Abilities.issue(u, 'plague', null, e.x, e.y); } }
       else if (d === 'science_vessel' && u.energy >= 75 && p.hasTech('irradiate_tech') && (G.frame + u.id) % 24 === 0) { const t = G.near(u.x, u.y, 9 * TILE).find(o => o.owner !== p.id && o.def.bio && !o.isBuilding && !o.fx.irradiate && o.maxHp >= 80); if (t) Abilities.issue(u, 'irradiate', t); }
       else if (d === 'queen' && u.energy >= 150 && p.hasTech('spawn_broodling_tech') && (G.frame + u.id) % 24 === 0) { const t = G.near(u.x, u.y, 9 * TILE).find(o => o.owner !== p.id && !o.fly && !o.isBuilding && !NO_BROODLING.has(o.def.id) && o.def.sup >= 2); if (t) Abilities.issue(u, 'spawn_broodling', t); }
       else if (d === 'medic' && u.order.type === 'idle' && this.rally && distPt(u.x, u.y, this.rally.x, this.rally.y) > 8 * TILE) { const a = this.armyUnits()[0]; if (a) u.setOrder({ type: 'follow', target: a }); }

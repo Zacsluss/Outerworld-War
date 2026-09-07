@@ -156,7 +156,9 @@ const DATA = (() => {
   B('greater_spire', { name: 'Greater Spire', race: 'Z', hp: 1000, w: 2, h: 2, min: 100, gas: 150, time: 1800, hk: 'G', tier: 'morph', req: ['hive'], upg: ['flyW', 'flyA'] });
   B('queens_nest', { name: "Queen's Nest", race: 'Z', hp: 850, w: 3, h: 2, min: 150, gas: 100, time: 900, hk: 'Q', tier: 'adv', req: ['lair'], needsCreep: true, tech: ['ensnare_tech', 'spawn_broodling_tech', 'gamete'] });
   B('ultralisk_cavern', { name: 'Ultralisk Cavern', race: 'Z', hp: 600, w: 3, h: 2, min: 150, gas: 200, time: 1200, hk: 'U', tier: 'adv', req: ['hive'], needsCreep: true, tech: ['anabolic', 'chitinous'] });
-  B('defiler_mound', { name: 'Defiler Mound', race: 'Z', hp: 850, w: 4, h: 2, min: 100, gas: 100, time: 900, hk: 'D', tier: 'adv', req: ['hive'], needsCreep: true, tech: ['plague_tech', 'consume_tech', 'metasynaptic'] });
+  // Lair, not Hive: in Brood War the Defiler Mound is a Lair-tech building, and having it behind the
+  // Hive put Zerg's only answer to healed bio four minutes past the end of an average AI game.
+  B('defiler_mound', { name: 'Defiler Mound', race: 'Z', hp: 850, w: 4, h: 2, min: 100, gas: 100, time: 900, hk: 'D', tier: 'adv', req: ['lair'], needsCreep: true, tech: ['plague_tech', 'consume_tech', 'metasynaptic'] });
   B('nydus_canal', { name: 'Nydus Canal', race: 'Z', hp: 250, w: 2, h: 2, min: 150, time: 600, hk: 'N', tier: 'adv', req: ['hive'], needsCreep: true, nydus: true, abil: ['nydus_exit'] });
   B('infested_command_center', { name: 'Infested Command Center', race: 'Z', hp: 1500, w: 4, h: 3, time: 1, tier: 'none', produces: ['infested_terran'], sight: 10 });
 
