@@ -308,7 +308,7 @@ class AI {
       // already lost; the old rule waited until 65% of the units were dead, by which point the army was
       // gone and the game with it. Pull back, rebuild, come again.
       const local = head ? this.enemyStrengthNear(head.x, head.y, 10 * TILE) : 0;
-      const gutted = this.waveSup0 && waveSup < this.waveSup0 * 0.7;
+      const gutted = this.waveSup0 && waveSup < this.waveSup0 * 0.8; // a fifth of the wave dead is already a losing fight; measured, 0.8 beats 0.7 and 0.55 outright
       const outgunned = local > 0 && waveSup < local * 0.7 && waveUnits.some(u => G.frame - u.lastHit < 48);
       if ((gutted || outgunned) && G.frame - this.startedAttack > 24 * 6) {
         this.state = 'gather'; this.regroupUntil = G.frame + 24 * 25;
