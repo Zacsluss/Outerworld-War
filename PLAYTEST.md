@@ -262,6 +262,18 @@ the refusal spoke. It now says "Maximum supply reached." instead. Two checks in 
 it, because the cap is reachable in any long game and the old line is the kind of thing a player learns
 to ignore the whole alert for.
 
+### 30. `z3 "Tunnel Vision"` is winnable after all
+
+**Fixed, by accident.** Round four left this as the one mission the scripted bot could not finish, with
+the right diagnosis — 22,354 commands where every other mission issues 1,100-4,400, a loop rather than a
+hard fight, the nydus block re-selecting idle zerglings and right-clicking the canal every six frames
+forever — and the wrong culprit. It was not the script and not the objective: the zerglings could not
+path to the canal, because the A* closed set had been broken since the 256th search of the game (see
+HANDOFF.md). With that fixed z3 wins at frame 19,368 on 2,577 commands. With only that one change
+reverted it still runs to the 28,800 cap on exactly 22,354, which is how we know.
+
+**The scripted bot now wins all eight missions**, zero JS errors and zero stuck units.
+
 ### What the audit still cannot see
 
 - **Anything about the console.** It counts what the AI does, not what the player is shown. A second
