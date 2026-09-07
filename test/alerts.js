@@ -141,6 +141,21 @@ const allowed = Math.ceil(mash.frames / mash.cool) + 1;
 ok('a player leaning on a button while supply blocked still gets told once', mash.blocked && mash.refusals > 100 && mash.lines >= 1, JSON.stringify(mash));
 ok('...and the refused clicks speak on the alert cooldown, not their own', mash.lines <= allowed, mash.refusals + ' refused clicks produced ' + mash.lines + ' console lines in ' + mash.frames + ' frames (at most ' + allowed + ' on a ' + mash.cool + '-frame cooldown)');
 
+// ...and at the 200 cap it must not tell the player to build a depot that cannot help
+run(`(() => {
+  const p = this.sandbox('T'); p.minerals = 9000; p.gas = 9000;
+  for (let i = 0; i < 300 && p.supMax < 200; i++) { const d = this.spawn('supply_depot', 0, p.startX + 200 + (i % 10) * 80, p.startY + 200 + Math.floor(i / 10) * 80); d.done = true; G.recomputeSupply(); }
+  for (let i = 0; i < 400 && p.supUsed < p.supMax; i++) { this.spawn('marine', 0, p.startX + 40, p.startY + 40); G.recomputeSupply(); }
+  const cc = G.units.find(u => u.alive && u.owner === 0 && u.def.id === 'command_center');
+  p.msgs.length = 0; p.lastAlert = {};
+  G.applying = true; const accepted = G.queueUnit(cc, 'scv'); G.applying = false;
+  G.tick();
+  this.capped = { sup: p.supUsed + '/' + p.supMax, accepted, msgs: p.msgs.map(m => m.text), depotLine: RACE_INFO.T.supplyMsg };
+})();`);
+const capped = ctx.capped;
+ok('at the 200 supply cap the refusal does not ask for more depots', capped.sup === '200/200' && capped.accepted === false && !capped.msgs.includes(capped.depotLine), JSON.stringify(capped));
+ok('...it says the cap is the reason instead', capped.msgs.length === 1 && capped.msgs[0] === 'Maximum supply reached.', JSON.stringify(capped.msgs));
+
 // ---------------- 2. nothing fires spuriously in a real game ----------------
 // The human seat is played by the ordinary AI, so this is a competently played game rather than a
 // player standing still. Every alert it raises is checked against the state of the world on the frame

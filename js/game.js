@@ -410,11 +410,14 @@ const G = {
   // speaks through the alert's cooldown -- at once when the alert has not just spoken, and silently
   // otherwise. tickAlerts drives the AI in test/alerts.js and the AI never makes a refused click, which
   // is why this survived task 3.
+  // At the 200 cap there is no depot, overlord or pylon that would help, and tickAlerts knows it -- its
+  // `blocked` test is gated on supMax < 200. The refusal has to know it too, or a player at maximum
+  // supply is told to build something that cannot exist, which is the one thing an alert must never do.
   supplyRefused(p) {
     const A = p.alertAt || (p.alertAt = {});
     if (this.frame - (A.supply || -9999) < ALERTS.supply.cool) return false;
     A.supply = this.frame; (p.alertT || (p.alertT = {})).supply = 0;
-    p.msg(RACE_INFO[p.race].supplyMsg, 'error');
+    p.msg(p.supMax >= 200 ? 'Maximum supply reached.' : RACE_INFO[p.race].supplyMsg, 'error');
     return true;
   },
   tickAlerts() {
