@@ -43,10 +43,65 @@ c.__json = JSON.stringify(donor.snap);
 run(c, 'Snapshot.restore(JSON.parse(this.__json));');
 compare('JSON round-trip, fresh context', c);
 
-// If C fails where A and B pass, the snapshot is fine and what a fresh G.init leaves behind is not.
+// D and E: is the pathfinder's scratch state the cause, or just the most visible difference?
+// D bumps only the generation counter; E copies the whole scratch across. If E matches and C does not,
+// the A* scratch is simulation state and belongs in the snapshot.
+const d = mk(); run(d, START); d.__json = JSON.stringify(donor.snap);
+d.__gen = donor.__pfgen = run(donor, 'return G.pf.gen;');
+run(d, 'Snapshot.restore(JSON.parse(this.__json)); G.pf.gen = this.__gen;');
+compare('fresh + pf.gen only', d);
+const e = mk(); run(e, START); e.__json = JSON.stringify(donor.snap);
+e.__pf = run(donor, `return JSON.stringify({ gen: G.pf.gen, g: Array.from(G.pf.g), closed: Array.from(G.pf.closed), parent: Array.from(G.pf.parent), stamp: Array.from(G.pf.stamp) });`);
+run(e, `Snapshot.restore(JSON.parse(this.__json)); const s = JSON.parse(this.__pf);
+  G.pf.gen = s.gen; G.pf.g.set(s.g); G.pf.closed.set(s.closed); G.pf.parent.set(s.parent); G.pf.stamp.set(s.stamp);`);
+compare('fresh + whole pf scratch', e);
+
+// If C fails where B passes, the snapshot is fine and the difference is state the snapshot does not
+// carry: B inherits it from having played the game, C has only what a fresh G.init built. The same
+// snapshot went into both, so anything that differs between them now is exactly that uncaptured state.
+{
+  const probe = `
+    return (() => {
+      const out = [];
+      const skip = new Set(['byId', 'grid', 'log', 'effects', '_allVis', 'pendingCmds']);
+      const seen = new Set();
+      const walk = (o, p, d) => {
+        if (d > 6 || o === null || typeof o !== 'object') return;
+        if (seen.has(o)) return; seen.add(o);
+        for (const k of Object.keys(o)) {
+          if (skip.has(k)) continue;
+          const v = o[k]; const path = p + '.' + k;
+          if (typeof v === 'function') { out.push([path, 'fn']); continue; }
+          if (ArrayBuffer.isView(v)) { let s = 0; for (let i = 0; i < v.length; i++) s = (s + v[i] * (i % 251 + 1)) >>> 0; out.push([path, 'ta:' + v.length + ':' + s]); continue; }
+          if (v === null || typeof v !== 'object') { out.push([path, String(v)]); continue; }
+          if (Array.isArray(v)) { out.push([path, 'arr:' + v.length]); if (v.length < 40) v.forEach((x, i) => walk(x, path + '[' + i + ']', d + 1)); continue; }
+          if (v instanceof Set) { out.push([path, 'set:' + v.size]); continue; }
+          if (v instanceof Map) { out.push([path, 'map:' + v.size]); continue; }
+          walk(v, path, d + 1);
+        }
+      };
+      walk(G.map, 'map', 0); walk(G.pf || {}, 'pf', 0);
+      for (const k of ['frame', 'over', 'winner', 'freePlay']) out.push(['G.' + k, String(G[k])]);
+      out.push(['RNG.s', String(RNG.s)]);
+      return JSON.stringify(out);
+    })();`;
+  const load = () => { const x = mk(); run(x, START); x.__json = JSON.stringify(donor.snap); return x; };
+  const good = mk(); run(good, `${START} for (let i = 0; i < ${FRAMES}; i++) G.tick();`);
+  good.__json = JSON.stringify(donor.snap); run(good, 'Snapshot.restore(JSON.parse(this.__json));');
+  const bad = load(); run(bad, 'Snapshot.restore(JSON.parse(this.__json));');
+  const G1 = new Map(JSON.parse(run(good, probe))), G2 = new Map(JSON.parse(run(bad, probe)));
+  const diffs = [];
+  for (const [k, v] of G1) { const w = G2.get(k); if (w !== v) diffs.push([k, v, w === undefined ? '(absent)' : w]); }
+  for (const [k, v] of G2) if (!G1.has(k)) diffs.push([k, '(absent)', v]);
+  console.log('\nsame snapshot restored into a played context vs a fresh one -- what the snapshot does not carry:');
+  if (!diffs.length) console.log('  nothing differs in map/pathfinder state');
+  for (const [k, a, b] of diffs.slice(0, 25)) console.log('  ' + k.padEnd(34) + 'played ' + String(a).slice(0, 34).padEnd(36) + 'fresh ' + String(b).slice(0, 34));
+  if (diffs.length > 25) console.log('  ... and ' + (diffs.length - 25) + ' more');
+}
+
 // Report the fields that differ between a fresh-init sim and the donor at the same frame.
 const dump = ctx => run(ctx, `
-  const o = { frame: G.frame, rng: RNG.s, units: G.units.filter(u => u.alive).length, fields: G.fields.length, projectiles: G.projectiles.length,
+  return (() => { const o = { frame: G.frame, rng: RNG.s, units: G.units.filter(u => u.alive).length, fields: G.fields.length, projectiles: G.projectiles.length,
     effects: G.effects.length, hash: G.stateHash(), nextId: (typeof UNIT_ID !== 'undefined' ? UNIT_ID : -1),
     players: G.players.map(p => ({ min: Math.round(p.minerals), gas: Math.round(p.gas), sup: p.supUsed + '/' + p.supMax, tech: p.tech.size, upg: Object.keys(p.upg || {}).length, def: !!p.defeated,
       vis: p.vis ? p.vis.reduce((s, v) => s + v, 0) : null, seen: p.seen ? p.seen.reduce((s, v) => s + v, 0) : null,
@@ -54,7 +109,7 @@ const dump = ctx => run(ctx, `
     creep: G.map.creep.reduce((s, v) => s + v, 0), blocked: G.map.blocked.reduce((s, v) => s + v, 0), walk: G.map.walk.reduce((s, v) => s + v, 0),
     psi: Object.keys(G.map.psi).map(k => k + ':' + G.map.psi[k].reduce((s, v) => s + v, 0)).join(' '),
     res: G.map.resources.reduce((s, r) => s + r.amount, 0) };
-  JSON.stringify(o);
+  return JSON.stringify(o); })();
 `);
 const donor2 = mk(); run(donor2, `${START} for (let i = 0; i < ${FRAMES}; i++) G.tick();`);
 const c2 = mk(); run(c2, START); c2.__json = JSON.stringify(donor.snap); run(c2, 'Snapshot.restore(JSON.parse(this.__json));');

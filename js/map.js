@@ -263,12 +263,21 @@ class GameMap {
 // A* pathfinding on the tile grid (8-dir, no corner cutting). Binary heap.
 // ============================================================================
 class Pathfinder {
-  constructor(map) { this.map = map; this.g = new Float32Array(map.w * map.h); this.closed = new Uint8Array(map.w * map.h); this.parent = new Int32Array(map.w * map.h); this.stamp = new Int32Array(map.w * map.h); this.gen = 0; }
+  // closed is stamped with the search generation, like stamp and for the same reason, so it must be able
+  // to hold one. It was a Uint8Array: closed[ci] = gen stored gen & 255, so from the 256th search of a
+  // game onward closed[ci] === gen was never true and the closed set silently stopped working -- every
+  // search from a few seconds in re-expanded nodes it had already expanded, spending the node budget on
+  // repeats and returning a worse path. It also made the pathfinder carry state between searches, which
+  // is what desynced a rejoining client: it starts at gen 0 with a working closed set while everyone
+  // else is past 256 with a broken one, so it walks its units somewhere different. With the right width
+  // a search depends on nothing but its own generation, and the scratch is scratch again.
+  constructor(map) { this.map = map; this.g = new Float32Array(map.w * map.h); this.closed = new Int32Array(map.w * map.h); this.parent = new Int32Array(map.w * map.h); this.stamp = new Int32Array(map.w * map.h); this.gen = 0; }
   // returns array of [tx,ty] from start (exclusive) to goal, or best-effort partial path
   find(sx, sy, gx, gy, maxNodes = 6000) {
     const m = this.map, W = m.w, Hh = m.h;
     if (!m.inb(sx, sy)) return [];
     const goalWalk = m.walkable(gx, gy);
+    if (this.gen >= 0x7ffffffe) { this.gen = 0; this.stamp.fill(0); this.closed.fill(0); } // 2^31 searches is not reachable in a game, but a wrap would fail the same silent way
     this.gen++;
     const gen = this.gen, g = this.g, stamp = this.stamp, parent = this.parent, closed = this.closed;
     const heap = []; // [f, idx]

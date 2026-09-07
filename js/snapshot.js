@@ -20,8 +20,9 @@
 const Snapshot = {
   // ---------------- serialise ----------------
   // Anything reachable that is not one of these becomes a plain deep copy.
+  _seen: null, // while take() runs: every unit id a reference was written for (see `gone` in take)
   _tag(v) {
-    if (v instanceof Unit) return { __u: v.id };
+    if (v instanceof Unit) { if (this._seen) this._seen.add(v.id); return { __u: v.id }; }
     if (v instanceof Player) return { __p: v.id };
     if (v && v.__resIdx !== undefined) return { __r: v.__resIdx };
     if (v && typeof v === 'object' && typeof v.id === 'string' && DATA.all[v.id] === v) return { __d: v.id };
@@ -65,6 +66,7 @@ const Snapshot = {
   take() {
     // resources are referenced by units (geyser, order targets) and need stable ids
     G.map.resources.forEach((r, i) => { r.__resIdx = i; });
+    this._seen = new Set();
     const s = {
       frame: G.frame, rng: RNG.s, nextId: (typeof UNIT_ID !== 'undefined' ? UNIT_ID : 0),
       over: G.over, winner: G.winner, winTeam: G.winTeam, freePlay: G.freePlay,
@@ -81,6 +83,21 @@ const Snapshot = {
       fields: this.enc(G.fields, 1), projectiles: this.enc(G.projectiles, 1),
       mission: G.mission ? this.encOwn(G.mission) : null,
     };
+    // Corpses that something still points at. G.units is reaped of the dead once a second, but nothing
+    // ever deletes from G.byId, so in a live game a reference to a unit that died a moment ago still
+    // resolves -- and the simulation reads those: AI.think's "am I being attacked" test asks
+    // lastHitBy.owner without asking whether the attacker is still alive. Restoring only the units in
+    // G.units dropped them, dec() turned the reference into null, and the restored AI stopped defending
+    // a base the live one defended. That is the desync a rejoining client hit inside a hundred frames.
+    // They go back into byId only, never into G.units, so G.units still matches the live game exactly.
+    const inUnits = new Set(G.units.map(u => u.id));
+    s.gone = [];
+    for (let pass = 0; pass < 8; pass++) {          // an orphan's own fields can name another orphan
+      const missing = [...this._seen].filter(id => !inUnits.has(id)).sort((a, b) => a - b);
+      if (!missing.length) break;
+      for (const id of missing) { inUnits.add(id); const u = G.byId.get(id); if (u) s.gone.push(this.encUnit(u)); }
+    }
+    this._seen = null;
     return s;
   },
 
@@ -92,15 +109,19 @@ const Snapshot = {
     for (const k of Object.keys(obj)) if (!(skip && skip.has(k))) target[k] = obj[k];
   },
   restore(s) {
-    // 1. units first, as empty shells, so every reference can be resolved in pass 2
+    // 1. units first, as empty shells, so every reference can be resolved in pass 2. The reaped-but-still
+    //    referenced corpses in s.gone get a shell and a byId entry but stay out of G.units, which is
+    //    where a live game has them too.
     G.units = []; G.byId = new Map();
     for (const su of s.units) { const u = Object.create(Unit.prototype); u.id = su.id; G.units.push(u); G.byId.set(u.id, u); }
+    for (const su of (s.gone || [])) { const u = Object.create(Unit.prototype); u.id = su.id; G.byId.set(u.id, u); }
     // 2. map arrays and resources, because unit references point at resources
     G.map.creep.set(s.creep); G.map.blocked.set(s.blocked); G.map.walk.set(s.walk);
     G.map.psi = {}; for (const k of Object.keys(s.psi || {})) G.map.psi[k] = new Uint8Array(s.psi[k]);
     s.resources.forEach((sr, i) => { const r = G.map.resources[i]; const d = {}; for (const k of Object.keys(sr)) d[k] = this.dec(sr[k]); this._apply(r, d); r.__resIdx = i; });
     // 3. fill the units and players in
     s.units.forEach((su, i) => { const u = G.units[i]; for (const k of Object.keys(su)) u[k] = this.dec(su[k]); });
+    for (const su of (s.gone || [])) { const u = G.byId.get(su.id); for (const k of Object.keys(su)) u[k] = this.dec(su[k]); }
     const AI_KEEP = new Set(['__ai']);
     s.players.forEach((sp, i) => {
       const p = G.players[i];
