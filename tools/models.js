@@ -66,6 +66,57 @@ const RIG = {
     const root = N([0, 0, 0]); const segs = o.segs || [[0, 0.5, 1.6, 0.9, 1.1]]; const bodyY = o.bodyY || 0.45; const legs = o.legs || 2, legLen = o.legLen || 0.9, lw = o.legW || 0.12;
     const body = N([0, bodyY, 0], { anim: st => ({ pos: [st.atk == null ? 0 : (o.lunge || 0.08) * Math.sin(st.atk * Math.PI), (o.idleAmp == null ? 0.05 : o.idleAmp) * IDLE(st), 0], rot: [0, 0, 0.05 * IDLE(st)] }) }); root.children.push(body);
     segs.forEach(([x, y, sx, sy, sz], i) => body.children.push(P('sphere', [sx, sy, sz], [x, y, 0], m(i === 0 ? (o.color || C.flesh) : (o.color2 || C.carapace), { spec: 0.35 }))));
+
+    // ---- carapace -------------------------------------------------------------------------------
+    // Every Zerg unit was one or two ellipsoids with a few loose spikes, which is why they read as
+    // potatoes. An insect is not a smooth solid: it is overlapping plate, banded segments, and rows of
+    // spines, and the hard straight edges of plate against the soft curve of the body are the whole
+    // reason chitin looks like chitin. All of it is derived from the first segment's own dimensions,
+    // so every unit built on this rig gets it in proportion without touching fifty model definitions.
+    const [bx, by, bsx, bsy, bsz] = segs[0];
+    const shell = o.color2 || C.carapace, shellD = C.carapaceD;
+    const jag = (i, k) => Math.sin(i * 12.9898 + k * 78.233) * 0.5;   // deterministic per-plate wobble
+
+    // Dorsal plates: overlapping wedges down the spine, largest over the shoulders and tapering back.
+    // Tilted nose-down so each one laps over the next, which is what makes the row read as armour
+    // rather than as bumps.
+    const plateN = o.plates == null ? 5 : o.plates;
+    for (let i = 0; i < plateN; i++) {
+      const t = plateN === 1 ? 0.5 : i / (plateN - 1);
+      // Narrow, and bedded down INTO the body rather than perched on it: a plate the full width of the
+      // back reads as a roof, and the body's own curve has to show past it on both sides for the plate
+      // to look like it is growing out of something.
+      const w = bsx * (0.26 - 0.09 * t), h = bsy * (0.24 - 0.07 * t), d = bsz * (0.60 - 0.20 * t);
+      body.children.push(P('wedge', [w, h, d], [bx + bsx * (0.55 - 1.15 * t), by + bsy * (0.40 - 0.05 * t), 0],
+        m(i % 2 ? shell : shellD, { spec: 0.62 }), { rot: [0, 0, -0.22 + jag(i, 1) * 0.10] }));
+    }
+
+    // Segment banding: rings standing slightly proud of the body, so the abdomen has articulation
+    // instead of being one continuous surface.
+    const bandN = o.bands == null ? 3 : o.bands;
+    for (let i = 0; i < bandN; i++) {
+      const t = (i + 1) / (bandN + 1);
+      body.children.push(P('sphere', [bsx * 0.085, bsy * 1.015, bsz * 1.03], [bx + bsx * (0.55 - 1.25 * t), by - bsy * 0.06, 0],
+        m(shellD, { spec: 0.5 })));
+    }
+
+    // Spine rows: paired, graded, swept back, and deliberately not mirrored -- the left row sits a
+    // little further forward than the right. Symmetry is what made these look moulded.
+    const spineN = o.spines == null ? 6 : o.spines;
+    for (let i = 0; i < spineN; i++) {
+      const t = i / Math.max(1, spineN - 1);
+      const len = bsy * (0.50 - 0.24 * t) * (o.spineLen || 1), rad = bsy * 0.055;
+      for (const sd of [-1, 1]) {
+        body.children.push(P('cone', [rad, len, rad],
+          [bx + bsx * (0.34 - 1.05 * t) + sd * bsx * 0.03, by + bsy * 0.5, sd * bsz * (0.34 + 0.12 * t)],
+          m(C.bone, { spec: 0.4 }), { rot: [sd * 0.30, 0, 0.55 + jag(i, sd) * 0.2] }));
+      }
+    }
+
+    // Wet underbelly: darker, flatter, and unlit from above, which is what stops the body reading as a
+    // ball. With the Zerg material's subsurface term this is where the warmth shows.
+    if (o.belly !== false) body.children.push(P('sphere', [bsx * 0.90, bsy * 0.40, bsz * 0.90], [bx, by - bsy * 0.58, 0], m(C.fleshD, { spec: 0.12 })));
+
     if (o.teamSpot !== false) body.children.push(P('sphere', [0.5, 0.25, 0.4], [o.teamX == null ? -0.2 : o.teamX, 0.32, 0], TEAM));
     for (let i = 0; i < legs; i++) { const x = (o.legX0 == null ? 0.35 : o.legX0) - i * (o.legGap || 0.5); for (const s of [-1, 1]) { const hip = N([x, bodyY * 0.8, s * 0.4], { anim: yaw(o.legSwing == null ? 0.35 : o.legSwing, i * Math.PI, s) }); const up = N([0, 0, 0], { rot: [s * 0.9, 0, 0] }); up.children.push(P('cyl', [lw, legLen * 0.6, lw], [0, legLen * 0.3, 0], m(o.legColor || C.fleshD))); const knee = N([0, legLen * 0.6, 0], { rot: [-s * 1.9, 0, 0] }); knee.children.push(P('cyl', [lw * 0.8, legLen * 0.7, lw * 0.8], [0, legLen * 0.35, 0], m(o.legColor || C.fleshD))); up.children.push(knee); hip.children.push(up); root.children.push(hip); } }
     if (o.head !== false) { const hx = o.headX == null ? 0.9 : o.headX; body.children.push(P('sphere', [o.headR || 0.6, (o.headR || 0.6) * 0.85, (o.headR || 0.6) * 0.9], [hx, 0.05, 0], m(o.headColor || C.carapace, { spec: 0.4 }))); for (const s of [-1, 1]) { const jaw = N([hx + 0.2, -0.05, s * 0.2], { anim: st => ({ rot: [0, -s * (0.5 - AK(st) * 0.9), 0] }) }); jaw.children.push(P('cone', [0.14, 0.5, 0.14], [0.25, 0, 0], m(C.bone), { rot: [0, 0, -Math.PI / 2] })); body.children.push(jaw); } for (const s of [-1, 1]) body.children.push(P('sphere', [0.1, 0.1, 0.1], [hx + 0.2, 0.18, s * 0.22], GLOW(C.eye))); }
@@ -198,7 +249,40 @@ const B = {
     for (let i = 0; i < Math.floor(w); i++) { root.children.push(P('box', [0.4, 0.22, 0.06], [-w / 2 + 0.5 + i, ht * 0.4, h / 2 - 0.1], m(C.dark)), P('box', [0.06, 0.06, 0.06], [-w / 2 + 0.5 + i, ht + 0.1, h / 2 - 0.35], GLOW([1, 0.8, 0.4]))); }
     for (let j = 0; j < Math.floor(h); j++) root.children.push(P('box', [0.06, ht * 0.5, 0.35], [w / 2 - 0.12, ht * 0.45, -h / 2 + 0.5 + j], m(steelD)));
     return root; },
-  zergMound(w, h, o = {}) { const root = N([0, 0, 0]); const ht = o.height || 0.7; root.children.push(P('dome', [w - 0.1, ht * 2, h - 0.1], [0, 0, 0], m(o.color || [0.47, 0.34, 0.37], { spec: 0.25 })), P('dome', [w * 0.55, ht * 1.6, h * 0.55], [-w * 0.1, ht * 0.3, -h * 0.1], m([0.56, 0.42, 0.44]))); for (let k = 0; k < 5; k++) root.children.push(P('sphere', [0.3, 0.25, 0.3], [Math.cos(k * 1.3) * w * 0.38, ht * 0.5 + Math.sin(k) * 0.1, Math.sin(k * 1.3) * h * 0.38], m(C.carapaceD))); root.children.push(P('sphere', [0.6, 0.25, 0.5], [0, ht * 1.05, 0], TEAM)); for (let k = 0; k < 4; k++) root.children.push(P('cyl', [0.12, 0.7, 0.12], [Math.cos(k * 1.6 + 0.4) * (w / 2 + 0.15), 0.15, Math.sin(k * 1.6 + 0.4) * (h / 2 + 0.15)], m(C.fleshD), { rot: [Math.sin(k * 1.6 + 0.4) * 1.3, 0, -Math.cos(k * 1.6 + 0.4) * 1.3] })); return root; },
+  // A Zerg building was two smooth domes with five bumps on it, which is a potato. What is missing is
+  // everything that says "grown": ribs of plate radiating off the crown, a crest of spines, cords of
+  // sinew running down into the creep, and a maw. Same reasoning as RIG.bug's carapace -- the hard
+  // edge of plate against the soft curve is what reads as chitin -- and every Zerg structure is built
+  // on this one function, so they all gain it together.
+  zergMound(w, h, o = {}) {
+    const root = N([0, 0, 0]); const ht = o.height || 0.7;
+    root.children.push(P('dome', [w - 0.1, ht * 2, h - 0.1], [0, 0, 0], m(o.color || [0.47, 0.34, 0.37], { spec: 0.25 })),
+      P('dome', [w * 0.55, ht * 1.6, h * 0.55], [-w * 0.1, ht * 0.3, -h * 0.1], m([0.56, 0.42, 0.44])));
+    // radial ribs: plates laid over the shoulder of the dome, alternating tone so the segments read
+    const ribs = o.ribs == null ? 7 : o.ribs;
+    for (let k = 0; k < ribs; k++) {
+      const a = (k / ribs) * Math.PI * 2 + 0.3, rr = 0.40;
+      root.children.push(P('wedge', [w * 0.17, ht * 0.42, h * 0.30],
+        [Math.cos(a) * w * rr, ht * 0.62, Math.sin(a) * h * rr],
+        m(k % 2 ? C.carapace : C.carapaceD, { spec: 0.55 }), { rot: [0, -a, -0.42] }));
+    }
+    for (let k = 0; k < 5; k++) root.children.push(P('sphere', [0.3, 0.25, 0.3], [Math.cos(k * 1.3) * w * 0.38, ht * 0.5 + Math.sin(k) * 0.1, Math.sin(k * 1.3) * h * 0.38], m(C.carapaceD)));
+    // crest, tallest at the middle
+    const crest = o.crest == null ? 5 : o.crest;
+    for (let k = 0; k < crest; k++) { const t = crest === 1 ? 0.5 : k / (crest - 1); const len = ht * (0.55 + 0.7 * Math.sin(Math.PI * t));
+      root.children.push(P('cone', [0.11, len, 0.11], [(t - 0.5) * w * 0.72, ht * 1.15, -h * 0.06], m(C.bone, { spec: 0.4 }), { rot: [0, 0, (t - 0.5) * 0.7] })); }
+    // a maw: recessed, dark, and the one place a Zerg building looks like it opens
+    root.children.push(P('sphere', [w * 0.20, ht * 0.34, h * 0.20], [w * 0.20, ht * 0.72, h * 0.24], m([0.12, 0.05, 0.10], { spec: 0.1 })));
+    root.children.push(P('sphere', [0.6, 0.25, 0.5], [0, ht * 1.05, 0], TEAM));
+    // sinew: cords running off the base into the creep, thicker at the top
+    for (let k = 0; k < 6; k++) { const a = k * 1.05 + 0.4;
+      root.children.push(P('cyl', [0.10, 0.8, 0.10], [Math.cos(a) * (w / 2 + 0.12), 0.16, Math.sin(a) * (h / 2 + 0.12)], m(C.fleshD),
+        { rot: [Math.sin(a) * 1.35, 0, -Math.cos(a) * 1.35] })); }
+    // nodules clustered where the mound meets the ground
+    for (let k = 0; k < 4; k++) { const a = k * 1.7 + 1.1;
+      root.children.push(P('sphere', [0.22, 0.18, 0.22], [Math.cos(a) * w * 0.46, 0.14, Math.sin(a) * h * 0.46], m(C.flesh, { spec: 0.45 }))); }
+    return root;
+  },
   protossSlab(w, h, o = {}) { const root = N([0, 0, 0]); const ht = o.height || 0.5; root.children.push(P('box', [w - 0.1, 0.25, h - 0.1], [0, 0.125, 0], m(C.goldD, { spec: 0.5 })), P('box', [w - 0.5, ht, h - 0.5], [0, 0.25 + ht / 2, 0], m(C.gold, { spec: 0.6 })), P('box', [w - 0.3, 0.05, 0.18], [0, 0.27, h / 2 - 0.2], TEAM)); for (let i = 0; i < Math.floor(w); i++) root.children.push(P('oct', [0.22, 0.3, 0.22], [-w / 2 + 0.5 + i, 0.3, -h / 2 + 0.2], GLOW(C.psi))); return root; },
   dome: (x, z, r, y, mat) => P('dome', [r * 2, r * 1.4, r * 2], [x, y, z], mat || m(C.metalL, { spec: 0.5 })),
   tower: (x, z, w, hgt, y, mat) => P('box', [w, hgt, w], [x, y + hgt / 2, z], mat || m(C.metalD)),
