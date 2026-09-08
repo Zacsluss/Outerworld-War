@@ -256,12 +256,16 @@ const UI = {
   // ---------------- commands ----------------
   ownSel() { return this.selection.filter(u => u.owner === G.human && u.alive); },
   marker(x, y, color) { this.markers.push({ x, y, t: 20, color }); },
+  // Same lifetime as marker(), but drawn as a ring around a resource's footprint by Render.
+  ringMarker(res) { this.markers.push({ res, t: 20, color: '80,255,80' }); },
   smartCommand(t, wx, wy, shift) {
     const sel = this.ownSel(); if (!sel.length) return;
     if (this.inMinimap(this.mouse.x, this.mouse.y)) return;
     // rally for single building
-    if (sel.length === 1 && sel[0].isBuilding && !sel[0].lifted) { const b = sel[0]; if (b.def.produces.length || b.def.spawnsLarva) { G.setRally(b, wx, wy, t); this.marker(wx, wy, '80,255,80'); } return; }
+    if (sel.length === 1 && sel[0].isBuilding && !sel[0].lifted) { const b = sel[0]; if (b.def.produces.length || b.def.spawnsLarva) { G.setRally(b, wx, wy, t); // a rally onto a resource acknowledges with a ring on the patch, matching what stays on screen
+      const rr = b.rally && b.rally.res; if (rr) this.ringMarker(rr); else this.marker(wx, wy, '80,255,80'); } return; }
     const res = G.map.resourceAt(Math.floor(wx / TILE), Math.floor(wy / TILE));
+    if (res) this.ringMarker(res);   // targeting a patch reads as a ring round it, not a dot in it
     let acked = false;
     for (const u of sel) {
       if (u.isBuilding && !u.lifted) continue; if (u.def.larva || u.def.egg) continue;

@@ -17,6 +17,9 @@ const SHADOW_FLAT = 0.42, SHADOW_DX = 5;
 // eighth of a second, which is a flash, and anything longer reads as a unit that is permanently on
 // fire once forty marines are shooting at once.
 const MUZZLE_F = 3, SHIELD_F = 8, RECOIL_F = 5;
+// How far the baked crystal cluster's scree sits above the bottom of its own canvas, so drawResource
+// can line that up with the bottom of the patch's tiles rather than centring the two.
+const MINERAL_FOOT = 0;
 const Render = {
   canvas: null, ctx: null, W: 0, H: 0, camX: 0, camY: 0, viewW: 0, viewH: 0, fogCanvas: null, creepOn: undefined, built: false, lastFrameTime: 0, mini: null,
   init(canvas) { this.canvas = canvas; this.ctx = canvas.getContext('2d'); this.resize(); },
@@ -104,10 +107,29 @@ const Render = {
     for (const u of UI.selection) { if (!u.alive || u.inside) continue; this.drawSelection(ctx, u, true); }
     if (UI.hover && UI.hover.alive && !UI.selection.includes(UI.hover)) this.drawSelection(ctx, UI.hover, false);
     for (const u of list) if (u.hp < u.maxHp && !UI.selection.includes(u) && (u.owner === G.human || G.frame - u.lastHit < 72)) this.drawBars(ctx, u);
-    if (UI.selection.length === 1 && UI.selection[0].rally && UI.selection[0].owner === G.human) { const b = UI.selection[0], r = b.rally; const rx = r.target ? r.target.x : r.x, ry = r.target ? r.target.y : r.y; ctx.strokeStyle = 'rgba(80,255,80,0.6)'; ctx.setLineDash([6, 6]); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(rx, ry); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = '#5f5'; ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx, ry - 16); ctx.lineTo(rx + 10, ry - 12); ctx.lineTo(rx, ry - 8); ctx.closePath(); ctx.fill(); }
+    if (UI.selection.length === 1 && UI.selection[0].rally && UI.selection[0].owner === G.human) {
+      const b = UI.selection[0], r = b.rally;
+      // A rally onto a resource is drawn as a ring around the patch, not as a flag planted in it.
+      // Brood War does it this way because the two mean different things: a flag is "walk here and
+      // wait", a ring is "go and work this". Showing the flag for both is what made it look as though
+      // the rally had been set to a bare point in the middle of the minerals.
+      if (r.res) { this.drawResourceRing(ctx, r.res, 0.75); }
+      else {
+        const rx = r.target ? r.target.x : r.x, ry = r.target ? r.target.y : r.y;
+        ctx.strokeStyle = 'rgba(80,255,80,0.6)'; ctx.setLineDash([6, 6]); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(rx, ry); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = '#5f5'; ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx, ry - 16); ctx.lineTo(rx + 10, ry - 12); ctx.lineTo(rx, ry - 8); ctx.closePath(); ctx.fill();
+      }
+    }
     if (UI.placing) this.drawPlacement(ctx);
     this.drawFog(ctx, vis, cx, cy);
-    for (const mk of UI.markers) { const a = mk.t / 20; ctx.strokeStyle = `rgba(${mk.color},${a})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(mk.x, mk.y, 5 + (20 - mk.t) * 0.7, (5 + (20 - mk.t) * 0.7) * 0.6, 0, 0, 7); ctx.stroke(); }
+    for (const mk of UI.markers) {
+      const a = mk.t / 20;
+      // A marker carrying a resource is the acknowledgement for targeting a patch: it settles onto the
+      // patch's own footprint instead of shrinking to a point, so it reads as the same ring the rally
+      // indicator leaves behind rather than as a different thing that happens to be green.
+      if (mk.res) { this.drawResourceRing(ctx, mk.res, a); continue; }
+      ctx.strokeStyle = `rgba(${mk.color},${a})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(mk.x, mk.y, 5 + (20 - mk.t) * 0.7, (5 + (20 - mk.t) * 0.7) * 0.6, 0, 0, 7); ctx.stroke();
+    }
     ctx.restore();
     if (UI.drag && UI.dragging) { const d = UI.drag; ctx.strokeStyle = '#4f4'; ctx.lineWidth = 1; ctx.strokeRect(Math.min(d.x0, d.x1) + .5, Math.min(d.y0, d.y1) + .5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0)); }
   },
@@ -163,11 +185,29 @@ const Render = {
     }
     return this._res[key] = { cv, W, H };
   },
+  // The ring Brood War puts round a resource you have targeted: an ellipse on the ground matching the
+  // patch's footprint, not a circle centred on the sprite, because the sprite overhangs the tiles.
+  drawResourceRing(ctx, r, alpha) {
+    const cx = (r.x + r.w / 2) * TILE, cy = (r.y + r.h / 2) * TILE;
+    const rx = r.w * TILE * 0.62, ry = r.h * TILE * 0.72;
+    ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = '#5f5'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, 7); ctx.stroke();
+    ctx.globalAlpha = alpha * 0.45; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.ellipse(cx, cy, rx + 3, ry + 3, 0, 0, 7); ctx.stroke();
+    ctx.restore();
+  },
   drawResource(ctx, r) {
     if (r.type === 'mineral') {
       const step = Math.max(0, Math.min(5, Math.round(r.amount / 1500 * 5)));
       const s = this.resourceSprite('mineral', step);
-      ctx.drawImage(s.cv, r.x * TILE + 32 - s.W / 2, r.y * TILE + 26 - s.H / 2);
+      // Anchor the cluster's BASE to the bottom of the patch's tiles, not its centre to their centre.
+      // A patch is 2x1 tiles (64x32) and this sprite is 76x62, so centring it hung 25 px of crystal --
+      // every crystal base and all the scree, the part you actually aim at -- below the clickable
+      // area. GameMap.resourceAt only knows about the tiles, so a right-click there found no resource:
+      // the rally fell back to a bare point and workers walked to it and stood idle. The tall shards
+      // still overhang upward, which is correct and is how Brood War does it too; what must line up is
+      // the ground contact.
+      ctx.drawImage(s.cv, r.x * TILE + r.w * TILE / 2 - s.W / 2, (r.y + r.h) * TILE - s.H + MINERAL_FOOT);
     } else {
       const s = this.resourceSprite('gas', r.amount > 0 ? 1 : 0);
       ctx.drawImage(s.cv, r.cx - s.W / 2, r.cy - s.H / 2);
