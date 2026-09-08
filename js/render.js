@@ -22,6 +22,17 @@ const SHADOW_FLAT = 0.42, SHADOW_DX = 5;
 // actually does. Half resolution is invisible on something drawn at 38% alpha and squashed to 42%
 // height -- the upscale softens the edge by about a pixel, on an edge that is already soft.
 const SHADOW_SS = 0.5, SHADOW_A = 0.38;
+// The canvas used to be sized in CSS pixels, so on any display with scaling -- a HiDPI panel, or
+// Windows at 125% -- the browser stretched the whole frame to fit the physical pixels and everything
+// went soft. The backing store is physical pixels now and the context carries a scale, which keeps
+// every coordinate in the code (and every mouse event, which arrives in CSS pixels) exactly as it was.
+// Capped, because cost goes as the square: twice the ratio is four times the fill.
+// What this sharpens is everything drawn as geometry -- terrain, fog, HUD text, selection rings, health
+// bars, particles, projectiles. Sprites come off fixed-size baked sheets, so they are upscaled by the
+// same ratio the browser was already upscaling them by, and look neither better nor worse. Making
+// those sharper means re-baking at a larger S, which is a four-fold blow-up of the sheets and of the
+// tinted-sheet ceiling with them, and is not what this is.
+const DPR_CAP = 2;
 // How long a muzzle flash and a shield hit stay up, in sim frames at 24/s. Short: three frames is an
 // eighth of a second, which is a flash, and anything longer reads as a unit that is permanently on
 // fire once forty marines are shooting at once.
@@ -30,9 +41,19 @@ const MUZZLE_F = 3, SHIELD_F = 8, RECOIL_F = 5;
 // can line that up with the bottom of the patch's tiles rather than centring the two.
 const MINERAL_FOOT = 0;
 const Render = {
-  canvas: null, ctx: null, W: 0, H: 0, camX: 0, camY: 0, viewW: 0, viewH: 0, fogCanvas: null, shadowBuf: null, shadowCtx: null, creepOn: undefined, built: false, lastFrameTime: 0, mini: null,
+  canvas: null, ctx: null, dpr: 1, W: 0, H: 0, camX: 0, camY: 0, viewW: 0, viewH: 0, fogCanvas: null, shadowBuf: null, shadowCtx: null, creepOn: undefined, built: false, lastFrameTime: 0, mini: null,
   init(canvas) { this.canvas = canvas; this.ctx = canvas.getContext('2d'); this.resize(); },
-  resize() { this.W = this.canvas.width = Math.max(1, window.innerWidth); this.H = this.canvas.height = Math.max(1, window.innerHeight); this.viewW = this.W; this.viewH = Math.max(1, this.H - UI.consoleH); }, // a hidden or unlaid-out canvas reports 0 and every drawImage of it throws
+  resize() { // a hidden or unlaid-out canvas reports 0 and every drawImage of it throws
+    const c = this.canvas;
+    this.dpr = Math.max(1, Math.min(DPR_CAP, window.devicePixelRatio || 1));
+    this.W = Math.max(1, window.innerWidth); this.H = Math.max(1, window.innerHeight);
+    c.width = Math.round(this.W * this.dpr); c.height = Math.round(this.H * this.dpr);
+    c.style.width = this.W + 'px'; c.style.height = this.H + 'px';   // or the element lays out at its backing size
+    this.viewW = this.W; this.viewH = Math.max(1, this.H - UI.consoleH);
+  },
+  // The base transform every draw on the main context sits on: set at the top of a frame and never
+  // reset to identity, so the HUD, the menus and the shadow blit all inherit it.
+  base(ctx) { ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0); },
   reset() { Terrain.reset(G.map.seed); Sprites.clear(); FX.reset(); this.built = false; },
   // The pooled shadow layer, cleared and put into world space so the draw calls above can keep using
   // world coordinates unchanged. Reallocated only when the viewport changes size.
@@ -72,7 +93,8 @@ const Render = {
     }
   },
   frame(alpha) {
-    const ctx = this.ctx, m = G.map; if (!ctx || this.viewW < 1 || this.viewH < 1) return; if (!this.built) this.buildStatic();
+    const ctx = this.ctx, m = G.map; if (!ctx) return; this.base(ctx);
+    if (this.viewW < 1 || this.viewH < 1) return; if (!this.built) this.buildStatic();
     const now = performance.now(); const dt = Math.min(0.1, (now - (this.lastFrameTime || now)) / 1000); this.lastFrameTime = now;
     if (!G.paused && !UI.menu) { FX.update(dt); FX.ambient(this.camX, this.camY, this.viewW, this.viewH); }
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, this.viewW, this.viewH); ctx.clip();
@@ -132,7 +154,7 @@ const Render = {
       const S = sh.S;
       sb.drawImage(sh.cv, sh.sx || 0, sh.sy || 0, S, S, u._x - sh.ox + SHADOW_DX, u._y - sh.oy * SHADOW_FLAT + u.r * 0.3, S, S * SHADOW_FLAT);
     }
-    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = SHADOW_A;
+    ctx.save(); this.base(ctx); ctx.globalAlpha = SHADOW_A;
     ctx.drawImage(this.shadowBuf, 0, 0, this.shadowBuf.width, this.shadowBuf.height, 0, 0, this.viewW, this.viewH);
     ctx.restore();
     ctx.globalAlpha = 1;

@@ -2,8 +2,14 @@
 // ============================================================================
 // Computer opponent: scripted opening, macro loop, army control, basic micro.
 // ============================================================================
+// covert_ops was in no script, so the AI could not build a ghost -- req: ['academy','covert_ops'] --
+// or a nuclear silo, ever, in any matchup. It needs a science facility of its own: both Terran science
+// add-ons name science_facility as their parent and AI.addon() looks for a parent that has none, so the
+// one facility in the script was always already spoken for by physics_lab.
+// Where these sit in the order is a balance question and is deliberately not being guessed at here --
+// they are appended at the supply the rest of the late game already sits at.
 const AI_SCRIPTS = {
-  T: [[9, 'supply_depot'], [11, 'barracks'], [12, 'refinery'], [15, 'supply_depot'], [16, 'factory'], [19, 'supply_depot'], [20, 'machine_shop'], [22, 'academy'], [23, 'command_center'], [24, 'engineering_bay'], [26, 'supply_depot'], [28, 'factory'], [30, 'comsat_station'], [32, 'armory'], [34, 'supply_depot'], [36, 'starport'], [38, 'science_facility'], [40, 'machine_shop'], [42, 'control_tower'], [44, 'barracks'], [46, 'command_center'], [50, 'factory'], [56, 'missile_turret'], [60, 'physics_lab'], [64, 'starport'], [70, 'barracks'], [80, 'factory']],
+  T: [[9, 'supply_depot'], [11, 'barracks'], [12, 'refinery'], [15, 'supply_depot'], [16, 'factory'], [19, 'supply_depot'], [20, 'machine_shop'], [22, 'academy'], [23, 'command_center'], [24, 'engineering_bay'], [26, 'supply_depot'], [28, 'factory'], [30, 'comsat_station'], [32, 'armory'], [34, 'supply_depot'], [36, 'starport'], [38, 'science_facility'], [40, 'machine_shop'], [42, 'control_tower'], [44, 'barracks'], [46, 'command_center'], [50, 'factory'], [56, 'missile_turret'], [60, 'physics_lab'], [62, 'science_facility'], [64, 'starport'], [66, 'covert_ops'], [70, 'barracks'], [80, 'factory']],
   Z: [[11, 'spawning_pool'], [12, 'hatchery'], [13, 'extractor'], [16, 'hydralisk_den'], [18, 'creep_colony'], [20, 'lair'], [22, 'extractor'], [24, 'hatchery'], [26, 'spire'], [28, 'evolution_chamber'], [30, 'creep_colony'], [32, 'defiler_mound'], [34, 'hatchery'], [38, 'creep_colony'], [44, 'queens_nest'], [48, 'extractor'], [52, 'hive'], [56, 'creep_colony'], [60, 'ultralisk_cavern'], [64, 'hatchery'], [70, 'greater_spire'], [80, 'hatchery']],
   P: [[8, 'pylon'], [10, 'gateway'], [12, 'assimilator'], [14, 'cybernetics_core'], [15, 'pylon'], [18, 'gateway'], [20, 'nexus'], [22, 'pylon'], [24, 'citadel_of_adun'], [26, 'forge'], [27, 'pylon'], [28, 'robotics_facility'], [30, 'observatory'], [32, 'templar_archives'], [34, 'gateway'], [36, 'pylon'], [38, 'photon_cannon'], [40, 'gateway'], [42, 'stargate'], [44, 'nexus'], [46, 'arbiter_tribunal'], [48, 'pylon'], [50, 'robotics_support_bay'], [52, 'fleet_beacon'], [56, 'gateway'], [66, 'gateway'], [72, 'stargate'], [80, 'nexus']],
 };
@@ -439,10 +445,23 @@ class AI {
     if (!best) { for (const u of G.units) { if (u.alive && !G.allied(u.owner, this.p.id) && !G.players[u.owner].defeated && !u.def.larva) { const d = distPt(u.x, u.y, from.x, from.y); if (d < bd) { bd = d; best = u; } } } }
     return best;
   }
+  // micro() does not run every frame. think() runs it on multiples of 12 and on each full think, so
+  // the only values G.frame % 16 ever takes in here are {0,4,8,12} -- measured, not reasoned. Every
+  // stagger below was written as (G.frame + id) % N === 0, which therefore came true only for ids in a
+  // quarter to an eighth of the residue classes, and did so for the whole life of the unit: a defiler
+  // whose id was not a multiple of 4 could not cast dark swarm however long it lived. That is most of
+  // what "1194 defiler-seconds alive and zero casts" was in test/casters.js, and the same arithmetic
+  // silently disabled psi storm, irradiate, spawn broodling, stasis, the nuke, spider mines and kiting
+  // for most of the units that had them. The comsat gate is keyed on p.id, where the reachable set is
+  // {0,12,16,24,32,36} and no player id is ever above 7 -- so only player 0 could ever scan.
+  //
+  // Count guaranteed micro ticks instead of raw frames: every id lands on one, and the stagger still
+  // spreads the work across ticks. n is the old period in units of 12 frames.
+  turn(id, n) { return (((G.frame / 12) | 0) + id) % n === 0; }
   micro() {
     const p = this.p;
     // Terran: scan where our units are being hit by something we cannot see (burrowed lurkers, cloaked units)
-    if (p.race === 'T' && (G.frame + p.id) % 48 === 0) { const cs = this.mine(u => u.def.id === 'comsat_station' && u.done && u.energy >= 50)[0]; if (cs) { const hit = this.mine(u => !u.isBuilding && G.frame - u.lastHit < 24 && u.lastHitBy && u.lastHitBy.alive && u.lastHitBy.isCloaked && !G.detected(u.lastHitBy, p.id))[0];
+    if (p.race === 'T' && this.turn(p.id, 4)) { const cs = this.mine(u => u.def.id === 'comsat_station' && u.done && u.energy >= 50)[0]; if (cs) { const hit = this.mine(u => !u.isBuilding && G.frame - u.lastHit < 24 && u.lastHitBy && u.lastHitBy.alive && u.lastHitBy.isCloaked && !G.detected(u.lastHitBy, p.id))[0];
       if (hit) Abilities.issue(cs, 'scanner_sweep', null, hit.lastHitBy.x, hit.lastHitBy.y);
       // A comsat parked at 200/200 is four scans thrown away, and it was the second largest pool of
       // unspent energy in the audit. Once the bar is nearly full the regeneration is wasted anyway, so
@@ -451,21 +470,21 @@ class AI {
     for (const u of G.units) {
       if (!u.alive || u.owner !== p.id || u.isBuilding || u.inside) continue;
       const d = u.def.id;
-      if (d === 'siege_tank' && p.hasTech('siege_tech') && u.transT <= 0) { const near = G.near(u.x, u.y, 11 * TILE).some(o => o.owner !== p.id && !o.fly && o.alive && (o.hasWeapon() || o.isBuilding)); const veryNear = G.near(u.x, u.y, 2 * TILE).some(o => o.owner !== p.id && !o.fly && o.alive && o.hasWeapon()); if (near && !u.sieged && !veryNear && (G.frame + u.id) % 24 === 0) Abilities.instant(u, 'siege_mode'); else if (u.sieged && !near && (G.frame + u.id) % 96 === 0) Abilities.instant(u, 'siege_mode'); }
-      else if ((d === 'vulture' || d === 'mutalisk' || d === 'dragoon') && u.order.type === 'attack' && (G.frame + u.id) % 12 === 0) this.kite(u);
+      if (d === 'siege_tank' && p.hasTech('siege_tech') && u.transT <= 0) { const near = G.near(u.x, u.y, 11 * TILE).some(o => o.owner !== p.id && !o.fly && o.alive && (o.hasWeapon() || o.isBuilding)); const veryNear = G.near(u.x, u.y, 2 * TILE).some(o => o.owner !== p.id && !o.fly && o.alive && o.hasWeapon()); if (near && !u.sieged && !veryNear && this.turn(u.id, 2)) Abilities.instant(u, 'siege_mode'); else if (u.sieged && !near && this.turn(u.id, 8)) Abilities.instant(u, 'siege_mode'); }
+      else if ((d === 'vulture' || d === 'mutalisk' || d === 'dragoon') && u.order.type === 'attack' && this.turn(u.id, 1)) this.kite(u);
       else if ((d === 'marine' || d === 'firebat') && p.hasTech('stim') && u.stim <= 0 && u.hp > 25 && u.order.type === 'attack' && u.order.target && dist(u, u.order.target) < 6 * TILE) Abilities.instant(u, 'stim');
-      else if (d === 'lurker' && u.transT <= 0) { const near = G.near(u.x, u.y, 7 * TILE).some(o => o.owner !== p.id && !o.fly && o.alive && !o.def.larva); if (near && !u.burrowed && (G.frame + u.id) % 12 === 0) Abilities.instant(u, 'burrow'); else if (u.burrowed && !near && (G.frame + u.id) % 72 === 0 && this.state !== 'gather') Abilities.instant(u, 'burrow'); }
-      else if (d === 'high_templar' && u.energy >= 75 && p.hasTech('psi_storm_tech') && (G.frame + u.id) % 16 === 0) { const c = this.cluster(u, 9, 3, o => o.owner !== p.id && !o.isBuilding); if (c) Abilities.issue(u, 'psi_storm', null, c.x, c.y); }
+      else if (d === 'lurker' && u.transT <= 0) { const near = G.near(u.x, u.y, 7 * TILE).some(o => o.owner !== p.id && !o.fly && o.alive && !o.def.larva); if (near && !u.burrowed && this.turn(u.id, 1)) Abilities.instant(u, 'burrow'); else if (u.burrowed && !near && this.turn(u.id, 6) && this.state !== 'gather') Abilities.instant(u, 'burrow'); }
+      else if (d === 'high_templar' && u.energy >= 75 && p.hasTech('psi_storm_tech') && this.turn(u.id, 1)) { const c = this.cluster(u, 9, 3, o => o.owner !== p.id && !o.isBuilding); if (c) Abilities.issue(u, 'psi_storm', null, c.x, c.y); }
       // Dark Swarm is as much a defensive spell as an offensive one, and the cluster test below already
       // says "our ground units are being shot at". Gating it on the army being on the attack meant the
       // Zerg AI, which spends most of a losing game in `defend`, never cast it when it needed it most.
-      else if (d === 'defiler' && u.energy >= 100 && (G.frame + u.id) % 16 === 0) { const c = this.cluster(u, 9, 3, o => o.owner === p.id && !o.fly && !o.isBuilding && o.hasWeapon() && G.frame - o.lastHit < 48); if (c && !Abilities.inField(c.x, c.y, 'swarm')) Abilities.issue(u, 'dark_swarm', null, c.x, c.y); else if (p.hasTech('plague_tech') && u.energy >= 150) { const e = this.cluster(u, 9, 4, o => o.owner !== p.id); if (e) Abilities.issue(u, 'plague', null, e.x, e.y); } }
-      else if (d === 'science_vessel' && u.energy >= 75 && p.hasTech('irradiate_tech') && (G.frame + u.id) % 24 === 0) { const t = G.near(u.x, u.y, 9 * TILE).find(o => o.owner !== p.id && o.def.bio && !o.isBuilding && !o.fx.irradiate && o.maxHp >= 80); if (t) Abilities.issue(u, 'irradiate', t); }
-      else if (d === 'queen' && u.energy >= 150 && p.hasTech('spawn_broodling_tech') && (G.frame + u.id) % 24 === 0) { const t = G.near(u.x, u.y, 9 * TILE).find(o => o.owner !== p.id && !o.fly && !o.isBuilding && !NO_BROODLING.has(o.def.id) && o.def.sup >= 2); if (t) Abilities.issue(u, 'spawn_broodling', t); }
+      else if (d === 'defiler' && u.energy >= 100 && this.turn(u.id, 1)) { const c = this.cluster(u, 9, 3, o => o.owner === p.id && !o.fly && !o.isBuilding && o.hasWeapon() && G.frame - o.lastHit < 48); if (c && !Abilities.inField(c.x, c.y, 'swarm')) Abilities.issue(u, 'dark_swarm', null, c.x, c.y); else if (p.hasTech('plague_tech') && u.energy >= 150) { const e = this.cluster(u, 9, 4, o => o.owner !== p.id); if (e) Abilities.issue(u, 'plague', null, e.x, e.y); } }
+      else if (d === 'science_vessel' && u.energy >= 75 && p.hasTech('irradiate_tech') && this.turn(u.id, 2)) { const t = G.near(u.x, u.y, 9 * TILE).find(o => o.owner !== p.id && o.def.bio && !o.isBuilding && !o.fx.irradiate && o.maxHp >= 80); if (t) Abilities.issue(u, 'irradiate', t); }
+      else if (d === 'queen' && u.energy >= 150 && p.hasTech('spawn_broodling_tech') && this.turn(u.id, 2)) { const t = G.near(u.x, u.y, 9 * TILE).find(o => o.owner !== p.id && !o.fly && !o.isBuilding && !NO_BROODLING.has(o.def.id) && o.def.sup >= 2); if (t) Abilities.issue(u, 'spawn_broodling', t); }
       else if (d === 'medic' && u.order.type === 'idle' && this.rally && distPt(u.x, u.y, this.rally.x, this.rally.y) > 8 * TILE) { const a = this.armyUnits()[0]; if (a) u.setOrder({ type: 'follow', target: a }); }
-      else if (d === 'vulture' && u.mines > 0 && p.hasTech('spider_mines_tech') && u.order.type === 'idle' && (G.frame + u.id) % 48 === 0) { Abilities.issue(u, 'spider_mine', null, u.x + (G.rand() - .5) * 64, u.y + (G.rand() - .5) * 64); }
-      else if (d === 'arbiter' && u.energy >= 100 && p.hasTech('stasis_tech') && (G.frame + u.id) % 24 === 0) { const c = this.cluster(u, 9, 4, o => o.owner !== p.id && !o.isBuilding); if (c) Abilities.issue(u, 'stasis_field', null, c.x, c.y); }
-      else if (d === 'ghost' && p.nukes > 0 && u.energy > 50 && (G.frame + u.id) % 48 === 0 && u.order.type !== 'ability') { const t = this.target; if (t && t.alive) { if (p.hasTech('personnel_cloaking') && !u.cloaked) Abilities.instant(u, 'cloak_ghost'); Abilities.issue(u, 'nuke', null, t.x, t.y); } }
+      else if (d === 'vulture' && u.mines > 0 && p.hasTech('spider_mines_tech') && u.order.type === 'idle' && this.turn(u.id, 4)) { Abilities.issue(u, 'spider_mine', null, u.x + (G.rand() - .5) * 64, u.y + (G.rand() - .5) * 64); }
+      else if (d === 'arbiter' && u.energy >= 100 && p.hasTech('stasis_tech') && this.turn(u.id, 2)) { const c = this.cluster(u, 9, 4, o => o.owner !== p.id && !o.isBuilding); if (c) Abilities.issue(u, 'stasis_field', null, c.x, c.y); }
+      else if (d === 'ghost' && p.nukes > 0 && u.energy > 50 && this.turn(u.id, 4) && u.order.type !== 'ability') { const t = this.target; if (t && t.alive) { if (p.hasTech('personnel_cloaking') && !u.cloaked) Abilities.instant(u, 'cloak_ghost'); Abilities.issue(u, 'nuke', null, t.x, t.y); } }
     }
   }
   scout() {
