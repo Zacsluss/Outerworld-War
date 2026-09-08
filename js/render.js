@@ -40,11 +40,22 @@ const SHADOW_SS = 0.5, SHADOW_A = 0.38;
 // unit blit is the thing to budget in and the resolution is not. The cap is 2 because that is the point
 // past which the sheets have no detail left to show, not because of the frame budget.
 //
-// What this sharpens is everything drawn as geometry -- terrain, fog, HUD text, selection rings, health
-// bars, particles, projectiles. Sprites come off fixed-size baked sheets, so they are upscaled by the
-// same ratio the browser was already upscaling them by, and look neither better nor worse. Making
-// those sharper means re-baking at a larger S, which is a four-fold blow-up of the sheets and of the
-// tinted-sheet ceiling with them, and is not what this is.
+// What this sharpens is only what is drawn as geometry: HUD text, bevels and panels, selection rings,
+// health bars, particles, projectiles, decals, the shadow blobs. It does NOT sharpen the world. Terrain
+// and creep are cached chunk canvases baked at CH * TILE, sprites come off fixed-size sheets, and the
+// fog and minimap are bitmaps -- all of them are blitted at their natural size and so are upscaled by
+// the ratio, exactly as the browser was already upscaling them. Making those sharper means baking them
+// at the ratio too, which for the sheets is a four-fold blow-up of both the files and the tinted-sheet
+// ceiling, and is a separate decision about whether the art should be crisper or stay chunky.
+//
+// Integer ratios only, which is the part that is not cosmetic. Terrain.draw blits chunks on whole
+// pixels on purpose: a chunk at a fractional offset goes through the bilinear filter and the first
+// thing that filter removes is the 1 px ordered dither the posterise pass puts in, which is the period
+// look on the whole screen. That rounding is in CSS pixels, so at a fractional ratio -- 1.5 is the
+// common one -- a whole CSS pixel is one and a half device pixels and every chunk lands half a device
+// pixel off. Flooring keeps the invariant true: at ratio 2 a whole CSS pixel is exactly two device
+// pixels and nothing moves. A 1.5 display therefore gets no change from before, which is correct until
+// the chunk bake is ratio-aware.
 const DPR_CAP = 2;
 // How long a muzzle flash and a shield hit stay up, in sim frames at 24/s. Short: three frames is an
 // eighth of a second, which is a flash, and anything longer reads as a unit that is permanently on
@@ -58,7 +69,7 @@ const Render = {
   init(canvas) { this.canvas = canvas; this.ctx = canvas.getContext('2d'); this.resize(); },
   resize() { // a hidden or unlaid-out canvas reports 0 and every drawImage of it throws
     const c = this.canvas;
-    this.dpr = Math.max(1, Math.min(DPR_CAP, window.devicePixelRatio || 1));
+    this.dpr = Math.max(1, Math.min(DPR_CAP, Math.floor(window.devicePixelRatio || 1)));   // integer only -- see DPR_CAP
     this.W = Math.max(1, window.innerWidth); this.H = Math.max(1, window.innerHeight);
     c.width = Math.round(this.W * this.dpr); c.height = Math.round(this.H * this.dpr);
     c.style.width = this.W + 'px'; c.style.height = this.H + 'px';   // or the element lays out at its backing size
