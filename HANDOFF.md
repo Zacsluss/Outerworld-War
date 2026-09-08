@@ -643,14 +643,14 @@ reverted. Zerg buys upgrades it does not live to use. Treat this lever as closed
 - **The AI is supply blocked 9-12% of the time**, unchanged in character since M4.
 - **Missions**: all eight resolve, are winnable, and the scripted bot wins all eight, with zero JS errors
   and zero stuck units. A human should still try them before anyone tunes them.
-- **Multiplayer**: rejoin ships a snapshot and is fast. Tested with two clients plus AI, not more.
+- **Multiplayer**: rejoin ships a snapshot and is fast. Tested with four clients plus AI, simultaneous drops, and host migration (`test/net_many.js`).
   `test/net.js` phase 3 now gets the same 240 s budget as every other phase (`83ce89f`); the separate
   assertion that a rejoin is *fast* keeps its own 120 s, because that one is about the code.
 - **Replay backward-seek** restarts from a checkpoint 30 s back, so it is fast but not instant;
   checkpoints past 40 minutes are thinned to every 60 s.
 - **Editor**: the brush is a circle only (rectangle fill is a separate mode). Map size cycles
   96/128/160/192 and the engine accepts 64-256, but the size button is the only way to change it.
-- **Art**: five terrain tilesets — badlands, jungle, ice, desert, space. Creep edges are still bilinear-smooth and are the plainest thing on screen. A sixth tileset is a palette entry in `js/terrain.js`
+- **Art**: five terrain tilesets — badlands, jungle, ice, desert, space. Creep is chunk-cached with a dithered border as of M9. A sixth tileset is a palette entry in `js/terrain.js`
   plus an id in `TILESET_IDS` in `js/map.js`, and nothing else.
 - **Host migration** is not a thing that needs building: the relay picks the first non-dropped human as
   host, so if the host leaves the next player takes over, and mid-game there is no authority to transfer
