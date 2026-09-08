@@ -15,13 +15,24 @@
 const BUILD = {
   _hash: null,
 
+  // The source text of one function, with line endings normalised. Both places that hash a function
+  // go through here so a third one cannot reintroduce the split described above.
+  src(fn) { return Function.prototype.toString.call(fn).split('\r\n').join('\n'); },
+
   // Deterministic textual serialisation. Keys are sorted so property order cannot
   // change the digest; depth and a seen-set keep cyclic tables (a def referring
   // back to its parent) from running away.
   ser(v, out, seen, depth) {
     if (depth > 8) { out.push('~'); return; }
     const t = typeof v;
-    if (t === 'function') { out.push('fn', Function.prototype.toString.call(v)); return; }
+    // Newlines are normalised out of the source text before hashing. Function.prototype.toString
+    // returns the exact slice including its line terminators, so a CRLF checkout and an LF checkout of
+    // the *same commit* used to produce different stamps -- and this repo is on Windows inside OneDrive
+    // with git converting line endings, so that is not hypothetical. It means a save written by one
+    // clone was refused by another clone running byte-identical logic, which is precisely the silent
+    // drift this stamp exists to prevent, firing backwards as a false alarm. Found when two agents in
+    // separate worktrees of one commit reported two different stamps.
+    if (t === 'function') { out.push('fn', this.src(v)); return; }
     if (v === null || v === undefined || t !== 'object') { out.push(String(v)); return; }
     if (seen.has(v)) { out.push('@'); return; }
     seen.add(v);
@@ -39,7 +50,7 @@ const BUILD = {
     out.push('#' + name);
     for (const k of Object.getOwnPropertyNames(o).sort()) {
       let v; try { v = o[k]; } catch (e) { continue; } // getters on a prototype can throw off an instance
-      if (typeof v === 'function') { out.push(k, Function.prototype.toString.call(v)); }
+      if (typeof v === 'function') { out.push(k, this.src(v)); }
     }
   },
 
