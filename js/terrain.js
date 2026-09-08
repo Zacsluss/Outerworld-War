@@ -95,14 +95,22 @@ const TILESETS = {
     crater: ['rgba(6,10,18,0.6)', 'rgba(40,54,74,0.35)', 'rgba(200,230,255,0.3)'],
   },
 };
+// Where the creep border sits and how wide its dithered fringe is, in coverage units where 1.0 is a
+// tile deep inside creep and 0.5 is the tile boundary. Coverage changes by about 1.0 per tile, so
+// CREEP_BAND 0.26 is a fringe a little over eight pixels wide at 32 px to the tile -- wide enough for
+// the 4x4 Bayer matrix to show its whole ramp of densities, which is what reads as a dither rather
+// than as a jagged line. Narrower than about 0.12 and the stipple disappears into a hard step; wider
+// than about 0.4 and the dots spread far enough apart to read as noise on the terrain.
+const CREEP_LO = 0.37, CREEP_BAND = 0.26;
 const Terrain = {
-  CH: 8, chunks: new Map(), seed: 1, creepPat: null, mini: null, setId: 'badlands',
+  CH: 8, chunks: new Map(), seed: 1, mini: null, setId: 'badlands',
+  creepChunks: new Map(), creepSig: null, creepAny: null, creepBudget: 0,
   get pal() { return TILESETS[this.setId] || TILESETS.badlands; },
   hash(x, y) { let h = (x * 374761393 + y * 668265263 + this.seed * 1013904223) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; },
   vnoise(x, y) { const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi; const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf); const a = this.hash(xi, yi), b = this.hash(xi + 1, yi), c = this.hash(xi, yi + 1), d = this.hash(xi + 1, yi + 1); return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v; },
   fbm(x, y, o = 3) { let s = 0, a = 0.5, f = 1, n = 0; for (let i = 0; i < o; i++) { s += this.vnoise(x * f, y * f) * a; n += a; a *= 0.5; f *= 2.1; } return s / n; },
   ridge(x, y) { return 1 - Math.abs(this.vnoise(x, y) * 2 - 1); },
-  reset(seed) { this.seed = seed; this.setId = (G.map && G.map.tileset) || 'badlands'; this.chunks.clear(); this.creepPat = null; this.mini = null; },
+  reset(seed) { this.seed = seed; this.setId = (G.map && G.map.tileset) || 'badlands'; this.chunks.clear(); this.resetCreep(); this.clearStrips(); this.mini = null; },
   // palette
   // ---- period look ------------------------------------------------------
   // The games this is imitating rendered to a small palette and covered the seams with an ordered
@@ -112,8 +120,23 @@ const Terrain = {
   // it creates from reading as bands.
   //
   // All of this happens while a chunk is being baked into its canvas, so it costs nothing per frame.
+  // STEP was 13 and the ground still read as smooth. 20 is the landing after looking at 13, 20 and 26
+  // side by side on badlands, ice and desert. Two things about this knob are worth knowing before
+  // turning it again. The palette ramps are narrow -- badlands high ground moves 40 units of red across
+  // the whole noise range -- so STEP is not really choosing a number of bands, it is choosing how few:
+  // at 20 the open ground is two tones dithered into each other, which is what a 90s tileset was. And
+  // because the dither amplitude is +/- STEP/2, raising it raises the visible speckle as fast as it
+  // raises the banding; at 26 the flat plateau on desert and ice reads as sensor noise rather than as
+  // art, which is the failure mode to watch for. 20 crunches the material seams and the cliff bands
+  // clearly and stops short of that.
+  //
+  // Also tried and not kept: a 2 px dither cell at STEP 20, which is the most period-looking of the
+  // four and was still wrong. Brood War ran 32 px tiles at 640x480 and dithered at one pixel, and this
+  // renders 32 px tiles too, so 1 px *is* Brood War's own relative scale -- 2 px is coarser than the
+  // thing being imitated, and over open ground it stops reading as a dissolve and starts reading as a
+  // woven fabric.
   BAYER: [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5],
-  STEP: 13,
+  STEP: 20,
   bayerAt(x, y) { return this.BAYER[(y & 3) * 4 + (x & 3)] / 16 - 0.5; },
   posterise(col, x, y) {
     const t = this.bayerAt(x, y) * this.STEP;
@@ -123,6 +146,74 @@ const Terrain = {
   lowCol(n, c) { return this.pal.low(n, c); },   // n noise 0..1, c crack 0..1
   highCol(n, c) { return this.pal.high(n, c); },
   rampCol(n) { return this.pal.ramp(n); },
+  // ---- cliffs and ramps, in the same idiom -------------------------------
+  // The ground got posterised and dithered and the two things standing on it did not: a cliff face was
+  // a three-stop linear gradient with a hard black bar under it, and a ramp was four flat translucent
+  // stripes. Both are the smooth 2010s look the rest of this file spent its effort getting rid of, and
+  // a cliff edge is the highest-contrast thing on the map, so it is where the eye goes first.
+  //
+  // Both are now baked once per tileset into a strip and blitted per tile, which is what makes it
+  // affordable to compute them a pixel at a time: a cliff face is identical on every cliff tile, so
+  // there is no reason to pay for it more than once. Strip pixel (0,0) always lands on a tile corner
+  // and tiles are 32 px, so the strip's Bayer phase is the world's Bayer phase and the dither lines up
+  // with the ground's.
+  rgba(s) { const p = String(s).replace(/[^0-9.,]/g, '').split(','); return [+p[0], +p[1], +p[2], p.length > 3 ? +p[3] : 1]; },
+  clearStrips() { this._face = this._ramp = null; },
+  // The rock face: the same three stops, but quantised to six values with an ordered dither across each
+  // boundary, so it reads as a cut face with bedding planes instead of an airbrushed ramp. The shadow it
+  // throws on the ground below is part of the same strip and dissolves downward rather than stopping,
+  // which is the single most characteristic thing about a Brood War cliff.
+  FACE_SH: 12,
+  faceStrip() {
+    if (this._face && this._faceSet === this.setId) return this._face;
+    const SH = this.FACE_SH, W = TILE, H = TILE + SH, NB = 6;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d');
+    const img = x.createImageData(W, H), d = img.data;
+    const f0 = this.rgba(this.pal.face[0]), f1 = this.rgba(this.pal.face[1]), f2 = this.rgba(this.pal.face[2]);
+    const at = t => { const a = t < 0.35 ? f0 : f1, b = t < 0.35 ? f1 : f2, k = t < 0.35 ? t / 0.35 : (t - 0.35) / 0.65; return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k, a[3] + (b[3] - a[3]) * k]; };
+    for (let y = 0; y < H; y++) for (let px = 0; px < W; px++) {
+      const o = (y * W + px) * 4;
+      if (y < TILE) {
+        const bf = (y / TILE) * NB, band = Math.floor(bf), frac = bf - band;
+        const c = at(Math.min(NB, frac > this.bayerAt(px, y) + 0.5 ? band + 1 : band) / NB);
+        d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = c[3] * 255;
+      } else {
+        const sy = y - TILE, k = 1 - Math.max(0, sy - 3) / (SH - 3);
+        if (k > this.bayerAt(px, y) + 0.5) { d[o] = d[o + 1] = d[o + 2] = 0; d[o + 3] = 132; }
+      }
+    }
+    x.putImageData(img, 0, 0);
+    this._faceSet = this.setId; return this._face = cv;
+  },
+  // The ramp. Two things were wrong with it beyond the smoothness. It drew four treads in every tile,
+  // so a five-tile ramp had twenty of them, and it drew a dark bar down both sides of every tile, so a
+  // four-tile-wide ramp had eight walls. Between them those made every ramp in the game read as a
+  // ladder. It is two treads a tile now, and a side wall is only drawn where the neighbouring tile is
+  // not also ramp -- which is what makes it a cut through the cliff with two walls instead of a grid.
+  // The tread boundaries dissolve into each other and each lip drops a stippled shadow on the step
+  // below, which is what says "steps" rather than "stripes".
+  RAMP_TREADS: 2,
+  rampStrip(vertical, w0, w1) {
+    if (!this._ramp || this._rampSet !== this.setId) { this._ramp = {}; this._rampSet = this.setId; }
+    const key = (vertical ? 'v' : 'h') + (w0 ? 1 : 0) + (w1 ? 1 : 0);
+    if (this._ramp[key]) return this._ramp[key];
+    const cv = document.createElement('canvas'); cv.width = cv.height = TILE; const x = cv.getContext('2d');
+    const img = x.createImageData(TILE, TILE), d = img.data, SP = TILE / this.RAMP_TREADS;
+    for (let y = 0; y < TILE; y++) for (let px = 0; px < TILE; px++) {
+      const along = vertical ? y : px, across = vertical ? px : y;
+      const s = along / SP, k = Math.floor(s), frac = s - k;
+      const th = this.bayerAt(px, y) + 0.5;
+      let tone = k & 1;
+      if (frac < 0.25 && !(frac / 0.25 > th)) tone ^= 1;                       // dithered tread boundary
+      let r = tone ? 0 : 255, a = tone ? 0.13 : 0.08;
+      if (frac < 0.19 && 1 - frac / 0.19 > th) { r = 0; a = 0.34; }            // the lip's own shadow
+      const edge = (w0 && across < 3) ? 1 - across / 3 : (w1 && across >= TILE - 3) ? 1 - (TILE - 1 - across) / 3 : 0;
+      if (edge > 0 && edge > th * 0.6) { r = 0; a = 0.3; }                     // the ramp's cut sides
+      const o = (y * TILE + px) * 4; d[o] = d[o + 1] = d[o + 2] = r; d[o + 3] = a * 255;
+    }
+    x.putImageData(img, 0, 0);
+    return this._ramp[key] = cv;
+  },
   getChunk(cx, cy) {
     const key = cx + ',' + cy; let c = this.chunks.get(key); if (c) return c;
     c = this.renderChunk(cx, cy); this.chunks.set(key, c); return c;
@@ -168,10 +259,9 @@ const Terrain = {
       if (cl === 1) {
         const southLow = m.inb(tx, ty + 1) && m.cliff[m.idx(tx, ty + 1)] === 0 && m.height[m.idx(tx, ty + 1)] !== 2;
         const northHigh = m.inb(tx, ty - 1) && m.cliff[m.idx(tx, ty - 1)] === 0 && m.height[m.idx(tx, ty - 1)] === 2;
-        if (southLow) { // visible rock face
-          const g = x.createLinearGradient(0, ly, 0, ly + TILE); g.addColorStop(0, this.pal.face[0]); g.addColorStop(0.35, this.pal.face[1]); g.addColorStop(1, this.pal.face[2]); x.fillStyle = g; x.fillRect(lx, ly, TILE, TILE);
+        if (southLow) { // visible rock face: the banded strip, plus this tile's own cracks over it
+          x.drawImage(this.faceStrip(), lx, ly);
           x.strokeStyle = this.pal.crack; x.lineWidth = 1; for (let k = 0; k < 4; k++) { const sx = lx + 4 + this.hash(tx * 7 + k, ty) * 24; x.beginPath(); x.moveTo(sx, ly + 6); x.lineTo(sx + (this.hash(tx, ty * 3 + k) - .5) * 8, ly + TILE); x.stroke(); }
-          x.fillStyle = 'rgba(0,0,0,0.45)'; x.fillRect(lx, ly + TILE, TILE, 7); x.fillStyle = 'rgba(0,0,0,0.2)'; x.fillRect(lx, ly + TILE + 7, TILE, 5);
         } else { // rubble edge
           for (let k = 0; k < 3; k++) { const bx = lx + 6 + this.hash(tx * 3 + k, ty * 5) * 20, by = ly + 6 + this.hash(tx * 5, ty * 3 + k) * 20, br = 4 + this.hash(tx + k, ty - k) * 6; x.fillStyle = this.pal.rubbleShade; x.beginPath(); x.ellipse(bx + 1.5, by + 1.5, br, br * .7, 0, 0, 7); x.fill(); x.fillStyle = this.pal.rubble(k); x.beginPath(); x.ellipse(bx, by, br, br * .7, 0, 0, 7); x.fill(); x.fillStyle = 'rgba(255,240,220,0.25)'; x.beginPath(); x.ellipse(bx - br * .3, by - br * .3, br * .4, br * .25, 0, 0, 7); x.fill(); }
         }
@@ -182,8 +272,9 @@ const Terrain = {
       } else if (h === 1) { // ramp shading: steps
         const up = m.inb(tx, ty - 1) && m.height[m.idx(tx, ty - 1)] === 2, dn = m.inb(tx, ty + 1) && m.height[m.idx(tx, ty + 1)] === 2, lf = m.inb(tx - 1, ty) && m.height[m.idx(tx - 1, ty)] === 2 && !m.cliff[m.idx(tx - 1, ty)], rt = m.inb(tx + 1, ty) && m.height[m.idx(tx + 1, ty)] === 2 && !m.cliff[m.idx(tx + 1, ty)];
         const vertical = !(lf || rt) || up || dn;
-        for (let k = 0; k < 4; k++) { x.fillStyle = k % 2 ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.07)'; if (vertical) x.fillRect(lx, ly + k * 8, TILE, 8); else x.fillRect(lx + k * 8, ly, 8, TILE); }
-        x.fillStyle = 'rgba(0,0,0,0.25)'; if (vertical) { x.fillRect(lx, ly, 3, TILE); x.fillRect(lx + TILE - 3, ly, 3, TILE); } else { x.fillRect(lx, ly, TILE, 3); x.fillRect(lx, ly + TILE - 3, TILE, 3); }
+        const ramp = (ax, ay) => m.inb(ax, ay) && m.height[m.idx(ax, ay)] === 1;
+        const w0 = vertical ? !ramp(tx - 1, ty) : !ramp(tx, ty - 1), w1 = vertical ? !ramp(tx + 1, ty) : !ramp(tx, ty + 1);
+        x.drawImage(this.rampStrip(vertical, w0, w1), lx, ly);
       } else if (h === 0 && m.walk[i]) { // low ground doodads
         const r = this.hash(tx * 13, ty * 17);
         if (r < 0.025) { const cxp = lx + 16, cyp = ly + 16, cr = 8 + r * 200; x.strokeStyle = this.pal.crater[0]; x.lineWidth = 3; x.beginPath(); x.ellipse(cxp, cyp, cr, cr * .7, 0, 0, 7); x.stroke(); x.fillStyle = this.pal.crater[1]; x.beginPath(); x.ellipse(cxp, cyp, cr - 2, cr * .7 - 2, 0, 0, 7); x.fill(); x.strokeStyle = this.pal.crater[2]; x.lineWidth = 1.5; x.beginPath(); x.ellipse(cxp, cyp - 1, cr, cr * .7, 0, Math.PI, Math.PI * 2); x.stroke(); }
@@ -224,15 +315,194 @@ const Terrain = {
   draw(ctx, camX, camY, vw, vh) {
     const CH = this.CH * TILE; const x0 = Math.floor(camX / CH), y0 = Math.floor(camY / CH), x1 = Math.floor((camX + vw) / CH), y1 = Math.floor((camY + vh) / CH);
     const maxC = Math.ceil(G.map.w / this.CH);
-    for (let cy = Math.max(0, y0); cy <= Math.min(maxC - 1, y1); cy++) for (let cx = Math.max(0, x0); cx <= Math.min(maxC - 1, x1); cx++) ctx.drawImage(this.getChunk(cx, cy), cx * CH - camX, cy * CH - camY);
+    // Blit on whole pixels. A chunk landed at a fractional offset goes through the bilinear filter, and
+    // what that filter removes first is exactly the 1 px ordered dither the posterise pass above put in
+    // -- half a pixel of camera offset undoes the period look on the whole screen. `centerOn` and a
+    // minimap click both produce a fractional camera, so this is not a hypothetical. Every chunk shifts
+    // by the same rounded amount, since their origins are all multiples of CH, so there are no seams.
+    const ox = Math.round(camX), oy = Math.round(camY);
+    for (let cy = Math.max(0, y0); cy <= Math.min(maxC - 1, y1); cy++) for (let cx = Math.max(0, x0); cx <= Math.min(maxC - 1, x1); cx++) ctx.drawImage(this.getChunk(cx, cy), cx * CH - ox, cy * CH - oy);
   },
-  creepPattern(ctx) {
-    if (this.creepPat) return this.creepPat;
-    const S = 192; const cv = document.createElement('canvas'); cv.width = S; cv.height = S; const x = cv.getContext('2d'); const img = x.createImageData(S, S); const d = img.data;
-    for (let py = 0; py < S; py++) for (let px = 0; px < S; px++) { const n = this.fbm(px / 22 + 500, py / 22 + 500, 3); const v = this.ridge(px / 14 + 900, py / 14 + 900); const o = (py * S + px) * 4; let r = 70 + n * 60, g = 30 + n * 28, b = 84 + n * 60; if (v > 0.88) { r -= 30; g -= 12; b -= 30; } d[o] = r; d[o + 1] = g; d[o + 2] = b; d[o + 3] = 255; }
+  // ---- creep -------------------------------------------------------------
+  // Creep was the plainest thing on the screen and the reason was structural, not artistic. It was a
+  // mask painted at 2 px per tile and blown up 16x with `imageSmoothingEnabled = true`, which is an
+  // airbrush: Zerg ground faded out over half a tile instead of stopping. Brood War's creep has a hard
+  // border with a lumpy outline and an ordered-dither fringe -- the same treatment the height
+  // transitions in renderChunk get, and for the same reason.
+  //
+  // It could not have that treatment because creep was the one layer composited from scratch every
+  // frame, and a dither applied *after* compositing is a full-screen pass. The draw pass has about
+  // 1.6 ms of headroom in total, so it cannot spend one on the ground the Zerg walk on.
+  //
+  // So creep is chunk-cached now, exactly like the terrain under it: one canvas per 8x8 tiles, keyed
+  // by the creep bits in and one tile around it, rebuilt only when those bits change. `m.creep` is a
+  // union of ellipses that `GameMap.recomputeCreep` only recomputes when a creep source finishes or
+  // dies, so "when those bits change" is a couple of dozen events in a game rather than a per-frame
+  // cost. That moves everything expensive -- the dithered threshold, a posterised material, a darkened
+  // rim, per-tile pustules and veins -- from per frame to per change.
+  //
+  // And it costs no more per frame than the airbrush it replaced: a few opaque chunk blits over the
+  // creeped area instead of a viewport clear, a smoothed upscale of the whole mask and a full-viewport
+  // `source-in` pattern fill. Measured on the packed 490-unit scene with creep laid across the whole
+  // viewport, drawCreep alone is 0.069 ms before and 0.071 ms after, and either way creep is 0.1 ms of
+  // a 5 ms frame. Note that test/perf_render cannot see any of this: its camera sits on the middle of
+  // `temple` and the only Zerg base is in a corner, so drawCreep early-outs on every measured frame in
+  // both versions. Anyone re-measuring this has to put creep on the screen on purpose.
+  resetCreep() { this.creepChunks.clear(); this.creepSig = null; this.creepAny = null; this._creepMat = null; },
+  creepNx() { return Math.ceil(G.map.w / this.CH); },
+  // Which chunks have creep in reach, and which of those changed since the last look. The window is
+  // the chunk grown by one tile on every side, because the coverage below reads a tile past the chunk
+  // edge and the lumpy outline can push creep about a quarter of a tile further -- a chunk with no
+  // creep of its own still shows its neighbour's border bleeding in, and has to be rebuilt when that
+  // neighbour changes. 100 tiles per chunk over the whole map is about 0.05 ms and runs twice a second.
+  syncCreep() {
+    const m = G.map, CH = this.CH, nx = this.creepNx(), ny = Math.ceil(m.h / CH), n = nx * ny;
+    if (!this.creepSig || this.creepSig.length !== n) { this.creepSig = new Int32Array(n); this.creepAny = new Uint8Array(n); this.creepChunks.clear(); }
+    let any = false;
+    for (let cy = 0; cy < ny; cy++) for (let cx = 0; cx < nx; cx++) {
+      let s = 0; const t0x = cx * CH - 1, t0y = cy * CH - 1, t1x = cx * CH + CH, t1y = cy * CH + CH;
+      for (let ty = t0y; ty <= t1y; ty++) {
+        if (ty < 0 || ty >= m.h) continue; const row = ty * m.w;
+        for (let tx = t0x; tx <= t1x; tx++) if (tx >= 0 && tx < m.w && m.creep[row + tx]) s = (Math.imul(s, 31) + (tx - t0x) * 131 + (ty - t0y) + 1) | 0;
+      }
+      const i = cy * nx + cx; this.creepSig[i] = s; this.creepAny[i] = s ? 1 : 0; if (s) any = true;
+    }
+    return any;
+  },
+  // A chunk that is stale but already drawn is returned as it is rather than rebuilt, once the frame's
+  // build budget is gone. A hatchery finishing invalidates a dozen chunks at once and rebuilding them
+  // all in one frame is a visible hitch; showing creep that is a fifth of a second out of date is not.
+  creepChunk(cx, cy) {
+    const nx = this.creepNx(), i = cy * nx + cx;
+    if (!this.creepAny || cx < 0 || cy < 0 || cx >= nx || i >= this.creepAny.length || !this.creepAny[i]) return null;
+    const key = cx + ',' + cy, sig = this.creepSig[i]; let e = this.creepChunks.get(key);
+    if (e && e.sig === sig) return e.cv;
+    if (this.creepBudget <= 0) return e ? e.cv : null;
+    this.creepBudget--;
+    const cv = this.renderCreepChunk(cx, cy);
+    if (e) { e.cv = cv; e.sig = sig; } else this.creepChunks.set(key, { cv, sig });
+    return cv;
+  },
+  // Creep is baked at 232/255 rather than drawn at globalAlpha 0.9, so the draw pass is a plain blit
+  // and the terrain still shows through exactly as much as it did before.
+  CREEP_A: 232,
+  // The creep material: the same fbm-and-ridge flesh the old per-frame pattern was made of, posterised
+  // into the same palette as the terrain, tiled at 192 px. It stays a tile rather than becoming part of
+  // the per-chunk loop because the noise is what a chunk bake spends its time on, and the first version
+  // of this proved it: fbm and ridge evaluated per creep pixel cost 27 ms a chunk, which at two chunks a
+  // frame is a second of stutter every time a hatchery finishes. Sampling a tile costs one array read.
+  // 192 is not a divisor of the 256 px chunk, so the tile's phase moves from chunk to chunk, and the
+  // per-tile pustules below are keyed off the tile coordinate rather than the tile, so they break the
+  // repeat where it would otherwise be visible.
+  creepMat() {
+    if (this._creepMat) return this._creepMat;
+    const S = 192, cv = document.createElement('canvas'); cv.width = cv.height = S; const x = cv.getContext('2d');
+    const img = x.createImageData(S, S), d = img.data, col = [0, 0, 0];
+    for (let py = 0; py < S; py++) for (let pxx = 0; pxx < S; pxx++) {
+      const n = this.fbm(pxx / 22 + 500, py / 22 + 500, 3), v = this.ridge(pxx / 14 + 900, py / 14 + 900);
+      col[0] = 70 + n * 60; col[1] = 30 + n * 28; col[2] = 84 + n * 60;
+      if (v > 0.88) { col[0] -= 30; col[1] -= 12; col[2] -= 30; }   // the dark veins running through it
+      this.posterise(col, pxx, py);
+      const o = (py * S + pxx) * 4; d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = 255;
+    }
     x.putImageData(img, 0, 0);
-    for (let k = 0; k < 40; k++) { const bx = this.hash(k, 3) * S, by = this.hash(3, k) * S, br = 3 + this.hash(k, k) * 7; const g = x.createRadialGradient(bx - br * .3, by - br * .3, 0, bx, by, br); g.addColorStop(0, 'rgba(190,120,200,0.55)'); g.addColorStop(1, 'rgba(60,20,70,0.0)'); x.fillStyle = g; x.beginPath(); x.arc(bx, by, br, 0, 7); x.fill(); }
-    this.creepPat = ctx.createPattern(cv, 'repeat'); this.creepPatCanvas = cv; return this.creepPat;
+    return this._creepMat = cv;
+  },
+  // One scratch canvas for every chunk bake rather than one each: the rim has to arrive through
+  // drawImage, because putImageData does not composite and would wipe the material out.
+  creepScratch(px) {
+    let cv = this._creepScratch;
+    if (!cv || cv.width !== px) { cv = this._creepScratch = document.createElement('canvas'); cv.width = cv.height = px; }
+    return cv;
+  },
+  renderCreepChunk(cx, cy) {
+    const m = G.map, CH = this.CH, px = CH * TILE, ox = cx * CH * TILE, oy = cy * CH * TILE;
+    const cv = document.createElement('canvas'); cv.width = px; cv.height = px; const x = cv.getContext('2d');
+    const shape = x.createImageData(px, px), sd = shape.data;
+    const rimCv = this.creepScratch(px), rc = rimCv.getContext('2d');
+    const rimImg = rc.createImageData(px, px), rd = rimImg.data;
+    const cAt = (tx, ty) => (tx < 0 || ty < 0 || tx >= m.w || ty >= m.h || !m.creep[ty * m.w + tx]) ? 0 : 1;
+    let anyRim = false, A = this.CREEP_A;
+    // Coverage is a bilinear blend of the creep bits at the four surrounding tile centres, so it is 1
+    // deep inside, 0 well outside and crosses 0.5 exactly on the tile boundary the simulation drew. The
+    // four bits are constant over a tile-sized cell offset half a tile from the grid, so the loop walks
+    // cells and hoists them: a cell with all four set needs no arithmetic at all, one with none needs
+    // nothing, and only the cells the border actually runs through pay for the noise. That is the whole
+    // reason this is affordable -- a border is a line through an area, and lines are cheap.
+    const g0x = Math.floor((ox - TILE / 2) / TILE), g0y = Math.floor((oy - TILE / 2) / TILE);
+    for (let gy = g0y; gy <= g0y + CH; gy++) for (let gx = g0x; gx <= g0x + CH; gx++) {
+      const c00 = cAt(gx, gy), c10 = cAt(gx + 1, gy), c01 = cAt(gx, gy + 1), c11 = cAt(gx + 1, gy + 1);
+      const sum = c00 + c10 + c01 + c11; if (!sum) continue;
+      const px0 = Math.max(0, gx * TILE + TILE / 2 - ox), px1 = Math.min(px, gx * TILE + TILE * 1.5 - ox);
+      const py0 = Math.max(0, gy * TILE + TILE / 2 - oy), py1 = Math.min(px, gy * TILE + TILE * 1.5 - oy);
+      if (sum === 4) { for (let p = py0; p < py1; p++) { let o = (p * px + px0) * 4 + 3; for (let q = px0; q < px1; q++, o += 4) sd[o] = A; } continue; }
+      for (let p = py0; p < py1; p++) {
+        const wy = oy + p, v = (wy - TILE / 2) / TILE - gy, iv = 1 - v;
+        const t0 = c00 * iv + c01 * v, t1 = c10 * iv + c11 * v;   // the two edge interpolants, per row
+        for (let q = px0; q < px1; q++) {
+          const wx = ox + q, u = (wx - TILE / 2) / TILE - gx;
+          const w = t0 * (1 - u) + t1 * u;
+          if (w < 0.11) continue;   // no amount of lumpiness reaches the threshold from here
+          // The outline. Two octaves on purpose: the coarse one gives creep its bulges and inlets, the
+          // fine one gives the crenulated edge those bulges need to stop reading as circles.
+          const lump = this.vnoise(wx / 12 + 71, wy / 12 + 71) * 0.62 + this.vnoise(wx / 4.5 + 313, wy / 4.5 + 313) * 0.38;
+          const a = (w + (lump - 0.5) * 0.5 - CREEP_LO) / CREEP_BAND;
+          // The dithered threshold, which is the whole point. A pixel in the band picks in or out against
+          // the Bayer matrix instead of taking a fraction of the colour, so the border is a stipple of
+          // whole pixels -- hard everywhere, thinning outward -- rather than a ramp of translucent ones.
+          // Outside the band the comparison is already decided, so one expression covers all three cases.
+          if (!(a > this.bayerAt(wx, wy) + 0.5)) continue;
+          const o = (p * px + q) * 4; sd[o + 3] = A;
+          // A darkened band just inside the border, so the edge reads as a membrane with a lip rather
+          // than a place where the texture stops. Keyed off the same `a`, so it follows every inlet.
+          if (a < 1.4) { rd[o + 3] = 112 * (1 - a / 1.4); anyRim = true; }
+        }
+      }
+    }
+    x.putImageData(shape, 0, 0);
+    // The material, poured through the shape. World-aligned, so the tile does not slide when the camera
+    // does and two neighbouring chunks agree along their seam.
+    x.globalCompositeOperation = 'source-in';
+    const mx = ((ox % 192) + 192) % 192, my = ((oy % 192) + 192) % 192;
+    x.save(); x.translate(-mx, -my); x.fillStyle = x.createPattern(this.creepMat(), 'repeat'); x.fillRect(mx, my, px, px); x.restore();
+    if (anyRim) { rc.putImageData(rimImg, 0, 0); x.globalCompositeOperation = 'source-atop'; x.drawImage(rimCv, 0, 0); }
+    // Mottling, pustules and veins, all keyed off the tile coordinate and all clipped to whatever the
+    // dither above decided is creep -- `source-atop` is doing that clipping for free.
+    //
+    // The mottle is here for a reason worth writing down: the material is a 192 px tile, and on a field
+    // this size the eye finds that repeat in about a second. Broad soft patches placed per tile are not
+    // periodic at all, so they break it, and they are also what stops a hundred tiles of creep reading
+    // as one flat sheet. They are drawn from two tiles outside the chunk inwards, because a patch is
+    // wider than a tile and a chunk that only drew its own would show its own edges.
+    x.globalCompositeOperation = 'source-atop';
+    const t0x = cx * CH, t0y = cy * CH, MG = 2;
+    for (let ty = t0y - MG; ty < t0y + CH + MG; ty++) for (let tx = t0x - MG; tx < t0x + CH + MG; tx++) {
+      if (!cAt(tx, ty)) continue;
+      const r = this.hash(tx * 29 + 7, ty * 23 + 11), lx = tx * TILE - ox, ly = ty * TILE - oy;
+      const mr = this.hash(tx * 17 + 3, ty * 41 + 5);
+      if (mr < 0.20) {
+        const mx2 = lx + 16, my2 = ly + 16, rad = 26 + this.hash(tx * 13, ty * 11) * 26;
+        const g = x.createRadialGradient(mx2, my2, 0, mx2, my2, rad);
+        g.addColorStop(0, mr < 0.10 ? 'rgba(226,196,232,0.13)' : 'rgba(22,4,30,0.17)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+        x.fillStyle = g; x.beginPath(); x.arc(mx2, my2, rad, 0, 7); x.fill();
+      }
+      if (r < 0.10) { // a blister cluster: lit on the upper left, to match every other light in the game
+        for (let k = 0; k < 3; k++) {
+          const bx = lx + 6 + this.hash(tx * 5 + k, ty) * 20, by = ly + 6 + this.hash(tx, ty * 5 + k) * 20, br = 2.5 + this.hash(tx + k, ty - k) * 3.5;
+          x.fillStyle = 'rgba(38,14,44,0.55)'; x.beginPath(); x.ellipse(bx + 1, by + 1, br, br * .8, 0, 0, 7); x.fill();
+          x.fillStyle = 'rgba(150,88,158,0.5)'; x.beginPath(); x.ellipse(bx, by, br, br * .8, 0, 0, 7); x.fill();
+          x.fillStyle = 'rgba(214,168,220,0.45)'; x.beginPath(); x.ellipse(bx - br * .3, by - br * .35, br * .42, br * .3, 0, 0, 7); x.fill();
+        }
+      } else if (r < 0.20) { // veins: two short dark runs, the thing that makes it look grown
+        x.strokeStyle = 'rgba(34,10,40,0.5)'; x.lineWidth = 2; x.lineCap = 'round';
+        for (let k = 0; k < 2; k++) {
+          const sx = lx + 5 + this.hash(tx * 3 + k, ty * 7) * 22, sy = ly + 5 + this.hash(tx * 7, ty * 3 + k) * 22, ang = this.hash(tx + k * 9, ty + k) * 6.28;
+          x.beginPath(); x.moveTo(sx, sy); x.lineTo(sx + Math.cos(ang) * 9, sy + Math.sin(ang) * 7); x.stroke();
+        }
+      }
+    }
+    x.globalCompositeOperation = 'source-over';
+    return cv;
   },
   buildMini() {
     const m = G.map; const cv = document.createElement('canvas'); cv.width = m.w; cv.height = m.h; const x = cv.getContext('2d'); const img = x.createImageData(m.w, m.h); const d = img.data;
