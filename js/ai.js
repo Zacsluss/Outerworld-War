@@ -176,7 +176,7 @@ class AI {
     // Zerg macro hatcheries: larvae are the bottleneck, so floating minerals with no larva means another hatchery, not more drones per hatchery
     if (r === 'Z' && ((p.minerals > 300 && !this.mine(u => u.def.larva).length) || p.minerals > 550) && workers >= 5 * this.mine(u => u.isBuilding && u.def.spawnsLarva).length && this.count('hatchery') <= this.halls().length && this.mine(u => u.isBuilding && u.def.spawnsLarva).length < 6 && halls.length) { const h = halls[Math.floor(G.rand() * halls.length)]; this.buildNear('hatchery', h.x, h.y); } // macro hatcheries go next to a base we already hold; real expansions come from the shared rule below
     // gas: one per base with hall
-    if (this.scriptIdx >= 3 && workers > 5 * gasBuildings(this) && !(p.gas > 800 && p.minerals < 300)) for (const h of halls) { if (!h.done) continue; const base = G.map.bases.find(b => distPt(b.cx, b.cy, h.x, h.y) < 3 * TILE); if (base && base.geyser.amount > 0 && !(base.geyser.building && base.geyser.building.alive) && p.minerals >= 100 && this.count(RACE_INFO[r].gasB) <= this.mine(u => u.def.onGeyser).length) { this.buildAt(RACE_INFO[r].gasB, base.geyser.x, base.geyser.y, true); break; } } // gas pays for itself, never let the reserve block it
+    if (this.scriptIdx >= 3 && workers > 5 * gasBuildings(this) && !(p.gas > 800 && p.minerals < 300)) for (const h of halls) { if (!h.done) continue; const base = G.map.bases.find(b => distPt(b.cx, b.cy, h.x, h.y) < 3 * TILE); if (base && base.geyser && base.geyser.amount > 0 && !(base.geyser.building && base.geyser.building.alive) && p.minerals >= 100 && this.count(RACE_INFO[r].gasB) <= this.mine(u => u.def.onGeyser).length) { this.buildAt(RACE_INFO[r].gasB, base.geyser.x, base.geyser.y, true); break; } } // gas pays for itself, never let the reserve block it
     // Static defence at the natural, placed on the line the enemy actually comes down rather than
     // towards the middle of the map, so an attack meets it instead of walking round it.
     if (this.scriptIdx >= 4 && p.minerals > 200) {
@@ -275,7 +275,7 @@ class AI {
   build(id, force) {
     const def = DATA.buildings[id], p = this.p; if (!p.hasReq(def)) return false;
     if (def.depot) { const base = this.pickExpansion(); if (!base) return false; return this.buildAt(id, base.x, base.y, force); }
-    if (def.onGeyser) { for (const h of this.halls()) { const base = G.map.bases.find(b => distPt(b.cx, b.cy, h.x, h.y) < 3 * TILE); if (base && !(base.geyser.building && base.geyser.building.alive) && base.geyser.amount > 0) return this.buildAt(id, base.geyser.x, base.geyser.y, true); } return false; }
+    if (def.onGeyser) { for (const h of this.halls()) { const base = G.map.bases.find(b => distPt(b.cx, b.cy, h.x, h.y) < 3 * TILE); if (base && base.geyser && !(base.geyser.building && base.geyser.building.alive) && base.geyser.amount > 0) return this.buildAt(id, base.geyser.x, base.geyser.y, true); } return false; }
     const halls = this.halls(); const defensive = def.gw || def.aw || def.id === 'creep_colony'; const h = (defensive && halls.length > 1 ? halls[halls.length - 1] : halls[Math.floor(G.rand() * Math.min(2, halls.length))]) || { x: p.startX, y: p.startY }; // static defence goes to the newest (most exposed) base
     return this.buildNear(id, h.x, h.y, force);
   }
