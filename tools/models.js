@@ -157,6 +157,15 @@ const RIG = {
     const root = N([0, 0, 0]); const by = o.bodyY || 0.9, ll = o.legLen || 0.9;
     const body = N([0, by, 0], { anim: recoil(0.12) }); root.children.push(body);
     body.children.push(P('sphere', o.bodySize || [1.3, 0.8, 1.1], [0, 0, 0], m(o.color || C.gold, { spec: 0.6 })));
+    // A dragoon was one gold sphere. It is a walking sarcophagus with something alive inside, so: a
+    // dorsal shell plate over the top, a lit core showing through the front, and shoulder vents.
+    if (o.shell !== false) {
+      const bs = o.bodySize || [1.3, 0.8, 1.1];
+      body.children.push(P('dome', [bs[0] * 1.30, bs[1] * 1.15, bs[2] * 1.28], [-bs[0] * 0.10, bs[1] * 0.10, 0], m(C.goldD, { spec: 0.66 })));
+      body.children.push(P('oct', [bs[0] * 0.34, bs[1] * 0.62, bs[2] * 0.34], [bs[0] * 0.52, 0, 0], GLOW(C.psi)));
+      for (const sd of [-1, 1]) body.children.push(P('cyl', [0.10, 0.34, 0.10], [-bs[0] * 0.35, bs[1] * 0.45, sd * bs[2] * 0.60], m(C.goldL, { spec: 0.7 }), { rot: [0, 0, sd * 0.3] }));
+      for (const sd of [-1, 1]) body.children.push(P('sphere', [0.09, 0.09, 0.09], [bs[0] * 0.30, bs[1] * 0.42, sd * bs[2] * 0.34], GLOW(C.visor)));
+    }
     body.children.push(P('sphere', [0.5, 0.25, 0.5], [-0.2, 0.3, 0], TEAM));
     body.children.push(P('sphere', [0.45, 0.45, 0.45], [0.55, 0.05, 0], m(C.navy))); body.children.push(P('sphere', [0.22, 0.22, 0.22], [0.75, 0.05, 0], GLOW(C.psi)));
     [[0.6, -1], [0.6, 1], [2.5, -1], [2.5, 1]].forEach(([a, s], i) => { const hip = N([Math.cos(a) * 0.5, by - 0.1, Math.sin(a) * 0.5 * s], { rot: [0, -Math.atan2(Math.sin(a) * s, Math.cos(a)), 0], anim: yaw(0.3, i % 2 ? Math.PI : 0, 1) }); const up = N([0, 0, 0], { rot: [0, 0, -0.9] }); up.children.push(P('cyl', [0.16, ll * 0.7, 0.16], [0, -ll * 0.35, 0], m(o.legColor || C.goldD, { spec: 0.5 }))); const knee = N([0, -ll * 0.7, 0], { rot: [0, 0, 1.6] }); knee.children.push(P('cyl', [0.13, ll * 0.75, 0.13], [0, -ll * 0.37, 0], m(o.legColor || C.goldD, { spec: 0.5 }))); up.children.push(knee); hip.children.push(up); root.children.push(hip); });
@@ -243,11 +252,32 @@ const UNITS = {
 };
 
 // ---------------- buildings (tile units; footprint centred at origin) ----------------
+// Running lights. The complaint was that buildings and units are short of colour and of anything that
+// glows, and it is fair: outside the Protoss the only emissive parts in the game were weapon muzzles
+// and Zerg eyes. Real 90s RTS structures were covered in blinking strip lights and lit panels, and
+// they cost nothing here -- a GLOW material is unlit, so it is one flat-shaded primitive.
+//
+// `lights` lays a row down each long side of a footprint at a given height; `beacon` is a single
+// larger lamp for a roof. Both are deterministic in position so nothing crawls between frames.
+const lights = (w, h, y, col, n) => {
+  const out = []; const count = n || Math.max(2, Math.floor(w));
+  for (let i = 0; i < count; i++) {
+    const t = count === 1 ? 0.5 : i / (count - 1);
+    const x = -w / 2 + 0.45 + t * (w - 0.9);
+    for (const sd of [-1, 1]) out.push(P('sphere', [0.075, 0.055, 0.075], [x, y, sd * (h / 2 - 0.18)], GLOW(col)));
+  }
+  return out;
+};
+const beacon = (x, z, y, col, r = 0.13) => P('sphere', [r, r * 0.8, r], [x, y, z], GLOW(col));
+
 const B = {
   terranBase(w, h, o = {}) { const root = N([0, 0, 0]); const ht = o.height || 0.6; const steel = [0.47, 0.52, 0.6], steelD = [0.3, 0.34, 0.4], roof = [0.6, 0.65, 0.72];
     root.children.push(P('box', [w - 0.05, 0.14, h - 0.05], [0, 0.07, 0], m(steelD)), P('box', [w - 0.25, ht - 0.1, h - 0.25], [0, ht / 2, 0], m(steel, { spec: 0.45 })), P('box', [w - 0.35, 0.1, h - 0.35], [0, ht, 0], m(roof, { spec: 0.5 })), P('box', [0.9, 0.04, 0.22], [-w / 2 + 0.65, ht + 0.06, -h / 2 + 0.35], TEAM), P('box', [w - 0.5, 0.03, 0.05], [0, ht + 0.06, 0], m(steelD)), P('box', [0.05, 0.03, h - 0.6], [0, ht + 0.06, 0], m(steelD)));
     for (let i = 0; i < Math.floor(w); i++) { root.children.push(P('box', [0.4, 0.22, 0.06], [-w / 2 + 0.5 + i, ht * 0.4, h / 2 - 0.1], m(C.dark)), P('box', [0.06, 0.06, 0.06], [-w / 2 + 0.5 + i, ht + 0.1, h / 2 - 0.35], GLOW([1, 0.8, 0.4]))); }
     for (let j = 0; j < Math.floor(h); j++) root.children.push(P('box', [0.06, ht * 0.5, 0.35], [w / 2 - 0.12, ht * 0.45, -h / 2 + 0.5 + j], m(steelD)));
+    // amber strip lights down both long sides, and a red hazard beacon on the roof corner
+    for (const L of lights(w, h, (o.height || 0.5) + 0.30, [1, 0.72, 0.28])) root.children.push(L);
+    root.children.push(beacon(-w / 2 + 0.42, -h / 2 + 0.42, (o.height || 0.5) + 0.52, [1, 0.25, 0.18]));
     return root; },
   // A Zerg building was two smooth domes with five bumps on it, which is a potato. What is missing is
   // everything that says "grown": ribs of plate radiating off the crown, a crest of spines, cords of
@@ -281,9 +311,45 @@ const B = {
     // nodules clustered where the mound meets the ground
     for (let k = 0; k < 4; k++) { const a = k * 1.7 + 1.1;
       root.children.push(P('sphere', [0.22, 0.18, 0.22], [Math.cos(a) * w * 0.46, 0.14, Math.sin(a) * h * 0.46], m(C.flesh, { spec: 0.45 }))); }
+    // bioluminescence: a few lit nodes in the carapace, sickly green rather than lamp-coloured
+    for (let k = 0; k < 5; k++) { const a = k * 1.27 + 0.6; root.children.push(P('sphere', [0.085, 0.065, 0.085], [Math.cos(a) * w * 0.30, ht * 0.86, Math.sin(a) * h * 0.30], GLOW(C.toxin))); }
     return root;
   },
-  protossSlab(w, h, o = {}) { const root = N([0, 0, 0]); const ht = o.height || 0.5; root.children.push(P('box', [w - 0.1, 0.25, h - 0.1], [0, 0.125, 0], m(C.goldD, { spec: 0.5 })), P('box', [w - 0.5, ht, h - 0.5], [0, 0.25 + ht / 2, 0], m(C.gold, { spec: 0.6 })), P('box', [w - 0.3, 0.05, 0.18], [0, 0.27, h / 2 - 0.2], TEAM)); for (let i = 0; i < Math.floor(w); i++) root.children.push(P('oct', [0.22, 0.3, 0.22], [-w / 2 + 0.5 + i, 0.3, -h / 2 + 0.2], GLOW(C.psi))); return root; },
+  // A Protoss building was two boxes and a strip of team colour, which is the least interesting thing
+  // any of the three races had. Protoss is not industrial -- it is ceremonial: stepped stone, ornate
+  // trim, and energy that is visibly *running through* the structure rather than bolted to it. Every
+  // Protoss building is built on this, so all of them gain it together.
+  protossSlab(w, h, o = {}) {
+    const root = N([0, 0, 0]); const ht = o.height || 0.5;
+    // plinth, with a lighter chamfer course on top of it so the base has an edge that catches light
+    root.children.push(P('box', [w - 0.1, 0.22, h - 0.1], [0, 0.11, 0], m(C.goldD, { spec: 0.5 })));
+    root.children.push(P('box', [w - 0.28, 0.07, h - 0.28], [0, 0.25, 0], m(C.goldL, { spec: 0.7 })));
+    // stepped tiers: three courses, each inset and shorter, which is the whole silhouette
+    const tiers = o.tiers == null ? 3 : o.tiers;
+    for (let i = 0; i < tiers; i++) {
+      const t = i / tiers, inset = 0.5 + t * (Math.min(w, h) * 0.30);
+      root.children.push(P('box', [w - inset, ht * (0.62 - 0.15 * i), h - inset],
+        [0, 0.29 + ht * (0.32 * i + 0.31), 0], m(i % 2 ? C.gold : C.goldD, { spec: 0.62 })));
+    }
+    // psi conduit: a glowing seam running the full width at the first step, so the energy reads as
+    // being inside the building. This is the single biggest thing separating Protoss from Terran gold.
+    root.children.push(P('box', [w - 0.62, 0.06, 0.10], [0, 0.42, h / 2 - 0.34], GLOW(C.psi)));
+    root.children.push(P('box', [w - 0.62, 0.06, 0.10], [0, 0.42, -h / 2 + 0.34], GLOW(C.psi)));
+    root.children.push(P('box', [0.10, 0.06, h - 0.62], [w / 2 - 0.34, 0.42, 0], GLOW(C.psi)));
+    root.children.push(P('box', [0.10, 0.06, h - 0.62], [-w / 2 + 0.34, 0.42, 0], GLOW(C.psi)));
+    // corner pylons, each capped with a lit crystal
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const px = sx * (w / 2 - 0.34), pz = sz * (h / 2 - 0.34);
+      root.children.push(P('cyl', [0.13, ht * 0.95, 0.13], [px, 0.28 + ht * 0.47, pz], m(C.goldD, { spec: 0.6 })));
+      root.children.push(P('oct', [0.19, 0.28, 0.19], [px, 0.30 + ht * 1.06, pz], GLOW(C.psi)));
+    }
+    // the floating crystal: nothing else in the game has a part that does not touch the ground, and
+    // that alone says "these people do not build the way the other two do"
+    root.children.push(P('oct', [0.30, 0.46, 0.30], [0, 0.34 + ht * 1.55, 0], GLOW(o.coreColor || C.psi),
+      { anim: st => ({ pos: [0, 0.06 * IDLE(st), 0], rot: [0, (st.idle || 0) * 6.283, 0] }) }));
+    root.children.push(P('box', [w - 0.3, 0.05, 0.18], [0, 0.27, h / 2 - 0.2], TEAM));
+    return root;
+  },
   dome: (x, z, r, y, mat) => P('dome', [r * 2, r * 1.4, r * 2], [x, y, z], mat || m(C.metalL, { spec: 0.5 })),
   tower: (x, z, w, hgt, y, mat) => P('box', [w, hgt, w], [x, y + hgt / 2, z], mat || m(C.metalD)),
   post: (x, z, hgt, y) => P('cyl', [0.12, hgt, 0.12], [x, y + hgt / 2, z], m(C.metalD)),
