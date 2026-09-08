@@ -6,6 +6,11 @@
 // How long a condition has to hold before the player is told, and how long the alert then stays quiet.
 // hold is in alert passes (one a second), cool in frames. These are the numbers that decide whether an
 // alert is useful or noise, so they live where they can be found rather than inline.
+// Eight unit vectors, for pushing apart two units sitting on precisely the same pixel -- see separate().
+// The diagonal is written out rather than computed from a square root, so every client holds the exact
+// same constant and the nudge cannot become a source of drift.
+const D = 0.7071067811865476;
+const SEP_DIRS = [[1, 0], [D, D], [0, 1], [-D, D], [-1, 0], [-D, -D], [0, -1], [D, -D]];
 const ALERTS = {
   supply:   { hold: 4, cool: 24 * 40 },  // long enough to survive the moment between finishing a unit and starting a depot
   idleProd: { hold: 8, cool: 24 * 45 },  // a queue empties for a second all the time; eight is a player not looking
@@ -73,19 +78,39 @@ const G = {
     return true;
   },
   separate() {
+    // Every unit gets a turn as `a`, not only those sharing a cell with someone. The old
+    // `if (cell.length < 2) continue` meant a unit alone in its 64 px cell was never the one doing the
+    // looking, so a pair that straddled a cell boundary was invisible to the pass from both sides and
+    // simply stayed overlapped -- two overlords 5.8 px apart, one in cell 12 and one in cell 11, sat
+    // there forever. nearEach already reaches into the neighbouring cells; nothing was asking it to.
     for (const cell of this.grid) {
-      if (cell.length < 2) continue;
       for (let i = 0; i < cell.length; i++) {
-        const a = cell[i]; if (a.isBuilding || a.def.larva || a.burrowed || a.fly) continue;
+        const a = cell[i]; if (a.isBuilding || a.def.larva || a.burrowed) continue;
         this.nearEach(a.x, a.y, a.r, b => {
-          if (b === a || b.isBuilding || b.def.larva || b.burrowed || b.fly || b.id < a.id) return;
+          if (b === a || b.isBuilding || b.def.larva || b.burrowed || b.id < a.id) return;
+          // Air separates from air and ground from ground, but the two layers pass through each other:
+          // a wraith flying over a marine is not a collision. Flyers used to be skipped entirely, so any
+          // number of overlords could sit on one pixel. Note this is a deliberate departure from Brood
+          // War, where air units do not collide at all and stacking mutalisks is a real technique.
+          if (!!a.fly !== !!b.fly) return;
           const dx = b.x - a.x, dy = b.y - a.y; let d = Math.hypot(dx, dy); const min = (a.r + b.r) * 0.85;
-          if (d >= min) return; if (d < 0.01) { d = 0.01; }
-          const push = (min - d) * 0.5 * 0.6; const ux = dx / d, uy = dy / d;
+          if (d >= min) return;
+          let ux, uy;
+          if (d < 0.01) {
+            // Exactly coincident. dx and dy are both zero, so the unit vector is (0,0) and the push
+            // below moves nothing -- two units on one pixel could never come apart. Pick a direction
+            // from the pair's ids instead: same answer on every client, and no trig, whose last bit is
+            // not guaranteed to agree between engines.
+            const h = ((a.id * 73856093) ^ (b.id * 19349663)) >>> 0;
+            const v = SEP_DIRS[h & 7]; ux = v[0]; uy = v[1]; d = 0.01;
+          } else { ux = dx / d; uy = dy / d; }
+          const push = (min - d) * 0.5 * 0.6;
           const am = a.sieged ? 0 : 1, bm = b.sieged ? 0 : 1;
           const ax = a.x - ux * push * am, ay = a.y - uy * push * am, bx = b.x + ux * push * bm, by = b.y + uy * push * bm;
-          if (am && this.passable(ax, ay, a)) { a.x = ax; a.y = ay; }
-          if (bm && this.passable(bx, by, b)) { b.x = bx; b.y = by; }
+          // passable() reads the walk grid, which says nothing useful about a flyer -- gating on it
+          // would pin overlords over cliffs and water, the places they most want to be.
+          if (am && (a.fly || this.passable(ax, ay, a))) { a.x = ax; a.y = ay; }
+          if (bm && (b.fly || this.passable(bx, by, b))) { b.x = bx; b.y = by; }
         });
       }
     }
@@ -247,7 +272,20 @@ const G = {
     }
     return n;
   },
-  removeResource(r) { r.amount = 0; this.map.unblock(r.x, r.y, r.w, r.h, -2); this.map.rect(r.x, r.y, r.w, r.h, (x, y) => { if (this.map.blocked[this.map.idx(x, y)] === -2) this.map.blocked[this.map.idx(x, y)] = -1; }); const i = this.map.resources.indexOf(r); if (i >= 0) this.map.resources.splice(i, 1); },
+  removeResource(r) { r.amount = 0; this.map.unblock(r.x, r.y, r.w, r.h, -2); this.map.rect(r.x, r.y, r.w, r.h, (x, y) => { if (this.map.blocked[this.map.idx(x, y)] === -2) this.map.blocked[this.map.idx(x, y)] = -1; }); const i = this.map.resources.indexOf(r); if (i >= 0) this.map.resources.splice(i, 1); this.repointRallies(r); },
+  // A rally set onto a mineral patch keeps a reference to the patch, and this is the one place a patch
+  // stops existing. Every rally aimed at it moves to the nearest remaining patch of the same kind --
+  // what a player would do by hand -- and if there is none left the rally clears, which puts new units
+  // back at the building that made them. Applies to every owner and to larva and egg rallies too, since
+  // it walks units rather than buildings.
+  repointRallies(gone) {
+    let best = null, bd = 1e9;
+    for (const o of this.map.resources) { if (o === gone || o.type !== gone.type || o.amount <= 0) continue; const d = distPt(gone.cx, gone.cy, o.cx, o.cy); if (d < bd) { bd = d; best = o; } }
+    for (const u of this.units) {
+      if (!u.alive || !u.rally || u.rally.res !== gone) continue;
+      u.rally = best ? { x: best.cx, y: best.cy, target: null, res: best } : null;
+    }
+  },
 
   // ---------------- supply ----------------
   recomputeSupply() {
