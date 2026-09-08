@@ -359,18 +359,32 @@ write the test and find out.
 
 ### Performance
 
-| metric | M2 baseline | M6 | M7 | target | |
-|---|---|---|---|---|---|
-| sim tick mean | 2.75 ms | 2.89 ms | 3.07 ms | under 8 ms | pass |
-| sim tick p95 | 5.64 ms | 6.03 ms | 6.14 ms | — | |
-| render median, 1080p, 290 units drawn | 3.7 ms | 1.60 ms | — | under 6 ms | pass |
-| render median, 1080p, 491 units drawn | — | 2.30 ms | — | under 6 ms | pass |
+| metric | M2 baseline | M6 | M7 | M8 | target | |
+|---|---|---|---|---|---|---|
+| sim tick mean | 2.75 ms | 2.89 ms | 3.07 ms | — | under 8 ms | pass |
+| sim tick p95 | 5.64 ms | 6.03 ms | 6.14 ms | — | — | |
+| render median, 1080p, ~290 units drawn | 3.7 ms | 1.60 ms | — | 3.30 ms | under 6 ms | pass |
+| render median, 1080p, ~490 units drawn | — | 2.30 ms | — | 4.80 ms | under 6 ms | pass |
 
 M7 costs about 0.18 ms a tick at 513 units and 204 supply a side, which is `AI.script()` walking
 `G.units` once more per think and `production()` being allowed to keep training rather than stopping at
 three units. The whole AI phase is 0.16 ms of a 3.07 ms tick; the tick is still dominated by unit
-separation at 0.92 ms. The render rows are M6's and stand: M7 did not touch a render file, and
-`test/version.js` confirms the build stamp moved only for the sim.
+separation at 0.92 ms. M8 did not touch a sim file for the graphics work, so the sim rows are M7's.
+
+**Read the render rows before planning more art.** M8 spent most of the headroom the handoff advertised:
+2.30 ms of a 6 ms budget became 4.80, so what is left is about 1.2 ms, not 3.7. The exchange rate is
+worth writing down because it decided three design choices in a row:
+
+> **One extra full-sprite blit per unit costs about 2 ms a frame at 490 units.**
+
+That is the whole reason the shadow pass is in the draw loop and the rim light is in the bake. A first
+version had both at draw time and measured 6.60 ms -- a fail. De-shearing the shadow bought 0.10 ms, so
+the shear was never the cost; dropping the rim bought 1.80. Budget in blits, not in effects.
+
+The other measured trap: **building a gradient per instance per frame is expensive.** The muzzle flash
+cost 0.8 ms while it called `createRadialGradient` per flash, and 0.3 ms once the gradient was baked
+into a 32px canvas and blitted. "Only units that fired this frame" is most of the screen in a
+200-supply battle.
 
 `node test/perf.js 600 4 temple --sustain` for the simulation; `node test/perf_render.js` then open the
 URL it prints for the draw pass. **Pace the draws.** Drawing in a tight loop outruns the compositor and
