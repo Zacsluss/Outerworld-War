@@ -140,7 +140,23 @@ class AI {
       // -16.39 (p = 0.013) against TvZ's -10.78 and -18.28. PvZ has no trustworthy absolute number yet
       // -- M9 task 0 is producing it -- so the confirming run has to cover TZ *and* ZP, and if PvZ has
       // come back Zerg-favoured after the Hold Position fix then this line is the first suspect.
-      if (this.race === 'Z' && i === this.scriptIdx && this.count(id) <= this.scriptHave(cnt, id)) this.reserve(def);
+      // M9 measured this line and it did two things at once. TvZ went 79% -> 64% (-15, p = 0.000), which
+      // is the second largest balance move in this project's history and the direction five milestones
+      // had been trying to go. PvZ went 63% -> 36% for Protoss (-27, p = 0.000), which is about twice
+      // what centring it needed -- Protoss went from favoured to unfavoured without stopping in between.
+      // Zerg was under-built against everyone, so correcting it helped against everyone.
+      //
+      // Against Protoss the reserve therefore only engages once half the cost is already banked, rather
+      // than from zero. That is deliberately a weaker version of the same lever and not an off switch:
+      // turning it off entirely would hand PvZ back to Protoss at 63%, which is just as wrong the other
+      // way. AI_COMP already carries ZvT and ZvP variants, so conditioning Zerg's economy on the
+      // opponent is the idiom here rather than a special case.
+      //
+      // UNMEASURED. Proxy it against the shipped code before believing a number, and confirm on TZ and
+      // ZP together -- TvZ must not give back the 15 points it just gained.
+      const vsP = (this.enemies()[0] || {}).race === 'P';
+      if (this.race === 'Z' && i === this.scriptIdx && this.count(id) <= this.scriptHave(cnt, id)
+          && (!vsP || p.minerals >= def.min * 0.5)) this.reserve(def);
       if (def.tier === 'addon') { if (this.addon(id)) { this.stepT = G.frame; return; } continue; }
       if (def.tier === 'morph') { if (this.mine(u => u.prod.some(it => it.kind === 'morph' && it.id === id)).length) continue; if (this.morph(id)) { this.stepT = G.frame; return; } continue; }
       if (this.count(id) > this.scriptHave(cnt, id)) continue;           // already pending / in construction

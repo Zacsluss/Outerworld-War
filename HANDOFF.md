@@ -630,6 +630,17 @@ reverted. Zerg buys upgrades it does not live to use. Treat this lever as closed
   checkpoints, not in `js/snapshot.js` or the sim. `test/observer.js` passes because a short replay is
   never thinned. The thinning itself is `js/ui.js:108`.
 
+  Three further hypotheses were tested in M9 and are also dead, so do not spend time on them.
+  **Restore is idempotent** -- restoring the same snapshot object twice gives the same hash and does not
+  resize the object, so seeks are not consuming their own checkpoints. **Fields, projectiles and each
+  player's AI state are all captured and restored** (`G.effects` is cleared deliberately, being
+  render-only). And the **long-span re-simulation is exact**, as above. What is left is narrow, and the
+  shape of the failure points at it: the FIRST seek in `test/longgame.js` passes and every seek after it
+  fails, which is state surviving across seeks rather than a bad checkpoint. The two candidates are
+  `UI.seekTo`'s handling of `G.pendingCmds` across *consecutive* seeks, and `UI.snap`'s
+  `last.f >= G.frame` early-return -- which means no checkpoint is recorded at all during a fast-forward
+  that follows a backward seek.
+
 - **No matchup is formally outside 60/40, and none is confirmed inside.** TvZ 64% [59-69] to Terran,
   PvZ 36% [31-41] to Protoss (so 64% to Zerg), PvT 62% [57-67] to Protoss. All three "undecided" --
   about 97 more decided games each would be needed to call any of them. PvZ is the one that moved

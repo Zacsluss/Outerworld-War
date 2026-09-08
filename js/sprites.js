@@ -40,6 +40,18 @@ const Sprites = {
     sh = { cv, S: s.S, ox: s.ox, oy: s.oy, sub: s.sub, sx: s.sx, sy: s.sy };
     this.cache.set(key, sh); return sh;
   },
+  // Black copy of a building's sprite, for the shadow pass. Cached per type and colour like the
+  // sprite itself, so it costs one canvas per building type actually on screen.
+  buildingShadow(u) {
+    const id = u.def.id, key = 'bsh|' + id;
+    let sh = this.cache.get(key); if (sh) return sh;
+    const b = this.building(u);
+    const cv = document.createElement('canvas'); cv.width = b.cv.width; cv.height = b.cv.height;
+    const c = cv.getContext('2d');
+    c.drawImage(b.cv, 0, 0); c.globalCompositeOperation = 'source-in'; c.fillStyle = '#000'; c.fillRect(0, 0, cv.width, cv.height);
+    sh = { cv, M: b.M, T: b.T, W: b.W, H: b.H };
+    this.cache.set(key, sh); return sh;
+  },
   building(u) {
     const id = u.def.id, color = G.players[u.owner].color; const key = 'b|' + id + '|' + color;
     if (typeof Atlas !== 'undefined' && Atlas.hasBuilding(id)) return Atlas.buildingImage(id, color);

@@ -85,10 +85,14 @@ const Render = {
     // A flyer's shadow falls further and stays a soft blob, because a sharp silhouette that far from
     // the unit reads as a second unit.
     for (const u of list) {
-      if ((u.isBuilding && !u.lifted) || u.burrowed || u.def.mine) continue;
+      // Buildings cast their own outline now, like units do, instead of being skipped entirely. They
+      // are the largest things on the map and a hard-edged silhouette under them is most of what makes
+      // a base read as sitting ON the ground rather than pasted onto it. Only grounded ones: a lifted
+      // building takes the blob below, further out, because it is in the air.
+      if (u.burrowed || u.def.mine) continue;
       // A lifted building has no unit silhouette either, for the same reason, so it takes the blob --
       // cast well below it, because it is in the air.
-      const sh = (u.fly || u.isBuilding) ? null : Sprites.shadow(u, Sprites.dirOf(u.facing), this.animOf(u));
+      const sh = (u.fly || u.lifted) ? null : (u.isBuilding ? Sprites.buildingShadow(u) : Sprites.shadow(u, Sprites.dirOf(u.facing), this.animOf(u)));
       if (!sh) { const air = u.fly || u.isBuilding; ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.globalAlpha = u._alpha * (air ? 0.3 : 0.4); const rr = u.isBuilding ? u.def.w * TILE * 0.42 : u.r * 0.95; ctx.beginPath(); ctx.ellipse(u._x + (air ? 14 : 3), u._y + (air ? 26 : u.r * 0.35 + 2), rr, rr * 0.47, 0, 0, 7); ctx.fill(); continue; }
       // Squash straight into drawImage's destination rectangle rather than setting a matrix. A shear
       // would be truer -- a shadow really does lean away from the light -- but a sheared blit is not
@@ -96,6 +100,11 @@ const Render = {
       // fraction of that. The silhouette is what makes a marine's shadow marine-shaped; the lean was
       // the expensive half of the effect and the cheap half is the half that reads.
       ctx.globalAlpha = u._alpha * 0.38;
+      if (u.isBuilding) {   // anchored to the footprint, squashed the same way a unit's is
+        const bw = sh.cv.width, bh = sh.cv.height;
+        ctx.drawImage(sh.cv, u.tx * TILE - sh.M + SHADOW_DX, (u.ty + u.def.h) * TILE - bh * SHADOW_FLAT, bw, bh * SHADOW_FLAT);
+        continue;
+      }
       const S = sh.S;
       ctx.drawImage(sh.cv, sh.sx || 0, sh.sy || 0, S, S, u._x - sh.ox + SHADOW_DX, u._y - sh.oy * SHADOW_FLAT + u.r * 0.3, S, S * SHADOW_FLAT);
     }
