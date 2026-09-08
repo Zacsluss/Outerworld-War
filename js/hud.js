@@ -59,7 +59,14 @@ const HUD = {
     c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(0, h - 1, w, 1);
     this._panelKey = key; return this._panel = cv;
   },
-  font(sz, bold = true) { return (bold ? 'bold ' : '') + sz + 'px "Trebuchet MS", "Segoe UI", Arial, sans-serif'; },
+  // Trebuchet is a 1996 *web* face and reads like one. The console fonts of this era were condensed,
+  // heavy and squared off, so this asks for those first and keeps Trebuchet only as the last resort.
+  font(sz, bold = true) { return (bold ? 'bold ' : '') + sz + 'px "Eurostile", "Bank Gothic", "Agency FB", "Franklin Gothic Medium", "Trebuchet MS", Arial, sans-serif'; },
+  // Era HUD labels were set in caps with air between the letters, which is as much of the look as the
+  // face is -- and it survives the font not being installed, which the face itself does not.
+  caps(s) { return String(s).toUpperCase(); },
+  spaced(ctx, s, x, y, tracking) { let cx = x; for (const ch of s) { ctx.fillText(ch, cx, y); cx += ctx.measureText(ch).width + tracking; } return cx - x - tracking; },
+  spacedWidth(ctx, s, tracking) { let w = 0; for (const ch of s) w += ctx.measureText(ch).width + tracking; return w - tracking; },
   // Two-pixel bevel rather than one: the outer line is the hard highlight, the inner a softer one, so
   // a button reads as a thick piece of plate at a glance instead of a rectangle with a light edge.
   bevel(ctx, x, y, w, h, raised = true, fill = '#1c212a') {
@@ -89,7 +96,15 @@ const HUD = {
     }
   },
   inset(ctx, x, y, w, h) { const s = this.skin(); ctx.fillStyle = s.ink; ctx.fillRect(x, y, w, h); this.bevel(ctx, x, y, w, h, false, 'rgba(0,0,0,0)'); ctx.strokeStyle = s.edge; ctx.globalAlpha = 0.22; ctx.lineWidth = 1; ctx.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3); ctx.globalAlpha = 1; },
-  text(ctx, s, x, y, color = '#d8dde4', sz = 12, bold = true, align = 'left') { ctx.font = this.font(sz, bold); ctx.textAlign = align; ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillText(s, x + 1, y + 1); ctx.fillStyle = color; ctx.fillText(s, x, y); ctx.textAlign = 'left'; },
+  // A hard black shell on all four sides rather than one offset shadow. Era UI text sat on top of
+  // whatever the console was made of and had to stay legible over rivets and hazard paint, so it was
+  // outlined, not drop-shadowed -- a shadow only works when what is behind it is flat.
+  text(ctx, s, x, y, color = '#d8dde4', sz = 12, bold = true, align = 'left') {
+    ctx.font = this.font(sz, bold); ctx.textAlign = align;
+    ctx.fillStyle = 'rgba(0,0,0,0.85)';
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [1, 1]]) ctx.fillText(s, x + dx, y + dy);
+    ctx.fillStyle = color; ctx.fillText(s, x, y); ctx.textAlign = 'left';
+  },
   hotLabel(ctx, label, hk, x, y, w, color = '#e6eaf0', fs = 10) { // label with hotkey letter highlighted
     ctx.font = this.font(fs); const words = label.split(' '); const lines = []; let cur = ''; for (const wd of words) { if (ctx.measureText((cur + ' ' + wd).trim()).width > w - 6 && cur) { lines.push(cur); cur = wd; } else cur = (cur + ' ' + wd).trim(); } lines.push(cur);
     let hkDone = false; lines.forEach((ln, i) => { let lx = x + w / 2 - ctx.measureText(ln).width / 2, ly = y + i * (fs + 1); if (!hkDone && hk && hk.length === 1) { const idx = ln.toUpperCase().indexOf(hk.toUpperCase()); if (idx >= 0) { const a = ln.slice(0, idx), b = ln[idx], c = ln.slice(idx + 1); ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillText(ln, lx + 1, ly + 1); ctx.fillStyle = color; ctx.fillText(a, lx, ly); lx += ctx.measureText(a).width; ctx.fillStyle = '#ffe45a'; ctx.fillText(b, lx, ly); lx += ctx.measureText(b).width; ctx.fillStyle = color; ctx.fillText(c, lx, ly); hkDone = true; return; } } ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillText(ln, lx + 1, ly + 1); ctx.fillStyle = color; ctx.fillText(ln, lx, ly); });
@@ -191,7 +206,13 @@ Object.assign(UI, {
     const items = [['min', Math.floor(p.minerals), '#dff6ff'], ['gas', Math.floor(p.gas), '#d6f5d0'], ['sup', `${Math.ceil(p.supUsed)}/${p.supMax}`, p.supUsed > p.supMax ? '#ff6a6a' : '#f0f2f4']];
     let x = Render.W - 14; ctx.font = HUD.font(14);
     for (let i = items.length - 1; i >= 0; i--) { const [k, v, col] = items[i]; const tw = ctx.measureText(String(v)).width + 40; HUD.bevel(ctx, x - tw, 6, tw, 24, true, 'rgba(12,15,20,0.85)'); HUD.resIcon(ctx, k, x - tw + 14, 18); HUD.text(ctx, String(v), x - 8, 23, col, 14, true, 'right'); x -= tw + 6; }
-    const t = Math.floor(G.frame / TPS); HUD.bevel(ctx, 8, 6, 170, 24, true, 'rgba(12,15,20,0.85)'); HUD.text(ctx, `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}   ${RACE_INFO[p.race].name}` + (G.paused ? '   PAUSED' : ''), 16, 23, G.paused ? '#ffe45a' : '#e6eaf0', 13);
+    // Caps and letterspacing on the clock/faction plate. This is the one piece of running text on
+    // screen at all times, so it is where the typography actually registers.
+    const t = Math.floor(G.frame / TPS); HUD.bevel(ctx, 8, 6, 178, 24, true, 'rgba(12,15,20,0.85)');
+    const label = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}   ${HUD.caps(RACE_INFO[p.race].name)}` + (G.paused ? '   PAUSED' : '');
+    ctx.font = HUD.font(12); ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(0,0,0,0.85)'; for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) HUD.spaced(ctx, label, 16 + dx, 23 + dy, 1.1);
+    ctx.fillStyle = G.paused ? '#ffe45a' : '#e6eaf0'; HUD.spaced(ctx, label, 16, 23, 1.1);
     if (this.mode === 'replay') HUD.text(ctx, 'REPLAY  ' + this.speedName() + '  (+/- speed, Ctrl+V perspective, F10 menu)', Render.W / 2, 23, '#ffe45a', 13, true, 'center');
     if (G.mission && !G.mission.done) { const d = G.mission.def; const left = d.minutes ? Math.max(0, d.minutes * 60 - Math.floor((G.frame - G.mission.start) / TPS)) : 0; HUD.text(ctx, 'Objective: ' + d.objective + (d.minutes ? `   ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : ''), 16, 66, '#ffe45a', 12); }
     if (this.net && Net.waitingSince && performance.now() - Net.waitingSince > 800) HUD.text(ctx, 'Waiting for other players...', Render.W / 2, 60, '#ffe45a', 14, true, 'center');

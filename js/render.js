@@ -45,7 +45,8 @@ const Render = {
   },
   frame(alpha) {
     const ctx = this.ctx, m = G.map; if (!ctx || this.viewW < 1 || this.viewH < 1) return; if (!this.built) this.buildStatic();
-    const now = performance.now(); const dt = Math.min(0.1, (now - (this.lastFrameTime || now)) / 1000); this.lastFrameTime = now; if (!G.paused && !UI.menu) FX.update(dt);
+    const now = performance.now(); const dt = Math.min(0.1, (now - (this.lastFrameTime || now)) / 1000); this.lastFrameTime = now;
+    if (!G.paused && !UI.menu) { FX.update(dt); FX.ambient(this.camX, this.camY, this.viewW, this.viewH); }
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, this.viewW, this.viewH); ctx.clip();
     const cx = this.camX, cy = this.camY;
     Terrain.draw(ctx, cx, cy, this.viewW, this.viewH);
@@ -113,15 +114,64 @@ const Render = {
     fc.putImageData(img, 0, 0);
     ctx.save(); ctx.imageSmoothingEnabled = true; ctx.drawImage(this.fogCanvas, cx / TILE - 0.5, cy / TILE - 0.5, this.viewW / TILE, this.viewH / TILE, cx, cy, this.viewW, this.viewH); ctx.restore();
   },
+  // A mineral field and a geyser are on screen from the first second of every game to the last, and
+  // they were the two least detailed things in it: five flat quads and an ellipse with a gradient.
+  // Both are now baked once per (kind, richness) into a small canvas and blitted, because they are
+  // static -- a crystal does not animate -- and the draw pass has no room for per-frame gradients.
+  resourceSprite(kind, step) {
+    const key = kind + step; this._res = this._res || {}; if (this._res[key]) return this._res[key];
+    const W = kind === 'mineral' ? 76 : 140, H = kind === 'mineral' ? 62 : 78;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const c = cv.getContext('2d');
+    let s = 987654 + step * 7919;
+    const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+    if (kind === 'mineral') {
+      const n = step >= 4 ? 8 : step >= 2 ? 6 : 4;          // a field visibly empties as it is mined
+      c.fillStyle = 'rgba(0,0,0,0.34)'; c.beginPath(); c.ellipse(W / 2, H - 14, 30, 9, 0, 0, 7); c.fill();
+      // scree at the base, so the cluster sits in the ground instead of on it
+      for (let k = 0; k < 14; k++) { const bx = W / 2 + (rnd() - .5) * 56, by = H - 16 + (rnd() - .5) * 12, br = 1 + rnd() * 2.6; c.fillStyle = 'rgba(30,58,78,' + (0.35 + rnd() * 0.4).toFixed(2) + ')'; c.beginPath(); c.ellipse(bx, by, br, br * .7, 0, 0, 7); c.fill(); }
+      const shards = [];
+      for (let k = 0; k < n; k++) shards.push({ x: 12 + (k / Math.max(1, n - 1)) * (W - 24) + (rnd() - .5) * 7, base: H - 14 + (rnd() - .5) * 8, h: 16 + rnd() * 20, w: 5 + rnd() * 4, lean: (rnd() - .5) * 5 });
+      shards.sort((a, b) => a.base - b.base);
+      for (const sh of shards) {
+        const tipX = sh.x + sh.lean, tipY = sh.base - sh.h;
+        // Three facets per crystal instead of one flat quad: a lit face, a shadow face and a bright
+        // spine between them. That is what makes it read as a solid with volume rather than a sticker.
+        c.beginPath(); c.moveTo(sh.x - sh.w, sh.base); c.lineTo(tipX - sh.w * .18, tipY); c.lineTo(tipX, tipY + 2); c.lineTo(sh.x, sh.base + 2); c.closePath();
+        c.fillStyle = '#1d5f8c'; c.fill();
+        c.beginPath(); c.moveTo(sh.x, sh.base + 2); c.lineTo(tipX, tipY + 2); c.lineTo(tipX + sh.w * .22, tipY + 1); c.lineTo(sh.x + sh.w, sh.base); c.closePath();
+        const g = c.createLinearGradient(tipX, tipY, sh.x + sh.w, sh.base);
+        g.addColorStop(0, '#eafcff'); g.addColorStop(0.35, '#7fdcff'); g.addColorStop(1, '#2b86bd'); c.fillStyle = g; c.fill();
+        c.strokeStyle = 'rgba(8,40,62,0.85)'; c.lineWidth = 1;
+        c.beginPath(); c.moveTo(sh.x - sh.w, sh.base); c.lineTo(tipX - sh.w * .18, tipY); c.lineTo(tipX + sh.w * .22, tipY + 1); c.lineTo(sh.x + sh.w, sh.base); c.stroke();
+        c.strokeStyle = 'rgba(230,252,255,0.75)'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(tipX, tipY + 2); c.lineTo(sh.x, sh.base + 1); c.stroke();
+        c.fillStyle = 'rgba(255,255,255,0.5)'; c.beginPath(); c.arc(tipX - sh.w * .05, tipY + 3, 1.4, 0, 7); c.fill();
+      }
+    } else {
+      // geyser: a cracked rock rim, a dark shaft, and a lit throat
+      c.fillStyle = '#3a352a'; c.strokeStyle = '#1b1811'; c.lineWidth = 2;
+      c.beginPath(); c.ellipse(W / 2, H / 2, 62, 30, 0, 0, 7); c.fill(); c.stroke();
+      for (let k = 0; k < 22; k++) { const a = rnd() * 7, rr = 40 + rnd() * 22, bx = W / 2 + Math.cos(a) * rr, by = H / 2 + Math.sin(a) * rr * 0.48, br = 3 + rnd() * 6; c.fillStyle = 'rgba(0,0,0,0.4)'; c.beginPath(); c.ellipse(bx + 1, by + 1.5, br, br * .66, 0, 0, 7); c.fill(); const gg = c.createLinearGradient(bx - br, by - br, bx + br, by + br); gg.addColorStop(0, '#6d6552'); gg.addColorStop(1, '#332f26'); c.fillStyle = gg; c.beginPath(); c.ellipse(bx, by, br, br * .66, 0, 0, 7); c.fill(); }
+      for (let k = 0; k < 7; k++) { const a = rnd() * 7; c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = 1 + rnd(); c.beginPath(); c.moveTo(W / 2 + Math.cos(a) * 20, H / 2 + Math.sin(a) * 10); c.lineTo(W / 2 + Math.cos(a) * 58, H / 2 + Math.sin(a) * 28); c.stroke(); }
+      c.fillStyle = '#241f18'; c.beginPath(); c.ellipse(W / 2, H / 2, 44, 20, 0, 0, 7); c.fill();
+      if (step) { const g = c.createRadialGradient(W / 2, H / 2 - 3, 2, W / 2, H / 2, 36); g.addColorStop(0, '#d8ffc0'); g.addColorStop(0.35, '#7ee27a'); g.addColorStop(0.75, '#2f7a3c'); g.addColorStop(1, 'rgba(20,50,26,0.9)'); c.fillStyle = g; c.beginPath(); c.ellipse(W / 2, H / 2, 34, 15, 0, 0, 7); c.fill(); c.strokeStyle = 'rgba(190,255,170,0.45)'; c.lineWidth = 1.5; c.beginPath(); c.ellipse(W / 2, H / 2, 34, 15, 0, 0, 7); c.stroke(); }
+      else { c.fillStyle = '#2e2c28'; c.beginPath(); c.ellipse(W / 2, H / 2, 34, 15, 0, 0, 7); c.fill(); }
+    }
+    return this._res[key] = { cv, W, H };
+  },
   drawResource(ctx, r) {
     if (r.type === 'mineral') {
-      const x0 = r.x * TILE, y0 = r.y * TILE; const rich = r.amount / 1500; ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(x0 + 32, y0 + 22, 30, 10, 0, 0, 7); ctx.fill();
-      const n = rich > 0.5 ? 5 : rich > 0.2 ? 3 : 2;
-      for (let k = 0; k < n; k++) { const x = x0 + 8 + k * 12 + (k % 2) * 3, y = y0 + 8 + (k % 2) * 7, hgt = 14 + (k % 3) * 4; const g = ctx.createLinearGradient(x, y - hgt, x + 12, y + 8); g.addColorStop(0, '#dff8ff'); g.addColorStop(0.4, '#5fd0ff'); g.addColorStop(1, '#1c6a9a'); ctx.fillStyle = g; ctx.strokeStyle = '#0b3a55'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, y + 8); ctx.lineTo(x + 3, y - hgt); ctx.lineTo(x + 10, y - hgt * 0.7); ctx.lineTo(x + 13, y + 8); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.beginPath(); ctx.moveTo(x + 3, y - hgt); ctx.lineTo(x + 5, y - hgt * 0.5); ctx.lineTo(x + 2, y); ctx.closePath(); ctx.fill(); }
+      const step = Math.max(0, Math.min(5, Math.round(r.amount / 1500 * 5)));
+      const s = this.resourceSprite('mineral', step);
+      ctx.drawImage(s.cv, r.x * TILE + 32 - s.W / 2, r.y * TILE + 26 - s.H / 2);
     } else {
-      ctx.fillStyle = '#4a4438'; ctx.strokeStyle = '#26221a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(r.cx, r.cy, 62, 30, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#2f3a2a'; ctx.beginPath(); ctx.ellipse(r.cx, r.cy, 44, 20, 0, 0, 7); ctx.fill();
-      if (r.amount > 0) { const g = ctx.createRadialGradient(r.cx, r.cy, 2, r.cx, r.cy, 34); g.addColorStop(0, '#b6ff9a'); g.addColorStop(0.5, '#5ad06a'); g.addColorStop(1, '#2a5a30'); ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(r.cx, r.cy, 34, 15, 0, 0, 7); ctx.fill(); if (!r.building || !r.building.alive) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; for (let k = 0; k < 3; k++) { const t = ((G.frame / 50) + k / 3) % 1; ctx.fillStyle = `rgba(160,255,140,${0.35 * (1 - t)})`; ctx.beginPath(); ctx.arc(r.cx + Math.sin(k * 2 + t * 6) * 10, r.cy - 6 - t * 40, 6 + t * 10, 0, 7); ctx.fill(); } ctx.restore(); } }
-      else { ctx.fillStyle = '#3a3a3a'; ctx.beginPath(); ctx.ellipse(r.cx, r.cy, 34, 15, 0, 0, 7); ctx.fill(); }
+      const s = this.resourceSprite('gas', r.amount > 0 ? 1 : 0);
+      ctx.drawImage(s.cv, r.cx - s.W / 2, r.cy - s.H / 2);
+      // the vapour is the only part that moves, so it is the only part not baked
+      if (r.amount > 0 && (!r.building || !r.building.alive)) {
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        for (let k = 0; k < 4; k++) { const t = ((G.frame / 50) + k / 4) % 1; ctx.fillStyle = 'rgba(160,255,140,' + (0.3 * (1 - t)).toFixed(3) + ')'; ctx.beginPath(); ctx.arc(r.cx + Math.sin(k * 2 + t * 6) * 11, r.cy - 6 - t * 42, 5 + t * 12, 0, 7); ctx.fill(); }
+        ctx.restore();
+      }
     }
   },
   drawUnit(ctx, u) {
@@ -179,7 +229,14 @@ const Render = {
     if (u.moving || (u.def.larva && (G.frame + u.id) % 90 < 30)) { const cycle = u.def.larva ? 30 : Math.max(20, u.r * 2.2); const d = u.def.larva ? G.frame : (u.walkDist || 0); return 'w' + (Math.floor((d / cycle) * Sprites.WALK_FRAMES) % Sprites.WALK_FRAMES); }
     // Idle loop, offset per unit so a group does not breathe in lockstep. Render-only: G.frame drives it,
     // nothing here feeds back into the simulation.
-    return 'i' + (Math.floor(G.frame / 14 + u.id * 1.7) % Sprites.IDLE_FRAMES);
+    // Fidget. A unit standing still used to cycle its four idle frames forever at a fixed rate, which
+    // is a loop, not life -- a line of marines all breathing is uncanny in a way that stillness is
+    // not. It rests on frame 0 most of the time now and every so often runs the cycle once, on a
+    // period derived from its id so no two units twitch together. Still pure G.frame: nothing is
+    // stored, so it cannot reach the simulation and a replay looks the same as the game did.
+    const period = 210 + (u.id * 37) % 190, t = (G.frame + u.id * 53) % period;
+    if (t >= Sprites.IDLE_FRAMES * 7) return 'i0';
+    return 'i' + (Math.floor(t / 7) % Sprites.IDLE_FRAMES);
   },
   drawStatus(ctx, u, x, y) {
     const r = u.r;

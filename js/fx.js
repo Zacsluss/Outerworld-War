@@ -15,6 +15,21 @@ const FX = {
   debris(x, y, n, spd, col = [90, 95, 100]) { this.burst(x, y, n, spd, { life: 0.8, size: 3, col, add: false, kind: 'debris', grav: 500, shrink: false }); },
   blood(x, y, n, spd) { this.burst(x, y, n, spd, { life: 0.5, size: 3, col: [150, 20, 40], add: false, kind: 'debris', grav: 400, shrink: false }); },
   decal(o) { this.decals.push(Object.assign({ t: 0, born: G.frame }, o)); if (this.decals.length > 400) this.decals.shift(); },
+  // Ambient drift: a handful of motes crossing the viewport, tinted to the tileset. The maps here are
+  // completely still between fights, and stillness is what makes a scene read as a screenshot rather
+  // than a place. Capped hard and spawned only every 20th frame, because this is scenery and must
+  // never compete with combat for the particle budget (MAX_PARTICLES is shared).
+  AMBIENT: { badlands: [196, 170, 120], jungle: [150, 200, 110], ice: [220, 236, 248], desert: [226, 196, 140], space: [150, 190, 230] },
+  ambient(camX, camY, vw, vh) {
+    if (G.frame % 20 || this.particles.length > this.MAX_PARTICLES * 0.5) return;
+    const col = this.AMBIENT[Terrain.setId] || this.AMBIENT.badlands;
+    for (let i = 0; i < 2; i++) this.p({
+      x: camX - 20 + this.rnd() * (vw + 40), y: camY + this.rnd() * vh,
+      vx: 12 + this.rnd() * 20, vy: -3 + this.rnd() * 6,
+      life: 2.4 + this.rnd() * 2.2, max: 4.6, size: 1 + this.rnd() * 1.6,
+      col, add: false, kind: 'dot', grav: 0, shrink: false, ambient: true,
+    });
+  },
   // Called once per effect the first time it is rendered
   spawn(e) {
     switch (e.kind) {

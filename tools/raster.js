@@ -11,6 +11,18 @@ const zlib = require('zlib');
 // look good on a marine blows out the highlights on the pale units (medic, ghost, ice-lit Protoss).
 const RIM_LIGHT = 46, RIM_COOL = 14;
 
+// The period look, and the single biggest lever on it. These sprites are rendered by a modern
+// float-shaded rasterizer, and it shows: smooth Gouraud ramps over thousands of shades read as 2010s
+// pre-rendered art, not as 1998 pre-rendered art. The games being imitated quantised to a small
+// palette and hid the seams with an ordered dither, and that crunch is most of what the eye reads as
+// "that era". SPRITE_STEP is how coarse the quantisation is (255/STEP shades a channel); the Bayer
+// matrix is what stops the bands it creates from looking like bands.
+//
+// Deliberately gentler than the terrain's: a unit is 40 px of important silhouette and posterising it
+// hard eats the detail that tells a marine from a firebat, where ground can take much more.
+const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+const SPRITE_STEP = 9;
+
 // ---------------- vector helpers ----------------
 const V = {
   add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
@@ -139,6 +151,14 @@ class Renderer {
       for (const [dx, dy] of [[-1, -1], [0, -1], [-1, 0]]) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= OW || yy >= OH || out[(yy * OW + xx) * 4 + 3] < 60) { lit = true; break; } }
       if (!lit) continue;
       rim[o] = Math.min(255, out[o] + RIM_LIGHT); rim[o + 1] = Math.min(255, out[o + 1] + RIM_LIGHT); rim[o + 2] = Math.min(255, out[o + 2] + RIM_LIGHT + RIM_COOL);
+    }
+    // Posterise last, after the outline and the rim light, so their edges get quantised with
+    // everything else instead of sitting on top as the only smooth thing in the frame. Transparent
+    // pixels are skipped: dithering into the alpha would fringe every silhouette.
+    for (let y = 0; y < OH; y++) for (let x = 0; x < OW; x++) {
+      const o = (y * OW + x) * 4; if (rim[o + 3] < 8) continue;
+      const t = (BAYER4[(y & 3) * 4 + (x & 3)] / 16 - 0.5) * SPRITE_STEP;
+      for (let k = 0; k < 3; k++) { const v = Math.round((rim[o + k] + t) / SPRITE_STEP) * SPRITE_STEP; rim[o + k] = v < 0 ? 0 : v > 255 ? 255 : v; }
     }
     return { rgba: rim, mask: mo, W: OW, H: OH };
   }

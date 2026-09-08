@@ -104,6 +104,22 @@ const Terrain = {
   ridge(x, y) { return 1 - Math.abs(this.vnoise(x, y) * 2 - 1); },
   reset(seed) { this.seed = seed; this.setId = (G.map && G.map.tileset) || 'badlands'; this.chunks.clear(); this.creepPat = null; this.mini = null; },
   // palette
+  // ---- period look ------------------------------------------------------
+  // The games this is imitating rendered to a small palette and covered the seams with an ordered
+  // dither, and that crunch is most of what makes them look like themselves. A smooth gradient is a
+  // 2010s look no matter what colours are in it. BAYER is the classic 4x4 threshold matrix; STEP is
+  // how many values a channel is allowed (255/STEP of them), and the dither is what stops the bands
+  // it creates from reading as bands.
+  //
+  // All of this happens while a chunk is being baked into its canvas, so it costs nothing per frame.
+  BAYER: [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5],
+  STEP: 13,
+  bayerAt(x, y) { return this.BAYER[(y & 3) * 4 + (x & 3)] / 16 - 0.5; },
+  posterise(col, x, y) {
+    const t = this.bayerAt(x, y) * this.STEP;
+    for (let k = 0; k < 3; k++) { let v = Math.round((col[k] + t) / this.STEP) * this.STEP; col[k] = v < 0 ? 0 : v > 255 ? 255 : v; }
+    return col;
+  },
   lowCol(n, c) { return this.pal.low(n, c); },   // n noise 0..1, c crack 0..1
   highCol(n, c) { return this.pal.high(n, c); },
   rampCol(n) { return this.pal.ramp(n); },
@@ -129,11 +145,18 @@ const Terrain = {
         const fix = h => h < 0 ? 0 : h; let w = fix(h00) * (1 - u) * (1 - v) + fix(h10) * u * (1 - v) + fix(h01) * (1 - u) * v + fix(h11) * u * v;
         w += (n2 - 0.5) * 0.35; w = w < 0 ? 0 : w > 1 ? 1 : w;
         const lo = this.lowCol(n, cr), hi = this.highCol(n, cr);
-        col = [lo[0] + (hi[0] - lo[0]) * w, lo[1] + (hi[1] - lo[1]) * w, lo[2] + (hi[2] - lo[2]) * w];
+        // Dithered transition rather than a blend. Between the two materials the pixel picks one or
+        // the other against the Bayer threshold instead of averaging them, which is how a 90s tileset
+        // joined two ground types -- an interlocking speckle, not an airbrushed ramp. Outside that
+        // band it is still a straight blend, so open ground stays smooth and only the seam speckles.
+        const edge = w > 0.28 && w < 0.72;
+        if (edge) { const pick = (w - 0.28) / 0.44 > this.bayerAt(wx, wy) + 0.5 ? hi : lo; col = [pick[0], pick[1], pick[2]]; }
+        else col = [lo[0] + (hi[0] - lo[0]) * w, lo[1] + (hi[1] - lo[1]) * w, lo[2] + (hi[2] - lo[2]) * w];
         if (i >= 0 && m.height[i] === 1) { const rc = this.rampCol(n); col = [(col[0] + rc[0]) / 2, (col[1] + rc[1]) / 2, (col[2] + rc[2]) / 2]; }
         // grain
         const g = (this.hash(wx, wy) - 0.5) * 14; col[0] += g; col[1] += g; col[2] += g;
       }
+      this.posterise(col, wx, wy);
       const o = (py * px + pxx) * 4; d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = 255;
     }
     x.putImageData(img, 0, 0);
@@ -166,6 +189,32 @@ const Terrain = {
         if (r < 0.025) { const cxp = lx + 16, cyp = ly + 16, cr = 8 + r * 200; x.strokeStyle = this.pal.crater[0]; x.lineWidth = 3; x.beginPath(); x.ellipse(cxp, cyp, cr, cr * .7, 0, 0, 7); x.stroke(); x.fillStyle = this.pal.crater[1]; x.beginPath(); x.ellipse(cxp, cyp, cr - 2, cr * .7 - 2, 0, 0, 7); x.fill(); x.strokeStyle = this.pal.crater[2]; x.lineWidth = 1.5; x.beginPath(); x.ellipse(cxp, cyp - 1, cr, cr * .7, 0, Math.PI, Math.PI * 2); x.stroke(); }
         else if (r < 0.07) { x.strokeStyle = this.pal.flora; x.lineWidth = 1.5; const gx = lx + 8 + this.hash(tx, ty + 99) * 16, gy = ly + 10 + this.hash(tx + 99, ty) * 16; for (let k = 0; k < 6; k++) { x.beginPath(); x.moveTo(gx, gy + 6); x.lineTo(gx + (k - 2.5) * 2.4, gy - 4 - this.hash(k, tx + ty) * 6); x.stroke(); } }
         else if (r < 0.10) { for (let k = 0; k < 3; k++) { const bx = lx + 6 + this.hash(tx + k, ty * 2) * 20, by = ly + 6 + this.hash(tx * 2, ty + k) * 20, br = 2 + this.hash(tx * k + 1, ty) * 3; x.fillStyle = 'rgba(0,0,0,0.35)'; x.beginPath(); x.ellipse(bx + 1, by + 1, br, br * .7, 0, 0, 7); x.fill(); x.fillStyle = this.pal.pebble; x.beginPath(); x.ellipse(bx, by, br, br * .7, 0, 0, 7); x.fill(); } }
+        // Four more low-ground doodads. Open ground was three kinds of thing spread over 7.5% of
+        // tiles, so most of a map was bare noise; these take it to about 15% and, more to the point,
+        // give the eye something with a straight edge on it. Every one of them is drawn from `hash`,
+        // which is a pure function of the tile, so a chunk redrawn after a resize is identical.
+        else if (r < 0.115) { // dry stream bed: a few linked scours
+          x.strokeStyle = this.pal.crack; x.lineWidth = 2.5; x.lineCap = 'round'; x.beginPath();
+          let sx = lx + 2, sy = ly + 6 + this.hash(tx, ty * 3) * 20; x.moveTo(sx, sy);
+          for (let k = 1; k <= 3; k++) x.lineTo(lx + k * 10, sy + (this.hash(tx + k, ty) - 0.5) * 14);
+          x.stroke(); x.strokeStyle = this.pal.rim; x.lineWidth = 1; x.stroke();
+        }
+        else if (r < 0.128) { // bleached bones / debris: three short pale strokes
+          const bx = lx + 8 + this.hash(tx * 3, ty) * 14, by = ly + 10 + this.hash(tx, ty * 5) * 14;
+          x.strokeStyle = 'rgba(226,220,198,0.5)'; x.lineWidth = 2; x.lineCap = 'round';
+          for (let k = 0; k < 3; k++) { const a = this.hash(tx + k * 5, ty + k) * 3.14; x.beginPath(); x.moveTo(bx, by); x.lineTo(bx + Math.cos(a) * 9, by + Math.sin(a) * 6); x.stroke(); }
+        }
+        else if (r < 0.142) { // a single larger boulder with a lit cap, to break the pebble rhythm
+          const bx = lx + 10 + this.hash(tx * 2, ty * 3) * 12, by = ly + 12 + this.hash(tx * 3, ty * 2) * 10, br = 5 + this.hash(tx, ty) * 4;
+          x.fillStyle = this.pal.rubbleShade; x.beginPath(); x.ellipse(bx + 2, by + 2, br, br * .72, 0, 0, 7); x.fill();
+          x.fillStyle = this.pal.boulder[1]; x.beginPath(); x.ellipse(bx, by, br, br * .72, 0, 0, 7); x.fill();
+          x.fillStyle = this.pal.boulder[0]; x.beginPath(); x.ellipse(bx - br * .2, by - br * .3, br * .62, br * .42, 0, 0, 7); x.fill();
+        }
+        else if (r < 0.155) { // scorch/vent stain, a soft dark patch that is not a crater
+          const bx = lx + 16, by = ly + 16, br = 8 + this.hash(tx * 5, ty * 5) * 7;
+          const g = x.createRadialGradient(bx, by, 1, bx, by, br); g.addColorStop(0, this.pal.crack); g.addColorStop(1, 'rgba(0,0,0,0)');
+          x.fillStyle = g; x.beginPath(); x.ellipse(bx, by, br, br * .7, 0, 0, 7); x.fill();
+        }
       } else if (h === 2 && !cl && m.walk[i]) { // plateau plate seams
         const r = this.hash(tx * 7, ty * 19); if (r < 0.06) { x.strokeStyle = 'rgba(0,0,0,0.18)'; x.lineWidth = 1; x.beginPath(); x.moveTo(lx + 2, ly + 30); x.lineTo(lx + 14, ly + 12); x.lineTo(lx + 30, ly + 6); x.stroke(); x.strokeStyle = 'rgba(255,255,255,0.08)'; x.beginPath(); x.moveTo(lx + 3, ly + 31); x.lineTo(lx + 15, ly + 13); x.lineTo(lx + 31, ly + 7); x.stroke(); }
       }
