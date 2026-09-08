@@ -336,7 +336,12 @@ const UI = {
   // ---------------- command card ----------------
   buildCard() {
     const btns = []; const sel = this.ownSel(); this.cardButtons = btns; if (!sel.length) return btns;
-    const p = G.players[G.human]; const u = sel[0];
+    const p = G.players[G.human];
+    // Normally the card follows the first selected unit. The exception is a selection holding both an
+    // egg and larvae, which is exactly what you have the moment you morph one of several larvae: the egg
+    // stays selected so its rally can be set, but the morph buttons must stay up so the next press
+    // morphs the next larva. So the card reaches past a leading egg for the first larva.
+    const u = (sel[0].def.egg && sel.find(x => x.def.larva)) || sel[0];
     const B = (slot, label, hk, fn, o = {}) => btns.push(Object.assign({ slot, label, hk, fn }, o));
     // Why a greyed button is greyed, for UI.press to say out loud. Player.missingReq already knew;
     // nothing ever asked it on behalf of the command card.
@@ -346,7 +351,10 @@ const UI = {
       const list = DATA.buildMenu[p.race][this.cardMenu]; list.forEach((id, i) => { const d = DATA.buildings[id]; const ok = p.hasReq(d); B(i, d.name, d.hk, () => { this.placing = { def: d, builder: u, tx: Math.floor(this.mouse.wx / TILE - d.w / 2 + .5), ty: Math.floor(this.mouse.wy / TILE - d.h / 2 + .5) }; }, { cost: d, enabled: ok, dim: !ok, why: why(d) }); });
       B(8, 'Cancel', 'Escape', () => { this.cardMenu = null; }); return btns;
     }
-    if (u.def.larva) { B(6, 'Set Rally', 'R', setPending('rally')); DATA.larvaMorphs.forEach((id, i) => { const d = DATA.units[id]; const ok = p.hasReq(d); B(i, d.name, d.hk, () => { for (const l of sel) if (l.def.larva) { if (G.larvaMorph(l, id)) { this.selection = this.selection.filter(x => x.alive && x.def.larva); break; } } }, { cost: d, enabled: ok, dim: !ok, why: why(d) }); }); return btns; }
+    // The morphed larva stays in the selection. larvaMorph reuses the object, so the egg IS the larva
+    // and its rally can be set the instant it morphs; the filter drops only what actually died. Eggs are
+    // skipped by the `l.def.larva` test below, so the next press still morphs the next larva.
+    if (u.def.larva) { B(6, 'Set Rally', 'R', setPending('rally')); DATA.larvaMorphs.forEach((id, i) => { const d = DATA.units[id]; const ok = p.hasReq(d); B(i, d.name, d.hk, () => { for (const l of sel) if (l.def.larva) { if (G.larvaMorph(l, id)) { this.selection = this.selection.filter(x => x.alive); break; } } }, { cost: d, enabled: ok, dim: !ok, why: why(d) }); }); return btns; }
     if (u.def.egg) { B(6, 'Set Rally', 'R', setPending('rally')); B(8, 'Cancel', 'Escape', () => { for (const e of sel) G.cancelProd(e, 0); }); return btns; }
     if (u.isBuilding && sel.length === 1) {
       const d = u.def; let i = 0;
