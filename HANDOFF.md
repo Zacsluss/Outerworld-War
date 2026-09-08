@@ -392,7 +392,13 @@ Then decide whether re-baselining PvT and PvZ properly is worth two more full ru
 they are the only matchups in the project with no trustworthy number at all, and the M8 experience is
 that a matchup nobody has measured recently is a matchup nobody knows.
 
-### 1. Write a test that plays like a person
+### 1. Write a test that plays like a person -- DONE in M9
+
+All three landed and are in `test/all.js`: `rates.js` (372 checks, every weapon's observed interval
+against its `wCd` in both hold and attack), `cardsay.js` (every greyed command-card button explains
+itself) and `wrongthing.js` (unreachable orders, unaffordable queues, cancelled morphs). The original
+reasoning is kept below because it is the argument for writing more of them.
+
 
 The strongest finding of M8 is in "The three bugs a player found in an afternoon" above: two of the
 three were invisible to every check in this repo and obvious within a minute of play. `playtest.js`
@@ -409,7 +415,7 @@ Concretely, and each of these would have caught a real bug:
 - **Do the wrong thing on purpose.** Order units to unreachable places, hold in odd spots, queue
   things that cannot be afforded, cancel mid-morph.
 
-### 2. The graphics, continued -- but read the budget first
+### 2. The graphics, continued -- DONE in M9; read the budget before adding more
 
 The draw pass is at **4.40 ms of a 6 ms target**, so there is roughly 1.6 ms left, not the 3.7 ms M8
 started with. Budget in blits, not effects: one extra full-sprite blit per unit is about 2 ms, which
@@ -424,9 +430,14 @@ Worth doing, roughly in order:
   to be built into the pattern or the mask rather than applied after -- see `drawCreep`.
 - **Death animations.** There is one death per unit and it is a collapse. Two or three, picked by
   `u.id`, would show constantly in every fight.
-- **More facings.** 16 directions is visible as a snap on slow-turning units. 32 doubles sheet memory.
-- **Buildings.** They got the material pass and the rim light but none of the silhouette attention the
-  infantry did, and they still cast the old ellipse shadow rather than their own outline.
+- ~~**More facings.**~~ Done in M9, but per unit rather than globally. Doubling every sheet costs
+  x1.96 bytes and takes the runtime tinted-sheet ceiling from 576 MB to 1152 MB; measurement said only
+  siege_tank (3.3 sim frames), reaver (2.6), ultralisk (2.0) and vulture (1.8) hold a 16-direction
+  bucket long enough to see, and the nineteen types with no `TURN` entry cross nearly two buckets a
+  frame. Those five are baked at 32 for +3.3 MB. `FINE_DIRS` in `tools/bake.js` is the list; the atlas
+  had recorded `cols` per unit all along and nothing read it, so this had to land as one commit.
+- ~~**Buildings.**~~ Done in M9: `Sprites.buildingShadow` casts the building's own outline, cached per
+  type, so a base sits on the ground instead of on top of it.
 
 ### 3. Balance, once task 0 has told you where you are
 
@@ -441,8 +452,8 @@ Do not plan this before reading the runs. What M8 leaves for it:
 
 ### 4. Leftovers
 
-- **`test/techtree.js` is not in any suite.** It runs in under a second and would catch a whole class
-  of "why can't I build X". Wire it into whatever runs the other checks.
+- ~~**`test/techtree.js` is not in any suite.**~~ Wired into `test/all.js` in M9, along with `rates`,
+  `cardsay` and `wrongthing`.
 - **The genuine 30-a-minute of idle production.** Unchanged from M7's list.
 
 ## Architecture map
@@ -659,8 +670,9 @@ reverted. Zerg buys upgrades it does not live to use. Treat this lever as closed
   assertion that a rejoin is *fast* keeps its own 120 s, because that one is about the code.
 - **Replay backward-seek** restarts from a checkpoint 30 s back, so it is fast but not instant;
   checkpoints past 40 minutes are thinned to every 60 s.
-- **Editor**: the brush is a circle only (rectangle fill is a separate mode). Map size cycles
-  96/128/160/192 and the engine accepts 64-256, but the size button is the only way to change it.
+- **Editor**: done as of M9. The brush is round or square (B), and "Size..." takes a number or WxH and
+  clamps to the 64-256 the engine has always accepted. Non-square maps were legal from the start and
+  simply unreachable; `test/editor.js` now plays one at 64x256.
 - **Art**: five terrain tilesets — badlands, jungle, ice, desert, space. Creep is chunk-cached with a dithered border as of M9. A sixth tileset is a palette entry in `js/terrain.js`
   plus an id in `TILESET_IDS` in `js/map.js`, and nothing else.
 - **Host migration** is not a thing that needs building: the relay picks the first non-dropped human as
