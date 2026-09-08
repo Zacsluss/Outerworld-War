@@ -44,7 +44,9 @@ Read these three things before touching anything:
 > fire lived. That is the opposite of what the symptom suggested, and it is the whole argument for
 > re-measuring rather than reasoning. Task 1's fix then took eight of those points back.
 >
-> **TvZ is 79% [75-83] and still outside 60/40.** PvT and PvZ have not been re-measured at all yet.
+> **TvZ is 79% [75-83] and still outside 60/40.** PvT is 62% [57-67] and PvZ 63% [58-67], both
+> undecided and both drifted toward Protoss from 54% and 49%. Three matchups, none of them
+> comfortably inside the band -- that is where M9 leaves the balance.
 >
 > **3. M7's stated cause for the TvZ move was wrong, and task 0 is what showed it.** The handoff said
 > to check whether `91e4195` paid Terran in upgrades. It did not: Terran's finished upgrades at ten
@@ -595,10 +597,29 @@ reverted. Zerg buys upgrades it does not live to use. Treat this lever as closed
 
 ## Known issues and rough edges
 
+- **Replay backward-seek into the thinned checkpoint region lands on the wrong state.** `test/longgame.js`
+  reproduces it: seeking to 23:20 and to 46:40 in a 60-minute replay both come back with a mismatched
+  state hash, and the seek takes 207 s against a 90 s budget. Newly *visible* rather than newly
+  introduced -- it was masked until `51a0755` by the positional-resource bug, which made the same seek
+  throw before it could get far enough to be wrong.
+
+  What has been ruled out, so M10 does not repeat it. **Snapshots do not alias live state**: taking one,
+  running 16,368 further frames and restoring the original object reproduces its hash exactly. **The
+  simulation re-simulates long spans faithfully**: restoring a checkpoint and running 0.5, 2.1, 8.3 and
+  11.4 minutes forward matches the original hash at every mark. Both probes are AI-only, with no
+  command log. So the fault is in the replay/UI layer -- `UI.seekTo`, `UI.snap` and `CMD.applyPending`
+  -- and specifically in replaying a *command log* across a gap where thinning has removed the nearby
+  checkpoints, not in `js/snapshot.js` or the sim. `test/observer.js` passes because a short replay is
+  never thinned. The thinning itself is `js/ui.js:108`.
+
 - **Terran vs Zerg is 79% [75-83] over 380 decided games**, OUTSIDE 60/40. Re-measured after the Hold
   Position fix, so this one is trustworthy.
-- **PvT and PvZ have no trustworthy number.** Every figure for them predates `fcf08be` and is void.
-  The run covering them was still going when M8 ended; M9 task 0 reads it.
+- **PvT is 62% [57-67] and PvZ 63% [58-67] for Protoss**, both *undecided* -- the interval crosses the
+  60/40 line, so neither can be called either way without about 97 more decided games. Both re-measured
+  after the Hold Position fix, on shipped code. Both have drifted up from their last trustworthy
+  figures (54% and 49%), which is consistent with the drone-gate fix: it army-gates Terran and Protoss
+  worker production, and the proxy called PvT 2 of 3 and PvZ 1 of 3 toward Protoss before the run.
+  **No matchup in the game is now comfortably inside the band.**
 - **The AI casts 5 of 28 spell abilities.** The tech buildings arrive now; the units do not get trained
   and the games end first. `node test/casters.js` is the measurement.
 - **The AI leaves production buildings idle**, 114 a minute over both players — but two thirds of that
