@@ -44,9 +44,27 @@ Read these three things before touching anything:
 > fire lived. That is the opposite of what the symptom suggested, and it is the whole argument for
 > re-measuring rather than reasoning. Task 1's fix then took eight of those points back.
 >
-> **TvZ is 79% [75-83] and still outside 60/40.** PvT is 62% [57-67] and PvZ 63% [58-67], both
-> undecided and both drifted toward Protoss from 54% and 49%. Three matchups, none of them
-> comfortably inside the band -- that is where M9 leaves the balance.
+> **After M9's Zerg build-order fix, no matchup is formally OUTSIDE 60/40 for the first time since M4**
+> -- but none is confirmed inside either. All three are "undecided": the interval still crosses the
+> line, and the harness's own rule is that undecided means undecided.
+>
+> | matchup | M8 as shipped | M9 as shipped | paired | verdict |
+> |---|---|---|---|---|
+> | TvZ | 79% [75-83] T | **64% [59-69] T** | 36 to T, 90 away of 360 | **-15 pts, p = 0.000** |
+> | PvZ | 63% [58-67] P | **36% [31-41] P** | 32 to P, 136 away of 380 | **-27 pts, p = 0.000** |
+> | PvT | 62% [57-67] P | not re-measured | -- | the change is Zerg-only and cannot move it |
+>
+> **The fix is right and it overshot.** -15 on TvZ is the second largest balance move in the project's
+> history after M5's 24, and it went the direction five milestones had been trying to go. The same
+> change moved PvZ 27 points, which is roughly twice what centring it needed: Protoss went from
+> favoured to unfavoured without stopping in the middle. Zerg was under-built against everyone, and
+> correcting that helped it against everyone.
+>
+> **This is the open problem M10 inherits, and it is a better one than M9 was handed.** The question is
+> no longer "why does Zerg lose" but "the Zerg correction is too strong by roughly half in PvZ" --
+> which is a tuning question with a measured size, not a search. Note that a Zerg-only lever cannot fix
+> it: the same reserve serves both matchups. Either PvZ needs a Protoss-side answer, or the reserve
+> needs to be conditioned on something that differs between the two.
 >
 > **3. M7's stated cause for the TvZ move was wrong, and task 0 is what showed it.** The handoff said
 > to check whether `91e4195` paid Terran in upgrades. It did not: Terran's finished upgrades at ten
@@ -612,14 +630,12 @@ reverted. Zerg buys upgrades it does not live to use. Treat this lever as closed
   checkpoints, not in `js/snapshot.js` or the sim. `test/observer.js` passes because a short replay is
   never thinned. The thinning itself is `js/ui.js:108`.
 
-- **Terran vs Zerg is 79% [75-83] over 380 decided games**, OUTSIDE 60/40. Re-measured after the Hold
-  Position fix, so this one is trustworthy.
-- **PvT is 62% [57-67] and PvZ 63% [58-67] for Protoss**, both *undecided* -- the interval crosses the
-  60/40 line, so neither can be called either way without about 97 more decided games. Both re-measured
-  after the Hold Position fix, on shipped code. Both have drifted up from their last trustworthy
-  figures (54% and 49%), which is consistent with the drone-gate fix: it army-gates Terran and Protoss
-  worker production, and the proxy called PvT 2 of 3 and PvZ 1 of 3 toward Protoss before the run.
-  **No matchup in the game is now comfortably inside the band.**
+- **No matchup is formally outside 60/40, and none is confirmed inside.** TvZ 64% [59-69] to Terran,
+  PvZ 36% [31-41] to Protoss (so 64% to Zerg), PvT 62% [57-67] to Protoss. All three "undecided" --
+  about 97 more decided games each would be needed to call any of them. PvZ is the one that moved
+  furthest and is the one to look at first; see Status.
+- **PvT is 62% [57-67] for Protoss and has not been re-measured since the Zerg build-order fix**,
+  which is Zerg-only and cannot affect it.
 - **The AI casts 5 of 28 spell abilities.** The tech buildings arrive now; the units do not get trained
   and the games end first. `node test/casters.js` is the measurement.
 - **The AI leaves production buildings idle**, 114 a minute over both players — but two thirds of that
