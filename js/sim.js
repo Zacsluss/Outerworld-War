@@ -206,7 +206,12 @@ class Unit {
     if (d.mine) { Abilities.mineTick(this); return; }
     switch (o.type) {
       case 'idle': this.tickIdle(); break;
-      case 'hold': { const t = this.autoTarget(true); if (t) this.fireAt(t); break; }
+      // Hold Position never checked its weapon cooldown, so a unit holding with a target in range fired
+      // every frame -- 24 shots a second where a siege tank is allowed one every 75 frames. It reads as
+      // a siege bug because siege mode is the only thing that puts a unit on hold and leaves it there
+      // (Abilities.instant sets order = hold when it sieges), and a tank's shot is 70 with splash. It
+      // was never siege-specific: every race's units did it on H.
+      case 'hold': { const t = this.autoTarget(true); if (t && this.cooldown <= 0) this.fireAt(t); break; }
       case 'move': if (this.moveTo(o.x, o.y, o.target)) this.nextOrder(); break;
       case 'follow': if (!o.target.alive) { this.nextOrder(); break; } if (dist(this, o.target) > this.r + o.target.r + 24) { this.moveTo(o.target.x, o.target.y, o.target); if (this.moveFailed) this.nextOrder(); } break;
       case 'attackmove': {
@@ -224,7 +229,13 @@ class Unit {
         if (!this.weaponFor(o.target)) { if (this.hasWeapon() || d.worker) { if (dist(this, o.target) > 48) this.moveTo(o.target.x, o.target.y, o.target); else this.nextOrder(); } else this.nextOrder(); break; }
         // an immobile attacker (sieged tank, burrowed lurker) whose target is out of range keeps shooting whatever is in range
         if ((this.sieged || (this.burrowed && !d.mine)) && !this.inRange(o.target)) {
-          const t = this.autoTarget(true); if (t) { this.fireAt(t); break; }
+          // ...on its weapon's cooldown, like every other way of firing. This is the one path that
+          // called fireAt directly instead of going through engage(), which is where the `cooldown <= 0`
+          // test lives, so a sieged tank re-acquiring a new target fired every frame: 75 shots in the
+          // time it is allowed one. Reported from play as "one tank, 81 kills in seconds", and it is
+          // reachable whenever a held tank is shot at, because being shot at turns hold into an attack
+          // order (G.onHit) whose target then dies or walks out of range.
+          const t = this.autoTarget(true); if (t) { if (this.cooldown <= 0) this.fireAt(t); break; }
           // Nothing in range. A Lurker's weapon is burrowOnly so staying down is the whole point, but any
           // other burrowed unit cannot shoot at all and was just sitting on the order forever: surface.
           if (this.burrowed && !d.mine && !((d.gw && d.gw.burrowOnly) || (d.aw && d.aw.burrowOnly))) { this.burrowed = false; this.transT = 20; this.path = null; }
