@@ -35,7 +35,7 @@ Then open http://localhost:8765. The server also prints a LAN address for multip
 
 **AI**: scripted openings per race, macro (workers, supply, gas saturation, expansions, production, add-ons, static defence), research priorities, scouting, wave attacks with grouping and reinforcement, drop play with transports, kiting for vultures/mutalisks/dragoons, siege/unsiege, stim, lurker burrow, and autocasts for storm, plague/swarm, irradiate, broodlings, stasis, mines and nukes. The autocasts are written and tested, but in a normal-length game the AI reaches almost none of them: it casts 5 of the 28 spell abilities, because the tech that unlocks the rest lands at 8-12 minutes and games end at 15.9. `node test/casters.js` prints exactly which, and when.
 
-**Presentation**: procedural terrain with cliffs, ramps, boulders and doodads in five tilesets (Badlands, Jungle, Ice, Desert, Space Platform); sprites baked from 3D models (16 facings, 4 idle, 8 walk and 5 attack frames, consistent lighting, a baked rim light on the sun-facing edge, team colours, death collapse); ground units cast their own silhouette as a shadow; muzzle flashes and shield-hit rings; animated building parts; damage states at two thresholds for every race (Terran scorch and buckled plating, Zerg necrosis and ichor, Protoss hull rents with plasma arcs); additive particle effects, blood, scorch marks and lingering corpses; BW-style bevelled console with icon buttons, portrait, wireframes and a custom cursor; score screen with per-player stats and APM.
+**Presentation**: procedural terrain with cliffs, ramps, boulders and doodads in five tilesets (Badlands, Jungle, Ice, Desert, Space Platform); sprites baked from 3D models (16 facings, 4 idle, 8 walk and 5 attack frames, consistent lighting, a baked rim light on the sun-facing edge, team colours, three death poses picked per corpse); ground units cast their own silhouette as a shadow; muzzle flashes and shield-hit rings; faceted mineral clusters that empty as they are mined and geysers with cracked rock rims; a dithered lumpy creep border; per-race console skins (Terran rolled steel, Zerg carapace, Protoss gilded stone); animated building parts; damage states at two thresholds for every race (Terran scorch and buckled plating, Zerg necrosis and ichor, Protoss hull rents with plasma arcs); additive particle effects, blood, scorch marks and lingering corpses; BW-style bevelled console with icon buttons, portrait, wireframes and a custom cursor; score screen with per-player stats and APM.
 
 ## Art pipeline
 
@@ -45,7 +45,7 @@ Units and buildings are 3D models built from primitives in [tools/models.js](too
 node broodwar/tools/bake.js
 ```
 
-That bakes everything in about 20 seconds and writes `assets/sprites/*.png`, `assets/atlas.js` and `assets/preview.png` (a contact sheet). Use `--only marine,hatchery` to rebake a few models. If the assets are missing the game falls back to vector painters.
+That bakes everything in about 40 seconds and writes `assets/sprites/*.png`, `assets/atlas.js` and `assets/preview.png` (a contact sheet). Use `--only marine,hatchery` to rebake a few models. If the assets are missing the game falls back to vector painters.
 
 ## Controls
 
@@ -55,6 +55,14 @@ Left click select, drag to box-select, right click for smart commands. `A` attac
 
 ```bash
 node broodwar/test/features.js      # 87 gameplay checks
+node broodwar/test/all.js                   # the eleven fast deterministic checks, in parallel
+node broodwar/test/rates.js                 # every weapon's observed rate of fire matches its table entry
+node broodwar/test/cardsay.js               # every greyed command-card button explains itself when pressed
+node broodwar/test/wrongthing.js            # do the wrong thing on purpose: nothing crashes, nothing wedges
+node broodwar/test/net_many.js              # 3-4 lockstep clients, simultaneous drops, host migration
+node broodwar/test/longgame.js              # a 60-minute game and its replay past the checkpoint thinning
+node broodwar/test/eightplayer.js           # 8 players on a 192x192 custom map
+node broodwar/test/saveload.js              # saves taken mid-nuke, mid-morph, mid-Recall reload exactly
 node broodwar/test/determinism.js   # identical runs match; replay reproduces the original
 node broodwar/test/version.js        # saves carry a build stamp; a save from another build is refused
 node broodwar/test/movement.js       # unreachable goals, wedged units, burrowed units

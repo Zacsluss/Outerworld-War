@@ -647,6 +647,14 @@ reverted. Zerg buys upgrades it does not live to use. Treat this lever as closed
 ```bash
 node test/serve.js 8765          # or double-click PLAY.bat; prints LAN URL
 node test/features.js            # 87 gameplay checks
+node test/all.js                   # the eleven fast deterministic checks, in parallel
+node test/rates.js                 # every weapon's observed rate of fire matches its table entry
+node test/cardsay.js               # every greyed command-card button explains itself when pressed
+node test/wrongthing.js            # do the wrong thing on purpose: nothing crashes, nothing wedges
+node test/net_many.js              # 3-4 lockstep clients, simultaneous drops, host migration
+node test/longgame.js              # a 60-minute game and its replay past the checkpoint thinning
+node test/eightplayer.js           # 8 players on a 192x192 custom map
+node test/saveload.js              # saves taken mid-nuke, mid-morph, mid-Recall reload exactly
 node test/determinism.js         # identical runs match; replay reproduces the original
 node test/alerts.js              # the four player alerts fire when they should, never when they should not
 node test/version.js             # build stamp: a save from another build is refused
