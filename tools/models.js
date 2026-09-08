@@ -19,7 +19,24 @@ const yaw = (amp, phase = 0, sign = 1) => st => ({ rot: [0, st.walk == null ? 0 
 const flap = (amp, sign = 1) => st => ({ rot: [st.walk == null ? 0 : sign * amp * Math.sin(st.walk * Math.PI * 2), 0, 0] });
 const recoil = k => st => ({ pos: [st.atk == null ? 0 : -k * Math.max(0, 1 - st.atk * 1.5), 0, 0] });
 const lunge = k => st => ({ pos: [st.atk == null ? 0 : k * Math.sin(st.atk * Math.PI), 0, 0] });
-const AK = st => st.atk == null ? 0 : Math.sin(st.atk * Math.PI);
+// The attack curve, and the reason attacks used to read as a flicker rather than a hit. It was
+// sin(t*PI): a symmetric swell that eases in, peaks, and eases out at the same rate. Nothing in
+// animation moves like that. A strike is anticipation, then a snap, then a slow settle -- the pull
+// back is what tells the eye a blow is coming, and the asymmetry between the fast out and the slow
+// return is what gives it force.
+//
+// Every model drives its attack off this one function, so all ~50 of them gain the timing at once.
+// It goes NEGATIVE during the wind-up, which is deliberate: arms rotate the other way and `size`
+// multipliers dip below 1, so a unit compresses before it strikes. Bounded at -0.28, and the largest
+// multiplier any model applies is 2, so the smallest scale this can produce is 0.44 -- never zero.
+const AK = st => {
+  if (st.atk == null) return 0;
+  const t = st.atk;
+  if (t < 0.34) return -0.28 * Math.sin((t / 0.34) * Math.PI);           // anticipation
+  const u = (t - 0.34) / 0.66;
+  return u < 0.28 ? Math.sin((u / 0.28) * (Math.PI / 2))                  // snap out
+                  : Math.cos(((u - 0.28) / 0.72) * (Math.PI / 2));        // and settle back, slower
+};
 // Idle channel: 0..1 around a loop, null while walking or attacking. Keep the amplitudes small - at
 // 1:1 an infantry sprite is about 24 px tall, so anything larger reads as a twitch rather than breathing.
 const IDLE = st => st.idle == null ? 0 : Math.sin(st.idle * Math.PI * 2);
@@ -99,10 +116,36 @@ const RIG = {
 // ---------------- units ----------------
 const UNITS = {
   scv: () => { const r = RIG.biped({ legLen: 0.4, legW: 0.2, torsoH: 0.9, torsoW: 1.2, torsoD: 1.1, headR: 0.3, pads: false, pack: false, suit: C.metal, visor: C.visor, stride: 0.5 }); r.children[2].children.push(P('box', [0.9, 0.55, 1.1], [0, 0.05, 0], m(C.metal, { spec: 0.4 })), P('box', [0.5, 0.35, 0.8], [-0.2, 0.33, 0], TEAM), P('box', [0.3, 0.4, 0.3], [-0.65, 0, 0], m(C.metalD)), P('sphere', [0.3, 0.3, 0.3], [-0.85, 0, 0], GLOW([0.5, 0.8, 1]))); for (const s of [-1, 1]) { const arm = N([0.45, 0.1, s * 0.55], { anim: lunge(0.15) }); arm.children.push(cylX(0.8, 0.12, [0.4, 0, 0], m(C.gun)), P('box', [0.25, 0.12, 0.3], [0.85, 0, 0], m(C.metalL))); r.children[2].children.push(arm); } return r; },
-  marine: () => { const r = RIG.biped({ gun: { len: 1.3 }, suit: C.metal }); r.children[2].children.push(P('sphere', [0.14, 0.14, 0.14], [0.2, 0.55, -0.5], GLOW([1, 0.9, 0.6]))); return r; },
-  firebat: () => { const r = RIG.biped({ suit: [0.62, 0.55, 0.45], torsoW: 1.05, pads: true }); const t = r.children[2]; for (const s of [-1, 1]) { t.children.push(cylX(1.1, 0.2, [0.6, -0.05, s * 0.45], m(C.gun)), P('sphere', [0.22, 0.22, 0.22], [1.2, -0.05, s * 0.45], GLOW(C.orange), { anim: st => ({ size: [1 + AK(st) * 1.5, 1 + AK(st) * 1.5, 1 + AK(st) * 1.5] }) }), P('cyl', [0.3, 0.6, 0.3], [-0.5, 0.1, s * 0.3], m([0.5, 0.18, 0.14]))); } return r; },
-  medic: () => { const r = RIG.biped({ suit: C.white, gun: { len: 0.7, w: 0.1, color: C.metalD } }); r.children[2].children.push(P('box', [0.1, 0.35, 0.12], [-0.55, 0.1, 0], GLOW(C.red)), P('box', [0.1, 0.12, 0.35], [-0.55, 0.1, 0], GLOW(C.red))); return r; },
-  ghost: () => RIG.biped({ suit: [0.24, 0.27, 0.32], torsoW: 0.75, torsoD: 0.65, headR: 0.42, gun: { len: 1.8, w: 0.11 }, visor: [1, 0.35, 0.35], pads: true, recoil: 0.2 }),
+  // ---- Terran infantry silhouettes -------------------------------------------------------------
+  // These four were the same biped in four colours. At 40 px, under fog, tinted by team colour and
+  // sitting on badlands, colour is the first thing you lose -- shape is what you actually identify a
+  // unit by, and identifying them is how you decide whether to engage. Each one now carries one
+  // deliberately oversized feature that breaks its outline from above, which is the only angle this
+  // game is ever seen from. Nothing here changes a stat; it is all in tools/models.js and baked.
+  marine: () => { const r = RIG.biped({ gun: { len: 1.3 }, suit: C.metal }); const t = r.children[2];
+    t.children.push(P('sphere', [0.14, 0.14, 0.14], [0.2, 0.55, -0.5], GLOW([1, 0.9, 0.6])));
+    // a heavy squared pauldron on the gun shoulder, and a stubby aerial: the marine reads as a wide block
+    t.children.push(P('box', [0.42, 0.3, 0.34], [0.05, 0.5, -0.62], m(C.metalD, { spec: 0.4 })), P('box', [0.46, 0.14, 0.38], [0.05, 0.66, -0.62], TEAM));
+    t.children.push(P('cyl', [0.05, 0.7, 0.05], [-0.3, 0.75, -0.38], m(C.metalD), { rot: [0.25, 0, 0.12] }));
+    return r; },
+  firebat: () => { const r = RIG.biped({ suit: [0.62, 0.55, 0.45], torsoW: 1.05, pads: true }); const t = r.children[2]; for (const s of [-1, 1]) { t.children.push(cylX(1.1, 0.2, [0.6, -0.05, s * 0.45], m(C.gun)), P('sphere', [0.22, 0.22, 0.22], [1.2, -0.05, s * 0.45], GLOW(C.orange), { anim: st => ({ size: [1 + AK(st) * 1.5, 1 + AK(st) * 1.5, 1 + AK(st) * 1.5] }) }));
+      // fuel tanks, much bigger than they were and standing proud of the shoulders with a capped valve:
+      // the twin-cylinder hump is the firebat's whole silhouette from above
+      t.children.push(P('cyl', [0.34, 0.95, 0.34], [-0.62, 0.3, s * 0.34], m([0.55, 0.2, 0.15], { spec: 0.5 })), P('cyl', [0.4, 0.14, 0.4], [-0.62, 0.8, s * 0.34], m(C.metalD)), P('sphere', [0.12, 0.12, 0.12], [-0.62, 0.92, s * 0.34], GLOW(C.orange)));
+    } return r; },
+  medic: () => { const r = RIG.biped({ suit: C.white, gun: { len: 0.7, w: 0.1, color: C.metalD } }); const t = r.children[2];
+    // the cross is lifted onto a raised dorsal plate so it is visible from overhead, not on the spine
+    // where nothing but the floor could see it, and it is flanked by two canisters that widen the top
+    t.children.push(P('box', [0.5, 0.12, 0.62], [-0.4, 0.52, 0], m(C.white, { spec: 0.3 })), P('box', [0.12, 0.16, 0.44], [-0.4, 0.62, 0], GLOW(C.red)), P('box', [0.44, 0.16, 0.12], [-0.4, 0.62, 0], GLOW(C.red)));
+    for (const s of [-1, 1]) t.children.push(P('cyl', [0.17, 0.5, 0.17], [-0.5, 0.2, s * 0.46], m([0.85, 0.88, 0.9], { spec: 0.55 })));
+    t.children.push(P('sphere', [0.1, 0.1, 0.1], [0.35, 0.6, 0.4], GLOW([0.7, 1, 1])));
+    return r; },
+  ghost: () => { const r = RIG.biped({ suit: [0.24, 0.27, 0.32], torsoW: 0.75, torsoD: 0.65, headR: 0.42, gun: { len: 1.8, w: 0.11 }, visor: [1, 0.35, 0.35], pads: true, recoil: 0.2 }); const t = r.children[2];
+    // long rifle case slung diagonally across the back: a hard straight line no other infantry has,
+    // which is what separates a ghost from a marine at a glance when both are dark against dark ground
+    t.children.push(P('box', [1.5, 0.13, 0.16], [-0.3, 0.42, 0.2], m([0.16, 0.18, 0.22], { spec: 0.35 }), { rot: [0, 0.45, 0.22] }));
+    t.children.push(P('cyl', [0.04, 0.85, 0.04], [-0.35, 0.7, -0.3], m(C.metalD), { rot: [0.4, 0, 0.2] }));
+    return r; },
   vulture: () => { const r = RIG.ship({ alt: 0.3, body: 'box', bodySize: [1.9, 0.4, 0.9], color: C.metal, cockpit: false, engines: [[-1.0, 0.05, 0]], engineColor: [0.5, 0.75, 1] }); r.children.push(P('sphere', [0.5, 0.5, 0.5], [-0.2, 0.35, 0], m(C.metalD)), P('box', [0.5, 0.12, 0.35], [0.6, 0.25, 0], m(C.metalL)), cylX(0.6, 0.12, [1.1, 0.1, -0.25], m(C.gun), { anim: recoil(0.15) }), cylX(0.6, 0.12, [1.1, 0.1, 0.25], m(C.gun), { anim: recoil(0.15) }), P('wedge', [0.5, 0.2, 0.9], [1.05, 0.05, 0], m(C.metal))); return r; },
   siege_tank: () => RIG.tank({}), siege_tank_s: () => RIG.tank({ sieged: true }),
   goliath: () => { const root = N([0, 0, 0]); for (const s of [-1, 1]) { const leg = N([-0.2, 0.75, s * 0.55], { anim: swing(0.45, 0, s) }); leg.children.push(P('cyl', [0.26, 0.5, 0.26], [-0.1, -0.25, 0], m(C.metalD), { rot: [0, 0, 0.5] })); const shin = N([-0.25, -0.5, 0], { rot: [0, 0, -0.8] }); shin.children.push(P('cyl', [0.22, 0.5, 0.22], [0, -0.25, 0], m(C.metalD)), P('box', [0.55, 0.14, 0.4], [0.05, -0.5, 0], m(C.metalD))); leg.children.push(shin); root.children.push(leg); } const body = N([0, 1.05, 0], { anim: recoil(0.12) }); root.children.push(body); body.children.push(P('box', [1.3, 0.75, 1.2], [0, 0, 0], m(C.metal, { spec: 0.45 })), P('box', [0.5, 0.1, 0.7], [-0.25, 0.42, 0], TEAM), P('box', [0.2, 0.3, 0.5], [0.66, 0.05, 0], GLOW(C.visor))); for (const s of [-1, 1]) body.children.push(cylX(1.2, 0.16, [0.55, 0.15, s * 0.78], m(C.gun), { anim: recoil(0.2) })); return root; },

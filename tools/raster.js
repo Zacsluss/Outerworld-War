@@ -23,6 +23,26 @@ const RIM_LIGHT = 46, RIM_COOL = 14;
 const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 const SPRITE_STEP = 9;
 
+// Per-race material response. Every unit in the game used to be shaded by one BRDF -- the same
+// specular exponent, the same ambient, no scattering -- so a hydralisk was lit like a siege tank that
+// happened to be a different colour. Three species should not reflect light the same way, and that
+// difference costs nothing at runtime because it is baked.
+//
+//   exp      specular tightness. Metal has a small hard highlight, wet chitin a broad soft one.
+//   specMul  scales whatever the model's own `spec` asked for.
+//   sub      subsurface: a warm term strongest where the surface faces AWAY from the light, which is
+//            what makes flesh look lit from inside rather than painted. Tinted by the base colour so
+//            it deepens the hue instead of washing it out.
+//   emis     self-illumination, a flat fraction of base colour: Protoss gold glows, it does not just
+//            reflect, and this is what separates it from Terran's painted metal at a glance.
+//   amb      ambient floor, so a Zerg shadow keeps some colour and a Terran shadow goes properly dark.
+const MATERIALS = {
+  T: { exp: 34, specMul: 1.25, sub: 0.00, emis: 0.00, amb: 0.26 },
+  Z: { exp: 5, specMul: 0.85, sub: 0.30, emis: 0.00, amb: 0.34 },
+  P: { exp: 20, specMul: 1.05, sub: 0.06, emis: 0.15, amb: 0.32 },
+};
+const DEFAULT_MAT = { exp: 18, specMul: 1, sub: 0, emis: 0, amb: null };
+
 // ---------------- vector helpers ----------------
 const V = {
   add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
@@ -86,7 +106,7 @@ function mesh(kind, seg = 12) {
 
 // ---------------- renderer ----------------
 class Renderer {
-  constructor(opts = {}) { this.el = (opts.elevation || 62) * Math.PI / 180; this.light = V.norm(opts.light || [-0.55, 0.95, -0.55]); this.ambient = opts.ambient || 0.38; this.ss = opts.ss || 2; this.gz = opts.groundScale == null ? 1 : opts.groundScale; this.aoH = opts.aoH || 1.0; }
+  constructor(opts = {}) { this.el = (opts.elevation || 62) * Math.PI / 180; this.light = V.norm(opts.light || [-0.55, 0.95, -0.55]); this.ambient = opts.ambient || 0.38; this.ss = opts.ss || 2; this.gz = opts.groundScale == null ? 1 : opts.groundScale; this.aoH = opts.aoH || 1.0; this.mat = MATERIALS[opts.race] || DEFAULT_MAT; if (this.mat.amb != null) this.ambient = this.mat.amb; }
   // Render a part tree at given facing into an RGBA + mask buffer of size S x S (pixels), scale k px per model unit.
   render(root, o) {
     const ss = this.ss, W = o.W * ss, H = o.H * ss; const col = new Float32Array(W * H * 4), zb = new Float32Array(W * H).fill(-1e9), mask = new Float32Array(W * H);
@@ -111,7 +131,18 @@ class Renderer {
       sx[i] = cx + p[0] * kk; sy[i] = cy + (p[2] * this.gz - p[1] * ce) * kk; sd[i] = p[2] * ce + p[1] * se;
       let r, g, b;
       if (glow) { r = base[0]; g = base[1]; b = base[2]; }
-      else { const d = Math.max(0, V.dot(nn, this.light)); const hv = V.norm(V.add(this.light, V3)); const s = Math.pow(Math.max(0, V.dot(nn, hv)), 18) * spec; const lt = (this.ambient + (1 - this.ambient) * d) * ao; r = Math.min(1, base[0] * lt + s); g = Math.min(1, base[1] * lt + s); b = Math.min(1, base[2] * lt + s); }
+      else {
+        const MT = this.mat;
+        const d = Math.max(0, V.dot(nn, this.light)); const hv = V.norm(V.add(this.light, V3));
+        const s = Math.pow(Math.max(0, V.dot(nn, hv)), MT.exp) * spec * MT.specMul;
+        const lt = (this.ambient + (1 - this.ambient) * d) * ao;
+        // Scattering rises as the surface turns away from the light; emission is flat. Both are scaled
+        // by the base colour so they deepen the material's own hue rather than tinting everything.
+        const sc = MT.sub * (1 - d) * ao, em = MT.emis;
+        r = Math.min(1, base[0] * (lt + sc + em) + s);
+        g = Math.min(1, base[1] * (lt + sc * 0.72 + em) + s);
+        b = Math.min(1, base[2] * (lt + sc * 0.55 + em) + s);
+      }
       cr[i] = r; cg[i] = g; cb[i] = b;
     }
     for (const tri of me.t) {

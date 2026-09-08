@@ -23,7 +23,7 @@ const t0 = Date.now(); let frames = 0; const PREVIEW = [];
 function bakeUnit(id, model) {
   const baseId = id.replace(/_s$/, ''); const def = DATA.units[baseId]; if (!def) return;
   const r = def.r || 10; const k = r * (r <= 9 ? 1.75 : r <= 14 ? 1.4 : 1.15) * (ART_SCALE[baseId] || 1); const S = Math.ceil(k * 5) + 14; const ss = ssArg || (r <= 10 ? 3 : 2);
-  const rend = new Renderer({ elevation: EL, ss, groundScale: GZ, ambient: 0.3, aoH: 1.2 }); const rows = [], mrows = []; const previewFrame = { S };
+  const rend = new Renderer({ elevation: EL, ss, groundScale: GZ, ambient: 0.3, aoH: 1.2, race: def.race }); const rows = [], mrows = []; const previewFrame = { S };
   const anims = []; for (let i = 0; i < IDLE; i++) anims.push({ walk: null, atk: null, idle: i / IDLE }); for (let i = 0; i < WALK; i++) anims.push({ walk: i / WALK, atk: null, idle: null }); for (let i = 0; i < ATK; i++) anims.push({ walk: null, atk: (i + 0.5) / ATK, idle: null });
   for (const st of anims) { const row = [], mrow = []; for (let d = 0; d < DIRS; d++) { const m = model(); const f = rend.render(m, { W: S, H: S, cx: S / 2, cy: S / 2, k, facing: d * Math.PI * 2 / DIRS, st }); row.push(f.rgba); mrow.push(f.mask); frames++; } rows.push(row); mrows.push(mrow); }
   const sh = sheet(rows, S), msh = sheet(mrows, S);
@@ -34,7 +34,7 @@ function bakeUnit(id, model) {
 }
 function bakeBuilding(id, model) {
   const def = DATA.buildings[id]; if (!def) return;
-  const TILE = 32, W = def.w * TILE, H = def.h * TILE, M = 18, T = 72; const rend = new Renderer({ elevation: EL, ss: 2, groundScale: GZ, ambient: 0.3, aoH: 1.4 });
+  const TILE = 32, W = def.w * TILE, H = def.h * TILE, M = 18, T = 72; const rend = new Renderer({ elevation: EL, ss: 2, groundScale: GZ, ambient: 0.3, aoH: 1.4, race: def.race });
   const m = model(def.w, def.h); const f = rend.render(m, { W: W + M * 2, H: H + M + T, cx: M + W / 2, cy: T + H / 2, k: TILE, facing: 0, st: null }); frames++;
   fs.writeFileSync(path.join(outDir, id + '.png'), encodePNG(W + M * 2, H + M + T, f.rgba)); fs.writeFileSync(path.join(outDir, id + '_m.png'), encodePNG(W + M * 2, H + M + T, f.mask));
   PREVIEW.push({ id, W: W + M * 2, H: H + M + T, rgba: f.rgba, building: true });

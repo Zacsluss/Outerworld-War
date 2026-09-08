@@ -16,7 +16,7 @@ const SHADOW_FLAT = 0.42, SHADOW_DX = 5;
 // How long a muzzle flash and a shield hit stay up, in sim frames at 24/s. Short: three frames is an
 // eighth of a second, which is a flash, and anything longer reads as a unit that is permanently on
 // fire once forty marines are shooting at once.
-const MUZZLE_F = 3, SHIELD_F = 8;
+const MUZZLE_F = 3, SHIELD_F = 8, RECOIL_F = 5;
 const Render = {
   canvas: null, ctx: null, W: 0, H: 0, camX: 0, camY: 0, viewW: 0, viewH: 0, fogCanvas: null, creepMask: null, creepLayer: null, built: false, lastFrameTime: 0, mini: null,
   init(canvas) { this.canvas = canvas; this.ctx = canvas.getContext('2d'); this.resize(); },
@@ -183,7 +183,30 @@ const Render = {
     const s = Sprites.unit(u, Sprites.dirOf(u.facing), this.animOf(u));
     let bob = 0, sc = 1; if (u.moving && !u.fly && u.def.bio) bob = Math.sin(G.frame * 0.7 + u.id) * 1.2; if (u.fly) bob = Math.sin(G.frame * 0.08 + u.id) * 2; if (u.def.id === 'zergling' && u.moving) sc = 1 + Math.sin(G.frame * 0.9 + u.id) * 0.06;
     if (u.morphT > 0) { ctx.globalAlpha *= 0.5 + 0.5 * Math.sin(G.frame * 0.3); }
-    ctx.translate(x, y + bob); if (sc !== 1) ctx.scale(sc, 1 / sc);
+    // Weight, part two. A unit that translates and rotates rigidly reads as a chess piece being slid;
+    // mass shows up as lag. Both cues here are derived from state the simulation already keeps, so
+    // nothing new is stored on the unit and nothing can leak back into it (invariant 3).
+    //
+    // Lean: the gap between where the unit is pointing and where it is trying to go is exactly what
+    // Unit.tickMove turns on, so leaning by it means a tank heels over into a turn and comes upright
+    // as it finishes -- no history required.
+    // Recoil: a kick straight back along the barrel for the first few frames after a shot, biggest for
+    // the heavy guns. This is what makes a siege tank feel like it weighs sixty tons.
+    let lean = 0, kick = 0;
+    if (!u.isBuilding) {
+      if (u.moving && (u.order.type === 'move' || u.order.type === 'attackmove' || u.order.type === 'patrol') && u.order.x !== undefined) {
+        let d = Math.atan2(u.order.y - u.y, u.order.x - u.x) - u.facing;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        lean = Math.max(-0.16, Math.min(0.16, d * 0.16));
+      }
+      if (u.lastFire !== undefined && G.frame - u.lastFire < RECOIL_F) {
+        const w = u.def.gw || u.def.aw;
+        kick = (1 - (G.frame - u.lastFire) / RECOIL_F) * Math.min(3.2, ((w && w.dmg) || 8) * 0.05);
+      }
+    }
+    ctx.translate(x - Math.cos(u.facing) * kick, y + bob - Math.sin(u.facing) * kick);
+    if (lean) ctx.rotate(lean);
+    if (sc !== 1) ctx.scale(sc, 1 / sc);
     if (u.def.id === 'archon' || u.def.id === 'dark_archon') { ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(0, 0, 2, 0, 0, u.r * 1.8); g.addColorStop(0, u.def.id === 'archon' ? 'rgba(120,200,255,0.6)' : 'rgba(200,80,255,0.6)'); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, u.r * 1.8 + Math.sin(G.frame * 0.3) * 3, 0, 7); ctx.fill(); ctx.globalCompositeOperation = 'source-over'; }
     Sprites.draw(ctx, s, 0, 0);
     // Muzzle flash and shield hit. Both are read off simulation state the draw pass already reads --
