@@ -13,7 +13,7 @@ const Voice = {
   init() { try { this.on = localStorage.getItem('bw_voice') !== '0'; } catch (e) { } },
   set(v) { this.on = v; try { localStorage.setItem('bw_voice', v ? '1' : '0'); } catch (e) { } },
   speak(text, race, kind) {
-    if (!this.on || typeof speechSynthesis === 'undefined') return; const now = performance.now();
+    if (!this.on || (typeof Sound !== 'undefined' && Sound.muted) || typeof speechSynthesis === 'undefined') return; const now = performance.now();
     if (kind !== 'adv' && (speechSynthesis.speaking || now - this.lastAt < 900)) return;
     if (kind === 'adv') speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text); const adv = this.lines.adv[race] || this.lines.adv.T;
@@ -33,7 +33,7 @@ const Music = {
   init() { try { this.on = localStorage.getItem('bw_music') !== '0'; } catch (e) { } },
   set(v) { this.on = v; try { localStorage.setItem('bw_music', v ? '1' : '0'); } catch (e) { } if (!v) this.stop(); else if (typeof G !== 'undefined' && G.players.length) this.start(); },
   start() {
-    if (!this.on) return; if (!this.ctx) { try { this.ctx = Sound.ctx || new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
+    if (!this.on || (typeof Sound !== 'undefined' && Sound.muted)) return; if (!this.ctx) { try { this.ctx = Sound.ctx || new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
     if (this.ctx.state === 'suspended') this.ctx.resume();
     if (!this.master) { this.master = this.ctx.createGain(); this.master.gain.value = 0.0; this.master.connect(this.ctx.destination); }
     this.master.gain.cancelScheduledValues(this.ctx.currentTime); this.master.gain.linearRampToValueAtTime(0.16, this.ctx.currentTime + 3);
