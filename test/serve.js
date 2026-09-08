@@ -34,13 +34,26 @@ function onMessage(c, m) {
         if (idx < 0) { send(c, { t: 'error', msg: 'Game already in progress' + (name ? ' and no dropped player is called ' + name : '') + '.' }); return; }
         const slot = lobby.players[idx]; slot.id = c.id; slot.gone = false;
         const R = Math.max(maxFrame() + 1, DELAY); lobby.gone[idx].to = R;
-        const donor = [...clients.values()].find(x => x !== c && lobby.players.some(p => p.id === x.id && !p.gone && !p.ai));
+        // ...and not a client that is itself mid-rejoin: `slot.gone` is cleared before this search, so
+        // once simultaneous rejoins actually work, the previous rejoiner looks like a healthy donor
+        // while it is still catching up and would hand over a snapshot from before it was caught up.
+        const rejoining = new Set([...(lobby.pendingSnaps || new Map()).values()].map(p => p.want));
+        const donor = [...clients.values()].find(x => x !== c && !rejoining.has(x.id) && lobby.players.some(p => p.id === x.id && !p.gone && !p.ai));
         if (donor) {
           // ask a live client for a state snapshot; the rejoiner waits rather than re-simulating the game
-          lobby.pendingSnap = { want: c.id, idx, at: Date.now() };
-          send(donor, { t: 'needsnap' });
+          // Keyed by request, not a single slot. This used to be `lobby.pendingSnap = {...}`, so two
+          // rejoins arriving close together overwrote each other: the donor's first snapshot went to
+          // the SECOND requester, the second snapshot found the slot empty and was dropped, and the
+          // first requester's fallback timer had been disarmed along with it, so it waited forever.
+          // Worse than losing one player -- the relay has already broadcast `rejoined`, so every
+          // client blocks at that frame for a batch that never comes and the whole game wedges.
+          const req = (lobby.snapSeq = (lobby.snapSeq || 0) + 1);
+          lobby.pendingSnaps = lobby.pendingSnaps || new Map();
+          lobby.pendingSnaps.set(req, { want: c.id, idx, at: Date.now() });
+          send(donor, { t: 'needsnap', req });
           setTimeout(() => { // donor did not answer: fall back to replaying the whole history
-            if (lobby.pendingSnap && lobby.pendingSnap.want === c.id) { lobby.pendingSnap = null; sendRejoin(c, idx, null, 0); }
+            const ps = lobby.pendingSnaps && lobby.pendingSnaps.get(req);
+            if (ps) { lobby.pendingSnaps.delete(req); sendRejoin(c, idx, null, 0); }
           }, 4000);
         } else sendRejoin(c, idx, null, 0);
         broadcast({ t: 'rejoined', p: idx, f: R }, c); broadcast(lobbyState()); console.log(name + ' rejoined as player ' + idx + ', live again from frame ' + R);
@@ -48,8 +61,13 @@ function onMessage(c, m) {
       }
       if (!me) lobby.players.push({ id: c.id, name: String(m.name || 'Player').slice(0, 16), race: m.race || 'R', team: lobby.players.length + 1 }); broadcast(lobbyState()); break;
     }
-    case 'set': if (me) { if (m.race) me.race = m.race; if (m.team) me.team = m.team; if (isHost && m.layout) lobby.layout = m.layout; if (isHost && m.speed != null) lobby.speed = Math.max(0, Math.min(6, m.speed | 0)); } broadcast(lobbyState()); break; // everyone must run the same speed or lockstep just makes the fast clients wait
-    case 'addai': if (isHost && lobby.players.length < 8) { lobby.players.push({ id: -(nextId++), name: 'Computer ' + lobby.players.filter(p => p.ai).length, race: m.race || 'R', team: lobby.players.length + 1, ai: true, difficulty: m.difficulty || 'normal' }); broadcast(lobbyState()); } break;
+    // Lobby settings are lobby-only. The relay is the authority here, and it was accepting both of
+    // these after the game had started: `set layout` rewrote lobby.layout, which sendRejoin reads via
+    // startMsg(), so the next player to rejoin loaded a DIFFERENT MAP than everyone else was playing;
+    // and `addai` grew lobby.players out of step with the running game. Neither is reachable from the
+    // UI, which is why nothing caught them, but a relay must not trust that its clients are the UI.
+    case 'set': if (me && !lobby.started) { if (m.race) me.race = m.race; if (m.team) me.team = m.team; if (isHost && m.layout) lobby.layout = m.layout; if (isHost && m.speed != null) lobby.speed = Math.max(0, Math.min(6, m.speed | 0)); } broadcast(lobbyState()); break; // everyone must run the same speed or lockstep just makes the fast clients wait
+    case 'addai': if (isHost && !lobby.started && lobby.players.length < 8) { lobby.players.push({ id: -(nextId++), name: 'Computer ' + lobby.players.filter(p => p.ai).length, race: m.race || 'R', team: lobby.players.length + 1, ai: true, difficulty: m.difficulty || 'normal' }); broadcast(lobbyState()); } break;
     case 'kick': if (isHost && lobby.state === 'lobby') { lobby.players = lobby.players.filter(p => p.id !== m.id); broadcast(lobbyState()); } break;
     case 'start': {
       if (!isHost || lobby.state !== 'lobby' || lobby.players.filter(p => !p.ai).length < 1) return; lobby.state = 'playing';
@@ -61,8 +79,8 @@ function onMessage(c, m) {
       break;
     }
     case 'snap': {
-      const ps = lobby.pendingSnap; if (!ps) break;
-      const target = clients.get(ps.want); lobby.pendingSnap = null;
+      const ps = lobby.pendingSnaps && lobby.pendingSnaps.get(m.req); if (!ps) break;
+      const target = clients.get(ps.want); lobby.pendingSnaps.delete(m.req);
       if (target) sendRejoin(target, ps.idx, m.snap, m.frame | 0);
       break;
     }

@@ -118,7 +118,26 @@ const Snapshot = {
     // 2. map arrays and resources, because unit references point at resources
     G.map.creep.set(s.creep); G.map.blocked.set(s.blocked); G.map.walk.set(s.walk);
     G.map.psi = {}; for (const k of Object.keys(s.psi || {})) G.map.psi[k] = new Uint8Array(s.psi[k]);
-    s.resources.forEach((sr, i) => { const r = G.map.resources[i]; const d = {}; for (const k of Object.keys(sr)) d[k] = this.dec(sr[k]); this._apply(r, d); r.__resIdx = i; });
+    // Rebuild the resource list by id rather than walking it positionally. G.removeResource SPLICES a
+    // mined-out patch out of G.map.resources, so the live array and a snapshot's are different lengths
+    // the moment any patch runs dry -- about 13:00 in a normal game. Walking them in step therefore
+    // wrote patch n's state onto patch n+1 once anything had been mined:
+    //   - seeking a replay backwards threw, because the snapshot has more patches than the live map
+    //     and G.map.resources[i] came back undefined;
+    //   - a rejoin silently desynced, because the rejoiner has just run G.init and holds the FULL
+    //     list, so the donor's shorter one landed on the head and the tail survived as duplicates.
+    //     _apply then copied the donor's `id` onto whichever object sat at that index, leaving
+    //     resById -- built once in GameMap.generate and never rebuilt -- pointing at the wrong patch,
+    //     so a worker sent to r5 mined r8. Divergence followed 30-80 seconds later, far from the cause.
+    // Reusing the live object where the id matches keeps identity, so anything already holding a
+    // reference to a patch still points at the right one.
+    const byId = new Map(G.map.resources.map(r => [r.id, r]));
+    G.map.resources = s.resources.map((sr, i) => {
+      const d = {}; for (const k of Object.keys(sr)) d[k] = this.dec(sr[k]);
+      const r = byId.get(d.id) || {};
+      this._apply(r, d); r.__resIdx = i; return r;
+    });
+    G.map.resById = new Map(G.map.resources.map(r => [r.id, r]));
     // 3. fill the units and players in
     s.units.forEach((su, i) => { const u = G.units[i]; for (const k of Object.keys(su)) u[k] = this.dec(su[k]); });
     for (const su of (s.gone || [])) { const u = G.byId.get(su.id); for (const k of Object.keys(su)) u[k] = this.dec(su[k]); }
