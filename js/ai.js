@@ -59,9 +59,19 @@ class AI {
     });
     // worker production
     const fields = G.map.resources.filter(r => r.type === 'mineral' && r.amount > 0 && halls.some(h => h.done && distPt(r.cx, r.cy, h.x, h.y) < 10 * TILE)).length; const want = Math.min(70, fields * 2 + gasB.length * 3 + 2);
-    const larvaN = this.race === 'Z' ? this.mine(u => u.def.larva).length : 9;
     const armySup = this.armyUnits().reduce((s, u) => s + u.def.sup, 0); this.armySup = armySup;
-    if (this.count(RACE_INFO[p.race].worker) < want && (p.race !== 'Z' ? (larvaN >= 2 || workers.length < 12 || armySup >= workers.length * 0.4) : (workers.length < 16 || armySup >= (workers.length - 16) * 1.5))) this.train(RACE_INFO[p.race].worker, 2); // drones only once the army keeps up
+    // "Drones only once the army keeps up" -- which, until M8, only Zerg ever did. The non-Zerg branch
+    // used to read `larvaN >= 2 || workers.length < 12 || armySup >= ...`, and larvaN was
+    // `this.race === 'Z' ? <count larvae> : 9`. It is only read here, on the branch where it is the
+    // literal 9, so `larvaN >= 2` was a constant true that short-circuited the army test written
+    // beside it: Terran and Protoss built workers to the cap unconditionally and always had.
+    //
+    // It cost nothing while Terran could not reach the cap anyway. M7's build-order fix removed that
+    // limit -- Terran went from 40 workers at ten minutes to 62 and TvZ went to 77% -- and this is the
+    // half of that change nobody had looked at. The other reading of the same slip, that `larvaN >= 2`
+    // was meant for the *Zerg* branch, was tried too: it is much worse (all three proxy indicators
+    // move to Terran), because a larva-gated Zerg drones to 60 and fields no army.
+    if (this.count(RACE_INFO[p.race].worker) < want && (p.race !== 'Z' ? (workers.length < 12 || armySup >= workers.length * 0.4) : (workers.length < 16 || armySup >= (workers.length - 16) * 1.5))) this.train(RACE_INFO[p.race].worker, 2);
     // transfer workers from saturated to new bases
     if (G.frame % (24 * 10) < this.thinkEvery && halls.length > 1) {
       for (const h of halls) { const near = workers.filter(w => dist(w, h) < 12 * TILE); const fields = G.map.resources.filter(r => r.type === 'mineral' && distPt(r.cx, r.cy, h.x, h.y) < 10 * TILE).length; if (near.length > fields * 2 + 3) { const other = halls.find(o => o !== h && o.done && workers.filter(w => dist(w, o) < 12 * TILE).length < 8); if (other) { const m = G.map.resources.find(r => r.type === 'mineral' && distPt(r.cx, r.cy, other.x, other.y) < 10 * TILE); if (m) for (let i = 0; i < 4; i++) { const w = near.find(w => w.order.type === 'gather' && !w.carrying); if (w) w.applyOrder({ type: 'gather', target: m, phase: 'goto' }); } } } }
