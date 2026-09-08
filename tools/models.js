@@ -44,13 +44,57 @@ const breathe = (amp, phase = 0) => st => ({ pos: [0, st.idle == null ? 0 : amp 
 const sway = (amp, phase = 0) => st => ({ rot: [0, 0, st.idle == null ? 0 : amp * Math.sin(st.idle * Math.PI * 2 + phase)] });
 const cylX = (len, w, pos, mat, extra) => P('cyl', [w, len, w], pos, mat, Object.assign({ rot: [0, 0, -Math.PI / 2] }, extra || {})); // cylinder along +X centred at pos
 
+// ---------------- death ----------------
+// There was one death in the game and it was not a pose at all: js/fx.js took the *live* sprite and
+// applied a 2D rotate-and-squash to it. That cannot foreshorten, and from a 50-degree camera a body on
+// the ground is almost entirely foreshortening -- which is why every corpse looked like a standing unit
+// that had been sheared rather than like something that had fallen over. These are 3D poses, baked as
+// extra rows: the model actually lies down, its limbs splay, its silhouette collapses along the axis it
+// fell, and the rasterizer's own AO darkens it because it is now near the floor.
+//
+// Three of them, because a fight kills a dozen units in the same second and one shape a dozen times is
+// what makes a battle read as a spreadsheet. Which one a corpse uses is chosen render-side per corpse,
+// so the cost is rows in a sheet and not a frame: no extra draw-loop pass, no second blit.
+//   0  fold forward   -- knees give, the body pitches over its own feet. The old collapse, done right.
+//   1  roll right     -- knocked off its feet sideways, lands on one shoulder.
+//   2  sprawl back    -- thrown backwards, a small hop at the apex, lands flat with the limbs up.
+//
+// `t` runs 0..1 across the frames of one variant. Ground units only: flyers are never given a corpse
+// decal (js/fx.js guards on `e.fly`), so baking death rows for a battlecruiser would be 100 KB of sheet
+// nothing can ever draw.
+const DTH = st => (st && st.death) ? st.death.t : 0;
+const DVAR = st => (st && st.death) ? st.death.v : -1;
+const A3 = (a, b) => a ? (b ? [a[0] + b[0], a[1] + b[1], a[2] + b[2]] : a) : b;
+const S3 = (a, b) => a ? (b ? [a[0] * b[0], a[1] * b[1], a[2] * b[2]] : a) : b;
+// Compose an existing joint animation with a death response, so no rig loses the walk/attack/idle it
+// already had and every rig can opt in with one wrapper.
+const withDeath = (base, f) => st => {
+  const b = (base ? base(st) : null) || {}; const t = DTH(st); if (!t) return b;
+  const d = f(t, DVAR(st)) || {};
+  return { rot: A3(b.rot, d.rot), pos: A3(b.pos, d.pos), size: S3(b.size, d.size) };
+};
+// Ease so the buckle is slow and the landing is fast -- a body accelerates into the floor, and the
+// frames are few enough that a linear ramp reads as a controlled lie-down.
+function deathPose(v, t) {
+  const e = t * t * (3 - 2 * t);
+  if (v === 1) return { pos: [0.06 * e, -0.10 * e, 0.34 * e], rot: [1.46 * e, 0.22 * e, -0.20 * e], size: [1, 1 - 0.06 * e, 1] };
+  if (v === 2) return { pos: [-0.44 * e, 0.11 * Math.sin(t * Math.PI) - 0.05 * e, -0.12 * e], rot: [-0.22 * e, -0.30 * e, 1.28 * e], size: [1, 1 - 0.05 * e, 1 + 0.06 * e] };
+  return { pos: [0.38 * e, -0.07 * e, 0], rot: [0.10 * e, 0.12 * e, -1.38 * e], size: [1, 1 - 0.12 * e, 1 + 0.08 * e] };
+}
+// Wrap a finished model in a node carrying the whole-body pose, so no model definition has to know
+// that death exists. The pivot is the model origin, which is the feet: rotating there topples a unit
+// over its own base instead of spinning it about its waist.
+const deathWrap = (model, d) => Object.assign({ children: [model] }, deathPose(d.v, d.t));
+
 // ---------------- rigs ----------------
 const RIG = {
   biped(o) {
     const legLen = o.legLen || 0.55, lw = o.legW || 0.22, torsoH = o.torsoH || 0.75, torsoW = o.torsoW || 0.95, torsoD = o.torsoD || 0.8, headR = o.headR || 0.5;
     const root = N([0, 0, 0]); const suit = o.suit || C.metal, dark = o.dark || C.metalD;
-    for (const s of [-1, 1]) { const leg = N([0, legLen, s * 0.3], { anim: swing(o.stride == null ? 0.6 : o.stride, 0, s) }); leg.children.push(P('cyl', [lw, legLen, lw], [0, -legLen / 2, 0], m(dark))); leg.children.push(P('sphere', [lw * 1.5, lw * 1.2, lw * 1.5], [0.05, -legLen * 0.45, 0], m(o.suit || C.metal, { spec: 0.5 }))); leg.children.push(P('box', [0.42, 0.14, 0.3], [0.08, -legLen + 0.07, 0], m(dark))); root.children.push(leg); }
-    const torso = N([0, legLen + torsoH / 2, 0], { anim: st => ({ pos: [st.atk == null ? 0 : -(o.recoil || 0.12) * Math.max(0, 1 - st.atk * 1.5), (o.idleAmp == null ? 0.045 : o.idleAmp) * IDLE(st), 0], rot: [0, 0, 0.035 * IDLE(st)] }) }); root.children.push(torso);
+    // Legs buckle outward and fold under on death; the sign flips for the backward sprawl, which is the
+     // one where the feet come off the ground and end up in front of the body.
+    for (const s of [-1, 1]) { const leg = N([0, legLen, s * 0.3], { anim: withDeath(swing(o.stride == null ? 0.6 : o.stride, 0, s), (t, v) => ({ rot: [s * 0.55 * t, 0, (v === 2 ? 0.95 : -0.75) * t] })) }); leg.children.push(P('cyl', [lw, legLen, lw], [0, -legLen / 2, 0], m(dark))); leg.children.push(P('sphere', [lw * 1.5, lw * 1.2, lw * 1.5], [0.05, -legLen * 0.45, 0], m(o.suit || C.metal, { spec: 0.5 }))); leg.children.push(P('box', [0.42, 0.14, 0.3], [0.08, -legLen + 0.07, 0], m(dark))); root.children.push(leg); }
+    const torso = N([0, legLen + torsoH / 2, 0], { anim: withDeath(st => ({ pos: [st.atk == null ? 0 : -(o.recoil || 0.12) * Math.max(0, 1 - st.atk * 1.5), (o.idleAmp == null ? 0.045 : o.idleAmp) * IDLE(st), 0], rot: [0, 0, 0.035 * IDLE(st)] }), (t, v) => ({ pos: [0, -0.12 * t, 0], rot: [v === 1 ? 0.2 * t : 0, 0, (v === 2 ? 0.28 : -0.34) * t] })) }); root.children.push(torso);
     torso.children.push(P('sphere', [torsoD, torsoH, torsoW], [0, 0, 0], m(suit, { spec: 0.4 })));
     if (o.pads !== false) for (const s of [-1, 1]) torso.children.push(P('sphere', [0.45, 0.35, 0.5], [-0.05, torsoH * 0.35, s * torsoW * 0.5], o.padMat || TEAM));
     if (o.pack !== false) torso.children.push(P('box', [0.3, torsoH * 0.8, torsoW * 0.7], [-torsoD * 0.5, 0, 0], m(dark)));
@@ -64,7 +108,7 @@ const RIG = {
   },
   bug(o) {
     const root = N([0, 0, 0]); const segs = o.segs || [[0, 0.5, 1.6, 0.9, 1.1]]; const bodyY = o.bodyY || 0.45; const legs = o.legs || 2, legLen = o.legLen || 0.9, lw = o.legW || 0.12;
-    const body = N([0, bodyY, 0], { anim: st => ({ pos: [st.atk == null ? 0 : (o.lunge || 0.08) * Math.sin(st.atk * Math.PI), (o.idleAmp == null ? 0.05 : o.idleAmp) * IDLE(st), 0], rot: [0, 0, 0.05 * IDLE(st)] }) }); root.children.push(body);
+    const body = N([0, bodyY, 0], { anim: withDeath(st => ({ pos: [st.atk == null ? 0 : (o.lunge || 0.08) * Math.sin(st.atk * Math.PI), (o.idleAmp == null ? 0.05 : o.idleAmp) * IDLE(st), 0], rot: [0, 0, 0.05 * IDLE(st)] }), (t, v) => ({ pos: [0, -bodyY * 0.45 * t, 0], rot: [(v === 1 ? 0.5 : -0.25) * t, 0, 0] })) }); root.children.push(body);
     segs.forEach(([x, y, sx, sy, sz], i) => body.children.push(P('sphere', [sx, sy, sz], [x, y, 0], m(i === 0 ? (o.color || C.flesh) : (o.color2 || C.carapace), { spec: 0.35 }))));
 
     // ---- carapace -------------------------------------------------------------------------------
@@ -118,7 +162,9 @@ const RIG = {
     if (o.belly !== false) body.children.push(P('sphere', [bsx * 0.90, bsy * 0.40, bsz * 0.90], [bx, by - bsy * 0.58, 0], m(C.fleshD, { spec: 0.12 })));
 
     if (o.teamSpot !== false) body.children.push(P('sphere', [0.5, 0.25, 0.4], [o.teamX == null ? -0.2 : o.teamX, 0.32, 0], TEAM));
-    for (let i = 0; i < legs; i++) { const x = (o.legX0 == null ? 0.35 : o.legX0) - i * (o.legGap || 0.5); for (const s of [-1, 1]) { const hip = N([x, bodyY * 0.8, s * 0.4], { anim: yaw(o.legSwing == null ? 0.35 : o.legSwing, i * Math.PI, s) }); const up = N([0, 0, 0], { rot: [s * 0.9, 0, 0] }); up.children.push(P('cyl', [lw, legLen * 0.6, lw], [0, legLen * 0.3, 0], m(o.legColor || C.fleshD))); const knee = N([0, legLen * 0.6, 0], { rot: [-s * 1.9, 0, 0] }); knee.children.push(P('cyl', [lw * 0.8, legLen * 0.7, lw * 0.8], [0, legLen * 0.35, 0], m(o.legColor || C.fleshD))); up.children.push(knee); hip.children.push(up); root.children.push(hip); } }
+    // A dead insect curls: the legs draw in under the body and the knees close up. That, and nothing
+    // else, is what tells you at a glance that the thing on the ground used to be Zerg.
+    for (let i = 0; i < legs; i++) { const x = (o.legX0 == null ? 0.35 : o.legX0) - i * (o.legGap || 0.5); for (const s of [-1, 1]) { const hip = N([x, bodyY * 0.8, s * 0.4], { anim: withDeath(yaw(o.legSwing == null ? 0.35 : o.legSwing, i * Math.PI, s), (t, v) => ({ rot: [s * 0.75 * t, s * 0.5 * t, (v === 2 ? 0.4 : -0.3) * t] })) }); const up = N([0, 0, 0], { rot: [s * 0.9, 0, 0] }); up.children.push(P('cyl', [lw, legLen * 0.6, lw], [0, legLen * 0.3, 0], m(o.legColor || C.fleshD))); const knee = N([0, legLen * 0.6, 0], { rot: [-s * 1.9, 0, 0], anim: st => ({ rot: [-s * 1.15 * DTH(st), 0, 0] }) }); knee.children.push(P('cyl', [lw * 0.8, legLen * 0.7, lw * 0.8], [0, legLen * 0.35, 0], m(o.legColor || C.fleshD))); up.children.push(knee); hip.children.push(up); root.children.push(hip); } }
     if (o.head !== false) { const hx = o.headX == null ? 0.9 : o.headX; body.children.push(P('sphere', [o.headR || 0.6, (o.headR || 0.6) * 0.85, (o.headR || 0.6) * 0.9], [hx, 0.05, 0], m(o.headColor || C.carapace, { spec: 0.4 }))); for (const s of [-1, 1]) { const jaw = N([hx + 0.2, -0.05, s * 0.2], { anim: st => ({ rot: [0, -s * (0.5 - AK(st) * 0.9), 0] }) }); jaw.children.push(P('cone', [0.14, 0.5, 0.14], [0.25, 0, 0], m(C.bone), { rot: [0, 0, -Math.PI / 2] })); body.children.push(jaw); } for (const s of [-1, 1]) body.children.push(P('sphere', [0.1, 0.1, 0.1], [hx + 0.2, 0.18, s * 0.22], GLOW(C.eye))); }
     if (o.extra) for (const e of o.extra(body, root)) body.children.push(e);
     root.yOffset = 0; return root;
@@ -168,7 +214,7 @@ const RIG = {
     }
     body.children.push(P('sphere', [0.5, 0.25, 0.5], [-0.2, 0.3, 0], TEAM));
     body.children.push(P('sphere', [0.45, 0.45, 0.45], [0.55, 0.05, 0], m(C.navy))); body.children.push(P('sphere', [0.22, 0.22, 0.22], [0.75, 0.05, 0], GLOW(C.psi)));
-    [[0.6, -1], [0.6, 1], [2.5, -1], [2.5, 1]].forEach(([a, s], i) => { const hip = N([Math.cos(a) * 0.5, by - 0.1, Math.sin(a) * 0.5 * s], { rot: [0, -Math.atan2(Math.sin(a) * s, Math.cos(a)), 0], anim: yaw(0.3, i % 2 ? Math.PI : 0, 1) }); const up = N([0, 0, 0], { rot: [0, 0, -0.9] }); up.children.push(P('cyl', [0.16, ll * 0.7, 0.16], [0, -ll * 0.35, 0], m(o.legColor || C.goldD, { spec: 0.5 }))); const knee = N([0, -ll * 0.7, 0], { rot: [0, 0, 1.6] }); knee.children.push(P('cyl', [0.13, ll * 0.75, 0.13], [0, -ll * 0.37, 0], m(o.legColor || C.goldD, { spec: 0.5 }))); up.children.push(knee); hip.children.push(up); root.children.push(hip); });
+    [[0.6, -1], [0.6, 1], [2.5, -1], [2.5, 1]].forEach(([a, s], i) => { const hip = N([Math.cos(a) * 0.5, by - 0.1, Math.sin(a) * 0.5 * s], { rot: [0, -Math.atan2(Math.sin(a) * s, Math.cos(a)), 0], anim: withDeath(yaw(0.3, i % 2 ? Math.PI : 0, 1), (t, v) => ({ rot: [0, 0, (i < 2 ? 0.7 : -0.5) * t] })) }); const up = N([0, 0, 0], { rot: [0, 0, -0.9] }); up.children.push(P('cyl', [0.16, ll * 0.7, 0.16], [0, -ll * 0.35, 0], m(o.legColor || C.goldD, { spec: 0.5 }))); const knee = N([0, -ll * 0.7, 0], { rot: [0, 0, 1.6] }); knee.children.push(P('cyl', [0.13, ll * 0.75, 0.13], [0, -ll * 0.37, 0], m(o.legColor || C.goldD, { spec: 0.5 }))); up.children.push(knee); hip.children.push(up); root.children.push(hip); });
     root.yOffset = 0; return root;
   },
 };
@@ -361,15 +407,86 @@ const BUILDINGS = {
   command_center: (w, h) => { const r = B.terranBase(w, h, { height: 0.8 }); r.children.push(B.dome(0, -0.2, 1.0, 0.8), B.tower(-1.4, 0, 0.7, 0.5, 0.8), B.tower(1.4, 0, 0.7, 0.5, 0.8), B.post(0, -0.2, 0.6, 1.4), P('box', [0.7, 0.05, 0.3], [0.2, 2.0, -0.2], m(C.metalL))); return r; },
   supply_depot: (w, h) => { const r = B.terranBase(w, h, { height: 0.35 }); for (let k = 0; k < 3; k++) r.children.push(P('cyl', [0.7, 0.45, 0.7], [-1 + k, 0.55, 0], m(C.metalL, { spec: 0.5 }))); return r; },
   refinery: (w, h) => { const r = N([0, 0, 0]); r.children.push(...B.geyserBase(w, h)); const base = B.terranBase(2.0, h, { height: 0.7 }); base.pos = [-1.0, 0, 0]; r.children.push(base, P('cyl', [0.9, 0.9, 0.9], [-1.0, 1.1, -0.2], m(C.metalD)), cylX(2.0, 0.18, [0.4, 0.5, -0.3], m(C.metalL)), cylX(2.0, 0.18, [0.4, 0.5, 0.3], m(C.metalL))); return r; },
-  barracks: (w, h) => { const r = B.terranBase(w, h, { height: 0.8 }); r.children.push(B.tower(1.3, -0.6, 0.8, 0.7, 0.8), P('box', [1.4, 0.7, 0.1], [-0.3, 0.35, h / 2 - 0.05], m(C.dark)), P('box', [1.5, 0.05, 0.9], [-0.8, 0.83, -0.2], m(C.metalL)), P('sphere', [0.3, 0.3, 0.3], [1.3, 1.6, -0.6], TEAM)); return r; },
-  engineering_bay: (w, h) => { const r = B.terranBase(w, h, { height: 0.7 }); r.children.push(B.tower(-1.2, 0, 0.9, 0.9, 0.7), B.post(0.6, 0, 0.6, 0.7), B.dome(0.6, 0, 0.7, 1.2, m(C.metalL)), P('cyl', [0.9, 0.08, 0.9], [0.6, 1.5, 0], m(C.metalL), { rot: [0.6, 0, 0] })); return r; },
-  academy: (w, h) => { const r = B.terranBase(w, h, { height: 0.6 }); for (let k = 0; k < 3; k++) r.children.push(B.post(-0.8 + k * 0.8, -0.3, 0.9, 0.6)); r.children.push(B.tower(0.9, 0.4, 0.6, 0.5, 0.6), P('sphere', [0.25, 0.25, 0.25], [0.9, 1.25, 0.4], GLOW(C.visor))); return r; },
+  // ---- Terran building silhouettes ---------------------------------------------------------------
+  // M8 did this to the infantry and never got to the buildings, which left one race as grey boxes in
+  // two sizes. Barracks, factory, starport, science facility and engineering bay are all 4x3, all the
+  // same slab off `terranBase`, all lit identically, and what told them apart was a bump on the roof
+  // about six pixels across. At 40 px under fog with a team tint that is nothing, and picking the
+  // factory out of an enemy base is how you decide what is about to come at you.
+  //
+  // Same rule as the marines: one deliberately oversized feature each, chosen to break the outline
+  // seen from directly overhead, because that is the only angle this game is ever seen from. Three
+  // things survive the fog -- round against square, tall against flat, and anything that hangs past
+  // the footprint edge -- and paint is not one of them.
+  //
+  // The vertical budget was there all along and unspent: bake.js already reserves 72 px of canvas
+  // above the footprint (`T`) and nothing was using more than a third of it. Two constraints to keep
+  // if these are edited. Horizontal overhang has 18 px (`M`) and no more, so about half a tile. And
+  // anything that covers the roof covers `terranBase`'s team-colour patch with it -- every building
+  // below that grew a roof carries a replacement TEAM part somewhere the new structure cannot hide.
+  barracks: (w, h) => { const r = B.terranBase(w, h, { height: 0.8 });
+    // a barrel-vault hangar roof down the full length: the only curve-along-X in the Terran set, so
+    // the barracks is the one with a round back
+    r.children.push(cylX(w - 0.7, 1.45, [0.05, 0.95, -0.15], m([0.53, 0.58, 0.66], { spec: 0.5 })));
+    for (const s of [-1, 1]) r.children.push(P('cyl', [1.5, 0.1, 1.5], [s * (w - 0.7) / 2 + 0.05, 0.95, -0.15], m([0.34, 0.37, 0.43]), { rot: [0, 0, -Math.PI / 2] }));
+    // and a drop ramp folded down past the front edge, which is the bit that hangs off the outline
+    r.children.push(P('wedge', [0.55, 0.42, 1.6], [0.2, 0.2, h / 2 + 0.18], m(C.metalD), { rot: [0, Math.PI, 0] }), P('box', [1.4, 0.7, 0.1], [0.2, 0.35, h / 2 - 0.05], m(C.dark)));
+    r.children.push(B.tower(-1.45, -0.75, 0.7, 0.6, 0.8), P('box', [0.62, 0.08, 0.42], [-1.45, 1.42, -0.75], TEAM), P('sphere', [0.26, 0.26, 0.26], [0.05, 1.75, -0.15], TEAM)); return r; },
+  engineering_bay: (w, h) => { const r = B.terranBase(w, h, { height: 0.7 });
+    // A crane boom on a counterweighted mast, hanging half a tile past the front edge. The first try
+    // here was a big dish, and it had to be thrown away for a reason worth writing down: this camera
+    // is an OBLIQUE projection, not a perspective one -- ground z maps to screen y at a flat 0.85 --
+    // so a disc projects as a circle whatever angle it is tilted at, and the starport's landing pad is
+    // already a circle. Two big discs is one silhouette, not two. A long thin diagonal that crosses
+    // the outline is the only shape in the Terran set that is neither a block nor a disc.
+    r.children.push(B.tower(-1.35, 0.3, 0.7, 0.8, 0.7), P('box', [0.58, 0.08, 0.4], [-1.35, 1.55, 0.3], TEAM));
+    r.children.push(P('box', [0.34, 1.5, 0.34], [-0.15, 1.45, -0.5], m([0.4, 0.43, 0.48], { spec: 0.4 })), P('box', [0.5, 0.34, 0.5], [-0.15, 2.25, -0.5], m(C.metalD)),
+      P('box', [0.2, 0.2, 3.4], [0.35, 2.2, 0.42], m(C.metalL, { spec: 0.55 }), { rot: [0, 0.42, 0.1] }),
+      P('box', [0.42, 0.42, 0.5], [-0.55, 2.05, -0.95], m(C.metalD)), P('cyl', [0.06, 1.0, 0.06], [1.05, 1.55, 1.55], m(C.metalD)), P('box', [0.3, 0.24, 0.34], [1.05, 1.0, 1.55], m(C.metalD)),
+      beacon(-0.15, -0.5, 2.5, [1, 0.3, 0.2], 0.11)); return r; },
+  academy: (w, h) => { const r = B.terranBase(w, h, { height: 0.6 }); for (let k = 0; k < 3; k++) r.children.push(B.post(-0.8 + k * 0.8, -0.35, 0.9, 0.6));
+    // a lit slanted frontage and one needle spire with two rings: thin and tall where the armory next
+    // to it is fat and low, which is the pair most often confused
+    r.children.push(P('box', [1.35, 0.1, h - 0.55], [0.62, 1.02, 0.1], m([0.36, 0.5, 0.62], { spec: 0.75 }), { rot: [0, 0, 0.6] }), P('box', [0.9, 0.08, h - 0.9], [0.5, 1.16, 0.1], GLOW([0.35, 0.8, 1]), { rot: [0, 0, 0.6] }));
+    r.children.push(P('cyl', [0.15, 2.3, 0.15], [-1.15, 1.75, 0.45], m(C.metalL, { spec: 0.5 })), P('cyl', [0.6, 0.09, 0.6], [-1.15, 2.35, 0.45], m(C.metalD)), P('cyl', [0.42, 0.09, 0.42], [-1.15, 2.62, 0.45], m(C.metalD)), beacon(-1.15, 0.45, 2.88, [0.4, 1, 0.6], 0.11), P('box', [0.5, 0.08, 0.34], [0.95, 0.68, -0.62], TEAM)); return r; },
   missile_turret: (w, h) => { const r = N([0, 0, 0]); r.children.push(P('cyl', [1.6, 0.3, 1.6], [0, 0.15, 0], m(C.metalD)), P('cyl', [0.7, 0.8, 0.7], [0, 0.7, 0], m(C.metal)), P('box', [0.9, 0.35, 0.6], [0.2, 1.25, 0], m(C.metalD)), P('box', [0.5, 0.1, 0.5], [-0.3, 0.32, 0], TEAM)); for (const s of [-1, 1]) r.children.push(cylX(0.6, 0.12, [0.6, 1.3, s * 0.18], m(C.red))); return r; },
-  bunker: (w, h) => { const r = B.terranBase(w, h, { height: 0.55 }); for (let k = 0; k < 3; k++) r.children.push(P('box', [0.5, 0.15, 0.08], [-0.9 + k * 0.9, 0.35, h / 2 - 0.06], m(C.dark))); r.children.push(P('box', [1.2, 0.3, 0.8], [0, 0.7, -0.2], m(C.metalD))); return r; },
-  factory: (w, h) => { const r = B.terranBase(w, h, { height: 0.9 }); r.children.push(P('box', [1.8, 0.8, 0.1], [0, 0.4, h / 2 - 0.05], m(C.dark)), B.tower(1.4, -0.7, 0.6, 0.9, 0.9), P('cyl', [0.3, 1.0, 0.3], [-1.4, 1.4, -0.6], m(C.metalD)), cylX(1.6, 0.1, [-0.5, 1.5, -0.7], m(C.metalL)), P('box', [0.3, 0.4, 0.3], [0.3, 1.2, -0.7], m(C.metalL))); return r; },
-  starport: (w, h) => { const r = B.terranBase(w, h, { height: 0.6 }); r.children.push(P('cyl', [2.2, 0.15, 2.0], [0.4, 0.65, 0], m([0.3, 0.33, 0.38])), B.tower(-1.4, -0.4, 0.8, 1.0, 0.6), P('box', [0.5, 0.2, 0.5], [-1.4, 1.7, -0.4], GLOW(C.visor))); for (let k = 0; k < 8; k++) r.children.push(P('sphere', [0.1, 0.1, 0.1], [0.4 + Math.cos(k * 0.785) * 1.0, 0.75, Math.sin(k * 0.785) * 0.9], GLOW([1, 0.85, 0.4]))); return r; },
-  science_facility: (w, h) => { const r = B.terranBase(w, h, { height: 0.7 }); r.children.push(B.tower(0, 0, 1.0, 1.1, 0.7), B.dome(0, 0, 0.5, 1.8, GLOW(C.visor))); for (const [dx, dz] of [[-1.3, -0.5], [1.3, -0.5], [-1.3, 0.6], [1.3, 0.6]]) r.children.push(B.dome(dx, dz, 0.45, 0.7)); return r; },
-  armory: (w, h) => { const r = B.terranBase(w, h, { height: 0.6 }); r.children.push(B.tower(1.0, 0, 0.7, 0.6, 0.6), P('cyl', [0.15, 0.9, 0.15], [-0.7, 1.0, 0], m(C.metalL), { rot: [0, 0, 0.7] }), P('cyl', [0.15, 0.7, 0.15], [-0.2, 1.4, 0], m(C.metalL), { rot: [0, 0, -0.6] })); return r; },
+  bunker: (w, h) => { const r = B.terranBase(w, h, { height: 0.55 }); for (let k = 0; k < 3; k++) r.children.push(P('box', [0.5, 0.15, 0.08], [-0.9 + k * 0.9, 0.35, h / 2 - 0.06], m(C.dark)));
+    // a heavy turtle shell over the whole footprint with four corner buttresses: a low round lump,
+    // deliberately the opposite of every other Terran building, because the structure you most need to
+    // identify at a glance is the one shooting at you
+    r.children.push(P('dome', [w - 0.4, 1.3, h - 0.25], [0, 0.5, 0], m([0.44, 0.47, 0.53], { spec: 0.35 })));
+    for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) r.children.push(P('box', [0.44, 0.8, 0.44], [dx * (w / 2 - 0.4), 0.4, dz * (h / 2 - 0.34)], m(C.metalD)));
+    r.children.push(P('box', [0.7, 0.09, 0.4], [-0.15, 1.16, 0], TEAM), P('box', [1.2, 0.3, 0.8], [0, 0.85, -0.2], m(C.metalD))); return r; },
+  factory: (w, h) => { const r = B.terranBase(w, h, { height: 0.9 }); r.children.push(P('box', [1.8, 0.8, 0.1], [0, 0.4, h / 2 - 0.05], m(C.dark)));
+    // twin flared smokestacks and a gantry rail on legs: two vertical pins and one hard horizontal
+    // line, which is a shape nothing else in the game makes and reads at any zoom
+    for (const s of [-1, 1]) r.children.push(P('cyl', [0.44, 1.9, 0.44], [-1.3, 1.85, s * 0.55], m([0.33, 0.35, 0.4], { spec: 0.3 })), P('cyl', [0.66, 0.2, 0.66], [-1.3, 2.85, s * 0.55], m(C.metalD)), beacon(-1.3, s * 0.55, 3.02, [1, 0.35, 0.2], 0.1));
+    r.children.push(P('box', [0.16, 1.05, 0.16], [0.95, 1.42, -h / 2 + 0.45], m(C.metalD)), P('box', [0.16, 1.05, 0.16], [0.95, 1.42, h / 2 - 0.45], m(C.metalD)),
+      P('box', [0.34, 0.18, h - 0.6], [0.95, 2.0, 0], m(C.metalL, { spec: 0.5 })), P('box', [0.5, 0.36, 0.5], [0.95, 1.74, 0.35], m(C.metalD)), P('box', [0.46, 0.08, 0.36], [0.95, 2.13, -0.75], TEAM)); return r; },
+  starport: (w, h) => { const r = B.terranBase(w, h, { height: 0.6 });
+    // the landing pad is wider than the building and stands off the roof on four pillars. A circle
+    // pushing past the rectangle on both sides is the only cue here that survives with half the
+    // building under fog -- and the pad's centre marking is the team colour, which is both the
+    // readable place for it and where a helipad marking belongs.
+    r.children.push(P('cyl', [w * 1.02, 0.2, h * 1.14], [0.3, 1.12, 0], m([0.29, 0.32, 0.37], { spec: 0.4 })), P('cyl', [w * 0.74, 0.1, h * 0.84], [0.3, 1.24, 0], m([0.44, 0.47, 0.52], { spec: 0.5 })), P('cyl', [w * 0.34, 0.07, h * 0.4], [0.3, 1.3, 0], TEAM));
+    for (const [dx, dz] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) r.children.push(P('cyl', [0.2, 0.6, 0.2], [0.3 + dx * 1.1, 0.75, dz * 0.9], m(C.metalD)));
+    r.children.push(B.tower(-1.55, -h / 2 + 0.55, 0.5, 1.9, 0.6), P('box', [0.5, 0.2, 0.5], [-1.55, 2.05, -h / 2 + 0.55], GLOW(C.visor)), cylX(1.15, 0.12, [-1.55, 2.55, -h / 2 + 0.55], m(C.metalL)), beacon(-1.55, -h / 2 + 0.55, 2.72, [0.4, 1, 0.5], 0.12));
+    for (let k = 0; k < 8; k++) r.children.push(P('sphere', [0.1, 0.1, 0.1], [0.3 + Math.cos(k * 0.785) * (w * 0.44), 1.27, Math.sin(k * 0.785) * (h * 0.5)], GLOW([1, 0.85, 0.4]))); return r; },
+  science_facility: (w, h) => { const r = B.terranBase(w, h, { height: 0.7 });
+    // one enormous observatory dome on a drum, taking most of the roof and rising higher than anything
+    // else Terran builds. Round-on-square at twice the size of the old one, with four raked struts
+    // that break the corners of the rectangle underneath it.
+    r.children.push(P('cyl', [2.35, 0.42, 2.15], [-0.1, 0.9, 0], m([0.35, 0.38, 0.44], { spec: 0.4 })), P('dome', [2.5, 1.85, 2.3], [-0.1, 1.11, 0], m([0.46, 0.6, 0.74], { spec: 0.8 })),
+      P('cyl', [0.9, 0.14, 0.9], [-0.1, 2.0, 0], m(C.metalD)), beacon(-0.1, 0, 2.18, [0.5, 0.95, 1], 0.14));
+    for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) r.children.push(P('cyl', [0.13, 1.6, 0.13], [-0.1 + dx * 1.45, 1.15, dz * (h / 2 - 0.35)], m(C.metalL, { spec: 0.5 }), { rot: [dz * 0.22, 0, -dx * 0.26] }));
+    r.children.push(P('box', [0.55, 0.08, 0.38], [1.5, 0.78, -h / 2 + 0.45], TEAM)); return r; },
+  armory: (w, h) => { const r = B.terranBase(w, h, { height: 0.6 });
+    // two fat ordnance tanks lying the length of the roof with bolted end caps: a double-barrel hump,
+    // low and wide, against the academy's needle. Both are 3x2 and they were the closest pair.
+    for (const s of [-1, 1]) r.children.push(cylX(w - 0.65, 0.92, [0.05, 1.02, s * 0.48], m([0.5, 0.52, 0.48], { spec: 0.5 })),
+      P('cyl', [1.0, 0.12, 1.0], [(w - 0.65) / 2 + 0.05, 1.02, s * 0.48], m(C.metalD), { rot: [0, 0, -Math.PI / 2] }),
+      P('cyl', [1.0, 0.12, 1.0], [-(w - 0.65) / 2 + 0.05, 1.02, s * 0.48], m(C.metalD), { rot: [0, 0, -Math.PI / 2] }));
+    r.children.push(P('box', [0.2, 1.15, 0.2], [-1.0, 1.68, 0], m(C.metalD)), cylX(1.0, 0.13, [-0.5, 2.2, 0], m(C.metalL)), P('cyl', [0.1, 0.45, 0.1], [-0.05, 1.95, 0], m(C.metalD)), P('box', [0.34, 0.3, 0.3], [-0.05, 1.6, 0], m(C.metalD)), P('box', [0.5, 0.09, 0.3], [1.0, 1.53, 0], TEAM)); return r; },
   comsat_station: (w, h) => { const r = B.terranBase(w, h, { height: 0.5 }); r.children.push(B.post(0, 0, 0.5, 0.5), P('cyl', [1.0, 0.08, 1.0], [0.1, 1.1, 0], m(C.metalL), { rot: [0.7, 0, 0] })); return r; },
   nuclear_silo: (w, h) => { const r = B.terranBase(w, h, { height: 0.5 }); r.children.push(B.dome(0, 0, 0.7, 0.5, m(C.metalD)), P('box', [1.0, 0.08, 0.12], [0, 0.85, 0.3], m(C.red))); return r; },
   machine_shop: (w, h) => { const r = B.terranBase(w, h, { height: 0.5 }); r.children.push(P('cyl', [0.6, 0.3, 0.6], [-0.3, 0.65, 0], m(C.metalD)), P('cyl', [0.4, 0.4, 0.4], [0.35, 0.7, -0.2], m(C.metalD))); return r; },
@@ -410,4 +527,4 @@ const BUILDINGS = {
   observatory: (w, h) => { const r = B.protossSlab(w, h, { height: 0.4 }); r.children.push(P('cyl', [1.1, 0.5, 1.1], [0, 0.9, 0], m(C.goldD)), P('sphere', [0.6, 0.6, 0.6], [0, 1.3, 0], m(C.navy)), P('cyl', [0.1, 1.2, 0.1], [0.4, 1.7, -0.3], m(C.goldL), { rot: [0.5, 0, -0.6] })); return r; },
   arbiter_tribunal: (w, h) => { const r = B.protossSlab(w, h, { height: 0.5 }); r.children.push(P('oct', [2.0, 1.2, 1.6], [0, 1.2, 0], m(C.goldD, { spec: 0.6 })), B.crystal(0, 0, 0.35, 1.7)); return r; },
 };
-module.exports = { UNITS, BUILDINGS, C };
+module.exports = { UNITS, BUILDINGS, C, deathWrap };

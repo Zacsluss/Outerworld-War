@@ -6,18 +6,39 @@
 // ============================================================================
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const { Renderer, encodePNG, sheet } = require('./raster');
-const { UNITS, BUILDINGS } = require('./models');
+const { UNITS, BUILDINGS, deathWrap } = require('./models');
 const root = path.join(__dirname, '..'); const outDir = path.join(root, 'assets', 'sprites'); fs.mkdirSync(outDir, { recursive: true });
 // load game data tables
 const ctx = { console }; vm.createContext(ctx); vm.runInContext(fs.readFileSync(path.join(root, 'js', 'data.js'), 'utf8') + ';this.DATA = DATA;', ctx);
 const DATA = ctx.DATA;
 const args = process.argv.slice(2); const only = args.includes('--only') ? args[args.indexOf('--only') + 1].split(',') : null; const ssArg = args.includes('--ss') ? parseInt(args[args.indexOf('--ss') + 1]) : 0;
+// Which sheet row the contact sheet samples. Default 0 is the first idle frame, which is what you want
+// for judging silhouettes; `--pv 19` is the settled frame of death pose 0, and is the only way to look
+// at a death row without a browser.
+const pvRow = args.includes('--pv') ? parseInt(args[args.indexOf('--pv') + 1]) : 0;
 const DIRS = 16, WALK = 8, ATK = 5, IDLE = 4, EL = 50, GZ = 0.85;
+// Death: DVAR poses x DFR frames, appended after the attack rows. Ground units only -- js/fx.js only
+// makes a corpse decal when the dead unit was not flying, so death rows on a battlecruiser would be
+// 180 KB of sheet nothing can ever draw.
+//
+// Three poses of two frames, and the split between those two numbers is the whole design. Measured on
+// marine.png (299,948 B before): three poses x three frames costs +57.6%, three x two costs +37.6%,
+// and three x three with the death rows baked at 8 facings instead of 16 costs +32.8%. So frames are
+// what is expensive and poses are what is worth having, because of the timing: the collapse is 12 game
+// frames and the settled corpse lingers for 1100. An intermediate frame is on screen for well under one
+// percent of a corpse's life; the pose it settles into is on screen for all of it, next to eleven other
+// corpses from the same fight. Two frames plus the 2D squash js/fx.js already applies is enough motion
+// to read as a fall, and the third pose is what stops a lost battle looking stamped from one die.
+// The 8-facing trick is real and is deliberately not taken: it saves 5 points over the option chosen
+// here and needs the sub-rect arithmetic in js/atlas.js to special-case one anim kind.
+const DVAR = 3, DFR = 2;
+const DEASE = [0.55, 1];   // where in the fall each frame sits
 // Infantry read too small at 1:1 next to a 32 px tile, because the sprite is scaled from the collision
 // radius and infantry have tiny radii. This is a render-only boost: sim radii are untouched, so a marine
 // just draws bigger than its footprint, which is what Brood War does too.
 const ART_SCALE = { marine: 1.32, firebat: 1.32, medic: 1.32, ghost: 1.28, zergling: 1.35, zealot: 1.3, dark_templar: 1.3, high_templar: 1.24 };
-const atlas = { el: EL, dirs: DIRS, walk: WALK, atk: ATK, idle: IDLE, units: {}, buildings: {} };
+const META = { el: EL, dirs: DIRS, walk: WALK, atk: ATK, idle: IDLE, dvar: DVAR, dframes: DFR, death: DVAR * DFR };
+const atlas = Object.assign({}, META, { units: {}, buildings: {} });
 const t0 = Date.now(); let frames = 0; const PREVIEW = [];
 
 function bakeUnit(id, model) {
@@ -25,11 +46,12 @@ function bakeUnit(id, model) {
   const r = def.r || 10; const k = r * (r <= 9 ? 1.75 : r <= 14 ? 1.4 : 1.15) * (ART_SCALE[baseId] || 1); const S = Math.ceil(k * 5) + 14; const ss = ssArg || (r <= 10 ? 3 : 2);
   const rend = new Renderer({ elevation: EL, ss, groundScale: GZ, ambient: 0.3, aoH: 1.2, race: def.race }); const rows = [], mrows = []; const previewFrame = { S };
   const anims = []; for (let i = 0; i < IDLE; i++) anims.push({ walk: null, atk: null, idle: i / IDLE }); for (let i = 0; i < WALK; i++) anims.push({ walk: i / WALK, atk: null, idle: null }); for (let i = 0; i < ATK; i++) anims.push({ walk: null, atk: (i + 0.5) / ATK, idle: null });
-  for (const st of anims) { const row = [], mrow = []; for (let d = 0; d < DIRS; d++) { const m = model(); const f = rend.render(m, { W: S, H: S, cx: S / 2, cy: S / 2, k, facing: d * Math.PI * 2 / DIRS, st }); row.push(f.rgba); mrow.push(f.mask); frames++; } rows.push(row); mrows.push(mrow); }
+  const dies = !def.fly; if (dies) for (let v = 0; v < DVAR; v++) for (let i = 0; i < DFR; i++) anims.push({ walk: null, atk: null, idle: null, death: { v, t: DEASE[i] } });
+  for (const st of anims) { const row = [], mrow = []; for (let d = 0; d < DIRS; d++) { const m = st.death ? deathWrap(model(), st.death) : model(); const f = rend.render(m, { W: S, H: S, cx: S / 2, cy: S / 2, k, facing: d * Math.PI * 2 / DIRS, st }); row.push(f.rgba); mrow.push(f.mask); frames++; } rows.push(row); mrows.push(mrow); }
   const sh = sheet(rows, S), msh = sheet(mrows, S);
   fs.writeFileSync(path.join(outDir, id + '.png'), encodePNG(sh.W, sh.H, sh.out)); fs.writeFileSync(path.join(outDir, id + '_m.png'), encodePNG(msh.W, msh.H, msh.out));
-  PREVIEW.push({ id, S, rgba: rows[0][2] });
-  atlas.units[id] = { file: 'assets/sprites/' + id + '.png', mask: 'assets/sprites/' + id + '_m.png', S, cols: DIRS, rows: { i: 0, w: IDLE, a: IDLE + WALK } };
+  PREVIEW.push({ id, S, rgba: rows[Math.min(pvRow, rows.length - 1)][2] });
+  atlas.units[id] = { file: 'assets/sprites/' + id + '.png', mask: 'assets/sprites/' + id + '_m.png', S, cols: DIRS, rows: dies ? { i: 0, w: IDLE, a: IDLE + WALK, d: IDLE + WALK + ATK } : { i: 0, w: IDLE, a: IDLE + WALK } };
   process.stdout.write(id + ' ');
 }
 function bakeBuilding(id, model) {
@@ -46,7 +68,7 @@ for (const [id, model] of Object.entries(BUILDINGS)) { if (only && !only.include
 if (!only) fs.writeFileSync(path.join(root, 'assets', 'atlas.js'), '// generated by tools/bake.js\nconst SPRITE_ATLAS = ' + JSON.stringify(atlas) + ';\n');
 else { // merge into existing atlas
   const ap = path.join(root, 'assets', 'atlas.js'); let prev = { units: {}, buildings: {} }; if (fs.existsSync(ap)) { const c2 = {}; vm.createContext(c2); vm.runInContext(fs.readFileSync(ap, 'utf8') + ';this.__a = SPRITE_ATLAS;', c2); prev = c2.__a; }
-  Object.assign(prev.units, atlas.units); Object.assign(prev.buildings, atlas.buildings); Object.assign(prev, { el: EL, dirs: DIRS, walk: WALK, atk: ATK, idle: IDLE });
+  Object.assign(prev.units, atlas.units); Object.assign(prev.buildings, atlas.buildings); Object.assign(prev, META);
   fs.writeFileSync(ap, '// generated by tools/bake.js\nconst SPRITE_ATLAS = ' + JSON.stringify(prev) + ';\n');
 }
 console.log('\nbaked ' + frames + ' frames in ' + ((Date.now() - t0) / 1000).toFixed(1) + 's');
