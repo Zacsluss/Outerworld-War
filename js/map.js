@@ -44,8 +44,8 @@ const MapCodec = {
 
 // Tilesets a map can declare. The palettes themselves live in js/terrain.js, but the list belongs here
 // so the editor and the headless harnesses can offer them without loading the renderer.
-const TILESET_IDS = ['badlands', 'jungle', 'ice'];
-const TILESET_NAMES = { badlands: 'Badlands', jungle: 'Jungle', ice: 'Ice' };
+const TILESET_IDS = ['badlands', 'jungle', 'ice', 'desert', 'space'];
+const TILESET_NAMES = { badlands: 'Badlands', jungle: 'Jungle', ice: 'Ice', desert: 'Desert', space: 'Space Platform' };
 
 class GameMap {
   constructor(seed = 1, layout = 'temple') {

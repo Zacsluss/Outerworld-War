@@ -56,6 +56,44 @@ const TILESETS = {
     flora: 'rgba(70,110,90,0.7)',
     crater: ['rgba(28,50,78,0.5)', 'rgba(60,92,126,0.35)', 'rgba(240,250,255,0.3)'],
   },
+  desert: {
+    name: 'Desert',
+    // The hard part is not looking like Badlands, which is already tan. Badlands is a brown lowland
+    // with a slightly lighter plateau; Desert inverts the relationship -- a dark rusted canyon floor
+    // under bleached sand mesas -- so the two read apart at a glance even though both are warm. The
+    // value gap (146 -> 214 in red) is doing the work; the hue only says which desert it is.
+    low: (n, c) => { let r = 146 + n * 40, g = 96 + n * 32, b = 58 + n * 22; const dry = c > 0.9 ? (c - 0.9) * 6 : 0; return [r - dry * 40, g - dry * 30, b - dry * 20]; },
+    high: (n, c) => { let r = 214 + n * 34, g = 190 + n * 32, b = 142 + n * 26; const ripple = c > 0.93 ? (c - 0.93) * 8 : 0; return [r - ripple * 26, g - ripple * 28, b - ripple * 30]; },
+    ramp: n => [186 + n * 32, 156 + n * 30, 110 + n * 24],
+    rock: k => [92 * k + 30, 60 * k + 20, 38 * k + 14],
+    slope: k => [128 * k + 32, 96 * k + 22, 62 * k + 16],
+    face: ['rgba(226,190,140,0.55)', 'rgba(128,84,50,0.4)', 'rgba(38,20,10,0.76)'],
+    crack: 'rgba(48,24,10,0.5)', rim: 'rgba(255,246,214,0.32)',
+    rubbleShade: 'rgba(58,32,14,0.6)', rubble: k => 'rgb(' + (176 + k * 14) + ',' + (144 + k * 12) + ',' + (100 + k * 10) + ')',
+    boulder: ['#b08a5e', '#4a3020'], pebble: '#c2a074',
+    flora: 'rgba(126,140,64,0.7)',   // scrub, not grass: a desert with green in it stops reading as one
+    crater: ['rgba(56,30,12,0.55)', 'rgba(92,58,28,0.35)', 'rgba(240,214,168,0.28)'],
+  },
+  space: {
+    name: 'Space Platform',
+    // Unlit deck in the platform's shadow below, hull plating catching a distant sun above, so the
+    // value gap is the widest of the five on purpose: on a space platform the cliff edge is the edge
+    // of the world and it has to be unmissable. The low ground is a dark slate rather than the black
+    // it wants to be, because it is walkable -- units fight on it, and fog darkens it again on top of
+    // whatever this returns. Cracks read as panel seams rather than fractures, which is why the crack
+    // colour is darker than the low ground instead of a tint of it.
+    low: (n, c) => { let r = 58 + n * 26, g = 66 + n * 30, b = 84 + n * 36; const seam = c > 0.9 ? (c - 0.9) * 6 : 0; return [r - seam * 22, g - seam * 26, b - seam * 32]; },
+    high: (n, c) => { let r = 128 + n * 40, g = 136 + n * 42, b = 152 + n * 46; const panel = c > 0.93 ? (c - 0.93) * 8 : 0; return [r - panel * 44, g - panel * 46, b - panel * 48]; },
+    ramp: n => [104 + n * 34, 112 + n * 36, 130 + n * 40],
+    rock: k => [64 * k + 26, 72 * k + 30, 88 * k + 38],
+    slope: k => [86 * k + 28, 96 * k + 32, 116 * k + 42],
+    face: ['rgba(168,196,224,0.6)', 'rgba(64,84,112,0.42)', 'rgba(4,6,12,0.85)'],
+    crack: 'rgba(6,10,18,0.6)', rim: 'rgba(226,244,255,0.45)',
+    rubbleShade: 'rgba(8,12,22,0.6)', rubble: k => 'rgb(' + (108 + k * 16) + ',' + (118 + k * 16) + ',' + (138 + k * 16) + ')',
+    boulder: ['#8fa2b8', '#232c3a'], pebble: '#7e8ea2',
+    flora: 'rgba(70,150,150,0.6)',   // no plants in vacuum; this slot is the only place a hull light can live
+    crater: ['rgba(6,10,18,0.6)', 'rgba(40,54,74,0.35)', 'rgba(200,230,255,0.3)'],
+  },
 };
 const Terrain = {
   CH: 8, chunks: new Map(), seed: 1, creepPat: null, mini: null, setId: 'badlands',

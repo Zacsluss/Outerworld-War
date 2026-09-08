@@ -453,7 +453,7 @@ reverted. Zerg buys upgrades it does not live to use. Treat this lever as closed
   checkpoints past 40 minutes are thinned to every 60 s.
 - **Editor**: the brush is a circle only (rectangle fill is a separate mode). Map size cycles
   96/128/160/192 and the engine accepts 64-256, but the size button is the only way to change it.
-- **Art**: three terrain tilesets — badlands, jungle, ice. A fourth is a palette entry in `js/terrain.js`
+- **Art**: five terrain tilesets — badlands, jungle, ice, desert, space. A sixth is a palette entry in `js/terrain.js`
   plus an id in `TILESET_IDS` in `js/map.js`, and nothing else.
 - **Host migration** is not a thing that needs building: the relay picks the first non-dropped human as
   host, so if the host leaves the next player takes over, and mid-game there is no authority to transfer
