@@ -24,7 +24,16 @@ const Snapshot = {
   _tag(v) {
     if (v instanceof Unit) { if (this._seen) this._seen.add(v.id); return { __u: v.id }; }
     if (v instanceof Player) return { __p: v.id };
-    if (v && v.__resIdx !== undefined) return { __r: v.__resIdx };
+    // By id, through resById, and never by position in G.map.resources. That array is spliced when a
+    // patch runs dry (G.removeResource), but the patch object lives on wherever something still points
+    // at it -- p.startBase.minerals, a worker's order target. A positional tag on one of those survivors
+    // is a stale index: it decoded to whichever patch had shifted into that slot, or off the end to
+    // undefined, so restoring a checkpoint quietly re-aimed workers at other people's minerals. That is
+    // the replay backward-seek bug, and it needed no thinning and no long game -- just one mined-out
+    // patch, which is about 13:00 into any game.
+    // resById is the identity map: built in GameMap.generate and never pruned, so it still holds the
+    // dry ones and a reference to a dry patch round-trips to the same object it did live.
+    if (v && G.map && G.map.resById && G.map.resById.get(v.id) === v) return { __r: v.id };
     if (v && typeof v === 'object' && typeof v.id === 'string' && DATA.all[v.id] === v) return { __d: v.id };
     return null;
   },
@@ -46,7 +55,7 @@ const Snapshot = {
     if (v.__undef) return undefined;
     if (v.__u !== undefined) return G.byId.get(v.__u) || null;
     if (v.__p !== undefined) return G.players[v.__p];
-    if (v.__r !== undefined) return G.map.resources[v.__r];
+    if (v.__r !== undefined) return G.map.resById.get(v.__r);
     if (v.__d !== undefined) return DATA.all[v.__d];
     if (v.__ta) return new (globalThis[v.__ta] || Uint8Array)(v.d);
     if (v.__set) return new Set(v.__set.map(x => this.dec(x)));
@@ -64,8 +73,6 @@ const Snapshot = {
   encUnit(u) { const o = {}; for (const k of Object.keys(u)) { if (typeof u[k] === 'function') continue; o[k] = k === 'def' ? { __d: u.def.id } : this.enc(u[k], 1); } return o; },
 
   take() {
-    // resources are referenced by units (geyser, order targets) and need stable ids
-    G.map.resources.forEach((r, i) => { r.__resIdx = i; });
     this._seen = new Set();
     const s = {
       frame: G.frame, rng: RNG.s, nextId: (typeof UNIT_ID !== 'undefined' ? UNIT_ID : 0),
@@ -131,13 +138,19 @@ const Snapshot = {
     //     so a worker sent to r5 mined r8. Divergence followed 30-80 seconds later, far from the cause.
     // Reusing the live object where the id matches keeps identity, so anything already holding a
     // reference to a patch still points at the right one.
-    const byId = new Map(G.map.resources.map(r => [r.id, r]));
-    G.map.resources = s.resources.map((sr, i) => {
+    // Match on resById, not on the live list: a snapshot taken before a patch ran dry and restored
+    // after it did would otherwise find nothing to reuse and build a second object for that id, while
+    // resById and everything holding a reference kept pointing at the first.
+    const byId = G.map.resById || new Map(G.map.resources.map(r => [r.id, r]));
+    G.map.resources = s.resources.map(sr => {
       const d = {}; for (const k of Object.keys(sr)) d[k] = this.dec(sr[k]);
       const r = byId.get(d.id) || {};
-      this._apply(r, d); r.__resIdx = i; return r;
+      this._apply(r, d); return r;
     });
-    G.map.resById = new Map(G.map.resources.map(r => [r.id, r]));
+    // Merge rather than replace, for the same reason resById is never pruned live: a dry patch is out
+    // of G.map.resources but is still the thing a reference to it must resolve to.
+    if (!G.map.resById) G.map.resById = new Map();
+    for (const r of G.map.resources) G.map.resById.set(r.id, r);
     // 3. fill the units and players in
     s.units.forEach((su, i) => { const u = G.units[i]; for (const k of Object.keys(su)) u[k] = this.dec(su[k]); });
     for (const su of (s.gone || [])) { const u = G.byId.get(su.id); for (const k of Object.keys(su)) u[k] = this.dec(su[k]); }
