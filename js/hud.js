@@ -4,11 +4,91 @@
 // messages, menus, custom cursor. Overrides the drawing methods of UI.
 // ============================================================================
 const HUD = {
-  accent() { const r = G.players[G.human].race; return r === 'T' ? '#6f8fb5' : r === 'Z' ? '#a86ad0' : '#e0b84a'; },
+  // ---- skin -------------------------------------------------------------
+  // The console used to be one gunmetal panel with a coloured line on top whichever race you were.
+  // A 90s RTS console is a piece of the faction's own material -- Terran is stamped steel with hazard
+  // paint, Zerg is carapace, Protoss is gilded stone -- so each race gets a palette and a texture,
+  // and the frame is built from them rather than hard-coded.
+  SKINS: {
+    T: { hi: '#3a4452', lo: '#161b22', edge: '#7d93ad', accent: '#d7a13c', rivet: '#0a0d11', ink: '#0b0e13', grain: 'brushed', stripe: true },
+    Z: { hi: '#3f2c3d', lo: '#150f16', edge: '#a86ad0', accent: '#c07ad8', rivet: '#160b18', ink: '#0d070e', grain: 'organic', stripe: false },
+    P: { hi: '#3b3524', lo: '#16130d', edge: '#e0b84a', accent: '#62d4ff', rivet: '#0d0a06', ink: '#0a0805', grain: 'gilded', stripe: false },
+  },
+  skin() { return this.SKINS[G.players[G.human].race] || this.SKINS.T; },
+  accent() { return this.skin().edge; },
+
+  // The console background is the same pixels every frame, so it is built once into a canvas and
+  // blitted. Drawing the texture live cost more than the whole rest of the HUD; cached it is one
+  // drawImage. Keyed on race and size because those are the only things that change it.
+  panel(w, h) {
+    const r = G.players[G.human].race, key = r + '|' + w + '|' + h;
+    if (this._panelKey === key) return this._panel;
+    const s = this.skin(), cv = document.createElement('canvas'); cv.width = w; cv.height = h; const c = cv.getContext('2d');
+    // Lit hard along the top and falling away fast, the way a plate tilted toward the room catches
+    // light. A flat top-to-bottom ramp reads as a coloured rectangle; the kink at 0.18 is what makes
+    // it read as a surface with a thickness.
+    const g = c.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, s.hi); g.addColorStop(0.18, s.hi); g.addColorStop(0.55, s.lo); g.addColorStop(1, s.ink);
+    c.fillStyle = g; c.fillRect(0, 0, w, h);
+    // texture. Deterministic from a fixed seed so the panel does not shimmer when the window resizes.
+    let seed = 1234567;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    c.save();
+    if (s.grain === 'brushed') { // horizontal tooling marks, like rolled plate
+      for (let i = 0; i < h * 1.4; i++) { const y = rnd() * h; c.strokeStyle = 'rgba(255,255,255,' + (0.012 + rnd() * 0.022).toFixed(3) + ')'; c.beginPath(); c.moveTo(rnd() * w * 0.5, y); c.lineTo(w * (0.4 + rnd() * 0.6), y); c.stroke(); }
+    } else if (s.grain === 'organic') { // carapace: overlapping dark cells with a wet highlight
+      for (let i = 0; i < 90; i++) { const x = rnd() * w, y = rnd() * h, rx = 14 + rnd() * 40, ry = 6 + rnd() * 14; c.fillStyle = 'rgba(0,0,0,' + (0.10 + rnd() * 0.16).toFixed(3) + ')'; c.beginPath(); c.ellipse(x, y, rx, ry, rnd() * 0.6 - 0.3, 0, 7); c.fill(); c.strokeStyle = 'rgba(190,140,210,0.05)'; c.lineWidth = 1; c.beginPath(); c.ellipse(x, y - 1, rx, ry, 0, 3.6, 5.8); c.stroke(); }
+    } else { // gilded: fine vertical fluting and a warm sheen
+      for (let x = 0; x < w; x += 6) { c.fillStyle = 'rgba(255,225,150,' + (0.018 + (x % 12 ? 0 : 0.02)).toFixed(3) + ')'; c.fillRect(x, 0, 2, h); }
+      const sh = c.createLinearGradient(0, 0, w, h); sh.addColorStop(0, 'rgba(255,220,140,0.05)'); sh.addColorStop(0.5, 'rgba(0,0,0,0)'); sh.addColorStop(1, 'rgba(255,220,140,0.04)'); c.fillStyle = sh; c.fillRect(0, 0, w, h);
+    }
+    c.restore();
+    // the lit top edge, and Terran's hazard stripe under it
+    c.fillStyle = s.edge; c.globalAlpha = 0.75; c.fillRect(0, 0, w, 2); c.globalAlpha = 1;
+    if (s.stripe) { c.save(); c.beginPath(); c.rect(0, 2, w, 5); c.clip(); for (let x = -20; x < w + 20; x += 14) { c.fillStyle = (x / 14 | 0) % 2 ? 'rgba(215,161,60,0.5)' : 'rgba(20,24,30,0.5)'; c.beginPath(); c.moveTo(x, 7); c.lineTo(x + 7, 2); c.lineTo(x + 14, 2); c.lineTo(x + 7, 7); c.closePath(); c.fill(); } c.restore(); }
+    // Ribs where the console divides into minimap / unit panel / command card. A real one is bolted
+    // together out of sections and the seams are where the eye rests; without them the whole bar is
+    // one undifferentiated slab however good the texture is.
+    for (const fx of [0.155, 0.815]) {
+      const x = Math.round(w * fx);
+      c.fillStyle = 'rgba(0,0,0,0.55)'; c.fillRect(x - 3, 4, 3, h - 8);
+      c.fillStyle = 'rgba(255,255,255,0.10)'; c.fillRect(x, 4, 2, h - 8);
+      c.fillStyle = s.edge; c.globalAlpha = 0.18; c.fillRect(x - 1, 4, 1, h - 8); c.globalAlpha = 1;
+      for (let ry = 12; ry < h - 10; ry += 22) { c.fillStyle = s.rivet; c.beginPath(); c.arc(x - 1, ry, 2, 0, 7); c.fill(); c.fillStyle = 'rgba(255,255,255,0.22)'; c.beginPath(); c.arc(x - 1.5, ry - .6, 0.9, 0, 7); c.fill(); }
+    }
+    c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(0, h - 1, w, 1);
+    this._panelKey = key; return this._panel = cv;
+  },
   font(sz, bold = true) { return (bold ? 'bold ' : '') + sz + 'px "Trebuchet MS", "Segoe UI", Arial, sans-serif'; },
-  bevel(ctx, x, y, w, h, raised = true, fill = '#1c212a') { ctx.fillStyle = fill; ctx.fillRect(x, y, w, h); ctx.strokeStyle = raised ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x + .5, y + h - .5); ctx.lineTo(x + .5, y + .5); ctx.lineTo(x + w - .5, y + .5); ctx.stroke(); ctx.strokeStyle = raised ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.15)'; ctx.beginPath(); ctx.moveTo(x + w - .5, y + .5); ctx.lineTo(x + w - .5, y + h - .5); ctx.lineTo(x + .5, y + h - .5); ctx.stroke(); },
-  frame(ctx, x, y, w, h) { const g = ctx.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, '#2a303b'); g.addColorStop(1, '#151920'); ctx.fillStyle = g; ctx.fillRect(x, y, w, h); this.bevel(ctx, x + 2, y + 2, w - 4, h - 4, true, 'rgba(0,0,0,0)'); const a = this.accent(); ctx.fillStyle = a; ctx.globalAlpha = 0.6; ctx.fillRect(x, y, w, 2); ctx.globalAlpha = 1; for (const [rx, ry] of [[x + 6, y + 6], [x + w - 8, y + 6], [x + 6, y + h - 8], [x + w - 8, y + h - 8]]) { ctx.fillStyle = '#0b0d11'; ctx.beginPath(); ctx.arc(rx, ry, 2.5, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.beginPath(); ctx.arc(rx - .7, ry - .7, 1.2, 0, 7); ctx.fill(); } },
-  inset(ctx, x, y, w, h) { ctx.fillStyle = '#07090c'; ctx.fillRect(x, y, w, h); this.bevel(ctx, x, y, w, h, false, 'rgba(0,0,0,0)'); },
+  // Two-pixel bevel rather than one: the outer line is the hard highlight, the inner a softer one, so
+  // a button reads as a thick piece of plate at a glance instead of a rectangle with a light edge.
+  bevel(ctx, x, y, w, h, raised = true, fill = '#1c212a') {
+    ctx.fillStyle = fill; ctx.fillRect(x, y, w, h);
+    for (const [i, a] of [[0, raised ? 0.22 : 0.62], [1, raised ? 0.10 : 0.28]]) {
+      ctx.strokeStyle = raised ? 'rgba(255,255,255,' + a + ')' : 'rgba(0,0,0,' + a + ')'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x + i + .5, y + h - i - .5); ctx.lineTo(x + i + .5, y + i + .5); ctx.lineTo(x + w - i - .5, y + i + .5); ctx.stroke();
+      ctx.strokeStyle = raised ? 'rgba(0,0,0,' + (a * 2.6) + ')' : 'rgba(255,255,255,' + (a * 0.35) + ')';
+      ctx.beginPath(); ctx.moveTo(x + w - i - .5, y + i + .5); ctx.lineTo(x + w - i - .5, y + h - i - .5); ctx.lineTo(x + i + .5, y + h - i - .5); ctx.stroke();
+    }
+  },
+  frame(ctx, x, y, w, h) {
+    const s = this.skin();
+    ctx.drawImage(this.panel(Math.max(1, Math.round(w)), Math.max(1, Math.round(h))), x, y);
+    this.bevel(ctx, x + 2, y + 2, w - 4, h - 4, true, 'rgba(0,0,0,0)');
+    // Corner brackets rather than four loose rivets: an L of plate with a rivet through it, which is
+    // the detail that makes a console read as bolted together instead of drawn on.
+    const B = 16;
+    for (const [cx, cy, sx, sy] of [[x + 4, y + 4, 1, 1], [x + w - 4, y + 4, -1, 1], [x + 4, y + h - 4, 1, -1], [x + w - 4, y + h - 4, -1, -1]]) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.lineWidth = 2; ctx.beginPath();
+      ctx.moveTo(cx + sx * B, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + sy * B); ctx.stroke();
+      ctx.strokeStyle = s.edge; ctx.globalAlpha = 0.35; ctx.lineWidth = 1; ctx.beginPath();
+      ctx.moveTo(cx + sx * (B - 3), cy + sy * 3); ctx.lineTo(cx + sx * 3, cy + sy * 3); ctx.lineTo(cx + sx * 3, cy + sy * (B - 3)); ctx.stroke(); ctx.globalAlpha = 1;
+      const rx = cx + sx * 7, ry = cy + sy * 7;
+      ctx.fillStyle = s.rivet; ctx.beginPath(); ctx.arc(rx, ry, 2.6, 0, 7); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.beginPath(); ctx.arc(rx - .8, ry - .8, 1.1, 0, 7); ctx.fill();
+    }
+  },
+  inset(ctx, x, y, w, h) { const s = this.skin(); ctx.fillStyle = s.ink; ctx.fillRect(x, y, w, h); this.bevel(ctx, x, y, w, h, false, 'rgba(0,0,0,0)'); ctx.strokeStyle = s.edge; ctx.globalAlpha = 0.22; ctx.lineWidth = 1; ctx.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3); ctx.globalAlpha = 1; },
   text(ctx, s, x, y, color = '#d8dde4', sz = 12, bold = true, align = 'left') { ctx.font = this.font(sz, bold); ctx.textAlign = align; ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillText(s, x + 1, y + 1); ctx.fillStyle = color; ctx.fillText(s, x, y); ctx.textAlign = 'left'; },
   hotLabel(ctx, label, hk, x, y, w, color = '#e6eaf0', fs = 10) { // label with hotkey letter highlighted
     ctx.font = this.font(fs); const words = label.split(' '); const lines = []; let cur = ''; for (const wd of words) { if (ctx.measureText((cur + ' ' + wd).trim()).width > w - 6 && cur) { lines.push(cur); cur = wd; } else cur = (cur + ' ' + wd).trim(); } lines.push(cur);
