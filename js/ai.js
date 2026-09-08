@@ -116,6 +116,31 @@ class AI {
       if (met(i)) continue;
       const id = s[i][1], def = DATA.buildings[id];
       if (!p.hasReq(def)) continue;
+      // The head step is "the first thing we still owe", so its money should be held whether or not this
+      // think can *start* it. The reserve is set only on the affordability path below, which puts it
+      // behind two gates that skip the step for reasons that have nothing to do with money -- the
+      // underway throttle and the gas-hungry-tech gate -- so those two release the head step's money in
+      // the same breath as they refuse it. Measured over nine TvZ games with the Zerg head step on the
+      // Spire (200/150): 750 think-ticks refused by the throttle and 502 by the tech gate against 925
+      // for money, so on 58% of the ticks where the Spire was still owed, nothing was being saved for it.
+      // It finished in 1 of 9 games, the Hive and the Cavern in none, and 11 of the 20 weight in
+      // AI_COMP.ZvT therefore sits behind buildings that never exist.
+      //
+      // Zerg only, and the reason is measured rather than tidy. Holding the head step's money is not
+      // free: it trades army now for tech on time, and because `afford` exempts workers the same brake
+      // lands differently per race -- Terran pays it out of marines, Zerg pays it out of zerglings and
+      // the minerals go to drones instead. Race-neutral over 128 paired ten-minute games it was a 14.7
+      // supply swing towards Zerg, but decomposed that is Terran -9.6 (p = 0.000) and Zerg +5.2
+      // (p = 0.001): mostly a Terran regression, and PvT has no trustworthy number to check it against.
+      // Zerg is the one race whose tech tree the measurement shows amputated, so Zerg gets it.
+      //
+      // **This strengthens Zerg in PvZ too, by about as much as in TvZ**, and PvZ is the matchup that
+      // punished the last Zerg-only lever (M8: relaxing the base-count floor for Zerg took TvZ to 65%
+      // and collapsed PvZ to 11%). Proxied here at 132 ZP games: sup@10 -10.46 (p = 0.005), score@cap
+      // -16.39 (p = 0.013) against TvZ's -10.78 and -18.28. PvZ has no trustworthy absolute number yet
+      // -- M9 task 0 is producing it -- so the confirming run has to cover TZ *and* ZP, and if PvZ has
+      // come back Zerg-favoured after the Hold Position fix then this line is the first suspect.
+      if (this.race === 'Z' && i === this.scriptIdx && this.count(id) <= this.scriptHave(cnt, id)) this.reserve(def);
       if (def.tier === 'addon') { if (this.addon(id)) { this.stepT = G.frame; return; } continue; }
       if (def.tier === 'morph') { if (this.mine(u => u.prod.some(it => it.kind === 'morph' && it.id === id)).length) continue; if (this.morph(id)) { this.stepT = G.frame; return; } continue; }
       if (this.count(id) > this.scriptHave(cnt, id)) continue;           // already pending / in construction
