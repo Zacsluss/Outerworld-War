@@ -1,12 +1,25 @@
 'use strict';
 // ============================================================================
-// Sprite cache: pre-renders unit painters per facing (16 dirs) and building
+// Sprite cache: pre-renders unit painters per facing (16 dirs, 32 for a few) and building
 // painters per type/colour, applies consistent top-left lighting + outline.
 // ============================================================================
 const Sprites = {
   DIRS: 16, cache: new Map(),
   clear() { this.cache.clear(); },
-  dirOf(facing) { const d = Math.round(facing / (Math.PI * 2 / this.DIRS)); return ((d % this.DIRS) + this.DIRS) % this.DIRS; },
+  // How many facings this unit was actually baked at. Most are DIRS; a handful of slow-turning types
+  // are baked at 32 because they visibly hold a bucket for two or more sim frames (see FINE_DIRS in
+  // tools/bake.js). The atlas has recorded `cols` per unit since the sheets existed -- nothing read it.
+  // Falls back to DIRS whenever the baked sheet is not the one being drawn, which is what keeps the
+  // vector painters correct: they rotate by dir * 2PI / DIRS.
+  dirsFor(u) {
+    if (u && u.def && typeof Atlas !== 'undefined' && Atlas.data) {
+      const id = this.variant(u) === 's' ? u.def.id + '_s' : u.def.id;
+      const a = Atlas.data.units[id];
+      if (a && a.cols && Atlas.hasUnit(id)) return a.cols;
+    }
+    return this.DIRS;
+  },
+  dirOf(facing, u) { const n = this.dirsFor(u); const d = Math.round(facing / (Math.PI * 2 / n)); return ((d % n) + n) % n; },
   variant(u) { return u.sieged ? 's' : ''; },
   light(c, S, strength = 1) { // fixed-direction lighting over painted pixels
     c.globalCompositeOperation = 'source-atop'; const g = c.createLinearGradient(-S / 2, -S / 2, S / 2, S / 2); g.addColorStop(0, `rgba(255,255,255,${0.26 * strength})`); g.addColorStop(0.45, 'rgba(255,255,255,0)'); g.addColorStop(0.6, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${0.42 * strength})`); c.fillStyle = g; c.fillRect(-S / 2, -S / 2, S, S); c.globalCompositeOperation = 'source-over';
@@ -66,7 +79,7 @@ const Sprites = {
   icon(defId, color, sz) {
     const key = 'i|' + defId + '|' + color + '|' + sz; let s = this.cache.get(key); if (s) return s;
     const cv = document.createElement('canvas'); cv.width = sz; cv.height = sz; const c = cv.getContext('2d'); const def = DATA.all[defId]; if (!def) return cv;
-    if (typeof Atlas !== 'undefined') { if (!def.isBuilding && Atlas.hasUnit(defId)) { const f = Atlas.unitFrame(defId, color, 14, 'i'); const k = (sz - 2) / f.S * 1.35; c.translate(sz / 2, sz / 2 + 2); c.scale(k, k); this.draw(c, f, 0, 0); this.cache.set(key, cv); return cv; } if (def.isBuilding && Atlas.hasBuilding(defId)) { const b = Atlas.buildingImage(defId, color); const k = (sz - 4) / Math.max(b.cv.width, b.cv.height); c.translate(sz / 2 - b.cv.width * k / 2, sz / 2 - b.cv.height * k / 2); c.scale(k, k); c.drawImage(b.cv, 0, 0); this.cache.set(key, cv); return cv; } }
+    if (typeof Atlas !== 'undefined') { if (!def.isBuilding && Atlas.hasUnit(defId)) { const cols = Atlas.data.units[defId].cols || this.DIRS; const f = Atlas.unitFrame(defId, color, Math.round(14 * cols / this.DIRS) % cols, 'i'); const k = (sz - 2) / f.S * 1.35; c.translate(sz / 2, sz / 2 + 2); c.scale(k, k); this.draw(c, f, 0, 0); this.cache.set(key, cv); return cv; } if (def.isBuilding && Atlas.hasBuilding(defId)) { const b = Atlas.buildingImage(defId, color); const k = (sz - 4) / Math.max(b.cv.width, b.cv.height); c.translate(sz / 2 - b.cv.width * k / 2, sz / 2 - b.cv.height * k / 2); c.scale(k, k); c.drawImage(b.cv, 0, 0); this.cache.set(key, cv); return cv; } }
     const h = PaintHelpers(c); c.lineJoin = 'round';
     if (def.isBuilding) { const W = def.w * TILE, H = def.h * TILE; const k = (sz - 6) / Math.max(W, H); c.translate(sz / 2 - W * k / 2, sz / 2 - H * k / 2); c.scale(k, k); (BUILDING_PAINTERS[defId] || BUILDING_PAINTERS.supply_depot)(h, c, W, H, color, shade(color, .6)); }
     else { const r = def.r || 10; const k = (sz / 2 - 3) / (r * 1.5); c.translate(sz / 2, sz / 2); c.scale(k, k); c.rotate(-Math.PI / 2 + 0.6); (UNIT_PAINTERS[defId] || UNIT_PAINTERS.marine)(h, r, color, shade(color, .6), { walk: null, atk: null }); }

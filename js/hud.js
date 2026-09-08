@@ -182,7 +182,7 @@ Object.assign(UI, {
     HUD.bevel(ctx, x + 8, y + 8, 80, 80, false, '#0a0d12'); const g = ctx.createRadialGradient(x + 48, y + 48, 4, x + 48, y + 48, 44); g.addColorStop(0, '#1e2a3a'); g.addColorStop(1, '#05070a'); ctx.fillStyle = g; ctx.fillRect(x + 9, y + 9, 78, 78);
     ctx.save(); ctx.beginPath(); ctx.rect(x + 9, y + 9, 78, 78); ctx.clip(); ctx.translate(x + 48, y + 50 + Math.sin(G.frame * 0.05) * 1.5);
     if (u.isBuilding) { const s = Sprites.building(u); const k = Math.min(72 / s.cv.width, 72 / s.cv.height) * 1.05; ctx.scale(k, k); ctx.drawImage(s.cv, -s.cv.width / 2, -s.cv.height / 2 + 4); }
-    else { const s = Sprites.unit(u, Sprites.dirOf(-Math.PI / 2 + Math.sin(G.frame * 0.02) * 0.5), Render.animOf(u)); const k = Math.min(2.4, 36 / u.r); ctx.scale(k, k); Sprites.draw(ctx, s, 0, 0); }
+    else { const s = Sprites.unit(u, Sprites.dirOf(-Math.PI / 2 + Math.sin(G.frame * 0.02) * 0.5, u), Render.animOf(u)); const k = Math.min(2.4, 36 / u.r); ctx.scale(k, k); Sprites.draw(ctx, s, 0, 0); }
     ctx.restore(); ctx.fillStyle = 'rgba(255,255,255,0.04)'; for (let i = 0; i < 78; i += 3) ctx.fillRect(x + 9, y + 9 + i, 78, 1);
     // name + stats
     let ly = y + 24; const tx = x + 100; HUD.text(ctx, u.def.name + (u.halluc ? ' (Hallucination)' : ''), tx, ly, u.owner === G.human ? HUD.accent() : p.color, 14); ly += 16;

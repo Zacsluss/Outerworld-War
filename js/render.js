@@ -92,7 +92,7 @@ const Render = {
       if (u.burrowed || u.def.mine) continue;
       // A lifted building has no unit silhouette either, for the same reason, so it takes the blob --
       // cast well below it, because it is in the air.
-      const sh = (u.fly || u.lifted) ? null : (u.isBuilding ? Sprites.buildingShadow(u) : Sprites.shadow(u, Sprites.dirOf(u.facing), this.animOf(u)));
+      const sh = (u.fly || u.lifted) ? null : (u.isBuilding ? Sprites.buildingShadow(u) : Sprites.shadow(u, Sprites.dirOf(u.facing, u), this.animOf(u)));
       if (!sh) { const air = u.fly || u.isBuilding; ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.globalAlpha = u._alpha * (air ? 0.3 : 0.4); const rr = u.isBuilding ? u.def.w * TILE * 0.42 : u.r * 0.95; ctx.beginPath(); ctx.ellipse(u._x + (air ? 14 : 3), u._y + (air ? 26 : u.r * 0.35 + 2), rr, rr * 0.47, 0, 0, 7); ctx.fill(); continue; }
       // Squash straight into drawImage's destination rectangle rather than setting a matrix. A shear
       // would be truer -- a shadow really does lean away from the light -- but a sheared blit is not
@@ -255,7 +255,7 @@ const Render = {
     ctx.save(); ctx.globalAlpha = u._alpha * (u.fx.stasis > 0 ? 0.6 : 1);
     if (u.burrowed && !u.def.mine) { ctx.fillStyle = 'rgba(60,30,70,0.7)'; ctx.beginPath(); ctx.ellipse(x, y, u.r, u.r * .55, 0, 0, 7); ctx.fill(); ctx.fillStyle = G.players[u.owner].color; ctx.fillRect(x - 3, y - 2, 6, 4); ctx.restore(); return; }
     if (u.def.mine) { ctx.globalAlpha *= u.burrowed ? 0.5 : 1; ctx.fillStyle = '#4a5058'; ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill(); ctx.fillStyle = (G.frame % 20 < 10) ? '#ff3030' : '#802020'; ctx.fillRect(x - 1.5, y - 1.5, 3, 3); ctx.restore(); return; }
-    const s = Sprites.unit(u, Sprites.dirOf(u.facing), this.animOf(u));
+    const s = Sprites.unit(u, Sprites.dirOf(u.facing, u), this.animOf(u));
     let bob = 0, sc = 1; if (u.moving && !u.fly && u.def.bio) bob = Math.sin(G.frame * 0.7 + u.id) * 1.2; if (u.fly) bob = Math.sin(G.frame * 0.08 + u.id) * 2; if (u.def.id === 'zergling' && u.moving) sc = 1 + Math.sin(G.frame * 0.9 + u.id) * 0.06;
     if (u.morphT > 0) { ctx.globalAlpha *= 0.5 + 0.5 * Math.sin(G.frame * 0.3); }
     // Weight, part two. A unit that translates and rotates rigidly reads as a chess piece being slid;

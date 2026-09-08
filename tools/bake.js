@@ -17,6 +17,14 @@ const args = process.argv.slice(2); const only = args.includes('--only') ? args[
 // at a death row without a browser.
 const pvRow = args.includes('--pv') ? parseInt(args[args.indexOf('--pv') + 1]) : 0;
 const DIRS = 16, WALK = 8, ATK = 5, IDLE = 4, EL = 50, GZ = 0.85;
+// Facings are per unit, not global. Lane B measured how long each type holds one 16-direction bucket
+// while turning: siege_tank 3.3 sim frames, reaver 2.6, ultralisk 2.0, vulture 1.8, and everything
+// else under 1.6 -- the nineteen ground types with no TURN entry rotate at 0.7 rad/frame and already
+// cross nearly two buckets per frame, so extra rows for them would be sub-frame and invisible.
+// Doubling globally cost x1.96 bytes and took the runtime tinted-sheet budget from 576 MB to 1152 MB
+// for a fix only four types can show. Doubling just these five is about +3.3 MB.
+const FINE_DIRS = new Set(['siege_tank', 'siege_tank_s', 'vulture', 'reaver', 'ultralisk']);
+const dirsFor = id => FINE_DIRS.has(id) ? 32 : DIRS;
 // Death: DVAR poses x DFR frames, appended after the attack rows. Ground units only -- js/fx.js only
 // makes a corpse decal when the dead unit was not flying, so death rows on a battlecruiser would be
 // 180 KB of sheet nothing can ever draw.
@@ -44,14 +52,15 @@ const t0 = Date.now(); let frames = 0; const PREVIEW = [];
 function bakeUnit(id, model) {
   const baseId = id.replace(/_s$/, ''); const def = DATA.units[baseId]; if (!def) return;
   const r = def.r || 10; const k = r * (r <= 9 ? 1.75 : r <= 14 ? 1.4 : 1.15) * (ART_SCALE[baseId] || 1); const S = Math.ceil(k * 5) + 14; const ss = ssArg || (r <= 10 ? 3 : 2);
+  const NDIR = dirsFor(id);
   const rend = new Renderer({ elevation: EL, ss, groundScale: GZ, ambient: 0.3, aoH: 1.2, race: def.race }); const rows = [], mrows = []; const previewFrame = { S };
   const anims = []; for (let i = 0; i < IDLE; i++) anims.push({ walk: null, atk: null, idle: i / IDLE }); for (let i = 0; i < WALK; i++) anims.push({ walk: i / WALK, atk: null, idle: null }); for (let i = 0; i < ATK; i++) anims.push({ walk: null, atk: (i + 0.5) / ATK, idle: null });
   const dies = !def.fly; if (dies) for (let v = 0; v < DVAR; v++) for (let i = 0; i < DFR; i++) anims.push({ walk: null, atk: null, idle: null, death: { v, t: DEASE[i] } });
-  for (const st of anims) { const row = [], mrow = []; for (let d = 0; d < DIRS; d++) { const m = st.death ? deathWrap(model(), st.death) : model(); const f = rend.render(m, { W: S, H: S, cx: S / 2, cy: S / 2, k, facing: d * Math.PI * 2 / DIRS, st }); row.push(f.rgba); mrow.push(f.mask); frames++; } rows.push(row); mrows.push(mrow); }
+  for (const st of anims) { const row = [], mrow = []; for (let d = 0; d < NDIR; d++) { const m = st.death ? deathWrap(model(), st.death) : model(); const f = rend.render(m, { W: S, H: S, cx: S / 2, cy: S / 2, k, facing: d * Math.PI * 2 / NDIR, st }); row.push(f.rgba); mrow.push(f.mask); frames++; } rows.push(row); mrows.push(mrow); }
   const sh = sheet(rows, S), msh = sheet(mrows, S);
   fs.writeFileSync(path.join(outDir, id + '.png'), encodePNG(sh.W, sh.H, sh.out)); fs.writeFileSync(path.join(outDir, id + '_m.png'), encodePNG(msh.W, msh.H, msh.out));
   PREVIEW.push({ id, S, rgba: rows[Math.min(pvRow, rows.length - 1)][2] });
-  atlas.units[id] = { file: 'assets/sprites/' + id + '.png', mask: 'assets/sprites/' + id + '_m.png', S, cols: DIRS, rows: dies ? { i: 0, w: IDLE, a: IDLE + WALK, d: IDLE + WALK + ATK } : { i: 0, w: IDLE, a: IDLE + WALK } };
+  atlas.units[id] = { file: 'assets/sprites/' + id + '.png', mask: 'assets/sprites/' + id + '_m.png', S, cols: NDIR, rows: dies ? { i: 0, w: IDLE, a: IDLE + WALK, d: IDLE + WALK + ATK } : { i: 0, w: IDLE, a: IDLE + WALK } };
   process.stdout.write(id + ' ');
 }
 function bakeBuilding(id, model) {

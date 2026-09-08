@@ -73,7 +73,7 @@ const FX = {
         // pose starts part-way down.
         const D = this.deathRows(def.id); let anim = k < 1 ? 'a2' : 'i';
         if (D && k >= 0.25) { const v = ((d.born + (d.x | 0) + (d.y | 0)) % D.v + D.v) % D.v; anim = 'd' + (v * D.f + Math.min(D.f - 1, Math.floor((k - 0.25) / 0.75 * D.f))); }
-        const s = Sprites.unit(fake, Sprites.dirOf(d.facing), anim); ctx.save(); ctx.globalAlpha = a * (0.85 + (1 - k) * 0.15); ctx.filter = k < 1 ? `brightness(${1 - k * 0.45}) sepia(${k * 0.6})` : (d.kind === 'corpse' ? 'brightness(0.55) sepia(0.6) hue-rotate(-30deg)' : 'brightness(0.35) grayscale(0.7)'); ctx.translate(d.x, d.y + k * 3);
+        const s = Sprites.unit(fake, Sprites.dirOf(d.facing, fake), anim); ctx.save(); ctx.globalAlpha = a * (0.85 + (1 - k) * 0.15); ctx.filter = k < 1 ? `brightness(${1 - k * 0.45}) sepia(${k * 0.6})` : (d.kind === 'corpse' ? 'brightness(0.55) sepia(0.6) hue-rotate(-30deg)' : 'brightness(0.35) grayscale(0.7)'); ctx.translate(d.x, d.y + k * 3);
         // The 2D squash used to BE the death animation. On the baked path it is only the last of the
         // settle on top of a real pose, so it drops to a tenth; with no baked rows it is untouched.
         if (!D) { ctx.rotate((d.kind === 'corpse' ? 0.6 : 0.25) * k * (d.def.length % 2 ? 1 : -1)); ctx.scale(1 + k * 0.1, 1 - k * 0.3); } else if (k < 1) ctx.scale(1 + k * 0.05, 1 - k * 0.08);
