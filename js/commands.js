@@ -16,23 +16,35 @@ const CMD = {
   ids(units) { return units.map(u => u.id); },
   units(ids, p) { const out = []; for (const id of ids) { const u = G.byId.get(id); if (u && u.alive && (p === undefined || u.owner === p || G.allied(u.owner, p))) out.push(u); } return out; },
   // -------- dispatcher: applies a command with original (unwrapped) functions --------
+  // Resolve a building a command names. G.byId never forgets a unit -- that is deliberate, the
+  // snapshot depends on it -- so `get` happily returns a corpse, and every one of these cases used to
+  // check only the owner. A dead building is still `done`, and none of the G.queue* validators look at
+  // `alive`, so a killed Factory accepted `train` and `upg`: the money was spent, the item joined a
+  // queue that will never tick, and an upgrade's reservation went into p.researching where nothing
+  // would ever clear it -- blocking that upgrade for the rest of the game.
+  //
+  // Not reachable in single player, where ownSel filters on alive and G.exec runs immediately. It is
+  // reachable in LAN, where Net.queue defers a command by design and the building can die in the gap.
+  // Deterministic on both clients, so it never desynced; it just quietly cost you a research slot.
+  bldg(id, own) { const b = G.byId.get(id); return b && b.alive && b.owner === own ? b : null; },
+
   apply(c) {
     const O = CMD.orig; const own = c.p;
     switch (c.t) {
       case 'order': { const o = this.unpackOrder(c.o); if (o.type === 'build' && !o.def) return false; if (o.type !== 'idle' && o.type !== 'hold' && o.type !== 'move' && o.type !== 'attackmove' && o.type !== 'patrol' && o.type !== 'unload' && o.type !== 'land' && !o.target && !o.def && !o.then && o.type !== 'return') return false; let ok = false; for (const u of this.units(c.u, own)) { O.setOrder.call(u, o, c.s); ok = true; } return ok; }
       case 'stop': for (const u of this.units(c.u, own)) O.stop.call(u); return true;
-      case 'train': { const b = G.byId.get(c.b); return b && b.owner === own ? O.queueUnit.call(G, b, c.id) : false; }
-      case 'larva': { const l = G.byId.get(c.b); return l && l.owner === own ? O.larvaMorph.call(G, l, c.id) : false; }
-      case 'upg': { const b = G.byId.get(c.b); return b && b.owner === own ? O.queueUpgrade.call(G, b, c.id) : false; }
-      case 'tech': { const b = G.byId.get(c.b); return b && b.owner === own ? O.queueTech.call(G, b, c.id) : false; }
-      case 'addon': { const b = G.byId.get(c.b); return b && b.owner === own ? O.queueAddon.call(G, b, c.id) : false; }
-      case 'morphB': { const b = G.byId.get(c.b); return b && b.owner === own ? O.queueMorph.call(G, b, c.id) : false; }
-      case 'cancel': { const b = G.byId.get(c.b); if (b && b.owner === own) O.cancelProd.call(G, b, c.i); return true; }
-      case 'cancelB': { const b = G.byId.get(c.b); if (b && b.owner === own) O.cancelBuilding.call(G, b); return true; }
-      case 'rally': { const b = G.byId.get(c.b); if (b && b.owner === own) O.setRally.call(G, b, c.x, c.y, this.deref(c.tg)); return true; }
-      case 'lift': { const b = G.byId.get(c.b); if (b && b.owner === own) O.liftBuilding.call(G, b); return true; }
-      case 'unloadAll': { const b = G.byId.get(c.b); if (b && b.owner === own) O.unloadAll.call(G, b); return true; }
-      case 'unloadCargo': { const b = G.byId.get(c.b), u = G.byId.get(c.c); if (b && b.owner === own && u) O.unloadCargo.call(G, b, u); return true; }
+      case 'train': { const b = CMD.bldg(c.b, own); return b ? O.queueUnit.call(G, b, c.id) : false; }
+      case 'larva': { const l = CMD.bldg(c.b, own); return l ? O.larvaMorph.call(G, l, c.id) : false; }
+      case 'upg': { const b = CMD.bldg(c.b, own); return b ? O.queueUpgrade.call(G, b, c.id) : false; }
+      case 'tech': { const b = CMD.bldg(c.b, own); return b ? O.queueTech.call(G, b, c.id) : false; }
+      case 'addon': { const b = CMD.bldg(c.b, own); return b ? O.queueAddon.call(G, b, c.id) : false; }
+      case 'morphB': { const b = CMD.bldg(c.b, own); return b ? O.queueMorph.call(G, b, c.id) : false; }
+      case 'cancel': { const b = CMD.bldg(c.b, own); if (b && b.owner === own) O.cancelProd.call(G, b, c.i); return true; }
+      case 'cancelB': { const b = CMD.bldg(c.b, own); if (b && b.owner === own) O.cancelBuilding.call(G, b); return true; }
+      case 'rally': { const b = CMD.bldg(c.b, own); if (b && b.owner === own) O.setRally.call(G, b, c.x, c.y, this.deref(c.tg)); return true; }
+      case 'lift': { const b = CMD.bldg(c.b, own); if (b && b.owner === own) O.liftBuilding.call(G, b); return true; }
+      case 'unloadAll': { const b = CMD.bldg(c.b, own); if (b && b.owner === own) O.unloadAll.call(G, b); return true; }
+      case 'unloadCargo': { const b = CMD.bldg(c.b, own), u = G.byId.get(c.c); if (b && b.owner === own && u) O.unloadCargo.call(G, b, u); return true; }
       case 'ability': { let ok = false; const tg = this.deref(c.tg); for (const u of this.units(c.u, own)) if (O.issue.call(Abilities, u, c.a, tg, c.x, c.y, c.s)) ok = true; return ok; }
       case 'merge': return O.merge.call(Abilities, this.units(c.u, own), c.a);
       case 'cheat': return O.cheat.call(G, c.code, own);
