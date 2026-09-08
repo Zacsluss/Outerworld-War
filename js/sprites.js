@@ -5,19 +5,25 @@
 // ============================================================================
 const Sprites = {
   DIRS: 16, cache: new Map(),
-  clear() { this.cache.clear(); },
+  clear() { this.cache.clear(); this._dirs.clear(); },
   // How many facings this unit was actually baked at. Most are DIRS; a handful of slow-turning types
   // are baked at 32 because they visibly hold a bucket for two or more sim frames (see FINE_DIRS in
   // tools/bake.js). The atlas has recorded `cols` per unit since the sheets existed -- nothing read it.
   // Falls back to DIRS whenever the baked sheet is not the one being drawn, which is what keeps the
   // vector painters correct: they rotate by dir * 2PI / DIRS.
+  // Memoised per sheet id, because the draw loop asks twice per unit per frame -- once in the shadow
+  // pass and once in drawUnit -- and the answer only changes when a sheet finishes loading. A miss
+  // while the images are still in flight is deliberately not cached: `Sprites.unit` takes the vector
+  // path under exactly the same condition, and the two have to flip together or the fallback painters
+  // get a facing index they cannot rotate to.
+  _dirs: new Map(),
   dirsFor(u) {
-    if (u && u.def && typeof Atlas !== 'undefined' && Atlas.data) {
-      const id = this.variant(u) === 's' ? u.def.id + '_s' : u.def.id;
-      const a = Atlas.data.units[id];
-      if (a && a.cols && Atlas.hasUnit(id)) return a.cols;
-    }
-    return this.DIRS;
+    if (!u || !u.def) return this.DIRS;
+    const id = u.sieged ? u.def.id + '_s' : u.def.id;
+    const n = this._dirs.get(id); if (n !== undefined) return n;
+    if (typeof Atlas === 'undefined' || !Atlas.data || !Atlas.hasUnit(id)) return this.DIRS;
+    const c = (Atlas.data.units[id] || {}).cols || this.DIRS;
+    this._dirs.set(id, c); return c;
   },
   dirOf(facing, u) { const n = this.dirsFor(u); const d = Math.round(facing / (Math.PI * 2 / n)); return ((d % n) + n) % n; },
   variant(u) { return u.sieged ? 's' : ''; },
