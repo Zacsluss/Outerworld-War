@@ -29,10 +29,22 @@ Read these three things before touching anything:
 > before, 74.7 after. It presents as a siege bug because siege mode is the only thing that puts a unit
 > on hold and leaves it there, but every race's units did it on `H`. Fixed in `fcf08be`.
 >
-> **2. Therefore every balance figure measured before `fcf08be` is void**, including M7's "TvZ 77%".
-> Siege tanks are 4 of 24 in `AI_COMP.T` and the AI sieges them, so the whole matrix was measured with
-> Terran's second-heaviest unit firing at up to 75x its rate. The re-measurement is running; see
-> "Balance" below for where it lands and what is still owed.
+> **2. Therefore every balance figure measured before `fcf08be` was void**, including M7's "TvZ 77%".
+> Siege tanks are 4 of 24 in `AI_COMP.T` and the AI sieges them. TvZ has been re-measured on 66 seeds,
+> three layouts, both sides, and the result is **not** what "siege tanks are overpowered" predicts:
+>
+> | code | TvZ | paired against the row above | verdict |
+> |---|---|---|---|
+> | M7 as shipped, `2802b31` (with the bug) | 77% [73-81] | -- | void, kept for the pairing |
+> | + the Hold Position fix, `fcf08be` | **87% [83-90]** | 39 to T, 9 away of 364 | **p = 0.000, MOVED** |
+> | + the drone-gate fix, `197eb40` (**as shipped**) | **79% [75-83]** | 37 to T, 67 away of 364 | **p = 0.004, MOVED** |
+>
+> **Fixing the tank made the matchup worse by nine points.** The bug was net-helping *Zerg*: a Zerg AI
+> spends most of a game defending, defending units sit on Hold, and Hold was where the illegal rate of
+> fire lived. That is the opposite of what the symptom suggested, and it is the whole argument for
+> re-measuring rather than reasoning. Task 1's fix then took eight of those points back.
+>
+> **TvZ is 79% [75-83] and still outside 60/40.** PvT and PvZ have not been re-measured at all yet.
 >
 > **3. M7's stated cause for the TvZ move was wrong, and task 0 is what showed it.** The handoff said
 > to check whether `91e4195` paid Terran in upgrades. It did not: Terran's finished upgrades at ten
@@ -105,6 +117,12 @@ they fire at p < 0.05 *in the wrong direction* on calls the full runs settled. T
 change does, not what it wins. Zerg buying upgrades it does not live to use is M7's own finding, and
 `upg@10` reports it as progress. Only the three validated indicators vote in `--ab`'s call.
 
+**It then got a sixth call right, on a change it was not tuned against.** The task 1 drone-gate fix
+was proxied at 3 of 3 toward Zerg (`score@cap` -31.3, p = 0.000) before any full run existed; the
+full 396-game run came back -8 points to Zerg at p = 0.004. That is the workflow working end to end:
+four minutes to decide the change was worth an hour, then the hour spent confirming rather than
+searching.
+
 **What the validation cannot do, which matters more than the score.** Four of the five calls are "no
 move", so most of what is being tested is whether an indicator cries wolf. The single positive is a
 13-point move. That is enough to say these three do not raise false alarms and do catch a large move;
@@ -146,7 +164,9 @@ that `larvaN >= 2` was meant for the *Zerg* branch -- was tried and is much wors
 Terran); a larva-gated Zerg drones to 60 and fields no army.
 
 Proxy on the fixed baseline, 132 games: **TvZ 3 of 3 toward Zerg** (`sup@10` -20.3, `bld@10` -5.1,
-`score@cap` -31.3, all p = 0.000); PvT 2 of 3 mildly toward Protoss; PvZ 1 of 3. Eleven other levers
+`score@cap` -31.3, all p = 0.000); PvT 2 of 3 mildly toward Protoss; PvZ 1 of 3. **Confirmed by the
+full run: -8 points to Zerg over 364 paired seeds, 37 flips to Terran against 67 away, p = 0.004.**
+TvZ is 79% [75-83] as shipped, still outside 60/40 but eight points better than the tank fix left it. Eleven other levers
 were tried and are in "what not to repeat" below, including both that this handoff nominated (a Zerg
 gas budget: nothing, 110 of 128 seeds bit-identical; reordering `AI_RESEARCH.Z`: nothing on outcome).
 
@@ -337,23 +357,20 @@ end of M8 and write to `C:\Users\zacsl\bw-scratch\full\`:
 | `m8-deadcode-tz.log` | HEAD as shipped | TZ |
 | `m8-deadcode-pvtpvz.log` | HEAD as shipped | TP, ZP |
 
-Check whether they completed (`progress2.txt` in the same directory ends with `FULL2DONE`). Then:
+**The two TvZ runs completed and their verdict is in Status above: 79% [75-83], still outside 60/40.**
+What is *not* done is the third run, `m8-deadcode-pvtpvz.log` (792 games), which was still going when
+M8 ended. Check `progress2.txt` for `FULL2DONE`; if it is not there, relaunch from
+`bw-scratch/full/run2.sh` -- the scratch directories are set up.
 
-```bash
-node test/balance_ab.js <full>/m8-holdfix-tz.log <full>/m8-deadcode-tz.log --matchup=TZ --race=T
-```
+That run tells you where PvT and PvZ sit after the Hold Position fix, which matters because **nothing
+has re-measured them at all.** Note its limit before quoting it: there is no matching post-`fcf08be`
+baseline for those two matchups, so it can say where they *are* but not what moved them. If either is
+outside 60/40, the first suspect is the tank fix, not anything M8 chose -- TvZ moved nine points on
+that change alone, in the direction nobody predicted.
 
-That is the paired verdict on task 1's drone-gate fix. The proxy called it 3/3 toward Zerg at
-p = 0.000, which is the strongest signal any lever produced in M8 -- but **it is a proxy call and this
-file should not carry a win rate until the run confirms it.** If the runs did not finish, relaunch
-them; the scratch directories `m8-holdfix` and `m8-holdfix-deadcode` are set up and the recipe is in
-`bw-scratch/full/run2.sh`.
-
-Two things to hold in mind while reading the result. **The absolute TvZ number is expected to move a
-lot regardless of the drone fix,** because the tank bug is gone; do not attribute that to task 1.
-And **PvT/PvZ need re-baselining too** -- the third run covers the variant but there is no matching
-post-`fcf08be` baseline for them, so it can say where they are but not what moved them. If they land
-outside 60/40, that is new information about the tank fix, not about anything M8 chose.
+Then decide whether re-baselining PvT and PvZ properly is worth two more full runs. It probably is:
+they are the only matchups in the project with no trustworthy number at all, and the M8 experience is
+that a matchup nobody has measured recently is a matchup nobody knows.
 
 ### 1. Write a test that plays like a person
 
@@ -580,7 +597,10 @@ reverted. Zerg buys upgrades it does not live to use. Treat this lever as closed
 
 ## Known issues and rough edges
 
-- **Terran vs Zerg is 77% [73-81] over 376 decided games**, OUTSIDE 60/40, the first established failure since M4. PvT 54% [49-59] and PvZ 49% [45-54] are at target.
+- **Terran vs Zerg is 79% [75-83] over 380 decided games**, OUTSIDE 60/40. Re-measured after the Hold
+  Position fix, so this one is trustworthy.
+- **PvT and PvZ have no trustworthy number.** Every figure for them predates `fcf08be` and is void.
+  The run covering them was still going when M8 ended; M9 task 0 reads it.
 - **The AI casts 5 of 28 spell abilities.** The tech buildings arrive now; the units do not get trained
   and the games end first. `node test/casters.js` is the measurement.
 - **The AI leaves production buildings idle**, 114 a minute over both players — but two thirds of that
