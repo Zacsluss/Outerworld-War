@@ -421,8 +421,6 @@ Do not plan this before reading the runs. What M8 leaves for it:
 
 ### 4. Leftovers
 
-- **`test/net.js` phase 3 has a 120-second budget** where every other phase gets 240. Unchanged from
-  M7's list; raise it to 240 or justify the tighter one, but do not go looking for a desync.
 - **`test/techtree.js` is not in any suite.** It runs in under a second and would catch a whole class
   of "why can't I build X". Wire it into whatever runs the other checks.
 - **The genuine 30-a-minute of idle production.** Unchanged from M7's list.
@@ -609,7 +607,8 @@ reverted. Zerg buys upgrades it does not live to use. Treat this lever as closed
 - **Missions**: all eight resolve, are winnable, and the scripted bot wins all eight, with zero JS errors
   and zero stuck units. A human should still try them before anyone tunes them.
 - **Multiplayer**: rejoin ships a snapshot and is fast. Tested with two clients plus AI, not more.
-  `test/net.js` phase 3 has a 120-second budget that a loaded machine can miss; see M8 task 4.
+  `test/net.js` phase 3 now gets the same 240 s budget as every other phase (`83ce89f`); the separate
+  assertion that a rejoin is *fast* keeps its own 120 s, because that one is about the code.
 - **Replay backward-seek** restarts from a checkpoint 30 s back, so it is fast but not instant;
   checkpoints past 40 minutes are thinned to every 60 s.
 - **Editor**: the brush is a circle only (rectangle fill is a separate mode). Map size cycles
