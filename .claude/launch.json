@@ -4,8 +4,11 @@
     {
       "name": "broodwar",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["test/serve.js", "8765"],
-      "port": 8765
+      "runtimeArgs": [
+        "test/serve.js",
+        "8899"
+      ],
+      "port": 8899
     }
   ]
 }

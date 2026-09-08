@@ -36,6 +36,9 @@ const G = {
       this.setupStart(p, base);
     });
     this.human = opts.human != null ? opts.human : this.players.findIndex(p => p.human);
+    // the hall you are given at frame 0 already sits on its full creep, as it does in Brood War;
+    // only creep built during the game has to spread
+    for (const u of this.units) if (u.def.creep && u.done) u.creepR = u.def.creep;
     this.map.recomputeCreep(this.units);
     for (const p of this.players) if (p.race === 'P') this.map.recomputePsi(p.id, this.units);
     this.recomputeSupply();
@@ -131,7 +134,8 @@ const G = {
   },
   completeBuilding(b) {
     b.done = true; b.progress = b.def.time; b.hp = Math.max(b.hp, b.maxHp);
-    if (b.def.creep) this.map.recomputeCreep(this.units);
+    // a finished source starts with a small pad and grows out from it
+    if (b.def.creep) { if (!b.creepR) b.creepR = Math.min(b.def.creep, CREEP_SEED); this.map.recomputeCreep(this.units); }
     if (b.def.psi) this.map.recomputePsi(b.owner, this.units);
     
     if (b.builder && b.builder.alive && b.builder.order.type === 'construct' && b.builder.order.target === b) { const w = b.builder; w.nextOrder(); if (w.order.type === 'idle' && w.lastRes) { const r = w.lastRes; if ((r.type === 'mineral' && r.amount > 0) || (r.type === 'gas' && r.alive)) w.applyOrder({ type: 'gather', target: r, phase: 'goto' }); } }
@@ -218,6 +222,19 @@ const G = {
     return best;
   },
   nearestDepot(u) { let best = null, bd = 1e9; for (const b of this.units) { if (b.alive && b.done && !b.lifted && b.owner === u.owner && b.def.depot) { const d = dist(u, b); if (d < bd) { bd = d; best = b; } } } return best; },
+  // How many workers are actually mining this patch right now. Counted by looking rather than by
+  // keeping a tally: a tally has to be decremented on every exit path -- death, new order, patch mined
+  // out, transferred by Mind Control -- and one missed decrement blocks a patch for the rest of the
+  // game. This is called when a worker arrives, not per frame, and miners are by definition adjacent.
+  minersOn(res, except) {
+    let n = 0;
+    for (const u of this.near(res.cx, res.cy, 3 * TILE)) {
+      if (u === except || !u.alive || !u.def.worker) continue;
+      const o = u.order;
+      if (o.type === 'gather' && o.target === res && o.phase === 'mine') n++;
+    }
+    return n;
+  },
   removeResource(r) { r.amount = 0; this.map.unblock(r.x, r.y, r.w, r.h, -2); this.map.rect(r.x, r.y, r.w, r.h, (x, y) => { if (this.map.blocked[this.map.idx(x, y)] === -2) this.map.blocked[this.map.idx(x, y)] = -1; }); const i = this.map.resources.indexOf(r); if (i >= 0) this.map.resources.splice(i, 1); },
 
   // ---------------- supply ----------------

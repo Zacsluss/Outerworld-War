@@ -142,12 +142,12 @@ const DATA = (() => {
   B('armory', { name: 'Armory', race: 'T', hp: 750, w: 3, h: 2, min: 100, gas: 50, time: 1200, hk: 'A', tier: 'adv', req: ['factory'], upg: ['vehW', 'vehA', 'shipW', 'shipA'] });
 
   // ============================ ZERG BUILDINGS ============================
-  B('hatchery', { name: 'Hatchery', race: 'Z', hp: 1250, w: 4, h: 3, min: 300, time: 1800, hk: 'H', tier: 'basic', sup: 1, depot: true, spawnsLarva: true, creep: 8, morphTo: 'lair', sight: 9 });
-  B('lair', { name: 'Lair', race: 'Z', hp: 1800, w: 4, h: 3, min: 150, gas: 100, time: 1500, hk: 'L', tier: 'morph', req: ['spawning_pool'], sup: 1, depot: true, spawnsLarva: true, creep: 8, morphTo: 'hive', tech: ['ventral_sacs', 'antennae', 'pneumatized'], sight: 10 });
-  B('hive', { name: 'Hive', race: 'Z', hp: 2500, w: 4, h: 3, min: 200, gas: 150, time: 1800, hk: 'H', tier: 'morph', req: ['queens_nest'], sup: 1, depot: true, spawnsLarva: true, creep: 8, tech: ['ventral_sacs', 'antennae', 'pneumatized'], sight: 11 });
-  B('creep_colony', { name: 'Creep Colony', race: 'Z', hp: 400, w: 2, h: 2, min: 75, time: 300, hk: 'C', tier: 'basic', creep: 5, needsCreep: true, morphOptions: ['sunken_colony', 'spore_colony'] });
-  B('sunken_colony', { name: 'Sunken Colony', race: 'Z', hp: 300, armor: 2, w: 2, h: 2, min: 50, time: 300, hk: 'S', tier: 'morph', req: ['spawning_pool'], creep: 5, gw: W(40, 'explosive', 7, 32, { upgKey: null }) });
-  B('spore_colony', { name: 'Spore Colony', race: 'Z', hp: 400, w: 2, h: 2, min: 50, time: 300, hk: 'P', tier: 'morph', req: ['evolution_chamber'], creep: 5, det: true, sight: 10, aw: W(15, 'normal', 7, 15, { targets: 'air', upgKey: null }) });
+  B('hatchery', { name: 'Hatchery', race: 'Z', hp: 1250, w: 4, h: 3, min: 300, time: 1800, hk: 'H', tier: 'basic', sup: 1, depot: true, spawnsLarva: true, creep: 11, morphTo: 'lair', sight: 9 });
+  B('lair', { name: 'Lair', race: 'Z', hp: 1800, w: 4, h: 3, min: 150, gas: 100, time: 1500, hk: 'L', tier: 'morph', req: ['spawning_pool'], sup: 1, depot: true, spawnsLarva: true, creep: 11, morphTo: 'hive', tech: ['ventral_sacs', 'antennae', 'pneumatized'], sight: 10 });
+  B('hive', { name: 'Hive', race: 'Z', hp: 2500, w: 4, h: 3, min: 200, gas: 150, time: 1800, hk: 'H', tier: 'morph', req: ['queens_nest'], sup: 1, depot: true, spawnsLarva: true, creep: 11, tech: ['ventral_sacs', 'antennae', 'pneumatized'], sight: 11 });
+  B('creep_colony', { name: 'Creep Colony', race: 'Z', hp: 400, w: 2, h: 2, min: 75, time: 300, hk: 'C', tier: 'basic', creep: 8, needsCreep: true, morphOptions: ['sunken_colony', 'spore_colony'] });
+  B('sunken_colony', { name: 'Sunken Colony', race: 'Z', hp: 300, armor: 2, w: 2, h: 2, min: 50, time: 300, hk: 'S', tier: 'morph', req: ['spawning_pool'], creep: 8, gw: W(40, 'explosive', 7, 32, { upgKey: null }) });
+  B('spore_colony', { name: 'Spore Colony', race: 'Z', hp: 400, w: 2, h: 2, min: 50, time: 300, hk: 'P', tier: 'morph', req: ['evolution_chamber'], creep: 8, det: true, sight: 10, aw: W(15, 'normal', 7, 15, { targets: 'air', upgKey: null }) });
   B('extractor', { name: 'Extractor', race: 'Z', hp: 750, w: 4, h: 2, min: 50, time: 600, hk: 'E', tier: 'basic', onGeyser: true, creep: 3 });
   B('spawning_pool', { name: 'Spawning Pool', race: 'Z', hp: 750, w: 3, h: 2, min: 200, time: 1200, hk: 'S', tier: 'basic', req: ['hatchery'], needsCreep: true, tech: ['metabolic', 'adrenal'] });
   B('evolution_chamber', { name: 'Evolution Chamber', race: 'Z', hp: 750, w: 3, h: 2, min: 75, time: 600, hk: 'V', tier: 'basic', req: ['hatchery'], needsCreep: true, upg: ['meleeW', 'missW', 'carapace'] });

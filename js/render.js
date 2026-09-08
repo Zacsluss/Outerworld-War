@@ -86,8 +86,10 @@ const Render = {
     // the unit reads as a second unit.
     for (const u of list) {
       if ((u.isBuilding && !u.lifted) || u.burrowed || u.def.mine) continue;
-      const sh = u.fly ? null : Sprites.shadow(u, Sprites.dirOf(u.facing), this.animOf(u));
-      if (!sh) { ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.globalAlpha = u._alpha * (u.fly ? 0.3 : 0.4); ctx.beginPath(); ctx.ellipse(u._x + (u.fly ? 14 : 3), u._y + (u.fly ? 26 : u.r * 0.35 + 2), u.r * 0.95, u.r * 0.45, 0, 0, 7); ctx.fill(); continue; }
+      // A lifted building has no unit silhouette either, for the same reason, so it takes the blob --
+      // cast well below it, because it is in the air.
+      const sh = (u.fly || u.isBuilding) ? null : Sprites.shadow(u, Sprites.dirOf(u.facing), this.animOf(u));
+      if (!sh) { const air = u.fly || u.isBuilding; ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.globalAlpha = u._alpha * (air ? 0.3 : 0.4); const rr = u.isBuilding ? u.def.w * TILE * 0.42 : u.r * 0.95; ctx.beginPath(); ctx.ellipse(u._x + (air ? 14 : 3), u._y + (air ? 26 : u.r * 0.35 + 2), rr, rr * 0.47, 0, 0, 7); ctx.fill(); continue; }
       // Squash straight into drawImage's destination rectangle rather than setting a matrix. A shear
       // would be truer -- a shadow really does lean away from the light -- but a sheared blit is not
       // axis-aligned and cost 4.3 ms a frame at 490 units against a 6 ms budget, where this costs a
@@ -222,6 +224,25 @@ const Render = {
   drawUnit(ctx, u) {
     const x = u._x, y = u._y;
     if (u.isBuilding && !u.lifted) { this.drawBuilding(ctx, u); return; }
+    // A LIFTED building fell straight through to the unit path below, which asks Sprites.unit for a
+    // sheet no building has -- and the vector fallback is `UNIT_PAINTERS[id] || UNIT_PAINTERS.marine`.
+    // So a Command Center in the air was drawn as a marine. It gets its own sprite, at its flying
+    // position rather than its old tile, with a hover bob and thrusters underneath.
+    if (u.isBuilding && u.lifted) {
+      const bs = Sprites.building(u), bob = Math.sin(G.frame * 0.05 + u.id) * 2.2;
+      ctx.save(); ctx.globalAlpha = u._alpha;
+      ctx.globalCompositeOperation = 'lighter';
+      for (const dx of [-bs.W * 0.28, bs.W * 0.28]) {
+        const g = ctx.createRadialGradient(x + dx, y + bs.H * 0.34 + bob, 0, x + dx, y + bs.H * 0.34 + bob, 9);
+        g.addColorStop(0, 'rgba(150,205,255,0.55)'); g.addColorStop(1, 'rgba(90,150,255,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x + dx, y + bs.H * 0.34 + bob, 9, 0, 7); ctx.fill();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(bs.cv, x - bs.W / 2 - bs.M, y - bs.H / 2 - bs.T + bob);
+      ctx.restore();
+      this.drawStatus(ctx, u, x, y);
+      return;
+    }
     ctx.save(); ctx.globalAlpha = u._alpha * (u.fx.stasis > 0 ? 0.6 : 1);
     if (u.burrowed && !u.def.mine) { ctx.fillStyle = 'rgba(60,30,70,0.7)'; ctx.beginPath(); ctx.ellipse(x, y, u.r, u.r * .55, 0, 0, 7); ctx.fill(); ctx.fillStyle = G.players[u.owner].color; ctx.fillRect(x - 3, y - 2, 6, 4); ctx.restore(); return; }
     if (u.def.mine) { ctx.globalAlpha *= u.burrowed ? 0.5 : 1; ctx.fillStyle = '#4a5058'; ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill(); ctx.fillStyle = (G.frame % 20 < 10) ? '#ff3030' : '#802020'; ctx.fillRect(x - 1.5, y - 1.5, 3, 3); ctx.restore(); return; }

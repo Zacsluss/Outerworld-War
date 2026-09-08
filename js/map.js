@@ -236,7 +236,9 @@ class GameMap {
     for (const u of units) {
       if (!u.alive || !u.def.creep || u.fly) continue;
       if (u.def.id !== 'hatchery' && u.def.id !== 'lair' && u.def.id !== 'hive' && !u.done) continue;
-      const cx = u.tx + u.def.w / 2, cy = u.ty + u.def.h / 2, r = u.def.creep;
+      // the source's CURRENT radius, not its final one -- see CREEP_GROW in sim.js
+      const cx = u.tx + u.def.w / 2, cy = u.ty + u.def.h / 2, r = Math.min(u.def.creep, u.creepR || 0);
+      if (r < 1) continue;
       this.ellipse(cx - 0.5, cy - 0.5, r, r * 0.8, (x, y) => { if (this.walk[this.idx(x, y)] && this.height[this.idx(x, y)] !== 1) this.creep[this.idx(x, y)] = 1; });
     }
   }

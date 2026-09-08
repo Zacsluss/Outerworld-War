@@ -6,6 +6,11 @@
 const SIEGE_W = { dmg: 70, type: 'explosive', range: 12, minRange: 2, cd: 75, hits: 1, upgDmg: 5, upgKey: 'vehW', targets: 'ground', splash: [0.3, 0.8, 1.25], ff: true };
 const EQUIV = { hatchery: ['lair', 'hive'], lair: ['hive'], spire: ['greater_spire'], command_center: [], nexus: [] };
 const MINE_TIME = 75, GAS_TIME = 37, LARVA_TIME = 342, MAX_QUEUE = 5;
+const MINERS_PER_PATCH = 2;   // Brood War saturates a mineral patch at two workers, not one
+// Creep does not appear, it spreads. A source starts with a small pad and reaches its full radius
+// over about a minute, which is roughly the Brood War rate. Growth is only ever read through
+// Math.floor, so the map is recomputed nine times over a building's life rather than every frame.
+const CREEP_SEED = 2, CREEP_GROW = 9 / (24 * 60);
 // turn rate (rad/frame) for ground units that must rotate before moving; acceleration (px/frame^2) for flyers
 // Orders that require actually relocating: a burrowed unit given one of these digs itself out first.
 // Deliberately excludes hold, attack and ability, so a burrowed Lurker keeps firing from where it is.
@@ -52,6 +57,7 @@ class Unit {
     this.prod = []; this.rally = null; this.addon = null; this.parent = null; this.sieged = false; this.transT = 0;
     this.cloaked = !!def.cloaked; this.burrowed = !!def.burrowed; this.stim = 0; this.fx = {}; this.kills = 0; this.detBy = {};
     this.lifetime = def.lifetime || 0; this.mines = def.mines || 0; this.scarabs = def.scarabs || 0; this.interceptors = def.interceptors || 0;
+    this.creepR = 0;
     this.larvae = []; this.larvaT = LARVA_TIME; this.hatch = null; this.morphT = 0; this.progress = 0; this.builder = null; this.lifted = false;
     this.lastHit = -9999; this.lastHitBy = null; this.arbCloak = -9999; this.halluc = false; this.idleT = 0; this.acidSpores = 0;
     this.waitT = 0; this.moving = false; this.vx = 0; this.vy = 0; this.spawnT = G.frame; this.cloakT = 0; this.unpowered = false;
@@ -162,6 +168,12 @@ class Unit {
     if (d.race === 'T' && this.hp < this.maxHp / 3) { this.hp -= 0.03; if ((G.frame + this.id) % 10 === 0) G.effects.push({ kind: 'fire', x: this.x + (G.rand() - .5) * d.w * TILE * 0.6, y: this.y + (G.rand() - .5) * d.h * TILE * 0.5, t: 14 }); if (this.hp <= 0) { G.kill(this, null); return; } }
     if (this.lifted) { this.tickOrder(); return; }
     if (d.race === 'P' && d.needsPsi) { const cx = this.tx + Math.floor(d.w / 2), cy = this.ty + Math.floor(d.h / 2); this.unpowered = !(G.map.hasPsi(this.owner, cx, cy) || G.map.hasPsi(this.owner, cx - 1, cy)); if (this.unpowered) return; }
+    // spread creep outward until this source reaches its full radius
+    if (d.creep && this.done && this.creepR < d.creep) {
+      const was = Math.floor(this.creepR);
+      this.creepR = Math.min(d.creep, this.creepR + CREEP_GROW);
+      if (Math.floor(this.creepR) !== was) G.map.recomputeCreep(G.units);
+    }
     if (d.spawnsLarva) { if (this.larvae.length < 3) { if (--this.larvaT <= 0) { this.larvaT = LARVA_TIME; G.spawnLarva(this); } } else this.larvaT = LARVA_TIME; }
     if (this.addon && !this.addon.alive) this.addon = null;
     if (this.addon && !this.addon.done) return; // building addon
@@ -394,9 +406,12 @@ class Unit {
     if (res.type === 'mineral') {
       if (o.phase === 'mine') { if (--o.t <= 0) { res.miner = null; res.amount -= 8; this.carrying = { type: 'mineral', amt: res.amount >= 0 ? 8 : 8 + res.amount }; if (res.amount <= 0) G.removeResource(res); this.applyOrder({ type: 'return', then: res }); } return; }
       if (this.moveToRect(res, 6)) {
-        if (!res.miner || res.miner === this || !res.miner.alive || res.miner.order.target !== res) { res.miner = this; o.phase = 'mine'; o.t = MINE_TIME; }
+        // Brood War puts TWO workers on a patch, not one. This used to hand the patch to a single
+        // claimant and send everyone else looking elsewhere, so a second worker right-clicked onto a
+        // patch would turn round and walk off it.
+        if (G.minersOn(res, this) < MINERS_PER_PATCH) { res.miner = this; o.phase = 'mine'; o.t = MINE_TIME; }
         else { // find another free field nearby
-          if ((G.frame + this.id) % 16 === 0) { let best = null, bd = 1e9; for (const r of G.map.resources) { if (r.type !== 'mineral' || r.amount <= 0 || (r.miner && r.miner.alive && r.miner.order.target === r)) continue; const dd = distPt(r.cx, r.cy, res.cx, res.cy); if (dd < 6 * TILE && dd < bd) { bd = dd; best = r; } } if (best) { o.target = best; o.phase = 'goto'; this.path = null; } }
+          if ((G.frame + this.id) % 16 === 0) { let best = null, bd = 1e9; for (const r of G.map.resources) { if (r.type !== 'mineral' || r.amount <= 0 || G.minersOn(r) >= MINERS_PER_PATCH) continue; const dd = distPt(r.cx, r.cy, res.cx, res.cy); if (dd < 6 * TILE && dd < bd) { bd = dd; best = r; } } if (best) { o.target = best; o.phase = 'goto'; this.path = null; } }
         }
       }
     } else { // gas building
