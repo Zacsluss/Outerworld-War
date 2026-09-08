@@ -361,6 +361,64 @@ Two real defects were found and fixed on the way:
   needed six thinks — eight seconds — to fill them. It keeps training now while something can still be
   trained, re-scoring the unit it just queued so the composition ratios still decide the order.
 
+## M9: most units could never use their abilities at all
+
+The finding of the milestone, and the reason every balance number is void.
+
+`micro()` does not run every frame. `think()` runs it on multiples of 12 and on each full think, so the
+only values `G.frame % 16` ever takes inside it are `{0,4,8,12}` -- measured, not reasoned. Every stagger
+in `micro()` was written `(G.frame + id) % N === 0`, so it came true only for ids in a fraction of the
+residue classes, and it did so for the entire life of the unit:
+
+| gate | abilities | units that could *ever* fire |
+|---|---|---|
+| `% 12` | kiting | 1 in 4 |
+| `% 16` | psi storm, dark swarm, plague | 1 in 4 |
+| `% 24` | irradiate, spawn broodling, stasis | 1 in 6 |
+| `% 48` | nuke, spider mine, comsat scan | 1 in 8 |
+
+A defiler whose id was not a multiple of 4 could not cast dark swarm however long it lived. The comsat
+gate keys on `p.id`, where the reachable set is `{0,12,16,24,32,36}` and no player id exceeds 7, so
+**only player 0 could ever scan** -- which is why the audit saw scans in some games and not others.
+`AI.turn(id, n)` counts guaranteed micro ticks instead of raw frames.
+
+Measured, same seeds, 41-minute cap, only the fix differing: caster kinds *casting* 1 -> 3, spells never
+cast 23 -> 21, dark swarm 0 -> 13, irradiate 0 -> 7, scanner sweep 25 -> 47, spider mine 72 -> 668, siege
+mode 105 -> 410, burrow 542 -> 1512.
+
+**The measurement that made this findable** was running `test/casters.js` at a 60,000-frame cap instead
+of 24,000. Doubling the cap took caster kinds fielded from 3/11 to 5/11 but left kinds *casting* at 1,
+and the defiler at 3,622 seconds alive with zero casts. That separated "the game ended" from "the AI
+can't" -- without it the whole thing reads as a game-length problem, which is what M7 and M8 concluded.
+
+Separately, `covert_ops` was in no build script, so the AI could not build a ghost or a nuclear silo in
+any matchup. It needs a science facility of its own: both Terran science add-ons name `science_facility`
+as parent and `AI.addon()` looks for a parent that has none, so the one facility in the script was
+always already taken by `physics_lab`.
+
+## M9: the render work, and one wrong extrapolation
+
+- **Per-unit facings.** Five slow-turning types (`FINE_DIRS` in `tools/bake.js`) bake at 32 rather than
+  16, for +3.3 MB instead of the x1.96 a global doubling costs. The atlas had recorded `cols` per unit
+  since the sheets existed and nothing read it.
+- **Pooled shadows.** The shadow pass was a second full-sprite blit per unit; it is now one blit into a
+  half-viewport layer per unit and a single upscaled blit of that layer. **4.30 -> 2.80 ms** at 490
+  units, p95 4.70 -> 3.20. It also fixed overlapping shadows double-darkening.
+- **Device pixel ratio.** The canvas was sized in CSS pixels, so a scaled display got a stretched frame.
+  It is sized in device pixels now, integer ratios only.
+
+  The instructive part is that **the cost extrapolation was wrong by two orders of magnitude.** Four
+  times the pixels ought to cost four times the fill; measured at 490 units, dpr 1 is 2.80 ms and dpr 2
+  (3840x2160) is 2.90. Canvas2D here is GPU-composited, so this pass is bound by the number of draw
+  calls and not the area each covers. `test/perf_render.js` takes a dpr argument now. **Budget in draw
+  calls, not in pixels** -- which is the same lesson as M8's "budget in blits, not in effects".
+
+  What it sharpens is only what is drawn as geometry: HUD text, bevels, rings, bars, particles, decals.
+  Terrain, creep, sprites, fog and the minimap are all cached bitmaps blitted at natural size, so they
+  are still upscaled. Making *those* sharp is an open look decision -- bake at the ratio and the 1 px
+  dither halves in apparent size, or upscale nearest-neighbour and the art stays chunky but crisp.
+  Neither should be picked without looking at it.
+
 ## M9 — what to do next
 
 **Task 0 is not optional and comes first, and it is not a research task this time: it is finishing the
@@ -445,8 +503,11 @@ Do not plan this before reading the runs. What M8 leaves for it:
 
 - **`AI_COMP` is still gas-blind** and a defiler still competes with a lurker morph. M8's gas budget
   attempt did nothing (110 of 128 seeds bit-identical), because the reserve almost never triggers --
-  but the underlying observation stands and a better implementation may not be hopeless.
-- **The AI still casts 5 of 28 spell abilities.** Unchanged since M7.
+  but the underlying observation stands and a better implementation may not be hopeless. Note that the
+  M9 caster work found `production()` already scores by share-of-army-supply, so a caster at count 0 is
+  the *top* pick and there is already a bank-for-the-top-pick hold: the gas story may not be the one.
+- **Casting is fixed; fielding is not.** See Known Issues -- the units that never cast now are the ones
+  that are never built.
 - **Terran loses equal-supply duels badly** (6/36, -10.3 supply) and wins games anyway. Whatever is
   deciding TvZ, it is not the fight. `test/duel.js --upg` is the tool for pricing that asymmetry.
 
@@ -626,40 +687,49 @@ reverted. Zerg buys upgrades it does not live to use. Treat this lever as closed
 
 ## Known issues and rough edges
 
-- **Replay backward-seek into the thinned checkpoint region lands on the wrong state.** `test/longgame.js`
-  reproduces it: seeking to 23:20 and to 46:40 in a 60-minute replay both come back with a mismatched
-  state hash, and the seek takes 207 s against a 90 s budget. Newly *visible* rather than newly
-  introduced -- it was masked until `51a0755` by the positional-resource bug, which made the same seek
-  throw before it could get far enough to be wrong.
+- ~~**Replay backward-seek lands on the wrong state.**~~ **Fixed in M9** (`779afb9`). `test/longgame.js`
+  is ALL PASS 19/19, and the seek that took 207 s against a 90 s budget takes 4.5 s.
 
-  What has been ruled out, so M10 does not repeat it. **Snapshots do not alias live state**: taking one,
-  running 16,368 further frames and restoring the original object reproduces its hash exactly. **The
-  simulation re-simulates long spans faithfully**: restoring a checkpoint and running 0.5, 2.1, 8.3 and
-  11.4 minutes forward matches the original hash at every mark. Both probes are AI-only, with no
-  command log. So the fault is in the replay/UI layer -- `UI.seekTo`, `UI.snap` and `CMD.applyPending`
-  -- and specifically in replaying a *command log* across a gap where thinning has removed the nearby
-  checkpoints, not in `js/snapshot.js` or the sim. `test/observer.js` passes because a short replay is
-  never thinned. The thinning itself is `js/ui.js:108`.
+  It was never about thinning, and both candidates this section used to name in `js/ui.js` were
+  innocent. `Snapshot` tagged a resource reference as its **index** into `G.map.resources`, and
+  `G.removeResource` splices a mined-out patch out of that array while the object lives on wherever
+  something still points at it -- `p.startBase.minerals`, a worker's order target. Those survivors kept
+  a stale index and decoded to whichever patch had shifted into the slot, or off the end to `undefined`.
+  A restored checkpoint quietly re-aimed workers at other players' minerals and the divergence surfaced
+  seconds later, far from the cause. References are keyed by `id` through `resById` now.
 
-  Three further hypotheses were tested in M9 and are also dead, so do not spend time on them.
-  **Restore is idempotent** -- restoring the same snapshot object twice gives the same hash and does not
-  resize the object, so seeks are not consuming their own checkpoints. **Fields, projectiles and each
-  player's AI state are all captured and restored** (`G.effects` is cleared deliberately, being
-  render-only). And the **long-span re-simulation is exact**, as above. What is left is narrow, and the
-  shape of the failure points at it: the FIRST seek in `test/longgame.js` passes and every seek after it
-  fails, which is state surviving across seeks rather than a bad checkpoint. The two candidates are
-  `UI.seekTo`'s handling of `G.pendingCmds` across *consecutive* seeks, and `UI.snap`'s
-  `last.f >= G.frame` early-return -- which means no checkpoint is recorded at all during a fast-forward
-  that follows a backward seek.
+  **The lesson worth keeping is why it looked like a seek bug for two milestones.** Every probe here
+  confirmed "the checkpoint restores to the right state" by comparing `G.stateHash()`. That only proves
+  the *hashed subset* matches, and a mis-aimed worker is not in it. Once that was distrusted it
+  reproduced in two minutes with a 33,200-frame game and no thinning at all: restore the checkpoint at
+  32,400 and it diverges 19 ticks later. All it needs is one mined-out patch, about 13:00 into any game.
+  A structural diff of the two snapshots named it outright -- `s.players[1].startBase.minerals[1].__r:
+  90 != undefined`. **When a hash says two states match and they then diverge, diff the states, not the
+  hash.**
 
+- **Dead-unit order targets do not survive a snapshot.** `s.gone` gets a shell for each referenced dead
+  unit, but a dead unit referenced only by *another* dead unit is not in the walk, so its `order.target`
+  decodes to `null`. Corpse-only and the sim never reads it, so it is cosmetic -- recorded because it
+  showed up in the diff above and should not be re-investigated as a fault.
+
+- **EVERY BALANCE NUMBER BELOW IS VOID.** `10fe920` changed how strong the AI is, not just which spells
+  it casts: kiting was on the same broken stagger, so vultures, mutalisks and dragoons now kite four
+  times as often, siege mode fires 4x more and spider mines 9x more. The build stamp moved
+  `f0b8c7ea07fba27b` -> `e65b2a5848da3481`. Nothing here has been re-measured since. **This is task 0
+  for whoever picks the project up next**, and it is a bigger re-measure than M8's, because it moves all
+  three matchups at once.
 - **No matchup is formally outside 60/40, and none is confirmed inside.** TvZ 64% [59-69] to Terran,
   PvZ 36% [31-41] to Protoss (so 64% to Zerg), PvT 62% [57-67] to Protoss. All three "undecided" --
   about 97 more decided games each would be needed to call any of them. PvZ is the one that moved
   furthest and is the one to look at first; see Status.
 - **PvT is 62% [57-67] for Protoss and has not been re-measured since the Zerg build-order fix**,
   which is Zerg-only and cannot affect it.
-- **The AI casts 5 of 28 spell abilities.** The tech buildings arrive now; the units do not get trained
-  and the games end first. `node test/casters.js` is the measurement.
+- **The AI casts 7 of 28 spell abilities, and 5 of 11 caster kinds are never fielded.** Improved in M9
+  from 5 of 28 by fixing the micro stagger below; what is left is a *production* problem, not a casting
+  one. At a 41-minute cap: queen (5/6 games have the enabler), dark archon, arbiter and corsair are never
+  trained at all, and the high templar gets 102 caster-seconds, which is not long enough to reach psi
+  storm's 75 energy. `node test/casters.js 60000` is the measurement -- and note the 24,000-frame default
+  materially under-reports, showing 3 of 11 kinds fielded where 60,000 shows 5.
 - **The AI leaves production buildings idle**, 114 a minute over both players — but two thirds of that
   is saturated town halls and is not a defect. See task 3 above.
 - **The AI is supply blocked 9-12% of the time**, unchanged in character since M4.
