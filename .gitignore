@@ -1,0 +1,3 @@
+
+# agent worktrees: git worktrees live here, they are not repo content
+.claude/worktrees/
