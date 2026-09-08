@@ -327,7 +327,7 @@ const UI = {
       const list = DATA.buildMenu[p.race][this.cardMenu]; list.forEach((id, i) => { const d = DATA.buildings[id]; const ok = p.hasReq(d); B(i, d.name, d.hk, () => { this.placing = { def: d, builder: u, tx: Math.floor(this.mouse.wx / TILE - d.w / 2 + .5), ty: Math.floor(this.mouse.wy / TILE - d.h / 2 + .5) }; }, { cost: d, enabled: ok, dim: !ok, why: why(d) }); });
       B(8, 'Cancel', 'Escape', () => { this.cardMenu = null; }); return btns;
     }
-    if (u.def.larva) { DATA.larvaMorphs.forEach((id, i) => { const d = DATA.units[id]; const ok = p.hasReq(d); B(i, d.name, d.hk, () => { for (const l of sel) if (l.def.larva) { if (G.larvaMorph(l, id)) break; } }, { cost: d, enabled: ok, dim: !ok, why: why(d) }); }); return btns; }
+    if (u.def.larva) { DATA.larvaMorphs.forEach((id, i) => { const d = DATA.units[id]; const ok = p.hasReq(d); B(i, d.name, d.hk, () => { for (const l of sel) if (l.def.larva) { if (G.larvaMorph(l, id)) { this.selection = this.selection.filter(x => x.alive && x.def.larva); break; } } }, { cost: d, enabled: ok, dim: !ok, why: why(d) }); }); return btns; }
     if (u.def.egg) { B(8, 'Cancel', 'Escape', () => { for (const e of sel) G.cancelProd(e, 0); }); return btns; }
     if (u.isBuilding && sel.length === 1) {
       const d = u.def; let i = 0;
@@ -342,6 +342,12 @@ const UI = {
       if (d.morphTo) { const nd = DATA.buildings[d.morphTo]; const ok = p.hasReq(nd); B(i++, nd.name, nd.hk, () => G.queueMorph(u, d.morphTo), { cost: nd, enabled: ok, dim: !ok, why: why(nd) }); }
       if (d.morphOptions) for (const id of d.morphOptions) { const nd = DATA.buildings[id]; const ok = p.hasReq(nd); B(i++, nd.name, nd.hk, () => G.queueMorph(u, id), { cost: nd, enabled: ok, dim: !ok, why: why(nd) }); }
       if (d.abil) for (const id of d.abil) { const ab = DATA.abilities[id]; if (!Abilities.available(u, id)) continue; if (ab.kind === 'instant') B(i++, ab.name, ab.hk, () => Abilities.issue(u, id)); else B(i++, ab.name, ab.hk, () => { this.pending = { kind: 'ability', abil: id }; }, { energy: ab.energy }); }
+      // Select Larvae, as Brood War has it on S. Without this the only way to morph is to click each
+      // larva individually, which is not how anyone plays Zerg: you select the hall, take its larvae,
+      // and press the morph key once per larva.
+      if (d.spawnsLarva) { const lv = u.larvae.filter(l => l.alive && l.def.larva);
+        B(7, 'Select Larvae', 'S', () => { this.selection = lv.slice(); this.cardMenu = null; this.pending = null; },
+          { enabled: lv.length > 0, dim: !lv.length, why: lv.length ? null : 'No larvae have hatched yet.' }); }
       if (d.produces.length || d.spawnsLarva) B(6, 'Set Rally', 'R', setPending('rally'));
       if (d.canLift && !u.prod.length) B(7, 'Lift Off', 'L', () => G.liftBuilding(u));
       if (u.prod.length) B(8, 'Cancel', 'Escape', () => G.cancelProd(u, u.prod.length - 1));
