@@ -103,7 +103,7 @@ const TILESETS = {
 // than about 0.4 and the dots spread far enough apart to read as noise on the terrain.
 const CREEP_LO = 0.37, CREEP_BAND = 0.26;
 const Terrain = {
-  CH: 8, chunks: new Map(), seed: 1, mini: null, setId: 'badlands',
+  CH: 8, chunks: new Map(), _bakedAt: 1, seed: 1, mini: null, setId: 'badlands',
   creepChunks: new Map(), creepSig: null, creepAny: null, creepBudget: 0,
   get pal() { return TILESETS[this.setId] || TILESETS.badlands; },
   hash(x, y) { let h = (x * 374761393 + y * 668265263 + this.seed * 1013904223) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; },
@@ -215,15 +215,27 @@ const Terrain = {
     return this._ramp[key] = cv;
   },
   getChunk(cx, cy) {
+    const k = this.bakeDpr(); if (k !== this._bakedAt) { this.chunks.clear(); this._bakedAt = k; }   // a ratio change invalidates every cached chunk
     const key = cx + ',' + cy; let c = this.chunks.get(key); if (c) return c;
     c = this.renderChunk(cx, cy); this.chunks.set(key, c); return c;
   },
+  // The ratio the chunk canvases are baked at. Terrain is most of the screen and it is the one cached
+  // bitmap worth baking at the display's real resolution -- the sheets are not, because re-baking those
+  // is a four-fold blow-up of the files and of the tinted-sheet ceiling with them.
+  //
+  // The dither survives this for free, which is the only reason it is worth doing. posterise() and
+  // bayerAt() are called with WORLD coordinates, not pixel indices, and bayerAt truncates them with
+  // `& 3` -- so sampling at 1/k of a world unit still lands every k*k block of device pixels in one
+  // Bayer cell. The threshold pattern keeps exactly the apparent size it has at ratio 1; what gets
+  // finer is the noise, the material blend and the vector pass on top.
+  bakeDpr() { return (typeof Render !== 'undefined' && Render.dpr) || 1; },
   renderChunk(cx, cy) {
-    const m = G.map, CH = this.CH, px = CH * TILE; const cv = document.createElement('canvas'); cv.width = px; cv.height = px; const x = cv.getContext('2d');
-    const img = x.createImageData(px, px); const d = img.data; const ox = cx * CH * TILE, oy = cy * CH * TILE;
+    const m = G.map, CH = this.CH, px = CH * TILE, k = this.bakeDpr(), W = px * k;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = W; const x = cv.getContext('2d');
+    const img = x.createImageData(W, W); const d = img.data; const ox = cx * CH * TILE, oy = cy * CH * TILE;
     const hAt = (tx, ty) => { if (!m.inb(tx, ty)) return 1; const i = m.idx(tx, ty); if (m.cliff[i] === 2) return -1; if (m.cliff[i] === 1) return 1; return m.height[i] === 2 ? 1 : m.height[i] === 1 ? 0.5 : 0; };
-    for (let py = 0; py < px; py++) for (let pxx = 0; pxx < px; pxx++) {
-      const wx = ox + pxx, wy = oy + py; const tx = Math.floor(wx / TILE), ty = Math.floor(wy / TILE);
+    for (let py = 0; py < W; py++) for (let pxx = 0; pxx < W; pxx++) {
+      const wx = ox + pxx / k, wy = oy + py / k; const tx = Math.floor(wx / TILE), ty = Math.floor(wy / TILE);
       const i = m.inb(tx, ty) ? m.idx(tx, ty) : -1; const cl = i >= 0 ? m.cliff[i] : 2;
       const n = this.fbm(wx / 40, wy / 40, 3) * 0.7 + this.vnoise(wx / 7, wy / 7) * 0.3, n2 = this.vnoise(wx / 9, wy / 9), cr = this.ridge(wx / 44, wy / 44);
       let col;
@@ -248,9 +260,10 @@ const Terrain = {
         const g = (this.hash(wx, wy) - 0.5) * 14; col[0] += g; col[1] += g; col[2] += g;
       }
       this.posterise(col, wx, wy);
-      const o = (py * px + pxx) * 4; d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = 255;
+      const o = (py * W + pxx) * 4; d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = 255;
     }
     x.putImageData(img, 0, 0);
+    x.setTransform(k, 0, 0, k, 0, 0);   // the vector pass below is written in chunk pixels; let it draw at the bake ratio
     // ---- vector pass: cliff faces, rims, shadows, ramps, doodads ----
     const t0x = cx * CH, t0y = cy * CH;
     for (let ty = t0y - 1; ty < t0y + CH + 1; ty++) for (let tx = t0x - 1; tx < t0x + CH + 1; tx++) {
@@ -321,7 +334,7 @@ const Terrain = {
     // minimap click both produce a fractional camera, so this is not a hypothetical. Every chunk shifts
     // by the same rounded amount, since their origins are all multiples of CH, so there are no seams.
     const ox = Math.round(camX), oy = Math.round(camY);
-    for (let cy = Math.max(0, y0); cy <= Math.min(maxC - 1, y1); cy++) for (let cx = Math.max(0, x0); cx <= Math.min(maxC - 1, x1); cx++) ctx.drawImage(this.getChunk(cx, cy), cx * CH - ox, cy * CH - oy);
+    for (let cy = Math.max(0, y0); cy <= Math.min(maxC - 1, y1); cy++) for (let cx = Math.max(0, x0); cx <= Math.min(maxC - 1, x1); cx++) ctx.drawImage(this.getChunk(cx, cy), cx * CH - ox, cy * CH - oy, CH, CH);   // source is CH*dpr wide; destination stays in CSS pixels
   },
   // ---- creep -------------------------------------------------------------
   // Creep was the plainest thing on the screen and the reason was structural, not artistic. It was a

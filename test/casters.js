@@ -1,5 +1,9 @@
 // Caster audit: which of the spells the AI ever actually casts, and why the rest do not.
-//   node test/casters.js [frames=24000] [seeds=1,2,3]
+//   node test/casters.js [frames=60000] [seeds=1,2,3]
+// The cap defaults to 60,000 (41 minutes) and not 24,000, because 24,000 materially under-reports:
+// it showed 3 of 11 caster kinds fielded where 60,000 shows 5, and every advanced caster's enabling
+// building lands between 11:44 and 22:46. A cap that ends the game before the tech arrives cannot
+// tell 'the AI will not' from 'the game stopped', which is the one question this file exists to ask.
 // M6 found "the AI never fields an advanced caster" as a side effect of the unspent-energy audit, and
 // could only say it with a caster-seconds figure. This makes it the primary measurement instead: per
 // race, when the enabling building finished, when the first caster of each kind existed, how many
@@ -7,7 +11,7 @@
 // problem; a caster that lives and never casts is a micro problem. The two need different fixes and
 // the energy audit cannot tell them apart.
 const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
-const FRAMES = parseInt(process.argv[2] || '24000');
+const FRAMES = parseInt(process.argv[2] || '60000');
 const SEEDS = (process.argv[3] || '1,2,3').split(',').map(Number);
 const MATCHUPS = ['TZ', 'TP', 'ZP'];
 // The casters whose spells sit behind a tech building. Everything here has working code in

@@ -724,6 +724,13 @@ reverted. Zerg buys upgrades it does not live to use. Treat this lever as closed
   furthest and is the one to look at first; see Status.
 - **PvT is 62% [57-67] for Protoss and has not been re-measured since the Zerg build-order fix**,
   which is Zerg-only and cannot affect it.
+- **Three of the five caster kinds that are never fielded are never fielded on purpose.** `ghost` and
+  `dark_archon` are absent from `AI_COMP` altogether and `queen` has weight 0 in all three Zerg comps,
+  where `production()` skips on `if (!wgt)`. So M9's `covert_ops` fix is deliberately incomplete: it
+  buys lockdown, personnel cloaking and the nuclear silo, but no ghost will be trained until one is
+  added to `AI_COMP.T`. Doing that is composition work and moves balance, so it belongs with a
+  measurement and not before one. Only `arbiter` and `corsair` are in the composition and still absent,
+  and those are the time-and-gas story.
 - **The AI casts 7 of 28 spell abilities, and 5 of 11 caster kinds are never fielded.** Improved in M9
   from 5 of 28 by fixing the micro stagger below; what is left is a *production* problem, not a casting
   one. At a 41-minute cap: queen (5/6 games have the enabler), dark archon, arbiter and corsair are never
