@@ -13,6 +13,10 @@
 // model under a light, the bake already has an outline pass to hang it on, and there it costs nothing
 // per frame. Do not put it back in the draw loop.
 const SHADOW_FLAT = 0.42, SHADOW_DX = 5;
+// How long a muzzle flash and a shield hit stay up, in sim frames at 24/s. Short: three frames is an
+// eighth of a second, which is a flash, and anything longer reads as a unit that is permanently on
+// fire once forty marines are shooting at once.
+const MUZZLE_F = 3, SHIELD_F = 8;
 const Render = {
   canvas: null, ctx: null, W: 0, H: 0, camX: 0, camY: 0, viewW: 0, viewH: 0, fogCanvas: null, creepMask: null, creepLayer: null, built: false, lastFrameTime: 0, mini: null,
   init(canvas) { this.canvas = canvas; this.ctx = canvas.getContext('2d'); this.resize(); },
@@ -132,9 +136,39 @@ const Render = {
     ctx.translate(x, y + bob); if (sc !== 1) ctx.scale(sc, 1 / sc);
     if (u.def.id === 'archon' || u.def.id === 'dark_archon') { ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(0, 0, 2, 0, 0, u.r * 1.8); g.addColorStop(0, u.def.id === 'archon' ? 'rgba(120,200,255,0.6)' : 'rgba(200,80,255,0.6)'); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, u.r * 1.8 + Math.sin(G.frame * 0.3) * 3, 0, 7); ctx.fill(); ctx.globalCompositeOperation = 'source-over'; }
     Sprites.draw(ctx, s, 0, 0);
+    // Muzzle flash and shield hit. Both are read off simulation state the draw pass already reads --
+    // u.lastFire drives the attack animation two lines up, u.lastHit and u.sh drive the health bars --
+    // so neither needs a new effect kind in combat.js, and the build stamp stays where it is. Nothing
+    // here is stored: a frame that is not drawn leaves no trace, which is what keeps replays honest.
+    if (u.lastFire !== undefined && G.frame - u.lastFire < MUZZLE_F && !u.def.worker && (u.def.gw || u.def.aw)) {
+      const k = 1 - (G.frame - u.lastFire) / MUZZLE_F, mx = Math.cos(u.facing) * u.r * 0.95, my = Math.sin(u.facing) * u.r * 0.95, rad = 3 + 7 * k;
+      // One gradient, baked once, blitted scaled. Building the gradient per flash per frame was 0.8 ms
+      // at 490 units -- most of a battle is units that fired this frame, so "only when firing" is not
+      // the small set it sounds like.
+      const fl = this.muzzleSprite(), a0 = ctx.globalAlpha;
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a0 * 0.8 * k;
+      ctx.drawImage(fl, mx - rad, my - rad, rad * 2, rad * 2);
+      ctx.globalAlpha = a0; ctx.globalCompositeOperation = 'source-over';
+    }
+    if (u.maxSh > 0 && u.sh > 0 && G.frame - u.lastHit < SHIELD_F) {
+      const k = 1 - (G.frame - u.lastHit) / SHIELD_F;
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = 'rgba(126,192,255,' + (0.6 * k).toFixed(3) + ')'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, 0, u.r + 1 + (1 - k) * 3, 0, 7); ctx.stroke();
+      ctx.globalCompositeOperation = 'source-over';
+    }
     if (u.halluc) { ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = 'rgba(100,180,255,0.25)'; ctx.beginPath(); ctx.arc(0, 0, u.r + 2, 0, 7); ctx.fill(); }
     ctx.restore();
     this.drawStatus(ctx, u, x, y);
+  },
+  // The muzzle flash, drawn once into a small canvas and reused. White-hot core to transparent orange.
+  muzzleSprite() {
+    if (this._muzzle) return this._muzzle;
+    const S = 32, cv = document.createElement('canvas'); cv.width = cv.height = S; const c = cv.getContext('2d');
+    const g = c.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+    g.addColorStop(0, 'rgba(255,246,214,1)'); g.addColorStop(0.35, 'rgba(255,208,120,0.75)'); g.addColorStop(1, 'rgba(255,150,40,0)');
+    c.fillStyle = g; c.fillRect(0, 0, S, S);
+    return this._muzzle = cv;
   },
   animOf(u) {
     const id = u.def.id; const ATK_LEN = 10;
