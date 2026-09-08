@@ -10,6 +10,7 @@ const Editor = {
   height: null, rocks: null, bases: [], tool: 'high', brush: 2, camX: 0, camY: 0, zoom: 6,
   painting: false, msg: '', msgT: 0, hoverTile: [0, 0], dirty: false,
   rectMode: false, rectStart: null, mirror: 'off', undoStack: [], redoStack: [], tileset: 'badlands',
+  squareBrush: false,   // the freehand brush is round by default; a square one is what you want for plateaus and corridors
 
   // ---------------- storage ----------------
   store: {
@@ -55,6 +56,19 @@ const Editor = {
     this.height = MapCodec.decode(l.height, this.W * this.H); this.rocks = MapCodec.decode(l.rocks, this.W * this.H);
     this.bases = (l.bases || []).map(b => ({ x: b.x, y: b.y, main: !!b.main, natural: !!b.natural, minerals: (b.minerals || []).map(m => m.slice()), geyser: b.geyser ? b.geyser.slice() : null }));
     this.dirty = false;
+  },
+  // Accepts a number or a "WxH" string. The engine has always clamped a custom layout to 64-256 per
+  // axis (js/map.js) and never required a square map -- the template lays itself out in 128ths of each
+  // axis independently -- but the only way to change the size was a button that cycled four square
+  // presets. Resizing cannot keep the painting, because the height and rock arrays are indexed by W:
+  // it lays down a fresh template, which is exactly what the cycle button already did.
+  resizeMap(spec) {
+    const lim = v => Math.max(64, Math.min(256, Math.round(v)));
+    const m = String(spec).toLowerCase().match(/^\s*(\d+)\s*(?:[x,\s]\s*(\d+))?\s*$/);
+    if (!m) { this.msgSay('Size must be a number or WxH, 64 to 256.'); return false; }
+    const w = lim(+m[1]), h = lim(m[2] ? +m[2] : +m[1]);
+    if (w !== +m[1] || h !== +(m[2] || m[1])) this.msgSay('Clamped to ' + w + 'x' + h + ' (64 to 256).');
+    this.W = w; this.H = h; this.template(); return true;
   },
   // A starter map so a new user has something valid to edit: two mirrored mains on high ground.
   template() {
@@ -140,6 +154,7 @@ const Editor = {
       else if (k === '4') this.tool = 'rock'; else if (k === '5') this.tool = 'base'; else if (k === '6') this.tool = 'start';
       else if (k === '[') this.brush = Math.max(1, this.brush - 1); else if (k === ']') this.brush = Math.min(12, this.brush + 1);
       else if (k === 'r') this.rectMode = !this.rectMode; else if (k === 'm') this.cycleMirror();
+      else if (k === 'b') this.squareBrush = !this.squareBrush;
       else if (k === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (e.shiftKey) this.redo(); else this.undo(); }
       else if (k === 'y' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); this.redo(); }
       else if (k === 'escape') { if (this.rectStart) { this.rectStart = null; this.undo(); } else this.close(); }
@@ -156,7 +171,10 @@ const Editor = {
     if (this.tool === 'rock') this.rocks[i] = erase ? 0 : 1;
     else { this.height[i] = erase ? 0 : this.toolValue(); if (!erase) this.rocks[i] = 0; }
   },
-  brushAt(tx, ty, erase) { const r = this.brush; for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (dx * dx + dy * dy <= r * r) for (const [x, y] of this.mirrors(tx + dx, ty + dy)) this.setTile(x, y, erase); this.dirty = true; },
+  // Round or square, same radius either way, so B swaps the shape without changing the size of the
+  // stroke. A round brush cannot paint a clean plateau edge and the rectangle tool cannot follow a
+  // curve, so neither of the two things that already existed covered a straight-edged freehand stroke.
+  brushAt(tx, ty, erase) { const r = this.brush, sq = this.squareBrush; for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (sq || dx * dx + dy * dy <= r * r) for (const [x, y] of this.mirrors(tx + dx, ty + dy)) this.setTile(x, y, erase); this.dirty = true; },
   fillRect(x0, y0, x1, y1, erase) {
     const ax = Math.min(x0, x1), ay = Math.min(y0, y1), bx = Math.max(x0, x1), by = Math.max(y0, y1);
     for (let y = ay; y <= by; y++) for (let x = ax; x <= bx; x++) for (const [mx, my] of this.mirrors(x, y)) this.setTile(mx, my, erase);
@@ -189,12 +207,14 @@ const Editor = {
     x += 14;
     add('Brush -', '[', () => this.brush = Math.max(1, this.brush - 1));
     add('Brush +', ']', () => this.brush = Math.min(12, this.brush + 1));
+    add(this.squareBrush ? 'Square' : 'Round', 'B', () => this.squareBrush = !this.squareBrush, this.squareBrush);
     add(this.rectMode ? 'Rect' : 'Brush', 'R', () => this.rectMode = !this.rectMode, this.rectMode);
     add('Mirror ' + (this.mirror === 'off' ? 'off' : this.mirror + 'p'), 'M', () => this.cycleMirror(), this.mirror !== 'off');
     add('Undo', '^Z', () => this.undo());
     add('Redo', '^Y', () => this.redo());
     x += 14;
-    add('Size ' + this.W, '', () => { const sizes = [96, 128, 160, 192]; this.mark(); this.W = this.H = sizes[(sizes.indexOf(this.W) + 1) % sizes.length]; this.template(); this.msgSay('New ' + this.W + 'x' + this.H + ' map.'); });
+    add('Size ' + this.W + 'x' + this.H, '', () => { const sizes = [96, 128, 160, 192]; this.mark(); this.resizeMap(sizes[(sizes.indexOf(this.W) + 1) % sizes.length]); });
+    add('Size...', '', () => { const n = prompt('Map size in tiles: one number for a square map, or WxH. 64 to 256.', this.W + 'x' + this.H); if (n) { this.mark(); this.resizeMap(n); } });
     add('Tiles: ' + (TILESET_NAMES[this.tileset] || this.tileset), '', () => { this.mark(); this.tileset = TILESET_IDS[(TILESET_IDS.indexOf(this.tileset) + 1) % TILESET_IDS.length]; this.dirty = true; this.msgSay('Tileset: ' + (TILESET_NAMES[this.tileset] || this.tileset) + '.'); });
     add('New', '', () => { this.mark(); this.template(); });
     add('Rename', '', () => { const n = prompt('Map name', this.name); if (n) { this.mark(); this.name = n.slice(0, 24); this.dirty = true; } });
@@ -284,7 +304,8 @@ const Editor = {
     } else {
       for (const [mx, my] of this.mirrors(hx, hy, fw, fh)) { // the mirrored copies show where the same stroke will land
         ctx.strokeStyle = (mx === hx && my === hy) ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.35)';
-        ctx.beginPath(); ctx.arc((mx - tx0 + .5) * z, 60 + (my - ty0 + .5) * z, (r + .5) * z, 0, 7); ctx.stroke();
+        if (this.squareBrush && this.tool !== 'base' && this.tool !== 'start') ctx.strokeRect((mx - r - tx0) * z + .5, 60 + (my - r - ty0) * z + .5, (r * 2 + 1) * z, (r * 2 + 1) * z);
+        else { ctx.beginPath(); ctx.arc((mx - tx0 + .5) * z, 60 + (my - ty0 + .5) * z, (r + .5) * z, 0, 7); ctx.stroke(); }
       }
     }
     this.drawMinimap();
@@ -300,7 +321,7 @@ const Editor = {
     ctx.fillStyle = '#151a22'; ctx.fillRect(0, H - 28, W, 28);
     ctx.fillStyle = '#9aa4b0'; ctx.font = '12px sans-serif';
     const mains = this.bases.filter(b => b.main).length;
-    ctx.fillText(`"${this.name}"${this.dirty ? ' *' : ''}   tile ${hx},${hy}   brush ${this.brush}   starts ${mains}   expansions ${this.bases.length - mains}   ${this.W}x${this.H}   ${this.rectMode ? 'rectangle' : 'brush'}   mirror ${this.mirror === 'off' ? 'off' : this.mirror + 'p'}   Ctrl+Z undo, R rectangle, M mirror, right-drag erases`, 10, H - 10);
+    ctx.fillText(`"${this.name}"${this.dirty ? ' *' : ''}   tile ${hx},${hy}   brush ${this.brush} ${this.squareBrush ? 'square' : 'round'}   starts ${mains}   expansions ${this.bases.length - mains}   ${this.W}x${this.H}   ${this.rectMode ? 'rectangle' : 'brush'}   mirror ${this.mirror === 'off' ? 'off' : this.mirror + 'p'}   Ctrl+Z undo, B brush shape, R rectangle, M mirror, right-drag erases`, 10, H - 10);
     if (this.msg && performance.now() - this.msgT < 6000) { ctx.fillStyle = '#ffe45a'; ctx.textAlign = 'right'; ctx.fillText(this.msg, W - 10, H - 10); ctx.textAlign = 'left'; }
   },
 };

@@ -83,6 +83,42 @@ check(qol.problems.length === 0, 'the mirrored 4-player map validates' + (qol.pr
 check(qol.layout.players === 4, 'it registers as a 4-player layout');
 
 // the symmetric map has to actually play
+// ---------- brush shape and explicit map size ----------
+// Both were added because the editor could only do one of each: a round brush, and four square presets.
+// The size check matters most -- a non-square map was legal in js/map.js from the start and simply
+// unreachable, so nothing had ever played one.
+const shp = makeCtx(false);
+vm.runInContext(`
+  Editor.canvas = { width: 1280, height: 720 }; Editor.blank(); Editor.tool = 'high'; Editor.brush = 3;
+  const count = () => { let n = 0; for (let i = 0; i < Editor.height.length; i++) if (Editor.height[i]) n++; return n; };
+  Editor.squareBrush = false; Editor.brushAt(40, 40, false); this.round = count();
+  Editor.blank(); Editor.tool = 'high';
+  Editor.squareBrush = true; Editor.brushAt(40, 40, false); this.square = count();
+  // a square stroke covers its whole (2r+1)^2 box; a round one of the same radius covers less
+  this.sqExact = this.square === 49;
+  Editor.blank();
+  this.ok1 = Editor.resizeMap(160); this.sq = [Editor.W, Editor.H];
+  this.ok2 = Editor.resizeMap('192x96'); this.rect = [Editor.W, Editor.H];
+  this.ok3 = Editor.resizeMap('40x900'); this.clamped = [Editor.W, Editor.H];
+  this.ok4 = Editor.resizeMap('huge'); this.after = [Editor.W, Editor.H];
+  this.problems = Editor.problems(); this.layout = Editor.toLayout();
+`, shp);
+check(shp.sqExact && shp.square > shp.round, 'square brush fills its whole box (' + shp.square + ' tiles vs ' + shp.round + ' round)');
+check(shp.ok1 && shp.sq[0] === 160 && shp.sq[1] === 160, 'a bare number makes a square map (' + shp.sq.join('x') + ')');
+check(shp.ok2 && shp.rect[0] === 192 && shp.rect[1] === 96, 'WxH makes a non-square map (' + shp.rect.join('x') + ')');
+check(shp.ok3 && shp.clamped[0] === 64 && shp.clamped[1] === 256, 'out-of-range sizes clamp to 64-256 (' + shp.clamped.join('x') + ')');
+check(shp.ok4 === false && shp.after[0] === 64 && shp.after[1] === 256, 'junk input is rejected and leaves the map alone');
+const rectPlay = makeCtx(false);
+vm.runInContext(`MAP_LAYOUTS['custom:Rect'] = ${JSON.stringify(shp.layout)};
+  const m = new GameMap(1, 'custom:Rect');
+  this.dims = [m.w, m.h];
+  G.init({ players: [{ race: 'T', human: false, difficulty: 'normal', name: 'A' }, { race: 'Z', human: false, difficulty: 'normal', name: 'B' }], seed: 3, layout: 'custom:Rect' });
+  for (let i = 0; i < 3000 && !G.over; i++) G.tick();
+  this.out = { w: G.map.w, h: G.map.h, sup: G.players.map(p => p.supUsed) };
+`, rectPlay);
+check(rectPlay.dims[0] === 64 && rectPlay.dims[1] === 256, 'the engine loads the non-square layout at its stored size (' + rectPlay.dims.join('x') + ')');
+check(rectPlay.out.sup[0] > 8 && rectPlay.out.sup[1] > 8 && rectPlay.errors.length === 0, 'both AIs play 3000 frames on a 64x256 map without error');
+
 const play4 = makeCtx(false);
 play4.layout4 = qol.layout;
 vm.runInContext(`
