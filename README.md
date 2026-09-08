@@ -68,6 +68,10 @@ node broodwar/test/playtest.js all          # scripted human plays TvZ, PvT, ZvP
 node broodwar/test/net.js                   # two lockstep clients + AI through the relay: hashes, drop, rejoin, desync detection
 node broodwar/test/missions.js              # every campaign mission: setup, placement, objective resolves
 node broodwar/test/balance.js               # AI-vs-AI win-rate matrix across matchups, layouts and seeds
+node broodwar/test/proxy.js --matchups=TZ   # the cheap version: ten-minute games, paired indicators
+node broodwar/test/proxy.js --ab a.log b.log --matchup=TZ --race=T   # which way a change moved, in minutes
+node broodwar/test/proxy_validate.js        # what the proxy gets right and wrong, against five full runs
+node broodwar/test/duel.js --upg=T:1,Z:0    # equal-supply duels, optionally at unequal upgrades
 node broodwar/test/perf.js 600 4 --sustain  # 4-player 200-supply battle, per-tick cost by phase
 node broodwar/test/perf_render.js           # the same battle's draw pass at 1080p; open the URL it prints
 node broodwar/test/editor.js                # builds a custom map, then plays an AI game and a LAN game on it
