@@ -16,6 +16,10 @@
 //     pinned to 1920x1080 afterwards so the number means the same on any screen.
 const http = require('http'), fs = require('fs'), path = require('path');
 const root = path.join(__dirname, '..'), port = parseInt(process.argv[2] || '8798');
+// Device pixel ratio to emulate. The pane and most desktops report 1, but a scaled Windows display
+// or any HiDPI panel reports more, and Render sizes its backing store by it -- so the honest cost of
+// "render at the screen's real resolution" is measured here, not extrapolated from the pixel count.
+const DPR = parseFloat(process.argv[3] || '1');
 const types = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json' };
 const W = 1920, H = 1080, LAYOUT = 'temple', SEED = 5, TICKS = 600, WARM = 20, SAMPLES = 100, GAP = 16, TARGET = 6;
 const SCRIPTS = ['js/data.js', 'js/map.js', 'js/sim.js', 'js/game.js', 'js/combat.js', 'js/abilities.js', 'js/commands.js', 'js/ai.js', 'js/missions.js', 'js/build.js', 'js/snapshot.js', 'js/audio.js', 'js/net.js', 'js/terrain.js', 'js/sprites_units.js', 'js/sprites_buildings.js', 'assets/atlas.js', 'js/sprites.js', 'js/atlas.js', 'js/fx.js', 'js/render.js', 'js/editor.js', 'js/ui.js', 'js/hud.js'];
@@ -26,7 +30,7 @@ const page = `<!doctype html><meta charset="utf-8"><title>render perf</title>
 <body><div id="menu" style="display:none"></div><canvas id="game"></canvas><div id="s">loading...</div>
 ${SCRIPTS.map(f => '<script src="/' + f + '"></script>').join('\n')}
 <script>
-const W = ${W}, H = ${H}, TICKS = ${TICKS}, WARM = ${WARM}, SAMPLES = ${SAMPLES}, GAP = ${GAP};
+const W = ${W}, H = ${H}, DPR = ${DPR}, TICKS = ${TICKS}, WARM = ${WARM}, SAMPLES = ${SAMPLES}, GAP = ${GAP};
 const status = document.getElementById('s'), say = t => status.textContent = t;
 const gap = ms => new Promise(r => setTimeout(r, ms));
 const stat = a => { const s = a.slice().sort((x, y) => x - y); const f = v => +v.toFixed(2);
@@ -72,7 +76,9 @@ function setup() {
   clearInterval(UI.simTimer); UI.simTimer = null; UI.running = false;  // we drive the sim and the draw by hand
   // (4) pin the canvas so the window size does not decide the answer
   Render.resize(); const c = Render.canvas;
-  c.width = Render.W = W; c.height = Render.H = H; Render.viewW = W; Render.viewH = H - UI.consoleH;
+  Render.dpr = DPR; Render.W = W; Render.H = H; Render.viewW = W; Render.viewH = H - UI.consoleH;
+  c.width = Math.round(W * DPR); c.height = Math.round(H * DPR);
+  c.style.width = W + 'px'; c.style.height = H + 'px';
   Render.creepLayer = null; Render.built = false;
   for (let i = 0; i < TICKS; i++) G.tick();
   Render.camX = cx - Render.viewW / 2; Render.camY = cy - Render.viewH / 2; UI.clampCam();
@@ -119,7 +125,7 @@ const server = http.createServer((req, res) => {
       let r; try { r = JSON.parse(body); } catch (e) { console.log('bad result: ' + body.slice(0, 200)); return process.exit(1); }
       const row = m => m.label.padEnd(22) + String(m.drawn).padStart(4) + ' drawn   median ' + m.median.toFixed(2) + ' ms   mean ' + m.mean.toFixed(2) + '   p95 ' + m.p95.toFixed(2) + '   max ' + m.max.toFixed(2) + '   over ' + TARGET + 'ms ' + m.over + '/' + SAMPLES;
       console.log('art: ' + r.art);
-      console.log(r.alive + ' units alive (' + r.mobile + ' mobile), canvas ' + r.canvas + ', viewport ' + r.viewport + ', ' + SAMPLES + ' frames paced ' + GAP + ' ms apart');
+      console.log(r.alive + ' units alive (' + r.mobile + ' mobile), canvas ' + r.canvas + ' at dpr ' + DPR + ', viewport ' + r.viewport + ', ' + SAMPLES + ' frames paced ' + GAP + ' ms apart');
       console.log('  ' + row(r.natural));
       console.log('  ' + row(r.packed));
       const worst = Math.max(r.natural.median, r.packed.median);

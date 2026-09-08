@@ -26,7 +26,20 @@ const SHADOW_SS = 0.5, SHADOW_A = 0.38;
 // Windows at 125% -- the browser stretched the whole frame to fit the physical pixels and everything
 // went soft. The backing store is physical pixels now and the context carries a scale, which keeps
 // every coordinate in the code (and every mouse event, which arrives in CSS pixels) exactly as it was.
-// Capped, because cost goes as the square: twice the ratio is four times the fill.
+// It is very nearly free, which was not the expectation. Four times the pixels ought to cost four times
+// the fill, so this was written expecting to have to pick a cautious cap. Measured instead, at 490 units
+// and a 1920x1080 viewport (test/perf_render.js takes a dpr argument now):
+//
+//   dpr 1     1920x1080   2.80 ms median   p95 3.3   max 4.8
+//   dpr 1.25  2400x1350   2.80 ms          p95 3.2   max 3.4
+//   dpr 1.5   2880x1620   2.80 ms          p95 3.3   max 4.1
+//   dpr 2     3840x2160   2.90 ms          p95 3.5   max 4.7
+//
+// Full 4K costs a tenth of a millisecond. Canvas2D here is GPU-composited, so this pass is bound by the
+// number of draw calls and not by how many pixels each one covers -- which is the same reason the per-
+// unit blit is the thing to budget in and the resolution is not. The cap is 2 because that is the point
+// past which the sheets have no detail left to show, not because of the frame budget.
+//
 // What this sharpens is everything drawn as geometry -- terrain, fog, HUD text, selection rings, health
 // bars, particles, projectiles. Sprites come off fixed-size baked sheets, so they are upscaled by the
 // same ratio the browser was already upscaling them by, and look neither better nor worse. Making
