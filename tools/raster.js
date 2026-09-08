@@ -6,6 +6,11 @@
 // ============================================================================
 const zlib = require('zlib');
 
+// How hard the rim light hits the sun-facing edge, and how much cooler that edge is than the surface
+// under it. Kept low on purpose: this fires on every sprite in the game, so anything strong enough to
+// look good on a marine blows out the highlights on the pale units (medic, ghost, ice-lit Protoss).
+const RIM_LIGHT = 46, RIM_COOL = 14;
+
 // ---------------- vector helpers ----------------
 const V = {
   add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
@@ -122,6 +127,19 @@ class Renderer {
     // outline: darken edge pixels & add a 1px dark rim outside
     const rim = new Uint8Array(OW * OH * 4); rim.set(out);
     for (let y = 0; y < OH; y++) for (let x = 0; x < OW; x++) { const o = (y * OW + x) * 4; if (out[o + 3] > 60) continue; let near = 0; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= OW || yy >= OH) continue; if (out[(yy * OW + xx) * 4 + 3] > 120) near = Math.max(near, out[(yy * OW + xx) * 4 + 3]); } if (near) { rim[o] = 14; rim[o + 1] = 15; rim[o + 2] = 20; rim[o + 3] = Math.round(near * 0.85); } }
+    // Rim light: the interior edge on the side facing the sun, lifted and cooled slightly, so a unit
+    // keeps a bright outline against the terrain instead of relying on the dark rim above -- which
+    // disappears on badlands and reads as a smudge on ice and space. This belongs here rather than in
+    // the draw loop: it is a property of the model under a light, and every per-frame way of faking it
+    // costs a second full-sprite blit, which is about 2 ms at 490 units (see js/render.js).
+    // Up and left, because that is where Renderer.light and Sprites.light both put the sun.
+    for (let y = 0; y < OH; y++) for (let x = 0; x < OW; x++) {
+      const o = (y * OW + x) * 4; if (out[o + 3] < 120) continue;
+      let lit = false;
+      for (const [dx, dy] of [[-1, -1], [0, -1], [-1, 0]]) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= OW || yy >= OH || out[(yy * OW + xx) * 4 + 3] < 60) { lit = true; break; } }
+      if (!lit) continue;
+      rim[o] = Math.min(255, out[o] + RIM_LIGHT); rim[o + 1] = Math.min(255, out[o + 1] + RIM_LIGHT); rim[o + 2] = Math.min(255, out[o + 2] + RIM_LIGHT + RIM_COOL);
+    }
     return { rgba: rim, mask: mo, W: OW, H: OH };
   }
 }
