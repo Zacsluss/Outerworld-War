@@ -1,4 +1,7 @@
-// Can everything actually be built?  node test/techtree.js
+// Can everything actually be built?  node test/techtree.js [--quiet]
+//
+// --quiet prints only failures and the one-line verdict, so this can sit inside test/all.js next to the
+// other fast checks without burying them in per-race totals and chain dumps.
 //
 // A closure over the tech tree: start from what a player is given at frame 0, then repeatedly add
 // anything whose requirements are already satisfied, until nothing new appears. Whatever is left over
@@ -20,6 +23,8 @@ const g = n => vm.runInContext(n, ctx);
 const DATA = g('DATA'), RACE_INFO = g('RACE_INFO'), EQUIV = g('EQUIV') || {};
 
 let fails = 0, checks = 0;
+const QUIET = process.argv.includes('--quiet');
+const say = QUIET ? () => { } : (...a) => console.log(...a); // detail; failures and the verdict always print
 const bad = (msg) => { console.log('  FAIL ' + msg); fails++; };
 const ok = (msg) => { console.log('  PASS ' + msg); };
 
@@ -28,7 +33,7 @@ const ok = (msg) => { console.log('  PASS ' + msg); };
 const satisfiedBy = (id, have) => have.has(id) || (EQUIV[id] || []).some(x => have.has(x));
 
 for (const race of ['T', 'Z', 'P']) {
-  console.log('\n=== ' + race + ' ===');
+  say('\n=== ' + race + ' ===');
   const have = new Set([RACE_INFO[race].hall]);
   const techs = new Set(), units = new Set();
   const reqMet = def => !def.req || def.req.every(r => DATA.techs[r] ? techs.has(r) : satisfiedBy(r, have));
@@ -94,17 +99,17 @@ for (const race of ['T', 'Z', 'P']) {
     if (d.race !== race || !d.req) continue;
     for (const r of d.req) { checks++; if (!DATA.buildings[r] && !DATA.techs[r]) bad((d.name || id) + ': requirement "' + r + '" is not a building or a tech'); }
   }
-  console.log('  reached ' + have.size + ' buildings, ' + units.size + ' units, ' + techs.size + ' techs');
+  say('  reached ' + have.size + ' buildings, ' + units.size + ' units, ' + techs.size + ' techs');
 }
 
 // The long Terran chains the player actually asks about, spelled out, so a regression names itself.
-console.log('\n=== the chains people ask about ===');
+say('\n=== the chains people ask about ===');
 const chain = (unitId) => {
   const u = DATA.units[unitId]; const parts = [];
   const walk = (id, depth) => { if (depth > 6) return; const d = DATA.buildings[id]; if (!d) return; const bits = [d.name]; if (d.tier === 'addon') bits.push('(add-on on ' + DATA.buildings[d.parent].name + ')'); parts.push('  '.repeat(depth) + bits.join(' ')); for (const r of (d.req || [])) walk(r, depth + 1); if (d.tier === 'addon') walk(d.parent, depth + 1); };
   for (const r of [u.from, ...(u.req || [])]) walk(r, 1);
   const seen = new Set(), lines = parts.filter(l => { const k = l.trim(); if (seen.has(k)) return false; seen.add(k); return true; });
-  console.log('\n' + u.name + '  needs:\n' + lines.join('\n'));
+  say('\n' + u.name + '  needs:\n' + lines.join('\n'));
 };
 for (const id of ['battlecruiser', 'ghost', 'medic', 'science_vessel']) chain(id);
 
