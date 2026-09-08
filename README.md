@@ -72,6 +72,7 @@ node broodwar/test/proxy.js --matchups=TZ   # the cheap version: ten-minute game
 node broodwar/test/proxy.js --ab a.log b.log --matchup=TZ --race=T   # which way a change moved, in minutes
 node broodwar/test/proxy_validate.js        # what the proxy gets right and wrong, against five full runs
 node broodwar/test/duel.js --upg=T:1,Z:0    # equal-supply duels, optionally at unequal upgrades
+node broodwar/test/techtree.js              # is every unit, building and tech actually reachable?
 node broodwar/test/perf.js 600 4 --sustain  # 4-player 200-supply battle, per-tick cost by phase
 node broodwar/test/perf_render.js           # the same battle's draw pass at 1080p; open the URL it prints
 node broodwar/test/editor.js                # builds a custom map, then plays an AI game and a LAN game on it
@@ -81,4 +82,4 @@ node broodwar/test/editor.js                # builds a custom map, then plays an
 
 - No online matchmaking (LAN only), no original campaign story, no hand-painted art or recorded voice acting.
 - Exact BW pathfinding quirks, collision boxes and animation timings are approximations.
-- Balance is tuned by AI-vs-AI runs, not by human ladder play. **Terran vs Zerg is 77% [73-81] over 376 decided games, which is outside the 60/40 band the harness asks for.** One M7 change did all of it: the AI's build order used to be run strictly at its head, so a step it could not start yet froze everything behind it and was eventually thrown away, taking every step that depended on it with it. Fixing that gives Terran back the infantry upgrades and the second factory it had been losing, and gives Zerg back buildings it has no time to use — worth +13 points to Terran at p = 0.000 over 371 paired seeds. It is a bug fix and it is kept; the matchup is the open problem. Protoss vs Terran is 54% [49-59] and Protoss vs Zerg 49% [45-54], both at target. See HANDOFF.md.
+- Balance is tuned by AI-vs-AI runs, not by human ladder play, and **it is currently unmeasured**. A bug found in M8 -- Hold Position never checked the weapon cooldown, so a sieged tank fired up to 75 times its allowed rate -- voided every previously published win rate, since the AI sieges its tanks. The fix is in; the re-measurement was launched and is the first task of the next milestone. See HANDOFF.md.

@@ -7,36 +7,184 @@ exactly what is left to do.
 
 Open a chat in `Default Project/broodwar/` and paste:
 
-> Read HANDOFF.md and README.md, run the tests, then work through the "M8 — what to do next" section in
-> order, starting with task 0. Keep the determinism tests green after every change, commit at each item,
-> and update HANDOFF.md at the end.
+> Read HANDOFF.md and README.md, run the tests, then work through the "M9 — what to do next" section
+> in order, starting with task 0. Keep the determinism tests green after every change, commit at each
+> item, and update HANDOFF.md at the end.
 >
-> Two things are already decided and are not open questions: `91e4195` stays even though it put Terran vs
-> Zerg outside 60/40, and task 2 (the graphics overhaul) happens regardless of how task 1 goes. If the
-> balance work stalls the way M4's and M7's did, say so and move to task 2 rather than grinding on it.
+> Task 0 is finishing a measurement, not starting one: M8 found a bug that voided every balance number
+> in the repo, and the re-measurement was launched but may not have finished. Check it before trusting
+> any win rate you read anywhere in that file.
 
-## Status (2026-09-07, M7 complete)
+## Status (2026-09-07, M8 complete)
 
-**M7 answered its first question, fixed the largest structural bug in the AI, and broke a matchup doing
-it.** All three tasks are done. The one-line summary a reader needs before touching anything:
+**M8 built a cheap way to ask balance questions, used it to find that the previous milestone's stated
+cause was wrong, and then a player found a bug that voids every balance number in this file.**
 
-> **Terran vs Zerg is 77% [73-81] over 376 decided games — OUTSIDE 60/40, the first established failure
-> since M4.** One commit did all of it: M7's build-order fix is worth +13 points to Terran at p = 0.000
-> over 371 paired seeds. That fix is not a tuning choice and is not a mistake — the build order was
-> throwing away its own steps and amputating its own tech tree — so it is kept, and this is the problem
-> M8 inherits. Read "The build order was a queue" below before changing a number.
+Read these three things before touching anything:
+
+> **1. Hold Position never checked the weapon cooldown.** `case 'hold'` called `fireAt` directly while
+> every other path goes through `engage()`, which is where `if (this.cooldown <= 0)` lives. A unit
+> holding with a target in range fired *once per tick* -- 24 shots a second where a siege tank is
+> allowed one per 75 frames, at 70 damage with splash. Measured: mean gap between shots 1 frame
+> before, 74.7 after. It presents as a siege bug because siege mode is the only thing that puts a unit
+> on hold and leaves it there, but every race's units did it on `H`. Fixed in `fcf08be`.
+>
+> **2. Therefore every balance figure measured before `fcf08be` is void**, including M7's "TvZ 77%".
+> Siege tanks are 4 of 24 in `AI_COMP.T` and the AI sieges them, so the whole matrix was measured with
+> Terran's second-heaviest unit firing at up to 75x its rate. The re-measurement is running; see
+> "Balance" below for where it lands and what is still owed.
+>
+> **3. M7's stated cause for the TvZ move was wrong, and task 0 is what showed it.** The handoff said
+> to check whether `91e4195` paid Terran in upgrades. It did not: Terran's finished upgrades at ten
+> minutes went *down* (0.17 to 0.11) and Zerg's went *up* (0.00 to 0.36), a paired -0.46 at p = 0.000.
+> What it paid Terran was economy -- 40 workers to 62, 110 supply to 137, +2,513 mined, army flat at
+> 55.6. That reframing is what led to the task 1 fix.
 
 | commit | what |
 |---|---|
-| `91e4195` | M7 task 2 (part) — the build order was a queue, and it was eating the tech tree |
-| `a23d92b` | M7 task 2 (rest) — the caster tech earlier, and templars that live to cast |
-| `aaa716e` | M7 task 3 (part) — the composition hold held buildings it had no business holding |
-| `07836c6` | M7 task 3 (rest) — two thirds of "idle production" was never a defect |
-| `2802b31` | M7 task 1 — the Zerg-side answer, and what each half of it was worth |
-| `48bbfac` | M7 close-out — the shipping balance, the README's claims, this handoff |
-| `4022e24` | the sim tick re-measured rather than asserted |
+| `b116e7a` | task 0 -- a balance proxy that is right for a reason, and two candidates that are wrong |
+| `9705072` | task 2 -- Desert and Space Platform, the two missing Brood War biomes |
+| `f0aaaf9` | task 2 -- a shadow pass that is the unit's own shape, and a rim light that is not |
+| `c389c5a` | task 2 -- the rim light, baked where it costs nothing |
+| `509ad17` | task 2 -- muzzle flashes and shield hits, without a new effect kind |
+| `e991333` | task 2 -- what the graphics work cost, in the units that decide the next one |
+| `fcf08be` | **Hold Position never checked the weapon cooldown** (player-reported) |
+| `e30e506` | a greyed command-card button says what is missing; `test/techtree.js` (player-reported) |
+| `285f90e` | task 2 -- the console is made of the faction's own material now |
+| `197eb40` | task 1 -- Terran and Protoss were never army-gated on workers, because of a constant |
+| `071d24e` | task 2 -- the era pass: posterised art, mineral fields and geysers, HUD type, ambient life |
+| `6c45be7` | task 2 -- units: silhouettes that differ, materials per race, and weight |
 
-## Task 1's answer: PvT and PvZ were fine all along
+## The three bugs a player found in an afternoon, and what that says
+
+All three came from someone playing the game rather than from a test, and two of them had been there
+for milestones. They are worth listing together because the pattern is the point.
+
+- **"my one tank is holding a position and has 81 kills in seemingly seconds"** -- and then, exactly
+  right, *"it looks like the cooldown isnt applied ONLY in siege mode"*. The Hold Position bug above.
+  Every automated check in this repo passed with it in place, because nothing measures rate of fire.
+- **"the terran barracks cant get its side building to enable firebats, medics, ghosts"** -- not a
+  broken requirement. The Academy is a standalone building and the Barracks has no add-on, in Brood
+  War either. What was broken is that the game never said so: both dispatchers skipped a disabled
+  button's handler, so pressing `F` with no Academy was indistinguishable from a dead key. The build
+  menu *looked* like it handled this, with a `'Requires ' + p.missingReq(d)` branch inside its
+  handler -- unreachable for the same reason. `Player.missingReq` already knew and nothing asked it.
+- **"why cant i build a battlecruiser"** -- also reachable, just deep: a Control Tower on the Starport
+  *and* a Physics Lab on a Science Facility. `test/techtree.js` is new and takes the closure of the
+  whole tech tree; it reports 236 checks and everything reachable for all three races.
+
+**The lesson for M9: this project has no test that plays like a person.** `test/playtest.js` drives
+the UI, but it drives it correctly -- it never holds position and watches, never clicks a greyed
+button and waits for an explanation, never asks why it cannot build the thing it wants. Two of these
+three were invisible to every check here and visible in about a minute of play.
+
+## Task 0's answer: the proxy works, and both of its favoured candidates lose
+
+`test/proxy.js` runs the same seeds to ten minutes instead of playing them out, and compares a
+measurement at a fixed frame rather than a win rate. A win rate is one coin flip per game and needs
+hundreds; a paired measurement on identical seeds differs only by the change, so 132 games in four
+minutes carries the same weight as a full run. **This is what made the rest of M8 possible: eleven
+variants were tested in about an hour, which at full-run prices is most of a day.**
+
+It was validated without spending a single new balance run. Every M7 variant's sim code was still on
+disk under `bw-scratch`, and each is byte-identical to its commit (checked: `m6-head`==`0f87106`,
+`m7-head`==`c494be6`, `m7-casters`==`a23d92b`, `m7-head2`==`07836c6`, `m7-mound`==`2802b31`), so the
+proxy could run against exactly the code that produced each log. `test/proxy_validate.js` scores ten
+indicators against five verdicts those runs already paid for, and runs no games:
+
+| indicator | verdicts | notes |
+|---|---|---|
+| `sup@10`, `bld@10`, `score@cap` | **5/5** | no false alarm on the four changes that did nothing |
+| `wk@10`, `mined@10`, `kills@cap` | 4/5 | |
+| `army@10` | 3/5 | |
+| **`army@contact`** | 2/5 | one of the two this handoff expected to win |
+| **`upg@10`, `upgtech@10`** | **1/5** | the other one |
+
+**The two candidates this handoff nominated are the two that lose**, and they do not merely fail --
+they fire at p < 0.05 *in the wrong direction* on calls the full runs settled. They measure what a
+change does, not what it wins. Zerg buying upgrades it does not live to use is M7's own finding, and
+`upg@10` reports it as progress. Only the three validated indicators vote in `--ab`'s call.
+
+**What the validation cannot do, which matters more than the score.** Four of the five calls are "no
+move", so most of what is being tested is whether an indicator cries wolf. The single positive is a
+13-point move. That is enough to say these three do not raise false alarms and do catch a large move;
+it is not enough to say they would catch a small one, because the ground truth contains no confirmed
+small move. **A quiet proxy is a reason not to spend a full run, not proof of neutrality.**
+
+`test/duel.js` is the third candidate and the control, worth keeping for what it proves rather than
+what it predicts. Its signature is byte-identical across all six M7 variants (`4142cbb4`): every one
+of those changes is in `ai.js` and none can touch combat. That makes it useless as a predictor for AI
+changes and exactly right as a scope check -- and `--upg` makes it the right first probe for the
+`js/data.js` tunes that fill "what not to repeat". Its other finding is worth reading: **at equal
+supply and equal upgrades Terran loses TvZ duels 6/36 at -10.3 supply**, and giving Terran alone one
+upgrade level plus stim and u238 takes that to 9/18 at -0.7. The matchup is not decided by the fight.
+
+## Task 1's answer: Terran and Protoss were never army-gated, because of a constant
+
+`economy()` has read this since M2:
+
+```js
+const larvaN = this.race === 'Z' ? this.mine(u => u.def.larva).length : 9;
+...
+(p.race !== 'Z' ? (larvaN >= 2 || workers.length < 12 || armySup >= workers.length * 0.4)
+                : (workers.length < 16 || armySup >= (workers.length - 16) * 1.5))
+                                                      // drones only once the army keeps up
+```
+
+`larvaN` is only ever read on the branch where it is the literal `9`. So `larvaN >= 2` is a constant
+`true` that short-circuits the army-supply test written beside it, under a comment describing that
+test. **Only Zerg was ever gated.** Terran and Protoss built workers to the saturation cap
+unconditionally, and always had.
+
+It cost nothing while Terran could not reach the cap anyway -- and M7's build-order fix is precisely
+what removed that limit. That is the missing half of M7's story and the reason the upgrade hypothesis
+in this file was wrong.
+
+Fixed in `197eb40`, minimally: the vestigial term is deleted, both races' real gates are untouched,
+and the now-unused `larvaN` walk over `G.units` goes with it. The other reading of the same slip --
+that `larvaN >= 2` was meant for the *Zerg* branch -- was tried and is much worse (3/3 indicators to
+Terran); a larva-gated Zerg drones to 60 and fields no army.
+
+Proxy on the fixed baseline, 132 games: **TvZ 3 of 3 toward Zerg** (`sup@10` -20.3, `bld@10` -5.1,
+`score@cap` -31.3, all p = 0.000); PvT 2 of 3 mildly toward Protoss; PvZ 1 of 3. Eleven other levers
+were tried and are in "what not to repeat" below, including both that this handoff nominated (a Zerg
+gas budget: nothing, 110 of 128 seeds bit-identical; reordering `AI_RESEARCH.Z`: nothing on outcome).
+
+## Task 2's answer: the graphics, and the exchange rate that shaped them
+
+Five tilesets instead of three (Desert, Space Platform), silhouette shadows, a baked rim light, muzzle
+flashes and shield hits, a per-race console skin, posterised sprites and terrain, real mineral fields
+and geysers, seven ground doodads instead of three, era typography, ambient drift, per-race material
+response, differentiated infantry silhouettes, and three weight cues.
+
+One number decided the shape of nearly all of it:
+
+> **One extra full-sprite blit per unit costs about 2 ms a frame at 490 units.**
+
+The draw pass had 3.7 ms of headroom against its 6 ms target, so it could afford one and not two. A
+first version had both a shadow and a runtime rim light and measured 6.60 ms -- a fail. De-shearing
+the shadow bought 0.10 ms, so the shear was never the cost; dropping the rim bought 1.80. The shadow
+stayed in the draw loop and **the rim light moved into `tools/raster.js`, where it costs nothing.**
+The same logic sent the mineral and geyser art into cached canvases and kept the muzzle flash's
+gradient out of the per-frame path (0.8 ms built live, 0.3 ms baked).
+
+Final cost: **4.40 ms at 490 units drawn**, from 2.30 at the start of M8 -- and the last two commits
+made it *cheaper*, because caching the resource sprites more than paid for the ambient particles.
+
+The period look is mostly one idea: **posterise and dither**. These sprites come out of a float-shaded
+rasterizer and the terrain out of a smooth noise painter, and thousands of shades in a gradient read
+as modern pre-rendered art whatever the colours are. Quantising to a small palette and hiding the
+seams with an ordered 4x4 Bayer dither is most of what the eye reads as "1998". Both do it now, and
+both do it at bake or cache time, so neither costs a frame.
+
+Two further things worth not re-deriving. **Per-race material response** (`MATERIALS` in
+`tools/raster.js`) was the cheapest large win on the units: one BRDF for all three races is most of
+why they read as one art style, and giving Zerg subsurface scattering, Terran a tight hard specular
+and Protoss emission separates them at a glance for free. And **silhouette beats colour**: at 40 px
+under fog with a team tint, colour is the first thing lost, so marine/firebat/medic/ghost each carry
+one oversized outline-breaking feature now. Neither changes a stat.
+
+## M7: PvT and PvZ were fine all along
 
 M6 left three matchups in three different states and could only vouch for one of them. Re-measured on
 the M6 shipping code, 66 seeds, three layouts, both sides, 396 games each:
@@ -51,7 +199,11 @@ So the M6 pathfinder repair, which moved TvZ six points, did not disturb the oth
 knowing before reasoning about anything else, and it is why the rest of M7 could treat TvZ as the only
 open matchup. `C:\Users\zacsl\bw-scratch\m7-head\pvt-pvz.log` is the run.
 
-## The build order was a queue, and it was eating the tech tree
+## M7: the build order was a queue, and it was eating the tech tree
+
+**Read the M8 correction in Status before quoting the mechanism in this section.** The finding -- that
+the build order threw away its own steps -- is sound and the fix is kept. The *explanation* of why it
+cost twelve points of TvZ is wrong: it bought Terran economy, not upgrades.
 
 This is the finding of the milestone and the cause of the balance move, so it is worth the space.
 
@@ -135,7 +287,7 @@ and Dark Swarm still does not fire once in nine games, because the defiler is ne
 50/150 and competes with a lurker morph at 50/100, and `AI_COMP` is a supply-share ratio with no notion
 of a gas budget at all. That is the thread M8 picks up.
 
-## Task 3's answer: two thirds of "idle production" was never a defect
+## M7: two thirds of "idle production" was never a defect
 
 `test/aiaudit.js` has reported idle production buildings since M4 and every milestone since has improved
 it without solving it: 203.1 a minute in M4, 105.7 in M5, 86.7 in M6. M7 asked the question of each idle
@@ -169,139 +321,94 @@ Two real defects were found and fixed on the way:
   needed six thinks — eight seconds — to fill them. It keeps training now while something can still be
   trained, re-scoring the unit it just queued so the composition ratios still decide the order.
 
-## M8 — what to do next
+## M9 — what to do next
 
-Four tasks, decided with the project owner at the end of M7. Task 2 does not depend on task 1 and does
-not touch the simulation at all; if the balance work stalls the way M4's and M7's did, go and do task 2
-rather than grinding on it. **Task 0 is not optional and comes first: it is what makes task 1 affordable.**
+**Task 0 is not optional and comes first, and it is not a research task this time: it is finishing the
+measurement M8 started.** Everything else here is downstream of knowing where the balance actually is.
 
-### 0. A cheap proxy for the balance number, validated for free
+### 0. Finish the re-measurement M8 voided
 
-Every balance claim in this project costs a 40-to-90-minute run, and M7 spent about 3,100 games. That is
-why so few ideas ever get tried. Build a fast signal that predicts the *direction* of a change, and spend
-the full runs only confirming what the proxy flags.
+`fcf08be` invalidated every balance number in this repository. Three full runs were launched at the
+end of M8 and write to `C:\Users\zacsl\bw-scratch\full\`:
 
-**Validate it without running a single new game.** Six labelled logs are already on disk (see "Balance"
-below), four of them paired on identical seeds with known verdicts of +13, +5, 0 and 0. A proxy worth
-having has to reproduce those four calls. Candidates, in the order M7's measurements make them look
-promising:
+| log | code | matchups |
+|---|---|---|
+| `m8-holdfix-tz.log` | HEAD before `197eb40` (tank fix, no drone fix) | TZ |
+| `m8-deadcode-tz.log` | HEAD as shipped | TZ |
+| `m8-deadcode-pvtpvz.log` | HEAD as shipped | TP, ZP |
 
-- **Upgrades finished per side at ten minutes.** M6 measured the asymmetry (Terran five techs by ten
-  minutes, Zerg none) and M7's fix plausibly widened it. Cheapest of the three and closest to the
-  suspected mechanism.
-- **Army supply at first contact**, which is what M5 established actually decides these games.
-- **Equal-supply duel outcomes** from `test/micro.js`, which M3 found to be Terran-Zerg 3-3 and therefore
-  probably *not* where the difference lives — worth including precisely because it should show nothing.
+Check whether they completed (`progress2.txt` in the same directory ends with `FULL2DONE`). Then:
 
-A proxy that gets three of four right is worth more than one that gets four of four by being tuned to
-them. Keep the validation honest and say which calls it misses.
+```bash
+node test/balance_ab.js <full>/m8-holdfix-tz.log <full>/m8-deadcode-tz.log --matchup=TZ --race=T
+```
 
-### 1. Terran vs Zerg is outside 60/40 — fix it from the Zerg side
+That is the paired verdict on task 1's drone-gate fix. The proxy called it 3/3 toward Zerg at
+p = 0.000, which is the strongest signal any lever produced in M8 -- but **it is a proxy call and this
+file should not carry a win rate until the run confirms it.** If the runs did not finish, relaunch
+them; the scratch directories `m8-holdfix` and `m8-holdfix-deadcode` are set up and the recipe is in
+`bw-scratch/full/run2.sh`.
 
-**The decision is made: `91e4195` stays.** A build order that abandons its own steps and amputates its
-own tech tree is a bug, in the same way a medic that does not heal and an A* closed set that does not
-close were bugs; M6 kept both and reported what they cost, and that precedent is the reason the balance
-figures in this project can be trusted. Do not revert it to make the number look better.
+Two things to hold in mind while reading the result. **The absolute TvZ number is expected to move a
+lot regardless of the drone fix,** because the tank bug is gone; do not attribute that to task 1.
+And **PvT/PvZ need re-baselining too** -- the third run covers the variant but there is no matching
+post-`fcf08be` baseline for them, so it can say where they are but not what moved them. If they land
+outside 60/40, that is new information about the tank fix, not about anything M8 chose.
 
-**TvZ is 77% [73-81] over 376 decided games.** The full chain, all 66 seeds, three layouts, both sides,
-each row paired against the one above it on identical seeds:
+### 1. Write a test that plays like a person
 
-| code | TvZ | paired against the row above | verdict |
-|---|---|---|---|
-| M6 as shipped, `c494be6` | 64% [59-69] | -- | undecided |
-| M7 tasks 2+3, `07836c6` | **77% [73-81]** | 104 to T, 56 away of 371 | **p = 0.000, MOVED** |
-| + the Zerg research gate | 83% [78-86] | 72 to T, 53 away of 360 | p = 0.107, reverted anyway |
-| M7 as shipped, `2802b31` | **77% [73-81]** | 39 to T, 40 away of 365 | p = 1.000, neutral |
+The strongest finding of M8 is in "The three bugs a player found in an afternoon" above: two of the
+three were invisible to every check in this repo and obvious within a minute of play. `playtest.js`
+drives the UI *correctly* -- it never holds position and watches, never presses a greyed button and
+waits to be told why, never tries to build something it cannot yet build.
 
-PvT and PvZ are at target and stayed there through the change (52% [47-57] and 46% [41-51], p = 0.512
-and p = 0.359). **TvZ is the only matchup out of band, and every point of the move is one commit.**
+Concretely, and each of these would have caught a real bug:
 
-The first thing to check, and half the reason task 0 exists: **the fix gave both sides their build order
-back, and only Terran's build order converts into its army's upgrades.** Terran's engineering bay and
-armory drive `infW`/`infA`/`vehW`/`vehA` on a bio ball that already heals. Zerg's evolution chamber is
-built at script step 9, but `AI_RESEARCH.Z` spends its early gate on `metabolic`, `flyW` and
-`lurker_aspect` first, and the flat 200/150 gate then almost never opens again. So the asymmetry may not
-be "Terran got more buildings" at all; it may be "both got their buildings and only one of them turns
-buildings into upgrades". Count finished upgrades per side at ten minutes, before and after `91e4195`,
-and find out in an hour.
+- **Assert rates, not just outcomes.** Nothing here measures shots per second. A check that a unit's
+  observed fire interval matches `wCd` for every weapon, in both hold and attack orders, is perhaps
+  thirty lines and would have caught `fcf08be` the day it was written.
+- **Press every disabled button and require an explanation.** Walk the command card in every state
+  and assert that anything dimmed produces a message when pressed. That is `e30e506` as a test.
+- **Do the wrong thing on purpose.** Order units to unreachable places, hold in odd spots, queue
+  things that cannot be afforded, cancel mid-morph.
 
-Then, in rough order of how much M7's measurements support them:
+### 2. The graphics, continued -- but read the budget first
 
-- **Give Zerg a gas budget.** `AI_COMP` is a supply-share ratio and gas is invisible to it, so a defiler
-  at 50/150 competes with a lurker morph at 50/100 and always loses. That is why Dark Swarm never fires
-  even now that the mound is finished by 8:04. It is the clearest unexploited mechanism left in the AI.
-- **Reorder `AI_RESEARCH.Z`** so carapace and missile attacks come before `flyW`. Note this is a
-  different change from relaxing the research gate, which was tried for all races in M4 and for Zerg
-  alone in M7 and helped Terran both times.
-- **Do not tune `js/data.js`.** The table of things already tried is below and it is five milestones
-  long. Nothing in it has ever moved this matchup. Every change that has moved it has been structural:
-  how armies retreat (M5, 24 points), how they path (M6, 6 points), what the build order actually builds
-  (M7, 13 points).
+The draw pass is at **4.40 ms of a 6 ms target**, so there is roughly 1.6 ms left, not the 3.7 ms M8
+started with. Budget in blits, not effects: one extra full-sprite blit per unit is about 2 ms, which
+means **there is no room for another per-unit pass in the draw loop.** Anything further has to be
+bake-time or cache-time. That is not much of a constraint -- most of M8's best work was.
 
-### 2. The graphics overhaul
+Worth doing, roughly in order:
 
-The largest piece of M8 and the only part that adds something a human notices. It touches no simulation
-file, so it cannot break determinism or balance — **and `test/version.js` proves that, because the build
-stamp must not move for a render-only change (invariant 6).** That check is the safety net; run it after
-every step.
+- **Creep edges.** Still the plainest thing on screen: the mask is upscaled with bilinear smoothing so
+  Zerg ground fades out like an airbrush. It wants the same dithered treatment the terrain height
+  transitions got. The obstacle is that creep is composited per frame, not cached, so the dither has
+  to be built into the pattern or the mask rather than applied after -- see `drawCreep`.
+- **Death animations.** There is one death per unit and it is a collapse. Two or three, picked by
+  `u.id`, would show constantly in every fight.
+- **More facings.** 16 directions is visible as a snap on slow-turning units. 32 doubles sheet memory.
+- **Buildings.** They got the material pass and the rim light but none of the silhouette attention the
+  infantry did, and they still cast the old ellipse shadow rather than their own outline.
 
-There is a lot of performance headroom to spend: the draw pass is 1.60 ms at 290 units and 2.30 ms at 491
-against a 6 ms budget at 1080p. Fidelity is affordable here in a way it is not in the sim.
+### 3. Balance, once task 0 has told you where you are
 
-What already exists, so none of it gets rebuilt by accident: units and buildings are 3D models assembled
-from primitives in `tools/models.js` on reusable rigs, rendered by a software rasterizer in
-`tools/raster.js` (oblique 50-degree camera, Gouraud lighting, ambient occlusion, supersampling, outline
-pass) and baked by `tools/bake.js` into sprite sheets plus team-colour masks the game multiplies with the
-player colour at load. Terrain is procedural, and a biome is one palette entry in `TILESETS` in
-`js/terrain.js` plus an id in `TILESET_IDS` in `js/map.js` and nothing else. `js/fx.js` is render-only
-particles and decals. `js/hud.js` overrides `UI`'s drawing methods.
+Do not plan this before reading the runs. What M8 leaves for it:
 
-Directions, roughly by value for effort:
-
-- **Two more tilesets.** Desert and Space Platform are the Brood War biomes missing, and they would take
-  the game from three to five. `node tools/tilesets.js` renders every entry through the game's own
-  `Terrain.draw` and writes a contact sheet, so the whole set can be compared at a glance.
-- **Sprite fidelity.** The bake is 16 facings with 4 idle, 8 walk and 5 attack frames. The cheapest wins
-  are a proper shadow pass under every unit and a rim light so units read against dark terrain. More
-  attack and death frames are the expensive win.
-- **Terrain readability.** Cliff edge transitions, ramp blending, creep edges and doodad variety are all
-  in the procedural painter and all currently plain.
-- **Effects.** Explosions, muzzle flashes, shield-hit flashes, weather. `js/fx.js` is the right home and
-  invariant 3 is what keeps it safe: nothing in it may ever be read by the sim.
-- **HUD.** The bevelled console, portraits and wireframes work but are simple.
-
-Two rules that are easy to break here: **never hand-edit a PNG** — edit `tools/models.js` and rebake
-(`node tools/bake.js`, about twenty seconds; `--only marine,hatchery` for a subset) — and **never let
-render state reach the simulation**, which is what makes replays and network play safe.
-
-### 3. The things nobody has tried
-
-All of this is untested territory rather than known-broken, which means the first job in each case is to
-write the test and find out.
-
-- **More than two clients.** `test/net.js` runs two lockstep clients plus AI. Three or four humans, and
-  the drop/rejoin logic with more than one player gone at once, have never been exercised.
-- **Host migration in practice.** The relay picks the first non-dropped human as host, so it should work
-  by construction — but "should work by construction" is exactly what M5 believed about the A* closed
-  set, which had been dead since the 256th search of every game.
-- **Long games.** Replay checkpoints thin to every 60 s past 40 minutes and nothing has ever run that
-  long. A 60-minute game is one `test/smoke.js` invocation away.
-- **Bigger maps and more players.** `MAP_LAYOUTS` has 4p and 2p layouts and the engine accepts 64 to 256
-  tiles, but nothing has run 8 players, and the AI's expansion logic has never seen that many bases.
-- **Save/load edges.** Saving mid-nuke, mid-morph, mid-Recall, and during a rejoin.
+- **`AI_COMP` is still gas-blind** and a defiler still competes with a lurker morph. M8's gas budget
+  attempt did nothing (110 of 128 seeds bit-identical), because the reserve almost never triggers --
+  but the underlying observation stands and a better implementation may not be hopeless.
+- **The AI still casts 5 of 28 spell abilities.** Unchanged since M7.
+- **Terran loses equal-supply duels badly** (6/36, -10.3 supply) and wins games anyway. Whatever is
+  deciding TvZ, it is not the fight. `test/duel.js --upg` is the tool for pricing that asymmetry.
 
 ### 4. Leftovers
 
-- **`test/net.js` phase 3 gets a 120-second wall-clock budget where every other phase gets 240.** It
-  failed once in M7 under a twelve-job balance run with both clients healthy and progressing, and passes
-  all eleven checks on an unloaded machine. The assertion that rejoin is *fast* is a separate check that
-  passed, so the budget is measuring the machine rather than the code. Raise it to 240 or justify the
-  tighter one — but do not go looking for a desync, which is what M5 did with this symptom.
-- **The genuine 30-a-minute of idle production.** With town halls named and set aside (M7 task 3), the
-  largest remaining cause is "saving for a building" at 12%, which is `afford()` holding every mineral
-  once 40% of the target is banked. It has been tuned twice already. Before touching it, decide whether
-  30 idle-building-seconds a minute across two players is a defect at all; it may not be, and the honest
-  move would be to write that down and take the metric off the list.
+- **`test/net.js` phase 3 has a 120-second budget** where every other phase gets 240. Unchanged from
+  M7's list; raise it to 240 or justify the tighter one, but do not go looking for a desync.
+- **`test/techtree.js` is not in any suite.** It runs in under a second and would catch a whole class
+  of "why can't I build X". Wire it into whatever runs the other checks.
+- **The genuine 30-a-minute of idle production.** Unchanged from M7's list.
 
 ## Architecture map
 
@@ -363,8 +470,8 @@ write the test and find out.
 |---|---|---|---|---|---|---|
 | sim tick mean | 2.75 ms | 2.89 ms | 3.07 ms | — | under 8 ms | pass |
 | sim tick p95 | 5.64 ms | 6.03 ms | 6.14 ms | — | — | |
-| render median, 1080p, ~290 units drawn | 3.7 ms | 1.60 ms | — | 3.30 ms | under 6 ms | pass |
-| render median, 1080p, ~490 units drawn | — | 2.30 ms | — | 4.80 ms | under 6 ms | pass |
+| render median, 1080p, ~290 units drawn | 3.7 ms | 1.60 ms | — | 3.10 ms | under 6 ms | pass |
+| render median, 1080p, ~490 units drawn | — | 2.30 ms | — | 4.40 ms | under 6 ms | pass |
 
 M7 costs about 0.18 ms a tick at 513 units and 204 supply a side, which is `AI.script()` walking
 `G.units` once more per think and `production()` being allowed to keep training rather than stopping at
@@ -372,7 +479,7 @@ three units. The whole AI phase is 0.16 ms of a 3.07 ms tick; the tick is still 
 separation at 0.92 ms. M8 did not touch a sim file for the graphics work, so the sim rows are M7's.
 
 **Read the render rows before planning more art.** M8 spent most of the headroom the handoff advertised:
-2.30 ms of a 6 ms budget became 4.80, so what is left is about 1.2 ms, not 3.7. The exchange rate is
+2.30 ms of a 6 ms budget became 4.40, so what is left is about 1.6 ms, not 3.7. The exchange rate is
 worth writing down because it decided three design choices in a row:
 
 > **One extra full-sprite blit per unit costs about 2 ms a frame at 490 units.**
@@ -392,6 +499,16 @@ every third frame blocks on the GPU queue, which reports 6.08 ms mean and a 15.8
 costs 2.3 ms.
 
 ### Balance
+
+> **Every balance number measured before `fcf08be` is void.** Hold Position never checked the weapon
+> cooldown, so a sieged tank fired up to 75x its allowed rate, and siege tanks are 4 of 24 in
+> `AI_COMP.T`. That includes M7's "TvZ 77% [73-81]" and every row of the chain below it. The logs are
+> kept because the *paired* comparisons between them are still valid -- both sides of each pair have
+> the bug -- but no absolute win rate in this file can be quoted. M9 task 0 is finishing the
+> re-measurement.
+>
+> The cheap path first: `test/proxy.js` gives a direction in four minutes and is validated
+> (`test/proxy_validate.js`). Spend a 40-to-90 minute run confirming what it flags, not discovering.
 
 Runs read `js/*.js` from disk when each child process starts, so editing the working tree mid-run
 silently mixes two versions — that happened once in M3 and cost a full run. **Snapshot instead**: copy
@@ -418,6 +535,9 @@ Logs kept, all 66 seeds, three layouts, both sides:
 | `C:\Users\zacsl\bw-scratch\m7-casters\after.log` | M7 task 2, `a23d92b` | TZ, TP, ZP |
 | `C:\Users\zacsl\bw-scratch\m7-head2\tvz.log` | M7 tasks 2+3, `07836c6` | TZ |
 | `C:\Users\zacsl\bw-scratch\m7-zerg\tvz.log` | M7 with the Zerg-side answer | TZ |
+| `C:\Users\zacsl\bw-scratch\m7-mound\tvz.log` | M7 **as shipped**, `2802b31` (M7's table omitted this one) | TZ |
+| `C:\Users\zacsl\bw-scratch\proxy\*.log` | ten-minute proxy runs, six M7 variants + eleven M8 ones | various |
+| `C:\Users\zacsl\bw-scratch\full\m8-*.log` | **post-`fcf08be`, M9 task 0 reads these** | TZ, TP, ZP |
 
 ### What not to repeat
 
@@ -432,6 +552,13 @@ Each was a full run, most 216 games or more, all zero or negative:
 | Relaxing the base-count floor for Zerg only | TvZ 65% but PvZ collapses to 11% |
 | Earlier Protoss gas | no change at all (M2's handoff recommended this) |
 | Earlier Psionic Storm, in the script and the research order | no change at all — and M7 explains why: the archives were never built |
+| **Zerg gas budget for `AI_COMP`** (M8) | nothing — 110 of 128 seeds bit-identical; the reserve almost never triggers |
+| **Reordering `AI_RESEARCH.Z`, carapace/missW before flyW** (M8) | nothing on outcome; only `upg@10` moves, and downward |
+| **Gentler Zerg drone ramp, 1.5 → 0.6** (M8) | nothing |
+| **Zerg drone floor 16 → 24 / 28 / 32** (M8) | all three move toward Zerg; 32 was 3/3, but the dead-code fix is bigger and is a bug fix |
+| **Per-base Zerg drone floor (10 × halls)** (M8) | nothing |
+| **Giving Zerg the larva-gated rule T and P had** (M8) | much worse, 3/3 to Terran — drones to 60, fields no army |
+| **Giving T and P Zerg's exact army gate** (M8) | as strong as the dead-code fix on TvZ but pushes PvZ toward Zerg, which is the wrong way |
 | Earlier Lurkers in the research order | no change |
 | More Zerg macro hatcheries | larvae but no minerals |
 | Cost-aware research gate, all races | helps Terran more; TvZ 97% |
@@ -467,7 +594,7 @@ reverted. Zerg buys upgrades it does not live to use. Treat this lever as closed
   checkpoints past 40 minutes are thinned to every 60 s.
 - **Editor**: the brush is a circle only (rectangle fill is a separate mode). Map size cycles
   96/128/160/192 and the engine accepts 64-256, but the size button is the only way to change it.
-- **Art**: five terrain tilesets — badlands, jungle, ice, desert, space. A sixth is a palette entry in `js/terrain.js`
+- **Art**: five terrain tilesets — badlands, jungle, ice, desert, space. Creep edges are still bilinear-smooth and are the plainest thing on screen. A sixth tileset is a palette entry in `js/terrain.js`
   plus an id in `TILESET_IDS` in `js/map.js`, and nothing else.
 - **Host migration** is not a thing that needs building: the relay picks the first non-dropped human as
   host, so if the host leaves the next player takes over, and mid-game there is no authority to transfer
@@ -488,6 +615,11 @@ node test/snapshot.js            # a restored simulation snapshot re-simulates b
 node test/rejoindiag.js [frames] # splits a rejoin into round-trip and fresh-context, to isolate a desync
 node test/movement.js            # unreachable goals, wedged units, burrowed units
 node test/balance_stats.js       # the statistics behind the balance harness (runs no games)
+node test/proxy.js --matchups=TZ            # the cheap balance signal: ten-minute games, paired
+node test/proxy.js --ab a.log b.log --matchup=TZ --race=T   # which way a change moved, in minutes
+node test/proxy_validate.js                 # what the proxy gets right and wrong (runs no games)
+node test/duel.js --upg=T:1,Z:0             # equal-supply duels, optionally at unequal upgrades
+node test/techtree.js                       # every unit/building/tech reachable? prints the long chains
 node test/balance_ab.js a.log b.log --matchup=TZ --race=T   # paired A/B of two balance logs (runs no games)
 node test/aiaudit.js             # things the AI does that a human never would, and why each idle building is idle
 node test/casters.js             # which spells the AI ever casts, and when the tech that unlocks them lands
@@ -511,6 +643,16 @@ Git: the repo is inside OneDrive; commits with the 16 MB of sprites are slow (30
 `git add -A && git commit` in the background if using a tool with a timeout.
 
 ## How earlier milestones landed (kept for context)
+
+**M8** built a ten-minute proxy for the balance harness, validated it for free against five runs that
+were already paid for, and used it to test eleven levers in an hour -- finding along the way that M7's
+stated cause was wrong (the build-order fix bought Terran *economy*, not upgrades) and that Terran and
+Protoss had never been army-gated on worker production because of a constant that was always true. It
+also did the graphics overhaul: five tilesets, silhouette shadows, baked rim light, posterised art,
+per-race console skins and materials, and real mineral fields. Then a player found in one afternoon
+three bugs that every test here missed, one of which -- Hold Position ignoring the weapon cooldown --
+voided the entire balance history of the project. **The milestone's most useful output is that last
+sentence**, and M9 task 1 is the test suite it implies.
 
 **M7** answered M6's open question — PvT and PvZ were at target all along — and then found the largest
 structural bug in the AI by asking the caster question directly instead of inferring it: the build order
