@@ -13,6 +13,15 @@
 // model under a light, the bake already has an outline pass to hang it on, and there it costs nothing
 // per frame. Do not put it back in the draw loop.
 const SHADOW_FLAT = 0.42, SHADOW_DX = 5;
+// Shadows are pooled into their own layer at SHADOW_SS of the viewport and blitted once at SHADOW_A,
+// instead of being composited one at a time straight onto the scene. Two reasons, one of each kind.
+// Cost: this was a second full-sprite blit per unit, and by the draw pass's own exchange rate that is
+// about 2 ms of the budget at 490 units; a half-size layer is a quarter of the fill. Correctness: two
+// overlapping shadows used to double-darken, because each carried its own alpha. Pooled, the layer is
+// simply opaque wherever any silhouette landed and the alpha is applied once, which is what a shadow
+// actually does. Half resolution is invisible on something drawn at 38% alpha and squashed to 42%
+// height -- the upscale softens the edge by about a pixel, on an edge that is already soft.
+const SHADOW_SS = 0.5, SHADOW_A = 0.38;
 // How long a muzzle flash and a shield hit stay up, in sim frames at 24/s. Short: three frames is an
 // eighth of a second, which is a flash, and anything longer reads as a unit that is permanently on
 // fire once forty marines are shooting at once.
@@ -21,10 +30,21 @@ const MUZZLE_F = 3, SHIELD_F = 8, RECOIL_F = 5;
 // can line that up with the bottom of the patch's tiles rather than centring the two.
 const MINERAL_FOOT = 0;
 const Render = {
-  canvas: null, ctx: null, W: 0, H: 0, camX: 0, camY: 0, viewW: 0, viewH: 0, fogCanvas: null, creepOn: undefined, built: false, lastFrameTime: 0, mini: null,
+  canvas: null, ctx: null, W: 0, H: 0, camX: 0, camY: 0, viewW: 0, viewH: 0, fogCanvas: null, shadowBuf: null, shadowCtx: null, creepOn: undefined, built: false, lastFrameTime: 0, mini: null,
   init(canvas) { this.canvas = canvas; this.ctx = canvas.getContext('2d'); this.resize(); },
   resize() { this.W = this.canvas.width = Math.max(1, window.innerWidth); this.H = this.canvas.height = Math.max(1, window.innerHeight); this.viewW = this.W; this.viewH = Math.max(1, this.H - UI.consoleH); }, // a hidden or unlaid-out canvas reports 0 and every drawImage of it throws
   reset() { Terrain.reset(G.map.seed); Sprites.clear(); FX.reset(); this.built = false; },
+  // The pooled shadow layer, cleared and put into world space so the draw calls above can keep using
+  // world coordinates unchanged. Reallocated only when the viewport changes size.
+  shadowLayer() {
+    const w = Math.max(1, Math.ceil(this.viewW * SHADOW_SS)), h = Math.max(1, Math.ceil(this.viewH * SHADOW_SS));
+    let cv = this.shadowBuf;
+    if (!cv || cv.width !== w || cv.height !== h) { cv = this.shadowBuf = document.createElement('canvas'); cv.width = w; cv.height = h; this.shadowCtx = cv.getContext('2d'); }
+    const c = this.shadowCtx;
+    c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, w, h);
+    c.setTransform(SHADOW_SS, 0, 0, SHADOW_SS, -this.camX * SHADOW_SS, -this.camY * SHADOW_SS);
+    return c;
+  },
   buildStatic() {
     const m = G.map; this.fogCanvas = document.createElement('canvas'); this.fogCanvas.width = m.w; this.fogCanvas.height = m.h; this.fogImg = null;
     Terrain.resetCreep(); this.creepOn = undefined;
@@ -84,6 +104,7 @@ const Render = {
     // put it at the upper left), or every unit looks lit from one side and shadowed from the other.
     // A flyer's shadow falls further and stays a soft blob, because a sharp silhouette that far from
     // the unit reads as a second unit.
+    const sb = this.shadowLayer();
     for (const u of list) {
       // Buildings cast their own outline now, like units do, instead of being skipped entirely. They
       // are the largest things on the map and a hard-edged silhouette under them is most of what makes
@@ -93,21 +114,27 @@ const Render = {
       // A lifted building has no unit silhouette either, for the same reason, so it takes the blob --
       // cast well below it, because it is in the air.
       const sh = (u.fly || u.lifted) ? null : (u.isBuilding ? Sprites.buildingShadow(u) : Sprites.shadow(u, Sprites.dirOf(u.facing, u), this.animOf(u)));
+      // The blob stays on the scene rather than in the layer: it is a path fill, not a blit, so it was
+      // never part of the cost this pools away, and it carries its own two alphas.
       if (!sh) { const air = u.fly || u.isBuilding; ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.globalAlpha = u._alpha * (air ? 0.3 : 0.4); const rr = u.isBuilding ? u.def.w * TILE * 0.42 : u.r * 0.95; ctx.beginPath(); ctx.ellipse(u._x + (air ? 14 : 3), u._y + (air ? 26 : u.r * 0.35 + 2), rr, rr * 0.47, 0, 0, 7); ctx.fill(); continue; }
       // Squash straight into drawImage's destination rectangle rather than setting a matrix. A shear
       // would be truer -- a shadow really does lean away from the light -- but a sheared blit is not
       // axis-aligned and cost 4.3 ms a frame at 490 units against a 6 ms budget, where this costs a
       // fraction of that. The silhouette is what makes a marine's shadow marine-shaped; the lean was
       // the expensive half of the effect and the cheap half is the half that reads.
-      ctx.globalAlpha = u._alpha * 0.38;
+      // Full alpha into the layer -- the one blit below applies SHADOW_A to all of them at once.
+      sb.globalAlpha = u._alpha;
       if (u.isBuilding) {   // anchored to the footprint, squashed the same way a unit's is
         const bw = sh.cv.width, bh = sh.cv.height;
-        ctx.drawImage(sh.cv, u.tx * TILE - sh.M + SHADOW_DX, (u.ty + u.def.h) * TILE - bh * SHADOW_FLAT, bw, bh * SHADOW_FLAT);
+        sb.drawImage(sh.cv, u.tx * TILE - sh.M + SHADOW_DX, (u.ty + u.def.h) * TILE - bh * SHADOW_FLAT, bw, bh * SHADOW_FLAT);
         continue;
       }
       const S = sh.S;
-      ctx.drawImage(sh.cv, sh.sx || 0, sh.sy || 0, S, S, u._x - sh.ox + SHADOW_DX, u._y - sh.oy * SHADOW_FLAT + u.r * 0.3, S, S * SHADOW_FLAT);
+      sb.drawImage(sh.cv, sh.sx || 0, sh.sy || 0, S, S, u._x - sh.ox + SHADOW_DX, u._y - sh.oy * SHADOW_FLAT + u.r * 0.3, S, S * SHADOW_FLAT);
     }
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = SHADOW_A;
+    ctx.drawImage(this.shadowBuf, 0, 0, this.shadowBuf.width, this.shadowBuf.height, 0, 0, this.viewW, this.viewH);
+    ctx.restore();
     ctx.globalAlpha = 1;
     for (const u of list) if (!u.fly) this.drawUnit(ctx, u);
     for (const u of list) if (u.fly) this.drawUnit(ctx, u);
