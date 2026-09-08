@@ -134,6 +134,18 @@ const G = {
   },
   completeBuilding(b) {
     b.done = true; b.progress = b.def.time; b.hp = Math.max(b.hp, b.maxHp);
+    // Nothing may be left standing inside a finished building. canPlace refuses a spot with a unit on
+    // it, but it deliberately lets larvae and the owner's own workers through -- the builder has to
+    // stand there, and larvae drift around a hatchery. A larva enclosed this way then morphs in place,
+    // so what you find later is a zergling sitting inside a building, permanently idle because it
+    // cannot path out of a footprint it should never have been in. Push anything caught out to the
+    // nearest free spot, which is the same thing production does for a unit that has just been built.
+    { const x0 = b.tx * TILE, y0 = b.ty * TILE, x1 = (b.tx + b.def.w) * TILE, y1 = (b.ty + b.def.h) * TILE;
+      for (const u of this.units) {
+        if (!u.alive || u.fly || u.isBuilding || u.inside) continue;
+        if (u.x + u.r <= x0 || u.x - u.r >= x1 || u.y + u.r <= y0 || u.y - u.r >= y1) continue;
+        const [sx, sy] = this.freeSpotAround(b, false); u.x = u.px = sx; u.y = u.py = sy; u.path = null;
+      } }
     // a finished source starts with a small pad and grows out from it
     if (b.def.creep) { if (!b.creepR) b.creepR = Math.min(b.def.creep, CREEP_SEED); this.map.recomputeCreep(this.units); }
     if (b.def.psi) this.map.recomputePsi(b.owner, this.units);
