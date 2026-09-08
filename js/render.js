@@ -18,30 +18,35 @@ const SHADOW_FLAT = 0.42, SHADOW_DX = 5;
 // fire once forty marines are shooting at once.
 const MUZZLE_F = 3, SHIELD_F = 8, RECOIL_F = 5;
 const Render = {
-  canvas: null, ctx: null, W: 0, H: 0, camX: 0, camY: 0, viewW: 0, viewH: 0, fogCanvas: null, creepMask: null, creepLayer: null, built: false, lastFrameTime: 0, mini: null,
+  canvas: null, ctx: null, W: 0, H: 0, camX: 0, camY: 0, viewW: 0, viewH: 0, fogCanvas: null, creepOn: undefined, built: false, lastFrameTime: 0, mini: null,
   init(canvas) { this.canvas = canvas; this.ctx = canvas.getContext('2d'); this.resize(); },
-  resize() { this.W = this.canvas.width = Math.max(1, window.innerWidth); this.H = this.canvas.height = Math.max(1, window.innerHeight); this.viewW = this.W; this.viewH = Math.max(1, this.H - UI.consoleH); this.creepLayer = null; }, // a hidden or unlaid-out canvas reports 0 and every drawImage of it throws
+  resize() { this.W = this.canvas.width = Math.max(1, window.innerWidth); this.H = this.canvas.height = Math.max(1, window.innerHeight); this.viewW = this.W; this.viewH = Math.max(1, this.H - UI.consoleH); }, // a hidden or unlaid-out canvas reports 0 and every drawImage of it throws
   reset() { Terrain.reset(G.map.seed); Sprites.clear(); FX.reset(); this.built = false; },
   buildStatic() {
-    const m = G.map; this.fogCanvas = document.createElement('canvas'); this.fogCanvas.width = m.w; this.fogCanvas.height = m.h; this.fogImg = null; this.creepBounds = undefined;
-    this.creepMask = document.createElement('canvas'); this.creepMask.width = m.w * 2; this.creepMask.height = m.h * 2;
+    const m = G.map; this.fogCanvas = document.createElement('canvas'); this.fogCanvas.width = m.w; this.fogCanvas.height = m.h; this.fogImg = null;
+    Terrain.resetCreep(); this.creepOn = undefined;
     this.mini = Terrain.buildMini(); this.built = true; this.creepFrame = -1;
   },
-  drawCreepMask() {
-    const m = G.map, c = this.creepMask.getContext('2d'); c.clearRect(0, 0, m.w * 2, m.h * 2); c.fillStyle = '#fff';
-    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-    for (let ty = 0; ty < m.h; ty++) for (let tx = 0; tx < m.w; tx++) if (m.creep[m.idx(tx, ty)]) { c.fillRect(tx * 2 - 1, ty * 2 - 1, 4, 4); if (tx < x0) x0 = tx; if (tx > x1) x1 = tx; if (ty < y0) y0 = ty; if (ty > y1) y1 = ty; }
-    this.creepBounds = x1 < x0 ? null : { x0: x0 * TILE, y0: y0 * TILE, x1: (x1 + 1) * TILE, y1: (y1 + 1) * TILE }; // so a creep-free view can skip the whole pass
-  },
+  // Creep. This used to compose a viewport-sized layer every frame -- clear it, blow a 2 px-per-tile
+  // mask up 16x through the bilinear filter, then pour the creep pattern through it with `source-in`.
+  // Three full-viewport operations, and an airbrushed edge as the reward. Terrain.creepChunk caches the
+  // whole thing at 8x8 tiles now, keyed by the creep bits, so this is a handful of opaque blits over
+  // the creeped part of the screen and every idea about how the border should look moved into the bake.
+  //
+  // The two rate limits are the same two the old version had, for the same reasons: the map is only
+  // re-examined twice a second, because `m.creep` only changes when a creep source finishes or dies,
+  // and a view with no creep in it does no work at all.
   drawCreep(ctx) {
-    if (!this.creepLayer || this.creepLayer.width !== this.viewW || this.creepLayer.height !== this.viewH) { this.creepLayer = document.createElement('canvas'); this.creepLayer.width = this.viewW; this.creepLayer.height = this.viewH; }
-    if (this.creepFrame !== G.frame && (G.frame % 12 === 0 || this.creepBounds === undefined)) { this.drawCreepMask(); this.creepFrame = G.frame; }
-    const b = this.creepBounds; if (b === null) return; // no creep anywhere
-    if (b && (b.x1 < this.camX || b.x0 > this.camX + this.viewW || b.y1 < this.camY || b.y0 > this.camY + this.viewH)) return; // none of it on screen
-    const l = this.creepLayer.getContext('2d'); l.clearRect(0, 0, this.viewW, this.viewH);
-    l.imageSmoothingEnabled = true; l.drawImage(this.creepMask, this.camX / 16, this.camY / 16, this.viewW / 16, this.viewH / 16, 0, 0, this.viewW, this.viewH);
-    l.globalCompositeOperation = 'source-in'; l.save(); l.translate(-this.camX % 192, -this.camY % 192); l.fillStyle = Terrain.creepPattern(l); l.fillRect(-192, -192, this.viewW + 384, this.viewH + 384); l.restore(); l.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 0.9; ctx.drawImage(this.creepLayer, 0, 0); ctx.globalAlpha = 1;
+    if (this.creepFrame !== G.frame && (G.frame % 12 === 0 || this.creepOn === undefined)) { this.creepOn = Terrain.syncCreep(); this.creepFrame = G.frame; }
+    if (!this.creepOn) return;
+    const CH = Terrain.CH * TILE, nx = Terrain.creepNx();
+    const x0 = Math.max(0, Math.floor(this.camX / CH)), y0 = Math.max(0, Math.floor(this.camY / CH));
+    const x1 = Math.min(nx - 1, Math.floor((this.camX + this.viewW) / CH)), y1 = Math.min(Math.ceil(G.map.h / Terrain.CH) - 1, Math.floor((this.camY + this.viewH) / CH));
+    Terrain.creepBudget = 2;   // at most two chunk bakes a frame; see Terrain.creepChunk
+    const ox = Math.round(this.camX), oy = Math.round(this.camY);   // whole pixels, or the filter eats the dither -- see Terrain.draw
+    for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
+      const cv = Terrain.creepChunk(cx, cy); if (cv) ctx.drawImage(cv, cx * CH - ox, cy * CH - oy);
+    }
   },
   frame(alpha) {
     const ctx = this.ctx, m = G.map; if (!ctx || this.viewW < 1 || this.viewH < 1) return; if (!this.built) this.buildStatic();
