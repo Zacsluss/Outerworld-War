@@ -26,6 +26,20 @@ const Sprites = {
     c.setTransform(1, 0, 0, 1, S / 2, S / 2); this.light(c, S, 1);
     s = { cv, S, ox: S / 2, oy: S / 2 }; this.cache.set(key, s); return s;
   },
+  // The unit's own outline in one flat colour: black for the cast shadow in render.js, pale for the
+  // rim light. Atlas sheets get one silhouette sheet per type and fill; the vector fallback derives
+  // one per cached frame the same way `tinted` does. Returns null only when neither path has a frame
+  // yet, and the caller falls back to the ellipse this used to be.
+  shadow(u, dir, anim = 'i', fill = '#000') {
+    const id = u.def.id, v = this.variant(u), aid = v === 's' ? id + '_s' : id;
+    if (typeof Atlas !== 'undefined' && Atlas.hasUnit(aid)) return Atlas.unitShadow(aid, dir, anim, fill);
+    const s = this.unit(u, dir, anim); if (!s) return null;
+    const key = 'sh|' + id + '|' + dir + '|' + v + '|' + anim + '|' + fill; let sh = this.cache.get(key); if (sh) return sh;
+    const cv = document.createElement('canvas'); cv.width = s.cv.width; cv.height = s.cv.height; const c = cv.getContext('2d');
+    c.drawImage(s.cv, 0, 0); c.globalCompositeOperation = 'source-in'; c.fillStyle = fill; c.fillRect(0, 0, cv.width, cv.height);
+    sh = { cv, S: s.S, ox: s.ox, oy: s.oy, sub: s.sub, sx: s.sx, sy: s.sy };
+    this.cache.set(key, sh); return sh;
+  },
   building(u) {
     const id = u.def.id, color = G.players[u.owner].color; const key = 'b|' + id + '|' + color;
     if (typeof Atlas !== 'undefined' && Atlas.hasBuilding(id)) return Atlas.buildingImage(id, color);

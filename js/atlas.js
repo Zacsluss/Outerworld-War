@@ -4,7 +4,7 @@
 // Team colour is applied by multiplying the mask region with the player colour.
 // ============================================================================
 const Atlas = {
-  data: (typeof SPRITE_ATLAS !== 'undefined') ? SPRITE_ATLAS : null, imgs: {}, tinted: new Map(), frames: new Map(), started: false,
+  data: (typeof SPRITE_ATLAS !== 'undefined') ? SPRITE_ATLAS : null, imgs: {}, tinted: new Map(), frames: new Map(), sils: new Map(), silFrames: new Map(), started: false,
   init() {
     if (!this.data || this.started) return; this.started = true;
     const load = (key, src) => { const im = new Image(); im.onload = () => { im.ok = true; }; im.onerror = () => { im.ok = false; }; im.src = src; this.imgs[key] = im; };
@@ -33,4 +33,26 @@ const Atlas = {
     f = { cv, sx: dir * S, sy: row * S, S, ox: S / 2, oy: S / 2, sub: true }; this.frames.set(key, f); return f;
   },
   buildingImage(id, color) { const a = this.data.buildings[id]; return { cv: this.sheet('b', id, color), M: a.M, T: a.T, W: a.W, H: a.H }; },
+
+  // Flat single-colour copy of a whole sheet: black for the shadow pass, pale for the rim light.
+  // One per type and fill rather than per team colour, because a silhouette does not care whose unit
+  // it is -- so two fills cost what one extra player colour would, however many players are in.
+  silhouette(kind, id, fill) {
+    const key = kind + '|' + id + '|' + fill; let cv = this.sils.get(key); if (cv) return cv;
+    const base = this.imgs[kind + '|' + id];
+    cv = document.createElement('canvas'); cv.width = base.width; cv.height = base.height;
+    const c = cv.getContext('2d');
+    c.drawImage(base, 0, 0);
+    c.globalCompositeOperation = 'source-in'; c.fillStyle = fill; c.fillRect(0, 0, cv.width, cv.height); c.globalCompositeOperation = 'source-over';
+    this.sils.set(key, cv); return cv;
+  },
+  // Same sub-rect arithmetic as unitFrame, against a silhouette sheet.
+  unitShadow(id, dir, anim, fill) {
+    const key = id + '|' + dir + '|' + anim + '|' + fill; let f = this.silFrames.get(key); if (f) return f;
+    const a = this.data.units[id]; const S = a.S;
+    let row = 0; if (anim[0] === 'w') row = a.rows.w + (parseInt(anim.slice(1)) % this.data.walk); else if (anim[0] === 'a') row = a.rows.a + Math.min(this.data.atk - 1, parseInt(anim.slice(1)));
+    else row = a.rows.i + (parseInt(anim.slice(1) || '0') % (this.data.idle || 1));
+    f = { cv: this.silhouette('u', id, fill), sx: dir * S, sy: row * S, S, ox: S / 2, oy: S / 2, sub: true };
+    this.silFrames.set(key, f); return f;
+  },
 };

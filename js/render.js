@@ -2,6 +2,17 @@
 // ============================================================================
 // Renderer: composes terrain chunks, creep, decals, sprites, effects, fog.
 // ============================================================================
+// The sun. Sprites.light and the rasterizer in tools/raster.js both light from the upper left, so a
+// cast shadow falls down and to the right: FLAT squashes the silhouette onto the ground and DX slides
+// it off the unit's feet.
+//
+// Budget note, because it decided the shape of this. Every extra full-sprite blit costs about 2 ms a
+// frame at 490 units, and the draw pass had 3.7 ms of headroom against its 6 ms target -- so this
+// pass can afford one of them and not two. The silhouette shadow is that one. A rim light was written
+// and measured here too, and it belongs in tools/raster.js instead: a lit edge is a property of the
+// model under a light, the bake already has an outline pass to hang it on, and there it costs nothing
+// per frame. Do not put it back in the draw loop.
+const SHADOW_FLAT = 0.42, SHADOW_DX = 5;
 const Render = {
   canvas: null, ctx: null, W: 0, H: 0, camX: 0, camY: 0, viewW: 0, viewH: 0, fogCanvas: null, creepMask: null, creepLayer: null, built: false, lastFrameTime: 0, mini: null,
   init(canvas) { this.canvas = canvas; this.ctx = canvas.getContext('2d'); this.resize(); },
@@ -54,9 +65,25 @@ const Render = {
       u._x = x; u._y = y; list.push(u);
     }
     list.sort((a, b) => (a.fly - b.fly) || (b.isBuilding - a.isBuilding) || (a._y - b._y));
-    // shadows
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    for (const u of list) { if (u.isBuilding && !u.lifted) continue; if (u.burrowed) continue; const off = u.fly ? 1 : 0; ctx.globalAlpha = u._alpha * (u.fly ? 0.3 : 0.4); ctx.beginPath(); ctx.ellipse(u._x + (u.fly ? 14 : 3), u._y + (u.fly ? 26 : u.r * 0.35 + 2), u.r * 0.95, u.r * 0.45, 0, 0, 7); ctx.fill(); }
+    // Shadows. The unit's own silhouette, sheared away from the light and flattened onto the ground,
+    // rather than the ellipse this used to draw -- a marine's shadow is now marine-shaped. The light
+    // direction has to match the one baked into the sprites (Sprites.light and the rasterizer both
+    // put it at the upper left), or every unit looks lit from one side and shadowed from the other.
+    // A flyer's shadow falls further and stays a soft blob, because a sharp silhouette that far from
+    // the unit reads as a second unit.
+    for (const u of list) {
+      if ((u.isBuilding && !u.lifted) || u.burrowed || u.def.mine) continue;
+      const sh = u.fly ? null : Sprites.shadow(u, Sprites.dirOf(u.facing), this.animOf(u));
+      if (!sh) { ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.globalAlpha = u._alpha * (u.fly ? 0.3 : 0.4); ctx.beginPath(); ctx.ellipse(u._x + (u.fly ? 14 : 3), u._y + (u.fly ? 26 : u.r * 0.35 + 2), u.r * 0.95, u.r * 0.45, 0, 0, 7); ctx.fill(); continue; }
+      // Squash straight into drawImage's destination rectangle rather than setting a matrix. A shear
+      // would be truer -- a shadow really does lean away from the light -- but a sheared blit is not
+      // axis-aligned and cost 4.3 ms a frame at 490 units against a 6 ms budget, where this costs a
+      // fraction of that. The silhouette is what makes a marine's shadow marine-shaped; the lean was
+      // the expensive half of the effect and the cheap half is the half that reads.
+      ctx.globalAlpha = u._alpha * 0.38;
+      const S = sh.S;
+      ctx.drawImage(sh.cv, sh.sx || 0, sh.sy || 0, S, S, u._x - sh.ox + SHADOW_DX, u._y - sh.oy * SHADOW_FLAT + u.r * 0.3, S, S * SHADOW_FLAT);
+    }
     ctx.globalAlpha = 1;
     for (const u of list) if (!u.fly) this.drawUnit(ctx, u);
     for (const u of list) if (u.fly) this.drawUnit(ctx, u);
