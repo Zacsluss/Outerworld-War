@@ -19,6 +19,23 @@ const BUILD = {
   // go through here so a third one cannot reintroduce the split described above.
   src(fn) { return Function.prototype.toString.call(fn).split('\r\n').join('\n'); },
 
+  // CMD.install() replaces seventeen of the functions below with a wrapper that packs the call into a
+  // command -- setOrder, stop, queueUnit, larvaMorph, queueUpgrade, queueTech, queueAddon, queueMorph,
+  // cancelProd, cancelBuilding, setRally, liftBuilding, unloadAll, unloadCargo, cheat, issue, merge.
+  // Every one of those is core simulation, and every one of them was invisible here: toString on a
+  // wrapper returns the wrapper's source, which is identical no matter what the function it wraps
+  // does. Rewrite how orders are issued or how units are queued and the stamp did not move, so a save
+  // from the old build loaded into the new one and drifted quietly -- the exact failure this file
+  // exists to prevent. CMD.orig keeps the originals; hash those.
+  //
+  // Substituted only when the live function really is the wrapper, so a same-named function on some
+  // other object is left alone.
+  unwrap(k, v) {
+    if (typeof CMD === 'undefined' || !CMD.orig) return v;
+    const o = CMD.orig[k];
+    return (o && o !== v) ? o : v;
+  },
+
   // Deterministic textual serialisation. Keys are sorted so property order cannot
   // change the digest; depth and a seen-set keep cyclic tables (a def referring
   // back to its parent) from running away.
@@ -50,7 +67,7 @@ const BUILD = {
     out.push('#' + name);
     for (const k of Object.getOwnPropertyNames(o).sort()) {
       let v; try { v = o[k]; } catch (e) { continue; } // getters on a prototype can throw off an instance
-      if (typeof v === 'function') { out.push(k, this.src(v)); }
+      if (typeof v === 'function') { out.push(k, this.src(this.unwrap(k, v))); }
     }
   },
 

@@ -262,6 +262,14 @@ const UI = {
     const sel = this.ownSel(); if (!sel.length) return;
     if (this.inMinimap(this.mouse.x, this.mouse.y)) return;
     // rally for single building
+    // Larvae and eggs take a rally of their own, which overrides the hall's when they hatch. They
+    // cannot move, so a right-click had nothing else to mean; this is every selected one at once, so
+    // "select larvae, right-click where you want them" works the way selecting them and morphing does.
+    if (sel.length && sel.every(u => u.def.larva || u.def.egg)) {
+      for (const u of sel) G.setRally(u, wx, wy, t);
+      const rr = sel[0].rally && sel[0].rally.res; if (rr) this.ringMarker(rr); else this.marker(wx, wy, '80,255,80');
+      return;
+    }
     if (sel.length === 1 && sel[0].isBuilding && !sel[0].lifted) { const b = sel[0]; if (b.def.produces.length || b.def.spawnsLarva) { G.setRally(b, wx, wy, t); // a rally onto a resource acknowledges with a ring on the patch, matching what stays on screen
       const rr = b.rally && b.rally.res; if (rr) this.ringMarker(rr); else this.marker(wx, wy, '80,255,80'); } return; }
     const res = G.map.resourceAt(Math.floor(wx / TILE), Math.floor(wy / TILE));
@@ -327,8 +335,8 @@ const UI = {
       const list = DATA.buildMenu[p.race][this.cardMenu]; list.forEach((id, i) => { const d = DATA.buildings[id]; const ok = p.hasReq(d); B(i, d.name, d.hk, () => { this.placing = { def: d, builder: u, tx: Math.floor(this.mouse.wx / TILE - d.w / 2 + .5), ty: Math.floor(this.mouse.wy / TILE - d.h / 2 + .5) }; }, { cost: d, enabled: ok, dim: !ok, why: why(d) }); });
       B(8, 'Cancel', 'Escape', () => { this.cardMenu = null; }); return btns;
     }
-    if (u.def.larva) { DATA.larvaMorphs.forEach((id, i) => { const d = DATA.units[id]; const ok = p.hasReq(d); B(i, d.name, d.hk, () => { for (const l of sel) if (l.def.larva) { if (G.larvaMorph(l, id)) { this.selection = this.selection.filter(x => x.alive && x.def.larva); break; } } }, { cost: d, enabled: ok, dim: !ok, why: why(d) }); }); return btns; }
-    if (u.def.egg) { B(8, 'Cancel', 'Escape', () => { for (const e of sel) G.cancelProd(e, 0); }); return btns; }
+    if (u.def.larva) { B(6, 'Set Rally', 'R', setPending('rally')); DATA.larvaMorphs.forEach((id, i) => { const d = DATA.units[id]; const ok = p.hasReq(d); B(i, d.name, d.hk, () => { for (const l of sel) if (l.def.larva) { if (G.larvaMorph(l, id)) { this.selection = this.selection.filter(x => x.alive && x.def.larva); break; } } }, { cost: d, enabled: ok, dim: !ok, why: why(d) }); }); return btns; }
+    if (u.def.egg) { B(6, 'Set Rally', 'R', setPending('rally')); B(8, 'Cancel', 'Escape', () => { for (const e of sel) G.cancelProd(e, 0); }); return btns; }
     if (u.isBuilding && sel.length === 1) {
       const d = u.def; let i = 0;
       if (!u.done) { B(8, 'Cancel', 'Escape', () => G.cancelBuilding(u)); return btns; }

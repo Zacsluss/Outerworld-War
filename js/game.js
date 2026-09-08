@@ -354,7 +354,11 @@ const G = {
     if (b.def.race === 'Z' && !b.def.onGeyser && b.def.tier !== 'addon') { const d = this.spawnUnit('drone', b.owner, b.x, b.y + b.r); }
     this.kill(b, null, true);
   },
-  setRally(b, x, y, target) { if (!b.isBuilding || !(b.def.produces.length || b.def.spawnsLarva)) return; const res = target ? null : this.map.resourceAt(Math.floor(x / TILE), Math.floor(y / TILE)); b.rally = { x, y, target: target && target.alive ? target : null, res }; },
+  // A larva or an egg may carry its own rally, which overrides the hall's. The resolution half of this
+  // already existed -- the producer's own rally wins and an egg falls back to b.rallyFrom.rally -- but
+  // there was no way to SET one, because this guard only admitted buildings. A larva keeps the rally
+  // through its morph for free: larvaMorph swaps the def on the same object, so the egg is the larva.
+  setRally(b, x, y, target) { if (!(b.isBuilding && (b.def.produces.length || b.def.spawnsLarva)) && !b.def.larva && !b.def.egg) return; const res = target ? null : this.map.resourceAt(Math.floor(x / TILE), Math.floor(y / TILE)); b.rally = { x, y, target: target && target.alive ? target : null, res }; },
 
   // ---------------- main tick ----------------
   tick() {
