@@ -61,9 +61,32 @@ const FX = {
       if (!inView(d.x, d.y, d.r + 20)) continue; const a = 1 - d.t / d.max;
       if (d.kind === 'scorch') { ctx.globalAlpha = a * 0.6; const g = ctx.createRadialGradient(d.x, d.y, 1, d.x, d.y, d.r); g.addColorStop(0, 'rgba(10,8,6,0.9)'); g.addColorStop(0.7, 'rgba(20,16,12,0.5)'); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, 7); ctx.fill(); }
       else if (d.kind === 'blood') { ctx.globalAlpha = a * 0.75; ctx.fillStyle = '#5a0f1c'; for (let k = 0; k < 5; k++) { const ang = d.seed * 7 + k * 1.3, dd = (k ? d.r * 0.5 : 0) * ((d.seed * (k + 1)) % 1 + 0.5); ctx.beginPath(); ctx.ellipse(d.x + Math.cos(ang) * dd, d.y + Math.sin(ang) * dd * 0.6, d.r * (k ? 0.35 : 0.7), d.r * (k ? 0.25 : 0.45), ang, 0, 7); ctx.fill(); } }
-      else if (d.kind === 'corpse' || d.kind === 'wreck') { const def = DATA.all[d.def]; if (!def) continue; const fake = { def, owner: d.owner, r: def.r || 10, sieged: false }; const age = G.frame - d.born; const k = Math.min(1, age / 12); const s = Sprites.unit(fake, Sprites.dirOf(d.facing), k < 1 ? 'a2' : 'i'); ctx.save(); ctx.globalAlpha = a * (0.85 + (1 - k) * 0.15); ctx.filter = k < 1 ? `brightness(${1 - k * 0.45}) sepia(${k * 0.6})` : (d.kind === 'corpse' ? 'brightness(0.55) sepia(0.6) hue-rotate(-30deg)' : 'brightness(0.35) grayscale(0.7)'); ctx.translate(d.x, d.y + k * 3); ctx.rotate((d.kind === 'corpse' ? 0.6 : 0.25) * k * (d.def.length % 2 ? 1 : -1)); ctx.scale(1 + k * 0.1, 1 - k * 0.3); Sprites.draw(ctx, s, 0, 0); ctx.restore(); }
+      else if (d.kind === 'corpse' || d.kind === 'wreck') { const def = DATA.all[d.def]; if (!def) continue; const fake = { def, owner: d.owner, r: def.r || 10, sieged: false }; const age = G.frame - d.born; const k = Math.min(1, age / 12);
+        // Baked death rows when this sheet has them: DVAR poses of DFR frames, laid out pose by pose.
+        // The pose is fixed for the life of the corpse and the frame walks the fall. `u.id` is not
+        // reachable here -- the effect G.kill pushes carries def/owner/facing and nothing else, and
+        // adding a field to it would edit a sim file and move the build stamp -- so the pose is keyed
+        // on the frame the corpse was born plus its tile. That is stable per decal, differs between
+        // two units killed by the same splash, and is made of sim quantities, so two clients watching
+        // one replay see the same battlefield. The first quarter of the collapse still shows the live
+        // attack frame, because a unit that died this instant was standing a frame ago and every baked
+        // pose starts part-way down.
+        const D = this.deathRows(def.id); let anim = k < 1 ? 'a2' : 'i';
+        if (D && k >= 0.25) { const v = ((d.born + (d.x | 0) + (d.y | 0)) % D.v + D.v) % D.v; anim = 'd' + (v * D.f + Math.min(D.f - 1, Math.floor((k - 0.25) / 0.75 * D.f))); }
+        const s = Sprites.unit(fake, Sprites.dirOf(d.facing), anim); ctx.save(); ctx.globalAlpha = a * (0.85 + (1 - k) * 0.15); ctx.filter = k < 1 ? `brightness(${1 - k * 0.45}) sepia(${k * 0.6})` : (d.kind === 'corpse' ? 'brightness(0.55) sepia(0.6) hue-rotate(-30deg)' : 'brightness(0.35) grayscale(0.7)'); ctx.translate(d.x, d.y + k * 3);
+        // The 2D squash used to BE the death animation. On the baked path it is only the last of the
+        // settle on top of a real pose, so it drops to a tenth; with no baked rows it is untouched.
+        if (!D) { ctx.rotate((d.kind === 'corpse' ? 0.6 : 0.25) * k * (d.def.length % 2 ? 1 : -1)); ctx.scale(1 + k * 0.1, 1 - k * 0.3); } else if (k < 1) ctx.scale(1 + k * 0.05, 1 - k * 0.08);
+        Sprites.draw(ctx, s, 0, 0); ctx.restore(); }
       ctx.globalAlpha = 1;
     }
+  },
+  // {v: poses, f: frames} when this unit type has baked death rows, else null. Flyers have none --
+  // a flying unit never leaves a corpse decal, so baking them would be sheet bytes nothing can draw --
+  // and neither does the vector fallback, which keeps the old squash.
+  deathRows(id) {
+    if (typeof Atlas === 'undefined' || !Atlas.data || !Atlas.data.dvar || !Atlas.hasUnit(id)) return null;
+    const u = Atlas.data.units[id]; return (u && u.rows.d != null) ? { v: Atlas.data.dvar, f: Atlas.data.dframes } : null;
   },
   lerpPos(e, T) { const k = 1 - e.t / T; return [e.x + (e.tx - e.x) * k, e.y + (e.ty - e.y) * k]; },
   drawEffect(ctx, e) {

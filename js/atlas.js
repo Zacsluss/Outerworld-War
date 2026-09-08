@@ -25,12 +25,21 @@ const Atlas = {
     c.globalCompositeOperation = 'multiply'; c.drawImage(mc, 0, 0); c.globalCompositeOperation = 'source-over';
     this.tinted.set(key, cv); return cv;
   },
+  // Anim string -> sheet row, shared by the colour path and the silhouette path so the two cannot
+  // drift apart. 'w<n>' walk, 'a<n>' attack, 'd<n>' death (n indexes the dvar poses x dframes frames
+  // baked by tools/bake.js, laid out pose by pose), anything else idle. A sheet with no death rows --
+  // every flyer, because nothing ever draws a flying corpse, and any sheet baked before they existed
+  // -- falls through to idle rather than reading past the end of the sheet.
+  row(a, anim) {
+    if (anim[0] === 'w') return a.rows.w + (parseInt(anim.slice(1)) % this.data.walk);
+    if (anim[0] === 'a') return a.rows.a + Math.min(this.data.atk - 1, parseInt(anim.slice(1)));
+    if (anim[0] === 'd' && a.rows.d != null) return a.rows.d + Math.min((this.data.death || 1) - 1, parseInt(anim.slice(1)));
+    return a.rows.i + (parseInt(anim.slice(1) || '0') % (this.data.idle || 1)); // sheets baked before idle animation have a single idle row
+  },
   unitFrame(id, color, dir, anim) {
     const key = id + '|' + color + '|' + dir + '|' + anim; let f = this.frames.get(key); if (f) return f;
     const a = this.data.units[id]; const cv = this.sheet('u', id, color); const S = a.S;
-    let row = 0; if (anim[0] === 'w') row = a.rows.w + (parseInt(anim.slice(1)) % this.data.walk); else if (anim[0] === 'a') row = a.rows.a + Math.min(this.data.atk - 1, parseInt(anim.slice(1)));
-    else row = a.rows.i + (parseInt(anim.slice(1) || '0') % (this.data.idle || 1)); // sheets baked before idle animation have a single idle row
-    f = { cv, sx: dir * S, sy: row * S, S, ox: S / 2, oy: S / 2, sub: true }; this.frames.set(key, f); return f;
+    f = { cv, sx: dir * S, sy: this.row(a, anim) * S, S, ox: S / 2, oy: S / 2, sub: true }; this.frames.set(key, f); return f;
   },
   buildingImage(id, color) { const a = this.data.buildings[id]; return { cv: this.sheet('b', id, color), M: a.M, T: a.T, W: a.W, H: a.H }; },
 
@@ -50,9 +59,7 @@ const Atlas = {
   unitShadow(id, dir, anim, fill) {
     const key = id + '|' + dir + '|' + anim + '|' + fill; let f = this.silFrames.get(key); if (f) return f;
     const a = this.data.units[id]; const S = a.S;
-    let row = 0; if (anim[0] === 'w') row = a.rows.w + (parseInt(anim.slice(1)) % this.data.walk); else if (anim[0] === 'a') row = a.rows.a + Math.min(this.data.atk - 1, parseInt(anim.slice(1)));
-    else row = a.rows.i + (parseInt(anim.slice(1) || '0') % (this.data.idle || 1));
-    f = { cv: this.silhouette('u', id, fill), sx: dir * S, sy: row * S, S, ox: S / 2, oy: S / 2, sub: true };
+    f = { cv: this.silhouette('u', id, fill), sx: dir * S, sy: this.row(a, anim) * S, S, ox: S / 2, oy: S / 2, sub: true };
     this.silFrames.set(key, f); return f;
   },
 };
