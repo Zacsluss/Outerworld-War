@@ -68,6 +68,7 @@ const TESTS = [
   { name: 'renderfeel', args: ['renderfeel.js'], what: 'the storm draws, weight settles, and 400 units stay legible' },
   { name: 'neutrals', args: ['neutrals.js'], what: "race 'N': buried life with a tell, and derelicts nobody can build" },
   { name: 'craters', args: ['craters.js'], what: 'the map remembers: permanent scarring, hulks that clear' },
+  { name: 'campaign', args: ['campaign.js'], what: 'weighted choices resolve both ways, the record persists, narrowing cannot strand you' },
 ];
 
 const argv = process.argv.slice(2);
