@@ -65,7 +65,15 @@ const UI = {
     c.addEventListener('mousemove', e => this.onMove(e)); c.addEventListener('mousedown', e => this.onDown(e)); window.addEventListener('mouseup', e => this.onUp(e));
     c.addEventListener('contextmenu', e => e.preventDefault()); c.addEventListener('dblclick', e => { });
     window.addEventListener('keydown', e => this.onKey(e)); window.addEventListener('keyup', e => { this.keys[e.key] = false; });
-    c.addEventListener('wheel', e => { e.preventDefault(); }, { passive: false });
+    // The wheel zooms. Guarded on the console strip and on any modal, so scrolling over the command
+    // card or the codex does not silently move the world behind it. Render.zoomAt clamps and re-clamps
+    // the camera itself; the anchor is the cursor, so the tile under the pointer stays under it.
+    c.addEventListener('wheel', e => {
+      e.preventDefault();
+      if (this.menu || (typeof Codex !== 'undefined' && Codex.isOpen())) return;
+      if (e.clientY >= Render.H - this.consoleH) return;
+      Render.zoomAt(Render.zoom * Math.pow(1.12, -Math.sign(e.deltaY)), e.clientX, e.clientY);
+    }, { passive: false });
     c.addEventListener('mouseleave', () => { this.mouse.inside = false; }); c.addEventListener('mouseenter', () => { this.mouse.inside = true; });
   },
   start(opts) {
@@ -73,7 +81,7 @@ const UI = {
     this.lastOpts = opts; this.mode = opts.mode || 'play'; this.viewAll = false; this.prodOverlay = false; this.chat = null; this.loading = null; if (this.speedIdx > this.maxSpeedIdx()) this.speedIdx = this.maxSpeedIdx();
     G.init(opts); G.recording = this.mode === 'play'; G.log = []; G.pendingCmds = null; G.mission = null; if (opts.mission && typeof Missions !== 'undefined') Missions.begin(opts.mission);
     Render.reset(); if (typeof Music !== 'undefined' && Music.on && !Sound.muted) Music.start(); this.net = !!opts.net; if (this.net) G.paused = false; this.selection = []; this.groups = {}; this.pending = null; this.placing = null; this.menu = null; this.markers = []; this.pings = []; this.msgLog = []; if (G.mission) this.menu = 'brief';
-    const hp = G.players[G.human]; Render.camX = hp.startX - Render.viewW / 2; Render.camY = hp.startY - Render.viewH / 2 + 40; this.clampCam();
+    const hp = G.players[G.human]; Render.camX = hp.startX - Render.viewWorldW() / 2; Render.camY = hp.startY - Render.viewWorldH() / 2 + 40; this.clampCam();
     const hall = G.units.find(u => u.owner === G.human && u.isBuilding); if (hall) this.select([hall]);
     document.getElementById('menu').style.display = 'none'; document.getElementById('game').style.display = 'block';
     this.running = true; this.lastT = performance.now(); this.accum = 0; this.lastR = performance.now();
@@ -191,14 +199,14 @@ const UI = {
   },
 
   // ---------------- camera ----------------
-  clampCam() { Render.camX = clamp(Render.camX, 0, G.map.w * TILE - Render.viewW); Render.camY = clamp(Render.camY, 0, G.map.h * TILE - Render.viewH); },
+  clampCam() { Render.clampCam(); },   // zoom-dependent, and centres the map when the view is wider than it
   scrollCam(dt) {
-    const s = 900 * dt; const m = this.mouse; let dx = 0, dy = 0;
+    const s = 900 * dt / Render.zoom; const m = this.mouse; let dx = 0, dy = 0;   // screen-constant speed: without /zoom, edge scroll crawls at the strategic view
     if (this.keys.ArrowLeft) dx -= s; if (this.keys.ArrowRight) dx += s; if (this.keys.ArrowUp) dy -= s; if (this.keys.ArrowDown) dy += s;
     if (document.hasFocus() && !this.menu && m.inside) { if (m.x <= 2) dx -= s; if (m.x >= Render.W - 3) dx += s; if (m.y <= 2) dy -= s; if (m.y >= Render.H - 3) dy += s; }
     if (dx || dy) { Render.camX += dx; Render.camY += dy; this.clampCam(); }
   },
-  centerOn(x, y) { Render.camX = x - Render.viewW / 2; Render.camY = y - Render.viewH / 2; this.clampCam(); },
+  centerOn(x, y) { Render.camX = x - Render.viewWorldW() / 2; Render.camY = y - Render.viewWorldH() / 2; this.clampCam(); },
   // ---------------- selection ----------------
   select(units, add) {
     this.subgroup = 0;   // a new selection starts on its first kind
@@ -214,13 +222,20 @@ const UI = {
     if (list.length) Sound.select(list[0]);
   },
   onUnitDied(u) { const i = this.selection.indexOf(u); if (i >= 0) this.selection.splice(i, 1); for (const k in this.groups) { const j = this.groups[k].indexOf(u); if (j >= 0) this.groups[k].splice(j, 1); } },
+  // The hit radius is in WORLD units, so at the strategic view it shrinks with everything else while
+  // the icon the player is actually aiming at does not. Max against the icon's own size keeps a unit
+  // clickable at the size it is drawn rather than the size it is.
   unitAt(wx, wy) {
     let best = null, bd = 1e9;
-    for (const u of G.units) { if (!u.alive || u.inside || u.def.notUnit) continue; if (u.owner !== G.human && !G.canSee(G.human, u) && !(u.isBuilding && G.explored(G.human, Math.floor(u.x / TILE), Math.floor(u.y / TILE)))) continue; let hit, d; if (u.isBuilding && !u.lifted) { hit = wx >= u.tx * TILE && wx < (u.tx + u.def.w) * TILE && wy >= u.ty * TILE && wy < (u.ty + u.def.h) * TILE; d = 500; } else { d = distPt(wx, wy, u.x, u.y); hit = d <= u.r + 4; } if (hit && d < bd) { bd = d; best = u; } }
+    for (const u of G.units) { if (!u.alive || u.inside || u.def.notUnit) continue; if (u.owner !== G.human && !G.canSee(G.human, u) && !(u.isBuilding && G.explored(G.human, Math.floor(u.x / TILE), Math.floor(u.y / TILE)))) continue; let hit, d; if (u.isBuilding && !u.lifted) { hit = wx >= u.tx * TILE && wx < (u.tx + u.def.w) * TILE && wy >= u.ty * TILE && wy < (u.ty + u.def.h) * TILE; d = 500; } else { d = distPt(wx, wy, u.x, u.y); hit = d <= Math.max(u.r + 4, Render.iconH(u) * 1.4); } if (hit && d < bd) { bd = d; best = u; } }
     return best;
   },
   // ---------------- input ----------------
-  screenToWorld(sx, sy) { return [sx + Render.camX, sy + Render.camY]; },
+  // Delegated to Render, which owns the zoom. This is the load-bearing line: every click, drag,
+  // order and hover goes through it, so leaving the old `sx + camX` here would land every one of them
+  // in the wrong place at any zoom other than 1 -- and it would look like a targeting bug, not a
+  // camera bug.
+  screenToWorld(sx, sy) { return Render.screenToWorld(sx, sy); },
   inMinimap(x, y) { const r = this.miniRect(); return x >= r.x && x < r.x + r.s && y >= r.y && y < r.y + r.s; },
   miniRect() { return { x: 10, y: Render.H - this.consoleH + 6, s: this.consoleH - 12 }; },
   miniToWorld(x, y) { const r = this.miniRect(); return [(x - r.x) / r.s * G.map.w * TILE, (y - r.y) / r.s * G.map.h * TILE]; },
@@ -265,8 +280,8 @@ const UI = {
       return;
     }
     if (e.button !== 0 || !m.down) return; m.down = false;
-    if (this.dragging && this.drag) { const d = this.drag; const x0 = Math.min(d.x0, d.x1) + Render.camX, x1 = Math.max(d.x0, d.x1) + Render.camX, y0 = Math.min(d.y0, d.y1) + Render.camY, y1 = Math.max(d.y0, d.y1) + Render.camY; const inBox = G.units.filter(u => u.alive && !u.inside && !u.isBuilding && u.x >= x0 && u.x <= x1 && u.y >= y0 && u.y <= y1 && (u.owner === G.human || G.canSee(G.human, u)) && !u.def.notUnit); let own = inBox.filter(u => u.owner === G.human); if (!own.length && inBox.length) own = [inBox[0]]; if (own.length) this.select(own, e.shiftKey); else if (!e.shiftKey) { const b = G.units.filter(u => u.alive && u.isBuilding && u.owner === G.human && u.x >= x0 && u.x <= x1 && u.y >= y0 && u.y <= y1)[0]; if (b) this.select([b]); } }
-    else if (this.drag) { const t = this.unitAt(m.wx, m.wy); const now = performance.now(); if (t) { if (now - this.lastClick < 350 && this.lastClickUnit === t && t.owner === G.human && !t.isBuilding) { const same = G.units.filter(u => u.alive && u.owner === G.human && u.def.id === t.def.id && !u.inside && u.x > Render.camX && u.x < Render.camX + Render.viewW && u.y > Render.camY && u.y < Render.camY + Render.viewH); this.select(same, e.shiftKey); } else if (e.shiftKey && this.selection.includes(t)) { this.selection = this.selection.filter(u => u !== t); } else if (e.ctrlKey) { const same = G.units.filter(u => u.alive && u.owner === t.owner && u.def.id === t.def.id && !u.inside && u.x > Render.camX && u.x < Render.camX + Render.viewW && u.y > Render.camY && u.y < Render.camY + Render.viewH); this.select(same, e.shiftKey); } else this.select([t], e.shiftKey && t.owner === G.human); this.lastClick = now; this.lastClickUnit = t; } else if (!e.shiftKey) { this.selection = []; this.cardMenu = null; } }
+    if (this.dragging && this.drag) { const d = this.drag; const [x0, y0] = this.screenToWorld(Math.min(d.x0, d.x1), Math.min(d.y0, d.y1)), [x1, y1] = this.screenToWorld(Math.max(d.x0, d.x1), Math.max(d.y0, d.y1)); const inBox = G.units.filter(u => u.alive && !u.inside && !u.isBuilding && u.x >= x0 && u.x <= x1 && u.y >= y0 && u.y <= y1 && (u.owner === G.human || G.canSee(G.human, u)) && !u.def.notUnit); let own = inBox.filter(u => u.owner === G.human); if (!own.length && inBox.length) own = [inBox[0]]; if (own.length) this.select(own, e.shiftKey); else if (!e.shiftKey) { const b = G.units.filter(u => u.alive && u.isBuilding && u.owner === G.human && u.x >= x0 && u.x <= x1 && u.y >= y0 && u.y <= y1)[0]; if (b) this.select([b]); } }
+    else if (this.drag) { const t = this.unitAt(m.wx, m.wy); const now = performance.now(); if (t) { if (now - this.lastClick < 350 && this.lastClickUnit === t && t.owner === G.human && !t.isBuilding) { const same = G.units.filter(u => u.alive && u.owner === G.human && u.def.id === t.def.id && !u.inside && u.x > Render.camX && u.x < Render.camX + Render.viewWorldW() && u.y > Render.camY && u.y < Render.camY + Render.viewWorldH()); this.select(same, e.shiftKey); } else if (e.shiftKey && this.selection.includes(t)) { this.selection = this.selection.filter(u => u !== t); } else if (e.ctrlKey) { const same = G.units.filter(u => u.alive && u.owner === t.owner && u.def.id === t.def.id && !u.inside && u.x > Render.camX && u.x < Render.camX + Render.viewWorldW() && u.y > Render.camY && u.y < Render.camY + Render.viewWorldH()); this.select(same, e.shiftKey); } else this.select([t], e.shiftKey && t.owner === G.human); this.lastClick = now; this.lastClickUnit = t; } else if (!e.shiftKey) { this.selection = []; this.cardMenu = null; } }
     this.drag = null; this.dragging = false;
   },
   onKey(e) {
@@ -301,7 +316,7 @@ const UI = {
     if (k === '+' || k === '=') { this.speedIdx = Math.min(this.maxSpeedIdx(), this.speedIdx + 1); return; } if (k === '-') { this.speedIdx = Math.max(0, this.speedIdx - 1); return; }
     if (k === ' ') { if (this.lastAlertPos) this.centerOn(this.lastAlertPos.x, this.lastAlertPos.y); return; }
     if (/^[0-9]$/.test(k)) { if (e.ctrlKey) { this.groups[k] = this.selection.slice(); e.preventDefault(); } else if (e.shiftKey) { this.groups[k] = (this.groups[k] || []).concat(this.selection.filter(u => !(this.groups[k] || []).includes(u))).slice(0, 12); } else if (this.groups[k] && this.groups[k].length) { const g = this.groups[k].filter(u => u.alive); if (this.lastGroupKey === k && performance.now() - this.lastGroupT < 400) this.centerOn(g[0].x, g[0].y); this.selection = g; this.pending = null; this.placing = null; this.cardMenu = null; this.lastGroupKey = k; this.lastGroupT = performance.now(); } return; }
-    if (/^F[2-8]$/.test(k)) { if (e.shiftKey) this.camSaves[k] = { x: Render.camX, y: Render.camY }; else if (this.camSaves[k]) { Render.camX = this.camSaves[k].x; Render.camY = this.camSaves[k].y; } return; }
+    if (/^F[2-8]$/.test(k)) { if (e.shiftKey) this.camSaves[k] = { x: Render.camX, y: Render.camY, z: Render.zoom }; else if (this.camSaves[k]) { if (this.camSaves[k].z) Render.setZoom(this.camSaves[k].z); Render.camX = this.camSaves[k].x; Render.camY = this.camSaves[k].y; this.clampCam(); } return; }
     const up = k.length === 1 ? k.toUpperCase() : k;
     for (const b of this.currentCard()) if (b.hk === up) { this.press(b); return; }
   },
@@ -655,7 +670,7 @@ const UI = {
     for (const r of G.map.resources) { const tx = r.x, ty = r.y; if (hp.vis[ty * G.map.w + tx] === 0) continue; ctx.fillStyle = r.type === 'mineral' ? '#5df' : '#6d5'; ctx.fillRect(mr.x + r.x * mr.s / G.map.w, mr.y + r.y * mr.s / G.map.h, 2, 1.5); }
     for (const u of G.units) { if (!u.alive || u.inside || u.def.larva) continue; if (u.owner !== G.human && !G.canSee(G.human, u) && !(u.isBuilding && G.explored(G.human, Math.floor(u.x / TILE), Math.floor(u.y / TILE)))) continue; ctx.fillStyle = G.players[u.owner].color; const s = u.isBuilding ? Math.max(3, u.def.w * TILE * sc) : 2.5; ctx.fillRect(mr.x + u.x * sc - s / 2, mr.y + u.y * sc - s / 2, s, s); }
     for (const pg of this.pings) { ctx.strokeStyle = `rgba(255,60,60,${pg.t / 90})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(mr.x + pg.x * sc, mr.y + pg.y * sc, 4 + (90 - pg.t) % 30 / 3, 0, 7); ctx.stroke(); }
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(mr.x + Render.camX * sc, mr.y + Render.camY * sc, Render.viewW * sc, Render.viewH * sc);
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(mr.x + Render.camX * sc, mr.y + Render.camY * sc, Render.viewWorldW() * sc, Render.viewWorldH() * sc);
     // info panel
     this.hotspots = [];
     const ix = mr.x + mr.s + 16, iw = Render.W - ix - (3 * 66 + 30); ctx.fillStyle = '#12151a'; ctx.fillRect(ix, y0 + 6, iw, ch - 12);
