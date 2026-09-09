@@ -17,6 +17,26 @@ const SEP_DIRS = [[1, 0], [D, D], [0, 1], [-D, D], [-1, 0], [-D, -D], [0, -1], [
 // Referenced rather than inlined because the supply-block alert and the refusal message both have to
 // agree with it, and they did not used to.
 const SUPPLY_CAP = 500;
+// Directional armour. A hit that lands behind or beside a unit hurts more than one it is facing, so
+// where a unit is pointing becomes part of what it is worth -- flanking is a mechanic rather than a
+// figure of speech, and a tank line has a front that can be turned.
+//
+// Multipliers are on the damage AFTER armour and the size table, so a flank does not turn a bad matchup
+// into a good one; it makes a good position better. Front is exactly 1: facing your attacker is the
+// baseline, and flanking is the reward. Discounting the front instead would have quietly made every
+// number in the damage tables 10% weaker head-on, which is a balance change wearing a mechanic's coat --
+// test/features.js caught that immediately by asserting an exact damage formula.
+//
+// Buildings, larvae, eggs and anything burrowed have no meaningful facing and are exempt. Splash and
+// spells are exempt too -- an explosion does not come from a direction the way a bullet does.
+const FACE_MULT = { front: 1, flank: 1.15, rear: 1.35 };
+const FACE_FLANK = Math.PI * 0.5, FACE_REAR = Math.PI * 0.75;   // half-angles from the unit's facing
+function hitFacing(t, src) {
+  if (!src || t.isBuilding || t.def.larva || t.def.egg || t.burrowed) return 'front';
+  const a = Math.atan2(src.y - t.y, src.x - t.x) - t.facing;
+  const off = Math.abs(Math.atan2(Math.sin(a), Math.cos(a)));   // wrapped to [0, PI]
+  return off <= FACE_FLANK ? 'front' : off <= FACE_REAR ? 'flank' : 'rear';
+}
 const ALERTS = {
   supply:   { hold: 4, cool: 24 * 40 },  // long enough to survive the moment between finishing a unit and starting a depot
   idleProd: { hold: 8, cool: 24 * 45 },  // a queue empties for a second all the time; eight is a player not looking
@@ -356,7 +376,10 @@ const G = {
     if (t.fx.matrix) { const ab = Math.min(t.fx.matrix.hp, dmg); t.fx.matrix.hp -= ab; dmg -= ab; if (t.fx.matrix.hp <= 0) t.fx.matrix = null; if (dmg <= 0) return 0; }
     let d = dmg; const p = this.players[t.owner];
     if (t.sh > 0) { d -= p.upgLevel('shields'); if (d < 0.5) d = 0.5; if (d <= t.sh) { t.sh -= d; this.onHit(t, src); return d; } d -= t.sh; t.sh = 0; }
-    d = (d - t.armor) * (DMG_MULT[type] || DMG_MULT.normal)[t.def.size || 'medium']; if (d < 0.5) d = 0.5;
+    d = (d - t.armor) * (DMG_MULT[type] || DMG_MULT.normal)[t.def.size || 'medium'];
+    // ...then where it landed. opts.splash covers explosions and spells, which have no direction.
+    if (!opts.splash && !opts.noFacing) d *= FACE_MULT[hitFacing(t, src)];
+    if (d < 0.5) d = 0.5;
     t.hp -= d; this.onHit(t, src);
     if (t.hp <= 0) this.kill(t, src);
     return d;

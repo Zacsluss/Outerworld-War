@@ -49,6 +49,8 @@ const TESTS = [
   { name: 'cardsay', args: ['cardsay.js'], what: 'every greyed command-card button says why' },
   { name: 'wrongthing', args: ['wrongthing.js'], what: 'doing the wrong thing on purpose neither crashes nor hangs' },
   { name: 'aiscripts', args: ['aiscripts.js'], what: 'the AI build scripts are ordered and name only real things' },
+  { name: 'veterancy', args: ['veterancy.js'], what: 'rank and scars are derived, and survive a snapshot' },
+  { name: 'facing', args: ['facing.js'], what: 'a hit from behind hurts more, and explosions have no direction' },
 ];
 
 const argv = process.argv.slice(2);

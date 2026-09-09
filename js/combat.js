@@ -16,7 +16,7 @@ const Combat = {
     if (w.glaive) { this.visual(a, t, 'glaive'); let cur = t, d = dmg; const hit = [t]; for (let b = 0; b < 3 && cur; b++) { if (!swarmed || b > 0) G.damage(cur, d, w.type, a); d = Math.max(1, Math.floor(d / 3)); let nx = null, nd = 1e9; for (const o of G.near(cur.x, cur.y, 3 * TILE)) { if (hit.includes(o) || o.owner === a.owner || !G.targetable(a, o) || o.isBuilding && false) continue; const dd = dist(o, cur); if (dd < nd) { nd = dd; nx = o; } } if (nx) { hit.push(nx); G.effects.push({ kind: 'line', x: cur.x, y: cur.y, tx: nx.x, ty: nx.y, t: 6, color: '#8f8' }); } cur = nx; } return; }
     if (w.line) { // Lurker spines along a line
       const ang = Math.atan2(t.y - a.y, t.x - a.x); const len = 6 * TILE; G.effects.push({ kind: 'spines', x: a.x, y: a.y, tx: a.x + Math.cos(ang) * len, ty: a.y + Math.sin(ang) * len, t: 12 });
-      for (const o of G.near(a.x + Math.cos(ang) * len / 2, a.y + Math.sin(ang) * len / 2, len / 2 + 16)) { if (o.owner === a.owner || o.fly || !o.alive || o.inside) continue; const rx = o.x - a.x, ry = o.y - a.y; const proj = rx * Math.cos(ang) + ry * Math.sin(ang); if (proj < 0 || proj > len) continue; const perp = Math.abs(-rx * Math.sin(ang) + ry * Math.cos(ang)); if (perp <= o.r + 8) G.damage(o, dmg, w.type, a); }
+      for (const o of G.near(a.x + Math.cos(ang) * len / 2, a.y + Math.sin(ang) * len / 2, len / 2 + 16)) { if (o.owner === a.owner || o.fly || !o.alive || o.inside) continue; const rx = o.x - a.x, ry = o.y - a.y; const proj = rx * Math.cos(ang) + ry * Math.sin(ang); if (proj < 0 || proj > len) continue; const perp = Math.abs(-rx * Math.sin(ang) + ry * Math.cos(ang)); if (perp <= o.r + 8) G.damage(o, dmg, w.type, a, { splash: true }); }   // a line hits everything along it at once
       return;
     }
     this.visual(a, t, w);
@@ -33,7 +33,7 @@ const Combat = {
       if (air ? !o.fly : (o.fly && !(w.targets === 'both'))) continue;
       const d = Math.max(0, distPt(o.x, o.y, x, y) - o.r) / TILE;
       const m = d <= r1 ? 1 : d <= r2 ? 0.5 : d <= r3 ? 0.25 : 0; if (!m) continue;
-      G.damage(o, dmg * m, w.type, a);
+      G.damage(o, dmg * m, w.type, a, { splash: true });   // a blast has no direction; see FACE_MULT
     }
     G.effects.push({ kind: 'boom', x, y, t: 12, r: r2 * TILE * 0.6 });
   },

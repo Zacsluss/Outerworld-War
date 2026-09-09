@@ -52,7 +52,13 @@ const siloB = G.units.find(u => u.def.id === 'nuclear_silo'); T('silo', siloB &&
 G.kill(lurk, null, true); for (const u of G.units) if (u.alive && u.owner === 1) G.kill(u, null, true); const ghost = sp('ghost', 0, hx + 100, hy + 100); const enemyHatch = place('hatchery', 1, hx + 500, hy + 500); ghost.energy = 200;
 T('nuke issue', Abilities.issue(ghost, 'nuke', null, enemyHatch.x, enemyHatch.y)); run(700); T('nuke hits', !enemyHatch.alive || enemyHatch.hp < 800);
 // damage math: concussive vs large
-const vult = sp('vulture', 0, hx, hy); const ultra = sp('ultralisk', 1, hx, hy); ultra.hp = 400; const d = G.damage(ultra, 20, 'concussive', vult); T('concussive vs large = (20-1)*0.25', Math.abs(d - 4.75) < 0.01); G.kill(ultra, null, true);
+// Facing is set toward the attacker on purpose. Directional armour (M11) multiplies the result by
+// where the hit landed, and both units are spawned at the same point and then nudged apart by
+// placement -- so without this the relative angle, and the multiplier with it, is arbitrary. This
+// assertion is about the damage formula, so it takes the front arc, where the multiplier is 1.
+const vult = sp('vulture', 0, hx, hy); const ultra = sp('ultralisk', 1, hx, hy); ultra.hp = 400;
+ultra.facing = Math.atan2(vult.y - ultra.y, vult.x - ultra.x);
+const d = G.damage(ultra, 20, 'concussive', vult); T('concussive vs large = (20-1)*0.25', Math.abs(d - 4.75) < 0.01); G.kill(ultra, null, true);
 // fog: low ground unit cannot see high ground
 const m = G.map; let lowT = null, highT = null; for (let y = 2; y < m.h; y++) for (let x = 2; x < m.w; x++) { const i = m.idx(x, y); if (m.height[i] === 0 && m.walk[i] && !lowT) { for (let dx = 0; dx < 6; dx++) { const j = m.idx(x + dx, y); if (m.height[j] === 2 && !highT) { lowT = [x, y]; highT = [x + dx, y]; } } } }
 if (lowT) { const spot = sp('marine', 0, (lowT[0] + .5) * TILE, (lowT[1] + .5) * TILE); run(4); T('high ground hidden from low ground', !G.visible(0, highT[0], highT[1])); const fly = sp('wraith', 0, spot.x, spot.y); run(4); T('flyer sees high ground', G.visible(0, highT[0], highT[1])); }
