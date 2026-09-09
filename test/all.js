@@ -69,6 +69,7 @@ const TESTS = [
   { name: 'neutrals', args: ['neutrals.js'], what: "race 'N': buried life with a tell, and derelicts nobody can build" },
   { name: 'craters', args: ['craters.js'], what: 'the map remembers: permanent scarring, hulks that clear' },
   { name: 'campaign', args: ['campaign.js'], what: 'weighted choices resolve both ways, the record persists, narrowing cannot strand you' },
+  { name: 'zoom', args: ['zoom.js'], what: 'strategic zoom clamps, anchors and swaps to icons; night runs without G.daylight' },
 ];
 
 const argv = process.argv.slice(2);
