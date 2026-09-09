@@ -806,7 +806,6 @@ const UI = {
     Render.resize(); Codex.open(); this.menuCodex = true;
     if (!this._loop) { this._loop = t => this.loop(t); requestAnimationFrame(this._loop); }   // no game has run yet, so the chain does not exist
   },
-<<<<<<< HEAD
   // One frame of the menu codex. Render.frame is deliberately not called: it reads a G that does not
   // exist yet. Closing the codex is what puts the menu back, so Escape, F3 and the panel's own close
   // button all work without any of them knowing this mode exists.
@@ -821,9 +820,7 @@ const UI = {
     c.fillStyle = '#05070a'; c.fillRect(0, 0, Render.W, Render.H);
     Codex.draw(c);
   },
-  toMenu() { this.running = false; this.menuCodex = false; this.menu = null; this.loading = null; if (this.refreshMapList) this.refreshMapList(); if (typeof Net !== 'undefined' && Net.active) Net.disconnect(); if (typeof Music !== 'undefined') Music.stop(); document.getElementById('menu').style.display = 'flex'; document.getElementById('game').style.display = 'none'; const ab = document.getElementById('autosaveBtn'); if (ab) ab.style.display = Replay.hasAutosave() ? 'block' : 'none'; },
-=======
-  toMenu() { this.running = false; this.menu = null; this.loading = null; if (this.refreshMapList) this.refreshMapList(); if (typeof Net !== 'undefined' && Net.active) Net.disconnect(); if (typeof Music !== 'undefined') Music.stop(); if (this.showPanel) this.showPanel('mainPanel'); document.getElementById('menu').style.display = 'flex'; document.getElementById('game').style.display = 'none'; const ab = document.getElementById('autosaveBtn'); if (ab) ab.style.display = Replay.hasAutosave() ? 'block' : 'none'; },
+  toMenu() { this.running = false; this.menuCodex = false; this.menu = null; this.loading = null; if (this.refreshMapList) this.refreshMapList(); if (typeof Net !== 'undefined' && Net.active) Net.disconnect(); if (typeof Music !== 'undefined') Music.stop(); if (this.showPanel) this.showPanel('mainPanel'); document.getElementById('menu').style.display = 'flex'; document.getElementById('game').style.display = 'none'; const ab = document.getElementById('autosaveBtn'); if (ab) ab.style.display = Replay.hasAutosave() ? 'block' : 'none'; },
 
   // ==========================================================================
   // Skirmish setup (M11 wave two, item 22)
@@ -1123,7 +1120,6 @@ const UI = {
       if (typeof po.gas === 'number' && isFinite(po.gas)) p.gas = Math.max(0, Math.round(po.gas));
     });
   },
->>>>>>> worktree-agent-a400bd22010d4b08f
 };
 
 // ---------------- boot ----------------
