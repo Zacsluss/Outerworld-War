@@ -56,6 +56,7 @@ const TESTS = [
   { name: 'targeting', args: ['targeting.js'], what: 'a unit shoots what threatens it, not merely what is nearest' },
   { name: 'newbuildings', args: ['newbuildings.js'], what: 'field hospitals, jammers and walls: data, art and the nine-slot card' },
   { name: 'formation', args: ['formation.js'], what: 'a right-drag spreads the selection evenly along the line' },
+  { name: 'mapmodes', args: ['mapmodes.js'], what: 'the four map sizes are different rules, and the sandstorm is deterministic' },
 ];
 
 const argv = process.argv.slice(2);
