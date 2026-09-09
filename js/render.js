@@ -189,6 +189,7 @@ const Render = {
     for (const e of G.effects) { if (!inView(e.x, e.y, 220)) continue; if (!visNow(e.x, e.y) && !(e.tx !== undefined && visNow(e.tx, e.ty)) && e.kind !== 'nuke') continue; FX.drawEffect(ctx, e); }
     FX.drawParticles(ctx);
     for (const u of UI.selection) { if (!u.alive || u.inside) continue; this.drawSelection(ctx, u, true); }
+    this.drawRallies(ctx);
     if (UI.hover && UI.hover.alive && !UI.selection.includes(UI.hover)) this.drawSelection(ctx, UI.hover, false);
     for (const u of list) if (u.hp < u.maxHp && !UI.selection.includes(u) && (u.owner === G.human || G.frame - u.lastHit < 72)) this.drawBars(ctx, u);
     if (UI.selection.length === 1 && UI.selection[0].rally && UI.selection[0].owner === G.human) {
@@ -506,6 +507,37 @@ const Render = {
       ctx.save(); ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(x0 + W / 2, y0 + H / 2, 2, x0 + W / 2, y0 + H / 2, Math.max(W, H) * 0.7); g.addColorStop(0, `rgba(120,200,255,${0.5 * (1 - k) + 0.1})`); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.fillRect(x0 - 20, y0 - 20, W + 40, H + 40); for (let i = 0; i < 5; i++) { const xx = x0 + 8 + ((i * 37 + G.frame * 2) % (W - 16)); ctx.fillStyle = 'rgba(160,220,255,0.35)'; ctx.fillRect(xx, y0 - 10, 2, H + 20); } ctx.restore();
     }
     const w = W - 8; ctx.fillStyle = '#000'; ctx.fillRect(x0 + 4, y0 + H - 7, w, 5); ctx.fillStyle = '#3f3'; ctx.fillRect(x0 + 4, y0 + H - 7, w * k, 5);
+  },
+  // Rally lines for whatever is selected, drawn for as long as it stays selected rather than as the
+  // half-second marker the click used to leave behind. Both StarCraft and StarCraft II keep them up, and
+  // with two rallies per building there is no other way to see which is which: the unit rally is green
+  // and the worker rally yellow, matching the flash the right-click gives.
+  RALLY_G: '120,255,120', RALLY_W: '255,220,80',
+  drawRallies(ctx) {
+    const seen = new Set();
+    for (const b of UI.selection) {
+      if (!b.alive || b.inside || seen.has(b.id)) continue; seen.add(b.id);
+      for (const [r, col] of [[b.rally, this.RALLY_G], [b.rallyW, this.RALLY_W]]) {
+        if (!r) continue;
+        // A rally onto a unit follows it, so the line is redrawn from wherever that unit is now.
+        const live = (r.target && r.target.alive) ? r.target : (r.gas && r.gas.alive ? r.gas : null);
+        const tx = live ? live.x : r.x, ty = live ? live.y : r.y;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(' + col + ',0.5)'; ctx.lineWidth = 1.5; ctx.setLineDash([7, 5]);
+        ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(tx, ty); ctx.stroke();
+        ctx.setLineDash([]);
+        const res = r.res || (r.gas && r.gas.geyser);
+        if (res) {   // a ring round the patch's own footprint, the shape the acknowledgement flash uses
+          ctx.strokeStyle = 'rgba(' + col + ',0.85)'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.ellipse(res.cx, res.cy, res.w * TILE * 0.62, res.h * TILE * 0.85, 0, 0, 7); ctx.stroke();
+        } else {     // otherwise a small flag, so a rally onto open ground is still findable
+          ctx.strokeStyle = 'rgba(' + col + ',0.9)'; ctx.fillStyle = 'rgba(' + col + ',0.35)'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(tx, ty, 7, 0, 7); ctx.fill(); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(tx, ty - 7); ctx.lineTo(tx, ty - 17); ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
   },
   drawSelection(ctx, u, sel) {
     const col = u.owner === G.human ? '#3fe83f' : G.allied(G.human, u.owner) ? '#f0e040' : '#ff3c3c';

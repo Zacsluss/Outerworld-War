@@ -216,8 +216,8 @@ const G = {
         let u;
         if (b.def.egg) { u = this.spawnUnit(it.id, b.owner, b.x + (i ? 12 : -12), b.y); }
         else { const [sx, sy] = this.freeSpotAround(b, ud.fly); u = this.spawnUnit(it.id, b.owner, sx + (i ? 14 : 0), sy); }
-        if (b.rally) this.applyRally(u, b.rally);
-        else if (b.def.egg && b.rallyFrom && b.rallyFrom.rally) this.applyRally(u, b.rallyFrom.rally);
+        const rr = this.rallyFor(b, u) || (b.def.egg && b.rallyFrom ? this.rallyFor(b.rallyFrom, u) : null);
+        if (rr) this.applyRally(u, rr);
       }
       if (b.def.egg) { this.kill(b, null, true); }
       if (b.def.id === 'lurker_egg' || b.def.id === 'cocoon') { }
@@ -228,7 +228,14 @@ const G = {
   },
   applyRally(u, r) {
     if (r.target && r.target.alive) { const t = r.target; if (t.def && (t.def.depot) && u.def.worker) { const m = this.findNearestResource(u, 'mineral'); if (m) u.applyOrder({ type: 'gather', target: m, phase: 'goto' }); return; } u.applyOrder({ type: 'follow', target: t }); return; }
-    if (r.res && u.def.worker) { u.applyOrder({ type: 'gather', target: r.res, phase: 'goto' }); return; }
+    // Gas: a rally onto a geyser only means anything once something is standing on it, and the thing a
+    // worker is actually sent to is that building, not the geyser. Falls through to a plain move while
+    // the geyser is bare, which is what a player would see happen anyway.
+    if (r.gas && r.gas.alive && r.gas.done && u.def.worker) { u.applyOrder({ type: 'gather', target: r.gas, phase: 'goto' }); return; }
+    if (r.res && u.def.worker) {
+      if (r.res.type === 'geyser') { for (const g of this.units) if (g.alive && g.done && g.def.onGeyser && g.geyser === r.res && this.allied(g.owner, u.owner)) { u.applyOrder({ type: 'gather', target: g, phase: 'goto' }); return; } }
+      else { u.applyOrder({ type: 'gather', target: r.res, phase: 'goto' }); return; }
+    }
     u.applyOrder({ type: 'move', x: r.x, y: r.y });
   },
   morphBuilding(b, toId) {
@@ -299,8 +306,10 @@ const G = {
     let best = null, bd = 1e9;
     for (const o of this.map.resources) { if (o === gone || o.type !== gone.type || o.amount <= 0) continue; const d = distPt(gone.cx, gone.cy, o.cx, o.cy); if (d < bd) { bd = d; best = o; } }
     for (const u of this.units) {
-      if (!u.alive || !u.rally || u.rally.res !== gone) continue;
-      u.rally = best ? { x: best.cx, y: best.cy, target: null, res: best } : null;
+      if (!u.alive) continue;
+      const moved = best ? { x: best.cx, y: best.cy, target: null, res: best, gas: null } : null;
+      if (u.rally && u.rally.res === gone) u.rally = moved;
+      if (u.rallyW && u.rallyW.res === gone) u.rallyW = moved;
     }
   },
 
@@ -442,7 +451,24 @@ const G = {
   // already existed -- the producer's own rally wins and an egg falls back to b.rallyFrom.rally -- but
   // there was no way to SET one, because this guard only admitted buildings. A larva keeps the rally
   // through its morph for free: larvaMorph swaps the def on the same object, so the egg is the larva.
-  setRally(b, x, y, target) { if (!(b.isBuilding && (b.def.produces.length || b.def.spawnsLarva)) && !b.def.larva && !b.def.egg) return; const res = target ? null : this.map.resourceAt(Math.floor(x / TILE), Math.floor(y / TILE)); b.rally = { x, y, target: target && target.alive ? target : null, res }; },
+  // Two rallies per building, as StarCraft II has them: a worker rally and a unit rally, held at the
+  // same time. A click on minerals, on a geyser, or on a refinery standing over one is a WORKER rally
+  // (drawn yellow); anything else is the unit rally (green). That is the whole reason for two -- a
+  // hatchery wants its drones mining and its zerglings at the ramp, and one rally cannot say both.
+  // Larvae and eggs keep a single rally: each produces exactly one unit, so there is nothing to split.
+  // Right-clicking the building itself clears both, which is the gesture SC2 uses and we had none for.
+  setRally(b, x, y, target) {
+    if (!(b.isBuilding && (b.def.produces.length || b.def.spawnsLarva)) && !b.def.larva && !b.def.egg) return;
+    if (target === b) { b.rally = null; b.rallyW = null; return; }
+    const res = target ? null : this.map.resourceAt(Math.floor(x / TILE), Math.floor(y / TILE));
+    const gas = target && target.isBuilding && target.def.onGeyser && target.done ? target : null;
+    const r = { x, y, target: gas ? null : (target && target.alive && target !== b ? target : null), res: res || null, gas: gas || null };
+    if ((res || gas) && !b.def.larva && !b.def.egg) b.rallyW = r; else b.rally = r;
+  },
+  // Which of the two a freshly produced unit should follow. A worker prefers the worker rally and falls
+  // back to the unit one, and everything else the other way round, so a building carrying only one
+  // rally behaves exactly as it did before there were two.
+  rallyFor(b, u) { return u.def.worker ? (b.rallyW || b.rally) : (b.rally || b.rallyW); },
 
   // ---------------- main tick ----------------
   tick() {

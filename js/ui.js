@@ -268,7 +268,7 @@ const UI = {
   ownSel() { return this.selection.filter(u => u.owner === G.human && u.alive); },
   marker(x, y, color) { this.markers.push({ x, y, t: 20, color }); },
   // Same lifetime as marker(), but drawn as a ring around a resource's footprint by Render.
-  ringMarker(res) { this.markers.push({ res, t: 20, color: '80,255,80' }); },
+  ringMarker(res, color = '80,255,80') { this.markers.push({ res, t: 20, color }); },
   smartCommand(t, wx, wy, shift) {
     const sel = this.ownSel(); if (!sel.length) return;
     // No minimap guard here. There used to be one, and it killed the minimap right-click entirely:
@@ -285,8 +285,19 @@ const UI = {
       const rr = sel[0].rally && sel[0].rally.res; if (rr) this.ringMarker(rr); else this.marker(wx, wy, '80,255,80');
       return;
     }
-    if (sel.length === 1 && sel[0].isBuilding && !sel[0].lifted) { const b = sel[0]; if (b.def.produces.length || b.def.spawnsLarva) { G.setRally(b, wx, wy, t); // a rally onto a resource acknowledges with a ring on the patch, matching what stays on screen
-      const rr = b.rally && b.rally.res; if (rr) this.ringMarker(rr); else this.marker(wx, wy, '80,255,80'); } return; }
+    // Every selected production building takes the rally, not just a lone one: ten gateways, one click.
+    // Which of the two slots it lands in is G.setRally's decision -- a click on minerals, a geyser or a
+    // refinery sets the worker rally, anything else the unit rally -- so the same gesture does both.
+    const halls = sel.filter(b => b.isBuilding && !b.lifted && (b.def.produces.length || b.def.spawnsLarva));
+    if (halls.length && halls.length === sel.length) {
+      for (const b of halls) G.setRally(b, wx, wy, t);
+      const b0 = halls[0];
+      if (t === b0) { this.marker(wx, wy, '200,200,200'); return; }       // right-click itself clears
+      const w = b0.rallyW, isW = !!(w && (w.res || w.gas) && (w.x === wx && w.y === wy));
+      const rr = isW ? (w.res || (w.gas && w.gas.geyser)) : null;
+      if (rr) this.ringMarker(rr, '255,220,80'); else this.marker(wx, wy, isW ? '255,220,80' : '80,255,80');
+      return;
+    }
     const res = G.map.resourceAt(Math.floor(wx / TILE), Math.floor(wy / TILE));
     if (res) this.ringMarker(res);   // targeting a patch reads as a ring round it, not a dot in it
     let acked = false;
