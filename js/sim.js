@@ -60,6 +60,7 @@ class Unit {
     this.creepR = 0;
     this.larvae = []; this.larvaT = LARVA_TIME; this.hatch = null; this.morphT = 0; this.progress = 0; this.builder = null; this.lifted = false;
     this.lastHit = -9999; this.lastHitBy = null; this.arbCloak = -9999; this.halluc = false; this.idleT = 0; this.acidSpores = 0;
+    this.auraSight = 1; this.auraNoDet = false;   // recomputed each pass by G.tickAuras; see the aura contract in js/data.js
     this.waitT = 0; this.moving = false; this.vx = 0; this.vy = 0; this.spawnT = G.frame; this.cloakT = 0; this.unpowered = false;
     if (this.isBuilding) { this.tx = Math.round(x / TILE - def.w / 2); this.ty = Math.round(y / TILE - def.h / 2); this.x = (this.tx + def.w / 2) * TILE; this.y = (this.ty + def.h / 2) * TILE; this.px = this.x; this.py = this.y; this.r = Math.max(def.w, def.h) * TILE / 2; }
   }
@@ -74,10 +75,14 @@ class Unit {
     if (this.lifted) s = 1;
     return s;
   }
-  get sight() { let s = this.def.sight || 7; const p = this.player; if (this.def.sightTech && p.hasTech(this.def.sightTech[0])) s = this.def.sightTech[1]; if (this.def.id === 'ghost' && p.hasTech('ocular')) s = 11; if (this.fx.blind > 0) s = 2; if (this.isBuilding && !this.done) s = 4; return s; }
+  get sight() { let s = this.def.sight || 7; const p = this.player; if (this.def.sightTech && p.hasTech(this.def.sightTech[0])) s = this.def.sightTech[1]; if (this.def.id === 'ghost' && p.hasTech('ocular')) s = 11; if (this.fx.blind > 0) s = 2; if (this.isBuilding && !this.done) s = 4;
+    // A jamming field shortens sight while the unit stands in it. Clamped at one tile, per the aura
+    // contract in js/data.js: short-sighted, never blind.
+    if (this.auraSight > 0 && this.auraSight < 1) s = Math.max(1, s * this.auraSight);
+    return s; }
   get armor() { let a = this.def.armor || 0; const p = this.player; if (this.def.upgA) a += p.upgLevel(this.def.upgA); if (this.def.armorTech && p.hasTech(this.def.armorTech[0])) a += this.def.armorTech[1]; a -= this.acidSpores; if (this.vet >= 2) a += 1; return Math.max(0, a); }
   get isCloaked() { return this.cloaked || this.burrowed || (G.frame - this.arbCloak < 12); }
-  get isDetector() { return this.def.det && this.done && !this.lifted && !(this.fx.blind > 0); }
+  get isDetector() { return this.def.det && this.done && !this.lifted && !(this.fx.blind > 0) && !this.auraNoDet; }
   get canMove() { return !this.isBuilding || this.lifted; }
   get disabled() { return this.fx.lockdown > 0 || this.fx.stasis > 0 || this.fx.maelstrom > 0 || this.morphT > 0 || this.unpowered; }
   get idle() { return this.order.type === 'idle'; }

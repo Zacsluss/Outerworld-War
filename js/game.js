@@ -533,6 +533,54 @@ const G = {
   // rally behaves exactly as it did before there were two.
   rallyFor(b, u) { return u.def.worker ? (b.rallyW || b.rally) : (b.rally || b.rallyW); },
 
+  // Building auras -- the reader for the `aura` contract documented in js/data.js. Field hospitals mend
+  // and jamming towers blind; walls have no aura at all.
+  //
+  // Three things the contract asks for that are easy to get wrong, so they are done explicitly here:
+  // fields do NOT stack (the strongest covering field wins, rather than the sum), 'mend' never touches
+  // buildings or revives anything, and the whole pass walks G.units in order so nothing depends on Set
+  // or Map iteration -- the determinism tests would find it and the replay would not survive.
+  //
+  // Run every AURA_EVERY frames rather than every frame: it is O(buildings x units nearby) and a
+  // per-second rate divided across a coarser tick is the same healing with a fraction of the work.
+  tickAuras() {
+    const every = 8;
+    // The blind half has to be cleared every pass even when there are no towers, or a unit that walks
+    // out of a field keeps its shortened sight for ever.
+    if (this.frame % every) return;
+    const sources = [];
+    for (const b of this.units) {
+      if (!b.alive || !b.isBuilding || !b.def.aura) continue;
+      if (!b.done || b.lifted || b.unpowered) continue;      // the three gates a photon cannon fires under
+      sources.push(b);
+    }
+    for (const u of this.units) { u.auraSight = 1; u.auraNoDet = false; }
+    if (!sources.length) return;
+    const dt = every / TPS;
+    for (const u of this.units) {
+      if (!u.alive || u.inside) continue;
+      let mendHp = 0, mendSh = 0, sight = 1, noDet = false;
+      for (const b of sources) {
+        const a = b.def.aura;
+        const cx = (b.tx + b.def.w / 2) * TILE, cy = (b.ty + b.def.h / 2) * TILE;
+        if (distPt(u.x, u.y, cx, cy) > a.r * TILE) continue;
+        const friendly = this.allied(b.owner, u.owner);
+        if (a.affects === 'ally' ? !friendly : friendly) continue;
+        if (a.kind === 'mend') {                              // strongest wins; they do not add
+          if ((a.hp || 0) > mendHp) mendHp = a.hp || 0;
+          if ((a.sh || 0) > mendSh) mendSh = a.sh || 0;
+        } else if (a.kind === 'blind') {
+          if (a.sight !== undefined && a.sight < sight) sight = a.sight;
+          if (a.detect) noDet = true;
+        }
+      }
+      if (sight < 1) u.auraSight = sight;
+      if (noDet) u.auraNoDet = true;
+      if (u.isBuilding) continue;                             // mend never repairs buildings
+      if (mendHp && u.hp > 0 && u.hp < u.maxHp) u.hp = Math.min(u.maxHp, u.hp + mendHp * dt);
+      if (mendSh && u.maxSh && u.sh < u.maxSh) u.sh = Math.min(u.maxSh, u.sh + mendSh * dt);
+    }
+  },
   // ---------------- main tick ----------------
   tick() {
     if (this.over || this.paused) return;
@@ -557,6 +605,7 @@ const G = {
     }
     Combat.tickProjectiles(); Abilities.tickFields();
     this.map.tickHazard(this.frame, this.units);   // weather; inert unless the layout declares a hazard. Contract is documented above GameMap.hazardState.
+    this.tickAuras();
     for (const p of this.players) if (p.ai && this.frame % 4 === p.id % 4) p.ai.tick();
     if (this.frame % 8 === 0) this.recomputeSupply();
     if (this.frame % 24 === 0) { this.units = this.units.filter(u => u.alive); this.checkVictory(); }
