@@ -29,7 +29,7 @@ const Sound = {
 
 const UI = {
   get consoleH() { return Math.round(clamp(Render.H * 0.26, 140, 196)); }, // a fixed height left no map at all in a short window
-  selection: [], groups: {}, hover: null, mouse: { x: 0, y: 0, down: false, wx: 0, wy: 0, inside: false }, drag: null, dragging: false, pending: null, placing: null, menu: null, markers: [], pings: [], keys: {}, lastClick: 0, lastClickUnit: null, msgLog: [], camSaves: {}, showHelp: false, cardButtons: [], lastAlertPos: null, speedIdx: 6, accum: 0, lastT: 0, running: false, fps: 0, frames: 0, fpsT: 0,
+  selection: [], subgroup: 0, idleIdx: 0, groups: {}, hover: null, mouse: { x: 0, y: 0, down: false, wx: 0, wy: 0, inside: false }, drag: null, dragging: false, pending: null, placing: null, menu: null, markers: [], pings: [], keys: {}, lastClick: 0, lastClickUnit: null, msgLog: [], camSaves: {}, showHelp: false, cardButtons: [], lastAlertPos: null, speedIdx: 6, accum: 0, lastT: 0, running: false, fps: 0, frames: 0, fpsT: 0,
   SPEEDS: [0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1, 2, 4, 8], SPEED_NAMES: ['Slowest', 'Slower', 'Slow', 'Normal', 'Fast', 'Faster', 'Fastest', '2x', '4x', '8x'], mode: 'play', viewAll: false, chat: null, loading: null, prodOverlay: false, replayData: null, seeking: false, snaps: [], SNAP_EVERY: 24 * 30,
   speedName() { return this.net && typeof Net !== 'undefined' && Net.speed != null ? this.SPEED_NAMES[Net.speed] + ' (set by the host)' : this.SPEED_NAMES[this.speedIdx]; },
   maxSpeedIdx() { return this.mode === 'replay' ? 9 : 6; },
@@ -173,6 +173,7 @@ const UI = {
   centerOn(x, y) { Render.camX = x - Render.viewW / 2; Render.camY = y - Render.viewH / 2; this.clampCam(); },
   // ---------------- selection ----------------
   select(units, add) {
+    this.subgroup = 0;   // a new selection starts on its first kind
     let list = add ? this.selection.slice() : [];
     for (const u of units) { if (!list.includes(u) && list.length < 12) list.push(u); }
     // if mix of own units and others, keep own only; buildings only when nothing else
@@ -243,6 +244,10 @@ const UI = {
       if (k === 'ArrowRight' && e.shiftKey) { e.preventDefault(); this.seekTo(G.frame + TPS * 30); return; }
       if (k === 'Home') { e.preventDefault(); this.seekTo(0); return; }
     }
+    if (k === 'Tab') { e.preventDefault(); this.cycleSubgroup(e.shiftKey ? -1 : 1); return; }   // Brood War cycles the card through the kinds in a mixed selection
+    if (k === ',') { this.idleWorker(); return; }
+    if (k === 'Backspace') { e.preventDefault(); this.centerOnSelection(); return; }
+    if ((k === 'a' || k === 'A') && e.ctrlKey) { e.preventDefault(); this.selectArmy(); return; }
     if (k === 'F1') { this.showHelp = !this.showHelp; return; }
     if (k === 'Escape') { if (this.placing || this.pending || this.cardMenu) { this.placing = null; this.pending = null; this.cardMenu = null; } else if (this.selection.length === 1 && this.selection[0].isBuilding && !this.selection[0].done && this.selection[0].owner === G.human) G.cancelBuilding(this.selection[0]); else if (this.selection.length === 1 && this.selection[0].prod.length && this.selection[0].owner === G.human) G.cancelProd(this.selection[0], this.selection[0].prod.length - 1); return; }
     if (k === 'F9' || k === 'Pause') { if (!this.net) G.paused = !G.paused; return; }
@@ -266,6 +271,33 @@ const UI = {
   currentCard() { const btns = this.buildCard(); if (this.gridKeys) for (const b of btns) if (b.hk !== 'Escape') b.hk = 'QWEASDZXC'[b.slot]; return btns; },
   // ---------------- commands ----------------
   ownSel() { return this.selection.filter(u => u.owner === G.human && u.alive); },
+  // Idle worker, which Brood War has no equivalent of and StarCraft II players reach for constantly.
+  // Cycles rather than selecting them all: the point is to find the one that stopped, not to gather a
+  // crowd. It wraps and remembers where it was, so pressing it repeatedly walks the whole set.
+  idleWorker() {
+    const idle = G.units.filter(u => u.alive && !u.inside && u.owner === G.human && u.def.worker && u.order.type === 'idle');
+    if (!idle.length) { const p = G.players[G.human]; if (p) p.msg('No idle workers.', 'info'); return; }
+    idle.sort((a, b) => a.id - b.id);
+    const u = idle[this.idleIdx % idle.length]; this.idleIdx = (this.idleIdx + 1) % idle.length;
+    this.select([u], false); this.centerOn(u.x, u.y);
+  },
+  // The whole army, as F2 does in StarCraft II: everything that fights. Workers, buildings, larvae,
+  // eggs and anything sitting in a transport stay out of it.
+  selectArmy() {
+    const army = G.units.filter(u => u.alive && !u.inside && u.owner === G.human && !u.isBuilding && !u.def.worker && !u.def.larva && !u.def.egg);
+    if (!army.length) { const p = G.players[G.human]; if (p) p.msg('No army units.', 'info'); return; }
+    this.select(army, false);
+  },
+  // Put the camera on what is selected. StarCraft II has this and Brood War does not; hunting for a
+  // group you just recalled by number is the reason people want it.
+  centerOnSelection() {
+    const sel = this.selection.filter(u => u.alive && !u.inside); if (!sel.length) return;
+    let x = 0, y = 0; for (const u of sel) { x += u.x; y += u.y; }
+    this.centerOn(x / sel.length, y / sel.length);
+  },
+  // The distinct kinds in the selection, in a stable order, for Tab cycling.
+  subgroupKinds() { const out = []; for (const u of this.ownSel()) if (!out.includes(u.def.id)) out.push(u.def.id); return out; },
+  cycleSubgroup(d) { const k = this.subgroupKinds(); if (k.length < 2) return; this.subgroup = ((this.subgroup + d) % k.length + k.length) % k.length; this.cardMenu = null; },
   marker(x, y, color) { this.markers.push({ x, y, t: 20, color }); },
   // Same lifetime as marker(), but drawn as a ring around a resource's footprint by Render.
   ringMarker(res, color = '80,255,80') { this.markers.push({ res, t: 20, color }); },
@@ -356,7 +388,11 @@ const UI = {
     // egg and larvae, which is exactly what you have the moment you morph one of several larvae: the egg
     // stays selected so its rally can be set, but the morph buttons must stay up so the next press
     // morphs the next larva. So the card reaches past a leading egg for the first larva.
-    const u = (sel[0].def.egg && sel.find(x => x.def.larva)) || sel[0];
+    // Tab picks which kind the card describes. sel[0] is only the default, and the larva/egg rule still
+    // wins over it, because a mixed larva-and-egg selection has one right answer regardless.
+    const kinds = this.subgroupKinds();
+    const pick = kinds.length > 1 ? sel.find(x => x.def.id === kinds[this.subgroup % kinds.length]) : null;
+    const u = (sel[0].def.egg && sel.find(x => x.def.larva)) || pick || sel[0];
     const B = (slot, label, hk, fn, o = {}) => btns.push(Object.assign({ slot, label, hk, fn }, o));
     // Why a greyed button is greyed, for UI.press to say out loud. Player.missingReq already knew;
     // nothing ever asked it on behalf of the command card.
@@ -422,7 +458,15 @@ const UI = {
       return btns;
     }
     // mobile units
-    const mobile = sel.filter(x => !x.isBuilding || x.lifted); if (!mobile.length) return btns;
+    // Narrowed to the kind Tab has selected, which is what makes Tab mean anything: with marines and
+    // vultures together the card shows stim or spider mines depending on which kind you are looking at,
+    // rather than the union of both. Movement is unaffected -- Move/Attack/Patrol set `pending`, which
+    // executes against the whole selection, and a right-click always moved everything.
+    const kindsM = this.subgroupKinds();
+    const kindM = kindsM.length > 1 ? kindsM[this.subgroup % kindsM.length] : null;
+    let mobile = sel.filter(x => !x.isBuilding || x.lifted);
+    if (kindM && mobile.some(x => x.def.id === kindM)) mobile = mobile.filter(x => x.def.id === kindM);
+    if (!mobile.length) return btns;
     const all = pred => mobile.every(pred), any = pred => mobile.some(pred);
     if (any(x => x.def.worker) && all(x => x.def.worker)) {
       B(0, 'Move', 'M', setPending('move')); B(1, 'Stop', 'S', () => mobile.forEach(x => x.stop())); B(2, 'Attack', 'A', setPending('attack'));
@@ -555,7 +599,8 @@ const UI = {
     let y = Render.H - this.consoleH - 12; for (let i = p.msgs.length - 1; i >= 0; i--) { const m = p.msgs[i]; const age = G.frame - m.t; if (age > 24 * 8) continue; ctx.fillStyle = m.kind === 'error' ? '#f77' : m.kind === 'attack' || m.kind === 'nuke' ? '#f55' : '#ff8'; ctx.globalAlpha = age > 24 * 6 ? 1 - (age - 144) / 48 : 1; ctx.fillText(m.text, 12, y); ctx.globalAlpha = 1; y -= 18; }
   },
   drawHelp(ctx) {
-    const lines = ['CONTROLS', 'Left click / drag: select   Right click: smart command   Shift: queue / add to selection', 'Ctrl+click: select all of type on screen   Double-click: same', 'M move  S stop  A attack(-move)  P patrol  H hold   B build  V advanced build', 'Ctrl+1..9 assign group   1..9 select   Shift+# add   F2-F8 (+Shift) camera saves', 'Esc: cancel / cancel construction or last queue item   Space: jump to last alert', 'Arrow keys / screen edge: scroll   Minimap click: move, right-click: command', '+ / -: game speed   F9: pause   F10: menu   Ctrl+M: mute   F1: toggle this help', 'Unit-specific hotkeys are shown on the command card (bottom right).'];
+    const lines = ['CONTROLS', 'Left click / drag: select   Right click: smart command   Shift: queue / add to selection', 'Ctrl+click: select all of type on screen   Double-click: same', 'M move  S stop  A attack(-move)  P patrol  H hold   B build  V advanced build', 'Ctrl+1..9 assign group   1..9 select   Shift+# add   F2-F8 (+Shift) camera saves', 'Esc: cancel / cancel construction or last queue item   Space: jump to last alert', 'Arrow keys / screen edge: scroll   Minimap click: move, right-click: command', 'Tab: cycle selected kind   , idle worker   Ctrl+A select army   Backspace: centre on selection',
+      '+ / -: game speed   F9: pause   F10: menu   Ctrl+M: mute   F1: toggle this help', 'Unit-specific hotkeys are shown on the command card (bottom right).'];
     ctx.fillStyle = '#000c'; ctx.fillRect(Render.W / 2 - 330, 60, 660, 20 * lines.length + 20); ctx.fillStyle = '#eee'; ctx.font = '13px sans-serif'; lines.forEach((l, i) => ctx.fillText(l, Render.W / 2 - 320, 84 + i * 20));
   },
   // ---------------- menus ----------------
