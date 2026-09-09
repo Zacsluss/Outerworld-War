@@ -25,10 +25,23 @@ const PaintHelpers = c => ({
   wing(s, r, span, color, edge, flap = 0) { const k = 1 + flap * 0.25; this.P([[-r * .2, 0], [r * .2, s * r * .5 * k], [-r * .3, s * span * k], [-r * .9, s * span * 0.8 * k], [-r * .6, s * r * .3]], color, edge, 1.2); },
 });
 const TCOL = { M: '#8f9aa6', Md: '#59636d', Ml: '#c3cbd3', gun: '#2b3036', visor: '#57d3ff', F: '#9b7466', Fd: '#5b3d38', Cp: '#6f4f64', bone: '#eadfc8', eye: '#ffd23f', Au: '#d8b24f', Aud: '#8b6c20', Aul: '#f4e2a1', psi: '#62d4ff', navy: '#2c3b70' };
+// The neutral palette (race 'N'): map life, the ground above it, derelict structures and the one
+// unit a derelict grants. It is deliberately the dullest set of colours in the file. Terran reads as
+// steel-blue, Zerg as purple flesh and Protoss as gold, and each of those says "an army is here";
+// the whole job of this palette is to say the opposite, so that a woken creature is alarming because
+// of what it does rather than because it lit up. Everything here sits in the same value range as the
+// terrain and gets its separation from silhouette and outline, not from hue.
+const NCOL = {
+  soil: '#6b5a41', soilD: '#3f3527', soilL: '#8a7857',       // the tells: churned earth, its shadow, its dust
+  chit: '#6d5f4a', chitD: '#3c3427', flesh: '#a8926a', bone: '#d9cfae',   // the wildlife
+  steel: '#77807a', steelD: '#3c443f', steelL: '#a7b0a8', amber: '#e8a33c',  // salvaged machinery
+  rust: '#7a5236', rustD: '#4a3221', ash: '#2d2c29', dead: '#4c5150',     // ruin: oxide, scorch, cold metal
+};
 // Which units animate how
 const ANIM_KIND = {
   biped: new Set(['scv', 'marine', 'firebat', 'medic', 'ghost', 'zealot', 'high_templar', 'dark_templar', 'infested_terran']),
-  legged: new Set(['zergling', 'hydralisk', 'lurker', 'ultralisk', 'defiler', 'broodling', 'dragoon', 'goliath', 'drone', 'larva', 'reaver']),
+  legged: new Set(['zergling', 'hydralisk', 'lurker', 'ultralisk', 'defiler', 'broodling', 'dragoon', 'goliath', 'drone', 'larva', 'reaver',
+    'carrion_grub', 'carrion_maw', 'sentinel']),   // race 'N': two walkers and a tripod. The tells are not units and are not listed.
   treads: new Set(['siege_tank']),
   winged: new Set(['mutalisk', 'guardian', 'devourer', 'scourge', 'queen', 'overlord', 'cocoon']),
   engine: new Set(['wraith', 'valkyrie', 'dropship', 'science_vessel', 'battlecruiser', 'vulture', 'probe', 'shuttle', 'observer', 'scout', 'corsair', 'carrier', 'arbiter', 'interceptor']),
@@ -88,4 +101,82 @@ const UNIT_PAINTERS = {
   scarab(h, r) { h.C(0, 0, r * 1.2, TCOL.Au); h.C(r * .3, 0, r * .5, TCOL.psi, null); },
   interceptor(h, r, TC) { h.P([[r * 1.6, 0], [-r * .6, -r * 1.2], [-r * .2, 0], [-r * .6, r * 1.2]], TCOL.Au); h.C(r * .2, 0, r * .4, TC, null); },
   hallucination(h, r) { h.C(0, 0, r * .6, 'rgba(120,200,255,0.6)'); },
+
+  // ============================ NEUTRAL LIFE, AND THE GROUND ABOVE IT ============================
+  // Painted in NCOL, not TCOL: the wildlife belongs to no race and must not read as a fourth army.
+  // Every one of these is dirt, chitin and old bone -- desaturated browns against the terrain's own
+  // palette -- and the team colour is used only where the engine insists on it (a thin membrane band
+  // on the creatures, because Sprites tints by owner and the neutral owner's colour is the dead
+  // ochre in RACE_INFO.N, so the band reads as part of the animal rather than as a banner).
+  //
+  // The three TELLS are the point of the feature and are drawn like ground decals, not like units:
+  // low contrast, no outline, nothing that reads as a silhouette. A tell should be the sort of thing
+  // you notice on the second look and kick yourself about on the third. They are addressed by key
+  // from DATA.buriedTells, and the renderer calls them exactly as it calls a unit painter, with
+  // `r` in pixels -- so `r` here is the whole radius of the disturbed patch, not a body radius.
+  carrion_grub(h, r, TC, TCd, st) {
+    const { chit, chitD, flesh, bone } = NCOL; const { sw, ak } = ANIM(st);
+    h.legs(3, -r * .15, r * .55, r * 1.1, chitD, 1.8, sw);
+    for (let k = 0; k < 4; k++) { const t = k / 3; h.E(-r * .85 + k * r * .42, sw * r * .07 * (k - 1.5), r * .32 - t * r * .05, r * .34 - t * r * .07, k % 2 ? flesh : '#9d8a63'); }
+    h.E(-r * .5, 0, r * .26, r * .18, TC, OUT, 1);                                  // the one team-coloured band
+    const hx = ak * r * .2; h.C(r * .62 + hx, 0, r * .34, chit);                    // chitin head
+    const ja = ak * r * .28;
+    h.L(r * .85 + hx, -r * .2, r * 1.2 + hx + ja, -r * .42 + ja * .4, bone, 2);     // mandibles
+    h.L(r * .85 + hx, r * .2, r * 1.2 + hx + ja, r * .42 - ja * .4, bone, 2);
+    h.C(r * .7 + hx, -r * .13, r * .05, '#d8452c', null); h.C(r * .7 + hx, r * .13, r * .05, '#d8452c', null);
+  },
+  carrion_maw(h, r, TC, TCd, st) {
+    const { chit, chitD, flesh, bone } = NCOL; const { sw, ak } = ANIM(st);
+    h.legs(2, -r * .1, r * .95, r * 1.15, chitD, 5, sw);
+    h.E(-r * .15, 0, r * 1.0, r * .74, chit);                                        // carapace
+    for (let k = 0; k < 4; k++) { const x = -r * .8 + k * r * .42; h.P([[x - r * .1, -r * .1], [x + r * .06, -r * .95 - (k % 2) * r * .12], [x + r * .2, -r * .1]], bone, OUT, 1); h.P([[x - r * .1, r * .1], [x + r * .06, r * .95 + (k % 2) * r * .12], [x + r * .2, r * .1]], bone, OUT, 1); }
+    h.E(-r * .35, 0, r * .42, r * .3, TC, OUT, 1);
+    const gape = 1 + ak * .55;
+    h.C(r * .62, 0, r * .48 * gape, '#2a1f1a');                                      // the maw itself
+    for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; h.P([[r * .62 + Math.cos(a) * r * .46 * gape, Math.sin(a) * r * .46 * gape], [r * .62 + Math.cos(a + .35) * r * .46 * gape, Math.sin(a + .35) * r * .46 * gape], [r * .62 + Math.cos(a + .17) * r * .2 * gape, Math.sin(a + .17) * r * .2 * gape]], bone, null); }
+    h.C(r * .28, -r * .3, r * .07, '#d8452c', null); h.C(r * .28, r * .3, r * .07, '#d8452c', null);
+  },
+  // The Sentinel is salvaged machinery and is deliberately in nobody's material language: no Terran
+  // rivets, no Zerg carapace, no Protoss gold. A drum on a tripod with a twin barrel and one amber
+  // eye, in the grey-green of something that has been standing outdoors for a very long time.
+  sentinel(h, r, TC, TCd, st) {
+    const { steel, steelD, steelL, amber } = NCOL; const { sw, rec } = ANIM(st);
+    for (const [a, s] of [[2.2, 1], [2.2, -1], [0, 1]]) { const ph = s * sw * r * .18; h.L(Math.cos(a) * r * .35, Math.sin(a) * r * .35 * s, Math.cos(a) * r * 1.0 + ph, Math.sin(a) * r * 1.0 * s, steelD, 4); h.C(Math.cos(a) * r * 1.0 + ph, Math.sin(a) * r * 1.0 * s, r * .13, steelD); }
+    const bx = -rec * r * .12;
+    h.C(bx, 0, r * .62, steel);                                                       // armoured drum
+    h.C(bx, 0, r * .42, steelD, null);
+    h.R(bx - r * .5, -r * .16, r * .35, r * .32, 2, TC, OUT, 1);                       // owner's plate
+    for (let k = 0; k < 5; k++) { const a = k * 1.256 + .3; h.L(bx + Math.cos(a) * r * .44, Math.sin(a) * r * .44, bx + Math.cos(a) * r * .6, Math.sin(a) * r * .6, steelL, 1.5); }
+    const rb = rec * r * .22;
+    h.L(bx + r * .3, -r * .17, r * 1.35 - rb, -r * .15, '#33383a', 3.5);               // twin barrel
+    h.L(bx + r * .3, r * .17, r * 1.35 - rb, r * .15, '#33383a', 3.5);
+    h.L(r * 1.05 - rb, -r * .15, r * 1.4 - rb, -r * .15, steelL, 1.4);
+    h.L(r * 1.05 - rb, r * .15, r * 1.4 - rb, r * .15, steelL, 1.4);
+    h.C(bx + r * .12, 0, r * .16, amber, null);                                        // one eye
+  },
+  // ---- the tells ---------------------------------------------------------------------------
+  // `r` is the radius of the disturbed patch in pixels (DATA.buriedTells[k].r * TILE). No outline,
+  // no team colour, nothing brighter than the ground: this is a hint, not a marker.
+  tell_churn(h, r) {
+    const { soil, soilD, soilL } = NCOL;
+    h.E(0, 0, r, r * .74, soil, null);
+    h.E(-r * .12, -r * .1, r * .62, r * .42, soilL, null);
+    for (let k = 0; k < 5; k++) { const a = k * 1.257 + .4; h.L(Math.cos(a) * r * .25, Math.sin(a) * r * .18, Math.cos(a) * r * .88, Math.sin(a) * r * .64, soilD, 1.6); }
+    h.C(r * .1, 0, r * .13, '#2b2117', null);
+  },
+  tell_mound(h, r) {
+    const { soil, soilD, soilL, bone } = NCOL;
+    h.E(0, 0, r, r * .66, soil, null);
+    h.E(-r * .05, -r * .12, r * .74, r * .38, soilL, null);
+    h.Q(-r * .8, r * .05, 0, -r * .16, r * .82, r * .08, soilD, 2.5);                  // the crack
+    h.Q(-r * .3, r * .12, r * .05, r * .3, r * .42, r * .2, soilD, 1.6);
+    for (const [x, y] of [[-r * .55, -r * .3], [r * .48, r * .34], [r * .12, -r * .42]]) h.P([[x, y], [x + r * .1, y - r * .16], [x + r * .16, y]], bone, null);
+  },
+  tell_vent(h, r) {
+    const { soil, soilD, soilL } = NCOL;
+    h.E(0, 0, r, r * .7, soil, null);
+    h.E(0, r * .04, r * .66, r * .44, soilD, null);
+    for (let k = 0; k < 6; k++) { const a = k * 1.047 + .25; const x = Math.cos(a) * r * .62, y = Math.sin(a) * r * .44; h.E(x, y, r * .17, r * .12, soilL, null); h.E(x, y, r * .09, r * .06, '#221a12', null); }
+    h.E(0, r * .04, r * .16, r * .11, '#1c150f', null);
+  },
 };

@@ -34,6 +34,36 @@ const BP = {
     for (let i = 0; i < Math.floor(W / 30); i++) { h.P([[16 + i * 30, 12], [22 + i * 30, 6], [28 + i * 30, 12]], TCOL.psi, null); }
   },
   dome(h, x, y, r, col) { h.C(x, y, r, col); h.E(x - r * .3, y - r * .3, r * .4, r * .25, 'rgba(255,255,255,0.35)', null); },
+  // ---- the ruined base, shared by all three derelicts -------------------------------------------
+  // A derelict has to read as RUINED at a glance and at forty pixels, and the only cue that survives
+  // that is SILHOUETTE. Colour is the first thing lost under fog and a team tint (M8's finding on the
+  // unit pass, and it applies twice over here, because a captured derelict is tinted with its new
+  // owner's colour and must still read as a wreck). So the ruin is cut into the outline: a bitten
+  // corner, a collapsed roof line, and rubble spilling past the footprint. Everything else -- the
+  // scorch, the oxide, the dead lights -- is confirmation for someone already looking.
+  //
+  // The team stripe is drawn DARK and unlit. A captured derelict lights up through BUILDING_ANIM,
+  // which is the only painter path that gets the unit and can therefore see `u.captured`; the static
+  // sprite is cached per (id, colour) and has no state to read.
+  ruinBase(h, c, W, H, TC, opts = {}) {
+    const bite = opts.bite || 0.28, depth = opts.depth || 9;
+    const bw = W * bite;
+    // wall, with the top-right corner missing
+    h.P([[3, 12], [W - bw, 12], [W - bw + 4, 20], [W - 8, 22], [W - 3, 30], [W - 3, H - 3], [3, H - 3]], '#3a352e', OUT, 1.5);
+    // roof slab, cracked and short of the wall on the bitten side
+    h.P([[6, 6], [W - bw - 4, 6], [W - bw + 2, 14], [W - bw - 10, 18], [6, 18 - 0]], NCOL.dead, OUT, 1.2);
+    c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = 1;
+    for (let i = 1; i < Math.max(2, Math.round(W / 34)); i++) { const x = 6 + i * (W - bw - 10) / Math.max(2, Math.round(W / 34)); c.beginPath(); c.moveTo(x, 8); c.lineTo(x - 2, H - 6); c.stroke(); }
+    // exposed girders where the corner went
+    for (let k = 0; k < 3; k++) { const x = W - bw + 2 + k * 6; h.L(x, 14 + k * 2, x + 4, H * .45, NCOL.rustD, 2); }
+    h.L(W - bw - 2, 13, W - 10, 21, NCOL.rust, 2.5);
+    // scorch across the face, and rubble along the bottom edge
+    h.E(W * .62, H * .55, W * .2, H * .16, 'rgba(20,18,16,0.45)', null);
+    for (let k = 0; k < Math.max(4, Math.floor(W / 14)); k++) { const x = 5 + k * (W - 10) / Math.max(4, Math.floor(W / 14)); h.P([[x, H - 3], [x + 4, H - 9 - (k % 3) * 3], [x + 9, H - 3]], k % 2 ? NCOL.ash : '#4a4137', null); }
+    // the dead stripe: where a working building would carry its owner's colour
+    h.R(7, H - 12, Math.min(30, W / 3), 5, 2, TC, null); c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(7, H - 12, Math.min(30, W / 3), 5);
+    return { bw, depth };
+  },
   crystal(h, x, y, s, col = TCOL.psi) { h.P([[x, y - s], [x + s * .5, y], [x, y + s * .6], [x - s * .5, y]], col, 'rgba(0,40,80,0.6)', 1); h.P([[x, y - s], [x + s * .2, y - s * .2], [x, y]], 'rgba(255,255,255,0.5)', null); },
 };
 const BUILDING_PAINTERS = {
@@ -102,6 +132,69 @@ const BUILDING_PAINTERS = {
   rejuvenation_shrine(h, c, W, H, TC) { BP.pBase(h, c, W, H, TC); h.E(W / 2, H / 2 - 4, 26, 14, TCOL.Aud); h.E(W / 2, H / 2 - 4, 18, 9, '#1c3a55', null); BP.crystal(h, W / 2, H / 2 - 10, 16, '#7effd0'); BP.crystal(h, 18, H / 2 - 4, 8, '#7effd0'); BP.crystal(h, W - 18, H / 2 - 4, 8, '#7effd0'); for (let k = 0; k < 4; k++) { const a = k * 1.57 + .78; h.L(W / 2 + Math.cos(a) * 20, H / 2 - 4 + Math.sin(a) * 11, W / 2 + Math.cos(a) * 30, H / 2 - 4 + Math.sin(a) * 16, TCOL.Aul, 2); } },
   null_obelisk(h, c, W, H, TC) { BP.pBase(h, c, W, H, TC); h.P([[W / 2 - 11, H - 20], [W / 2 - 6, 6], [W / 2 + 6, 6], [W / 2 + 11, H - 20]], '#2a2038', OUT, 1.5); h.P([[W / 2 - 4, H - 22], [W / 2 - 2, 10], [W / 2 + 2, 10], [W / 2 + 3, H - 22]], '#5c4a7a', null); BP.crystal(h, W / 2, H / 2 - 8, 10, '#3a2a52'); h.C(W / 2, H / 2 - 12, 3, '#b48cff', null); BP.crystal(h, 18, H / 2 + 2, 7, '#3a2a52'); BP.crystal(h, W - 18, H / 2 + 2, 7, '#3a2a52'); },
   warded_bastion(h, c, W, H, TC) { h.P([[8, 4], [W - 8, 4], [W - 2, 14], [W - 2, H - 14], [W - 8, H - 6], [8, H - 6], [2, H - 14], [2, 14]], '#8b6c20', OUT, 1.5); h.P([[12, 9], [W - 12, 9], [W - 7, 16], [W - 7, H - 15], [W - 12, H - 11], [12, H - 11], [7, H - 15], [7, 16]], TCOL.Au, null); c.strokeStyle = 'rgba(255,240,200,0.3)'; c.lineWidth = 1; for (let k = 1; k < 3; k++) { c.beginPath(); c.moveTo(7 + k * (W - 14) / 3, 12); c.lineTo(7 + k * (W - 14) / 3, H - 13); c.stroke(); } for (let k = 0; k < 3; k++) BP.crystal(h, 20 + k * (W - 40) / 2, H / 2 - 4, 7); h.R(10, H - 10, W - 20, 4, 2, TC, null); },
+
+  // ============================ NEUTRAL STRUCTURES (race 'N') ============================
+  // One nest and three derelicts. See js/data.js for what each of them is for; what matters here is
+  // that none of them may look like it belongs to a race. The nest is dirt and chitin in NCOL, the
+  // derelicts are BP.ruinBase plus one silhouette feature each.
+  //
+  // THE NEST IS DRAWN AS IF IT WERE ALREADY OPEN, because by the time anything draws it, it is: while
+  // it is buried the map shows the `vent` tell from UNIT_PAINTERS instead, and the structure sprite
+  // only appears once the thing has surfaced. That is the same split the creatures use, and it is
+  // why neither needs a second "buried" frame.
+  carrion_warren(h, c, W, H, TC) {
+    const { soil, soilD, soilL, chit, chitD, bone } = NCOL;
+    h.E(W / 2, H * .58, W / 2 - 3, H * .42, soilD, OUT, 1.5);                          // the spoil heap
+    h.E(W / 2, H * .52, W / 2 - 8, H * .32, soil, null);
+    h.E(W / 2 - W * .06, H * .44, W * .28, H * .16, soilL, null);
+    h.E(W / 2, H * .54, W * .19, H * .17, '#191309', OUT, 1.2);                        // the throat
+    h.E(W / 2, H * .5, W * .12, H * .1, '#000', null);
+    for (let k = 0; k < 7; k++) { const a = k * .9 + .35; const x = W / 2 + Math.cos(a) * (W * .3), y = H * .55 + Math.sin(a) * (H * .28); h.P([[x - 4, y + 3], [x + (k % 2 ? 2 : -1), y - 9 - (k % 3) * 3], [x + 5, y + 3]], k % 2 ? chit : bone, OUT, 1); }
+    for (let k = 0; k < 4; k++) { const x = 8 + k * (W - 16) / 3; h.E(x, H - 9, 5, 3, '#231a11', null); h.E(x, H - 10, 7, 4, 'rgba(190,178,150,0.28)', null); }  // vent holes still smoking
+    h.E(W / 2, H * .54, W * .07, H * .05, TC, 'rgba(0,0,0,0.5)', 1);
+  },
+  // 4x3. A shed with its roof open to the sky, a cold chimney and a dead gantry crane over the bay.
+  derelict_foundry(h, c, W, H, TC) {
+    const { rust, rustD, steel, steelD, ash } = NCOL;
+    BP.ruinBase(h, c, W, H, TC, { bite: 0.3 });
+    h.R(10, 20, 22, H - 30, 2, '#2a2723');                                             // the cold furnace
+    h.R(13, 24, 16, 14, 1, ash, null);
+    h.R(14, H * .5, 14, 6, 1, rustD, null);
+    h.P([[36, 16], [46, 4], [56, 4], [50, 20]], steelD, OUT, 1.2);                     // the stack, snapped
+    h.P([[46, 4], [56, 4], [54, 0], [48, 1]], rust, null);
+    h.L(34, 26, W - 24, 30, steelD, 3);                                                // the gantry rail
+    h.L(W * .55, 28, W * .55, H - 22, rust, 2);                                        // and the hook, dropped
+    h.C(W * .55, H - 20, 4, rustD);
+    for (let k = 0; k < 3; k++) h.R(W - 34 + k * 9, H - 26, 6, 14, 1, k === 1 ? '#26221d' : rustD, null);
+    h.E(W * .3, H - 12, 13, 6, ash, null);
+  },
+  // 3x2. A slab of dark screens with a snapped data spire leaning off it, and its panels on the floor.
+  derelict_archive(h, c, W, H, TC) {
+    const { steel, steelD, ash, rust, dead } = NCOL;
+    BP.ruinBase(h, c, W, H, TC, { bite: 0.24 });
+    h.R(9, 18, W * .42, H - 30, 2, '#23262a');                                         // the screen wall
+    for (let k = 0; k < 4; k++) { const x = 12 + (k % 2) * (W * .19), y = 21 + Math.floor(k / 2) * ((H - 34) / 2); h.R(x, y, W * .15, (H - 36) / 2, 1, k === 2 ? '#2f3d3a' : ash, null); }
+    h.L(11, 24, 11 + W * .38, 24 + 3, 'rgba(120,150,140,0.25)', 1);                    // one pane still faintly lit by nothing
+    h.P([[W * .62, H - 12], [W * .69, 8], [W * .76, 9], [W * .72, H - 12]], dead, OUT, 1.3);   // the spire, leaning
+    h.P([[W * .69, 8], [W * .76, 9], [W * .84, 3]], steelD, null);                     // the broken tip
+    h.L(W * .66, H * .5, W * .74, H * .5, rust, 1.5);
+    for (let k = 0; k < 3; k++) h.P([[W - 26 + k * 8, H - 6], [W - 22 + k * 8, H - 14], [W - 16 + k * 8, H - 6]], k % 2 ? steel : ash, null);   // spilled panels
+  },
+  // 2x2. A lattice mast leaning off true with a cracked dish; the cabin at its foot is caved in.
+  derelict_watchtower(h, c, W, H, TC) {
+    const { steel, steelD, steelL, rust, rustD, ash, dead } = NCOL;
+    h.P([[3, H - 20], [W - 6, H - 22], [W - 3, H - 3], [3, H - 3]], '#332f29', OUT, 1.5);   // the caved cabin
+    h.R(6, H - 18, 10, 9, 1, ash, null);
+    h.E(W * .62, H - 8, 8, 4, rustD, null);
+    const mx = W * .48, lean = 5;                                                       // the mast, off true
+    h.L(mx - 7, H - 20, mx - 2 + lean, 12, steelD, 3);
+    h.L(mx + 7, H - 20, mx + 8 + lean, 13, steelD, 3);
+    for (let k = 0; k < 4; k++) { const t = k / 4, y0 = H - 22 - k * ((H - 34) / 4), y1 = y0 - (H - 34) / 4; const x0 = mx - 6 + t * lean, x1 = mx + 6 + (t + .25) * lean; h.L(x0, y0, x1, y1, k === 2 ? rust : steel, 1.4); h.L(x1, y0, x0, y1, k === 1 ? rustD : steel, 1.4); }
+    h.P([[mx + 2 + lean, 14], [mx + 13 + lean, 7], [mx + 13 + lean, 18], [mx + 3 + lean, 20]], dead, OUT, 1.2);   // the dish, cracked
+    h.L(mx + 5 + lean, 10, mx + 11 + lean, 19, ash, 1.4);
+    h.C(mx + 6 + lean, 14, 2, rustD, null);
+    h.R(4, H - 10, Math.min(20, W / 2), 4, 1, TC, null); c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(4, H - 10, Math.min(20, W / 2), 4);
+  },
 };
 // Animated overlays drawn on top of static sprites each frame (world coords, x0/y0 = footprint top-left)
 const BUILDING_ANIM = {
@@ -126,5 +219,43 @@ const BUILDING_ANIM = {
   miasma_gland(ctx, u, x0, y0, W, H, f) { const cx = x0 + W / 2, cy = y0 + H / 2; for (let k = 0; k < 3; k++) { const t = ((f / 56) + k / 3) % 1; ctx.fillStyle = `rgba(170,120,200,${0.3 * (1 - t)})`; ctx.beginPath(); ctx.ellipse(cx + Math.cos(k * 2.1 + t * 1.2) * (6 + t * 18), cy + Math.sin(k * 2.1) * 5 - t * 6, 4 + t * 7, 3 + t * 5, 0, 0, 7); ctx.fill(); } },
   rejuvenation_shrine(ctx, u, x0, y0, W, H, f) { if (u.unpowered) return; const cx = x0 + W / 2, cy = y0 + H / 2 - 8; const t = (f / 60) % 1; ctx.strokeStyle = `rgba(126,255,208,${0.5 * (1 - t)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(cx, cy, 8 + t * 22, 5 + t * 13, 0, 0, 7); ctx.stroke(); },
   null_obelisk(ctx, u, x0, y0, W, H, f) { if (u.unpowered) return; const cx = x0 + W / 2, cy = y0 + H / 2 - 8; const t = (f / 70) % 1; ctx.strokeStyle = `rgba(180,140,255,${0.45 * t})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(cx, cy, 30 - t * 24, 17 - t * 13, 0, 0, 7); ctx.stroke(); },
+
+  // ---- race 'N' -------------------------------------------------------------------------------
+  // The nest breathes whether or not anybody woke it, because a nest you can hear is a nest you were
+  // warned about -- the same argument as the buried tell, one layer up.
+  carrion_warren(ctx, u, x0, y0, W, H, f) {
+    const cx = x0 + W / 2, cy = y0 + H * .52;
+    const b = 1 + Math.sin((f + (u.id || 0) * 13) * 0.045) * 0.14;
+    ctx.fillStyle = 'rgba(24,18,10,0.5)'; ctx.beginPath(); ctx.ellipse(cx, cy, W * .12 * b, H * .1 * b, 0, 0, 7); ctx.fill();
+    for (let k = 0; k < 3; k++) { const t = ((f / 70) + k / 3) % 1; ctx.fillStyle = `rgba(190,178,150,${0.22 * (1 - t)})`; ctx.beginPath(); ctx.ellipse(cx + Math.cos(k * 2.1) * 12, cy - t * 12, 3 + t * 7, 2 + t * 5, 0, 0, 7); ctx.fill(); }
+  },
+  // THE ONLY THING IN THE DRAW PASS THAT KNOWS A DERELICT WAS CAPTURED.
+  // Sprites.building caches the static sprite per (id, colour) and hands the painter no unit, so a
+  // painter cannot branch on state; an animated overlay is handed the unit and can. `u.captured` is
+  // the field js/game.js sets on capture (see the derelict contract in js/data.js). It is absent
+  // everywhere else -- on a derelict nobody has taken, and on the fake unit a test or a command-card
+  // icon passes in -- and absent means "still a wreck", which is why the test is written this way
+  // round rather than as `if (!u.captured) return` plus a ruin overlay.
+  derelict_foundry(ctx, u, x0, y0, W, H, f) {
+    if (!u.captured) return;
+    const g = 0.4 + Math.sin(f * 0.07) * 0.22;
+    ctx.fillStyle = `rgba(255,150,60,${g})`; ctx.fillRect(x0 + 13, y0 + 24, 16, 14);           // the furnace, relit
+    ctx.fillStyle = `rgba(255,210,120,${0.5 + Math.sin(f * 0.11) * 0.3})`;
+    for (let k = 0; k < 3; k++) ctx.fillRect(x0 + W - 34 + k * 9, y0 + H - 24, 6, 4);
+  },
+  derelict_archive(ctx, u, x0, y0, W, H, f) {
+    if (!u.captured) return;
+    for (let k = 0; k < 4; k++) {                                                              // screens waking one at a time
+      const t = ((f / 26) + k * 0.31) % 1; if (t > 0.72) continue;
+      ctx.fillStyle = `rgba(120,220,200,${0.18 + t * 0.3})`;
+      ctx.fillRect(x0 + 12 + (k % 2) * (W * .19), y0 + 21 + Math.floor(k / 2) * ((H - 34) / 2), W * .15, (H - 36) / 2);
+    }
+  },
+  derelict_watchtower(ctx, u, x0, y0, W, H, f) {
+    if (!u.captured) return;
+    const cx = x0 + W * .54 + 5, cy = y0 + 14;                                                 // the dish, sweeping
+    for (let k = 0; k < 2; k++) { const t = ((f / 48) + k / 2) % 1; ctx.strokeStyle = `rgba(150,220,255,${0.4 * (1 - t)})`; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(cx, cy, 5 + t * 26, 3 + t * 15, 0, 0, 7); ctx.stroke(); }
+    ctx.fillStyle = `rgba(255,90,70,${0.4 + Math.sin(f * 0.13) * 0.35})`; ctx.beginPath(); ctx.arc(cx, cy, 2.5, 0, 7); ctx.fill();
+  },
 };
 BUILDING_ANIM.lair = BUILDING_ANIM.hatchery; BUILDING_ANIM.hive = BUILDING_ANIM.hatchery; BUILDING_ANIM.refinery = BUILDING_ANIM.extractor; BUILDING_ANIM.assimilator = BUILDING_ANIM.extractor;
