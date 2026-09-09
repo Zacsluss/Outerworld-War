@@ -346,6 +346,27 @@ const Render = {
       if (mk.res) { this.drawResourceRing(ctx, mk.res, a); continue; }
       ctx.strokeStyle = `rgba(${mk.color},${a})`; ctx.lineWidth = 2 / z; ctx.beginPath(); ctx.ellipse(mk.x, mk.y, 5 + (20 - mk.t) * 0.7, (5 + (20 - mk.t) * 0.7) * 0.6, 0, 0, 7); ctx.stroke();
     }
+    // Pings and drawings (M12 item 9). World space, above the ground and under the HUD. An ally's
+    // signal is drawn in that player's colour, which is the only thing that makes a shared ping useful
+    // in a team game -- "someone pinged" is noise, "blue pinged the natural" is information.
+    if (G.signals && G.signals.length) {
+      for (const sg of G.signals) {
+        if (!G.allied(sg.owner, G.human)) continue;
+        const col = (G.players[sg.owner] && G.players[sg.owner].color) || '#fff';
+        const a = Math.min(1, sg.t / 40);
+        ctx.globalAlpha = a; ctx.strokeStyle = col; ctx.lineWidth = 2 / z; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+        if (sg.kind === 'draw' && sg.pts && sg.pts.length >= 4) {
+          ctx.beginPath(); ctx.moveTo(sg.pts[0], sg.pts[1]);
+          for (let i = 2; i < sg.pts.length; i += 2) ctx.lineTo(sg.pts[i], sg.pts[i + 1]);
+          ctx.stroke();
+        } else {
+          const grow = (96 - sg.t) * 0.9;
+          ctx.beginPath(); ctx.arc(sg.x, sg.y, 10 + grow, 0, Math.PI * 2); ctx.stroke();
+          ctx.beginPath(); ctx.arc(sg.x, sg.y, 4, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
     ctx.restore();
     if (UI.drag && UI.dragging) { const d = UI.drag; ctx.strokeStyle = '#4f4'; ctx.lineWidth = 1; ctx.strokeRect(Math.min(d.x0, d.x1) + .5, Math.min(d.y0, d.y1) + .5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0)); }
     // The line-formation preview. The mechanic has worked since M11 and was reported as missing,

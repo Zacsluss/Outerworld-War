@@ -357,6 +357,14 @@ const G = {
         else { const [sx, sy] = this.freeSpotAround(b, ud.fly); u = this.spawnUnit(it.id, b.owner, sx + (i ? 14 : 0), sy); }
         const rr = this.rallyFor(b, u) || (b.def.egg && b.rallyFrom ? this.rallyFor(b.rallyFrom, u) : null);
         if (rr) this.applyRally(u, rr);
+        // A NEW WORKER MINES (M12 item 4). Only when there is no rally to obey -- an explicit rally is
+        // an instruction and must win -- and only from a hall, so a worker built at some forward
+        // building does not immediately walk home across the map. This is the single most-clicked
+        // piece of busywork the game had: every worker ever produced needed a manual right-click.
+        else if (ud.worker && b.def.depot) {
+          const m = this.findNearestResource(u, 'mineral');
+          if (m) u.applyOrder({ type: 'gather', target: m, phase: 'goto' });
+        }
       }
       if (b.def.egg) { this.kill(b, null, true); }
       if (b.def.id === 'lurker_egg' || b.def.id === 'cocoon') { }
@@ -684,6 +692,86 @@ const G = {
     if (p.human) p.msg(b.def.name + ' captured.', 'info');
   },
 
+  // ==========================================================================
+  // AUTOCAST -- M12 item 6.
+  // ==========================================================================
+  // An armed ability fires on its own. `u.armed` is a Set of ability ids on the UNIT, not on the def,
+  // because arming is a decision the player makes about these medics and not about medics in general;
+  // js/snapshot.js encodes a Set natively (`__set`), so it round-trips a save with no extra work.
+  //
+  // Each ability brings its own rule for when firing would be WASTED, and that is the whole design.
+  // A generic "has enough energy" gate is not sufficient: a heal cast on a full-health unit spends
+  // energy for nothing just as surely as casting with none does, and an ammo builder that ignores its
+  // cap burns minerals into a queue that will be thrown away. So the rules live here, one per ability,
+  // next to each other where they can be compared.
+  //
+  // Staggered by unit id like every other per-unit scan in this file: a hundred armed medics asking
+  // "is anyone hurt near me" every frame is a hundred radius queries a frame for something that only
+  // has to feel responsive.
+  tickAutocast() {
+    if ((this.frame & 7) !== 0) return;
+    for (const u of this.units) {
+      if (!u.alive || !u.armed || !u.armed.size || u.inside || u.disabled) continue;
+      if (((this.frame >> 3) + u.id) % 3 !== 0) continue;
+      for (const id of u.armed) {
+        const ab = DATA.abilities[id]; if (!ab || !ab.autocast) continue;
+        if (ab.energy && (u.energy || 0) < ab.energy) continue;
+        if (id === 'build_scarab' || id === 'build_interceptor') {
+          // ammo: only up to the cap, and only if nothing is already in the queue for it
+          const p = this.players[u.owner];
+          const isScarab = id === 'build_scarab';
+          const cap = isScarab ? (p.hasTech('reaver_capacity') ? 10 : 5) : (p.hasTech('carrier_capacity') ? 8 : 4);
+          const have = (isScarab ? u.scarabs : u.interceptors) + u.prod.length;
+          if (have >= cap) continue;
+          const ud = DATA.units[ab.unit];
+          if (!p.canAfford(ud.min, ud.gas)) continue;
+          this.queueUnit(u, ab.unit);
+          continue;
+        }
+        // the two support casts: find the nearest ally that the cast would actually help
+        const r = (u.sight || 7) * TILE;
+        let best = null, bd = 1e9;
+        for (const t of this.near(u.x, u.y, r)) {
+          if (t === u || !t.alive || t.inside || t.isBuilding || !this.allied(u.owner, t.owner)) continue;
+          if (id === 'heal') { if (t.def.race !== 'T' || t.def.mech || t.hp >= t.maxHp) continue; }
+          else if (id === 'restoration') { const f = t.fx; if (!f) continue; if (!(f.plague > 0 || f.blind > 0 || f.ensnare > 0 || f.lockdown > 0 || f.irradiate > 0 || f.maelstrom > 0 || t.acidSpores > 0)) continue; }
+          const d = distPt(u.x, u.y, t.x, t.y); if (d < bd) { bd = d; best = t; }
+        }
+        if (best) { Abilities.issue(u, id, best, best.x, best.y, false); break; }   // one cast a pass
+      }
+    }
+  },
+  // Arm or disarm an ability on a set of units. Returns the state it settled on, so the caller can say
+  // so; a mixed selection is armed rather than toggled per unit, because a toggle that leaves half the
+  // group armed is a toggle nobody can reason about.
+  setAutocast(units, id, on) {
+    const ab = DATA.abilities[id]; if (!ab || !ab.autocast) return false;
+    const want = on === undefined ? !units.every(u => u.armed && u.armed.has(id)) : !!on;
+    for (const u of units) {
+      if (!u.armed) u.armed = new Set();
+      if (want) u.armed.add(id); else u.armed.delete(id);
+    }
+    return want;
+  },
+  // PINGS AND DRAWINGS -- M12 item 9.
+  //
+  // These go through the COMMAND SYSTEM rather than straight into a render list, which is the whole
+  // point: a ping only your own client can see is a note to yourself. Routed through CMD it reaches
+  // allies over the relay and it lands in the replay, so watching a game back shows you what people
+  // were pointing at, which is most of what makes a replay readable.
+  //
+  // It writes to G.signals and to NOTHING ELSE. G.stateHash does not include signals and must not:
+  // a cosmetic broadcast that could change the simulation would be a desync waiting to happen, and a
+  // player spamming pings would be able to cause one. Signals are also not snapshotted -- a rejoining
+  // client has no business seeing a ping from before it arrived.
+  signals: [],
+  signal(owner, kind, x, y, pts) {
+    if (!this.signals) this.signals = [];
+    if (this.signals.length > 64) this.signals.splice(0, this.signals.length - 64);   // a spam bound, not a design
+    this.signals.push({ kind, x, y, pts: pts || null, owner, t: kind === 'draw' ? 150 : 96 });
+    if (kind === 'ping' && this.allied(owner, this.human)) { this.lastAlertPos = { x, y }; }
+    return true;
+  },
   // ---------------- commands (validated) ----------------
   queueUnit(b, uid) {
     const p = this.players[b.owner], ud = DATA.units[uid];
@@ -850,6 +938,8 @@ const G = {
     this.rebuildGrid();
     if (this.frame % 3 === 0) this.updateVision();
     if (this.neutral) this.tickNeutrals();
+    this.tickAutocast();
+    if (this.signals && this.signals.length) { for (let i = this.signals.length - 1; i >= 0; i--) if (--this.signals[i].t <= 0) this.signals.splice(i, 1); }
     for (const u of this.units) { if (u.alive) { u.px = u.x; u.py = u.y; } }
     for (const u of this.units) { if (u.alive) { try { u.tick(); } catch (e) { console.error(e, u.def.id); } } }
     this.separate();

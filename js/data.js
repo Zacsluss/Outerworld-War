@@ -611,8 +611,15 @@ const DATA = (() => {
   A('morph_menu', 'Morph', 'M', 'menu');
   A('unload', 'Unload All', 'U', 'instant');
   A('stim', 'Stim Pack', 'T', 'instant', { tech: 'stim' });
-  A('heal', 'Heal', 'E', 'unit', { energy: 0, auto: true });
-  A('restoration', 'Restoration', 'R', 'unit', { energy: 50, tech: 'restoration_tech' });
+  // `autocast: true` means the ability may be ARMED by the player (right-click its card button) and
+  // will then fire on its own. The set is deliberately Brood War's own: heal, restoration, and the two
+  // ammo builders. Nothing here consumes a unit -- there is no autocast on infest, nuke, consume or any
+  // morph, and there must not be, because an ability that spends a unit without being asked is a bug
+  // the player cannot undo. Each armed ability carries its own "would this be wasted" rule in
+  // G.tickAutocast; a generic energy check is not enough (a full-health target wastes a heal just as
+  // surely as no energy does).
+  A('heal', 'Heal', 'E', 'unit', { energy: 0, auto: true, autocast: true });
+  A('restoration', 'Restoration', 'R', 'unit', { energy: 50, tech: 'restoration_tech', autocast: true });
   A('optical_flare', 'Optical Flare', 'F', 'unit', { energy: 75, tech: 'optical_flare_tech' });
   A('lockdown', 'Lockdown', 'L', 'unit', { energy: 100, tech: 'lockdown_tech', range: 8 });
   A('cloak_ghost', 'Personnel Cloaking', 'C', 'toggle', { energy: 25, tech: 'personnel_cloaking' });
@@ -644,8 +651,8 @@ const DATA = (() => {
   A('feedback', 'Feedback', 'F', 'unit', { energy: 50, range: 10 });
   A('mind_control', 'Mind Control', 'C', 'unit', { energy: 150, tech: 'mind_control_tech', range: 8 });
   A('maelstrom', 'Maelstrom', 'E', 'point', { energy: 100, tech: 'maelstrom_tech', range: 10 });
-  A('build_scarab', 'Build Scarab', 'B', 'produce', { unit: 'scarab' });
-  A('build_interceptor', 'Build Interceptor', 'I', 'produce', { unit: 'interceptor' });
+  A('build_scarab', 'Build Scarab', 'B', 'produce', { unit: 'scarab', autocast: true });
+  A('build_interceptor', 'Build Interceptor', 'I', 'produce', { unit: 'interceptor', autocast: true });
   A('disruption_web', 'Disruption Web', 'D', 'point', { energy: 125, tech: 'disruption_web_tech', range: 9 });
   A('recall', 'Recall', 'R', 'point', { energy: 150, tech: 'recall_tech', range: 999 });
   A('stasis_field', 'Stasis Field', 'T', 'point', { energy: 100, tech: 'stasis_tech', range: 9 });

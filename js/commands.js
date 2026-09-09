@@ -33,6 +33,7 @@ const CMD = {
     switch (c.t) {
       case 'order': { const o = this.unpackOrder(c.o); if (o.type === 'build' && !o.def) return false; if (o.type !== 'idle' && o.type !== 'hold' && o.type !== 'move' && o.type !== 'attackmove' && o.type !== 'patrol' && o.type !== 'unload' && o.type !== 'land' && !o.target && !o.def && !o.then && o.type !== 'return') return false; let ok = false; for (const u of this.units(c.u, own)) { O.setOrder.call(u, o, c.s); ok = true; } return ok; }
       case 'stop': for (const u of this.units(c.u, own)) O.stop.call(u); return true;
+      case 'signal': return O.signal.call(G, own, c.k, c.x, c.y, c.pts);
       case 'train': { const b = CMD.bldg(c.b, own); return b ? O.queueUnit.call(G, b, c.id) : false; }
       case 'larva': { const l = CMD.bldg(c.b, own); return l ? O.larvaMorph.call(G, l, c.id) : false; }
       case 'upg': { const b = CMD.bldg(c.b, own); return b ? O.queueUpgrade.call(G, b, c.id) : false; }
@@ -56,6 +57,7 @@ const CMD = {
   pack: {
     setOrder: (u, o, shift) => ({ t: 'order', u: [u.id], o: CMD.packOrder(o), s: !!shift }),
     stop: u => ({ t: 'stop', u: [u.id] }),
+    signal: (g, owner, kind, x, y, pts) => ({ t: 'signal', k: kind, x: Math.round(x), y: Math.round(y), pts: pts ? pts.map(v => Math.round(v)) : null }),
     queueUnit: (g, b, id) => ({ t: 'train', b: b.id, id }),
     larvaMorph: (g, l, id) => ({ t: 'larva', b: l.id, id }),
     queueUpgrade: (g, b, id) => ({ t: 'upg', b: b.id, id }),
@@ -85,7 +87,7 @@ const CMD = {
       };
     };
     wrap(Unit.prototype, 'setOrder', 'setOrder'); wrap(Unit.prototype, 'stop', 'stop');
-    for (const n of ['queueUnit', 'larvaMorph', 'queueUpgrade', 'queueTech', 'queueAddon', 'queueMorph', 'cancelProd', 'cancelBuilding', 'setRally', 'liftBuilding', 'unloadAll', 'unloadCargo', 'cheat']) wrap(G, n, n);
+    for (const n of ['queueUnit', 'larvaMorph', 'queueUpgrade', 'queueTech', 'queueAddon', 'queueMorph', 'cancelProd', 'cancelBuilding', 'setRally', 'liftBuilding', 'unloadAll', 'unloadCargo', 'cheat', 'signal']) wrap(G, n, n);
     wrap(Abilities, 'issue', 'issue'); wrap(Abilities, 'merge', 'merge');
   },
 };

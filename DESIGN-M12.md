@@ -122,4 +122,17 @@ measures nothing. Balance measurement remains separately gated on an explicit in
 
 ## Status
 
-Wave one: item 1 done. Everything else: not started.
+**Wave one: DONE** (2026-09-09). Items 1-9 all land, `test/qol.js` covers them, 43 suites green.
+
+Two of the nine turned out to be already built and only needed verifying, which is worth recording so
+nobody builds them twice: **7 repeat/queue building** already worked -- `UI.confirmPlacement(shift)`
+queues the order and keeps the placement ghost alive -- and **8 control-group tab across types** already
+worked, via `UI.cycleSubgroup` with the command card following `UI.subgroup`.
+
+And one was smaller than it looked but in a different place than expected. **5 smart casting** was
+supposed to stop N casters all firing at one point; that was already true, because the ability branch in
+`execPending` returns after the first unit. What was NOT true is that it picked a sensible caster -- it
+took whatever was first in the selection, with no energy and standing furthest away. So smart casting
+here means "the right caster", not "one caster", and the test measures that.
+
+Waves two to five: not started.

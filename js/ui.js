@@ -217,13 +217,17 @@ const UI = {
   select(units, add) {
     this.subgroup = 0;   // a new selection starts on its first kind
     let list = add ? this.selection.slice() : [];
-    for (const u of units) { if (!list.includes(u) && list.length < 12) list.push(u); }
+    for (const u of units) { if (!list.includes(u)) list.push(u); }   // no cap; see below
     // if mix of own units and others, keep own only; buildings only when nothing else
     const own = list.filter(u => u.owner === G.human);
     if (own.length && own.length < list.length) list = own;
     const mobile = list.filter(u => !u.isBuilding);
     if (mobile.length && mobile.length < list.length) list = mobile;
-    if (list.length > 1) list = list.filter(u => !u.def.larva || list.every(v => v.def.larva)).slice(0, 12);
+    // No cap. Brood War's twelve was a genuine skill expression and removing it is a real change to how
+    // the game plays; it goes because this project already has select-all-army, control groups and a
+    // paginating command card, so the cap was producing clicking rather than decisions. drawSelGrid is
+    // what keeps an unbounded selection legible.
+    if (list.length > 1) list = list.filter(u => !u.def.larva || list.every(v => v.def.larva));
     this.selection = list; this.pending = null; this.placing = null; this.cardMenu = null;
     if (list.length) Sound.select(list[0]);
   },
@@ -250,12 +254,16 @@ const UI = {
     if (typeof Codex !== 'undefined' && Codex.isOpen()) { Codex.move(m.x, m.y); return; }
     if (this.drag && m.down && distPt(m.x, m.y, this.drag.x0, this.drag.y0) > 4) { this.dragging = true; this.drag.x1 = m.x; this.drag.y1 = m.y; }
     if (this.lineDrag) { this.lineDrag.x1 = m.x; this.lineDrag.y1 = m.y; }
+    if (this.sketch) { const n = this.sketch.length; if (n < 2 || distPt(m.wx, m.wy, this.sketch[n - 2], this.sketch[n - 1]) > 14) { this.sketch.push(m.wx, m.wy); if (this.sketch.length > 80) this.sketch.splice(0, 2); } }
     if (this.miniDrag) { const [wx, wy] = this.miniToWorld(m.x, m.y); this.centerOn(wx, wy); }
     if (this.placing) { const d = this.placing.def; this.placing.tx = Math.floor(m.wx / TILE - d.w / 2 + 0.5); this.placing.ty = Math.floor(m.wy / TILE - d.h / 2 + 0.5); if (d.onGeyser) { const g = G.map.resources.find(r => r.type === 'geyser' && m.wx >= r.x * TILE - 16 && m.wx < (r.x + r.w) * TILE + 16 && m.wy >= r.y * TILE - 16 && m.wy < (r.y + r.h) * TILE + 16); if (g) { this.placing.tx = g.x; this.placing.ty = g.y; } } }
     this.hover = (m.y < Render.H - this.consoleH) ? this.unitAt(m.wx, m.wy) : null;
   },
   onDown(e) {
     const m = this.mouse; m.x = e.clientX; m.y = e.clientY; [m.wx, m.wy] = this.screenToWorld(m.x, m.y);
+    // Alt is the signalling modifier (M12 item 9): alt-click pings, alt-drag draws a stroke. Both go
+    // out as commands, so allies see them and a replay keeps them.
+    if (e.altKey && e.button === 0 && m.y < Render.H - this.consoleH) { e.preventDefault(); this.sketch = [m.wx, m.wy]; return; }
     if (typeof Codex !== 'undefined' && Codex.isOpen()) { Codex.click(m.x, m.y, e.button); return; }
     if (Sound.ctx && Sound.ctx.state === 'suspended') Sound.ctx.resume();
     if (this.menu) { this.menuClick(m.x, m.y); return; }
@@ -277,6 +285,14 @@ const UI = {
   },
   onUp(e) {
     const m = this.mouse; if (this.miniDrag) { this.miniDrag = false; return; }
+    if (this.sketch) {
+      const pts = this.sketch; this.sketch = null;
+      // a stroke of one point is a click, and a click is a ping -- so the same gesture covers both and
+      // there is nothing extra to learn
+      if (pts.length <= 4) G.signal(G.human, 'ping', pts[0], pts[1], null);
+      else G.signal(G.human, 'draw', pts[0], pts[1], pts);
+      return;
+    }
     if (e.button === 2 && this.lineDrag) {
       const d = this.lineDrag; this.lineDrag = null;
       const len = distPt(d.x0, d.y0, d.x1, d.y1);
@@ -322,7 +338,7 @@ const UI = {
     if (k === 'F9' || k === 'Pause') { if (!this.net) G.paused = !G.paused; return; }
     if (k === '+' || k === '=') { this.speedIdx = Math.min(this.maxSpeedIdx(), this.speedIdx + 1); return; } if (k === '-') { this.speedIdx = Math.max(0, this.speedIdx - 1); return; }
     if (k === ' ') { if (this.lastAlertPos) this.centerOn(this.lastAlertPos.x, this.lastAlertPos.y); return; }
-    if (/^[0-9]$/.test(k)) { if (e.ctrlKey) { this.groups[k] = this.selection.slice(); e.preventDefault(); } else if (e.shiftKey) { this.groups[k] = (this.groups[k] || []).concat(this.selection.filter(u => !(this.groups[k] || []).includes(u))).slice(0, 12); } else if (this.groups[k] && this.groups[k].length) { const g = this.groups[k].filter(u => u.alive); if (this.lastGroupKey === k && performance.now() - this.lastGroupT < 400) this.centerOn(g[0].x, g[0].y); this.selection = g; this.pending = null; this.placing = null; this.cardMenu = null; this.lastGroupKey = k; this.lastGroupT = performance.now(); } return; }
+    if (/^[0-9]$/.test(k)) { if (e.ctrlKey) { this.groups[k] = this.selection.slice(); e.preventDefault(); } else if (e.shiftKey) { this.groups[k] = (this.groups[k] || []).concat(this.selection.filter(u => !(this.groups[k] || []).includes(u))); } else if (this.groups[k] && this.groups[k].length) { const g = this.groups[k].filter(u => u.alive); if (this.lastGroupKey === k && performance.now() - this.lastGroupT < 400) this.centerOn(g[0].x, g[0].y); this.selection = g; this.pending = null; this.placing = null; this.cardMenu = null; this.lastGroupKey = k; this.lastGroupT = performance.now(); } return; }
     if (/^F[2-8]$/.test(k)) { if (e.shiftKey) this.camSaves[k] = { x: Render.camX, y: Render.camY, z: Render.zoom }; else if (this.camSaves[k]) { if (this.camSaves[k].z) Render.setZoom(this.camSaves[k].z); Render.camX = this.camSaves[k].x; Render.camY = this.camSaves[k].y; this.clampCam(); } return; }
     const up = k.length === 1 ? k.toUpperCase() : k;
     for (const b of this.currentCard()) if (b.hk === up) { this.press(b); return; }
@@ -488,6 +504,24 @@ const UI = {
     const p = this.pending; let sel = this.ownSel(); this.pending = null; if (!sel.length) return;
     if (p.kind === 'rally') { const b = sel[0]; G.setRally(b, wx, wy, t); return; }
     if (p.caster && p.caster.alive) sel = [p.caster]; // ability offered on a parent's card but cast by its add-on (Comsat on a Command Center)
+    // SMART CASTING (M12 item 5). This loop casts from EVERY selected unit, so eight templar with
+    // storm selected produced eight storms on one spot -- eight times the energy for one storm's worth
+    // of damage, and the single most expensive misclick in the game. One press is now one cast, from
+    // the unit best placed to make it: enough energy first, then nearest to the target, then lowest id
+    // so the choice is stable and a replay reproduces it.
+    //
+    // Deliberately not applied to `auto` abilities, which are the toggles and instant self-casts where
+    // "all of them" is exactly what the player means (stim, cloak, siege, burrow).
+    if (p.kind === 'ability' && sel.length > 1) {
+      const ab = DATA.abilities[p.abil];
+      if (ab && !ab.auto) {
+        const cost = ab.energy || 0;
+        const able = sel.filter(x => x.alive && !x.disabled && (!cost || (x.energy || 0) >= cost));
+        const pool = able.length ? able : sel;
+        pool.sort((a, b) => distPt(a.x, a.y, wx, wy) - distPt(b.x, b.y, wx, wy) || a.id - b.id);
+        sel = [pool[0]];
+      }
+    }
     for (const u of sel) {
       if (u.isBuilding && !u.lifted && p.kind !== 'ability') continue;
       switch (p.kind) {
@@ -601,11 +635,24 @@ const UI = {
       }
       return btns;
     }
-    if (u.isBuilding && sel.length === 1) {
+    // MULTI-BUILDING PRODUCTION (M12 item 3). The card used to require a selection of exactly one
+    // building, so five barracks meant five clicks on five buildings to queue five marines. Now any
+    // number of buildings of the SAME type share one card, and a production button goes to whichever
+    // of them has the shortest queue -- which is what a player doing it by hand is trying to achieve.
+    //
+    // Same type only, deliberately. A mixed selection of a barracks and a factory has no shared card
+    // and no sensible answer to "queue a marine"; Tab already cycles the subgroup for that case.
+    // Research and upgrades stay on ONE building even when several are selected: queueing the same
+    // upgrade five times is a mistake every time, not a shortcut.
+    const bldGroup = sel.length > 1 && sel.every(x => x.isBuilding && x.def.id === sel[0].def.id && x.done && !x.lifted) ? sel : null;
+    if (u.isBuilding && (sel.length === 1 || bldGroup)) {
       const d = u.def; let i = 0;
+      // the building a production order should go to: fewest items queued, ties broken by id so it is
+      // stable frame to frame and does not jitter between two equal buildings
+      const target = () => (bldGroup ? bldGroup.slice().sort((a, b) => a.prod.length - b.prod.length || a.id - b.id)[0] : u);
       if (!u.done) { B(this.CARD_SLOTS - 1, 'Cancel', 'Escape', () => G.cancelBuilding(u), { pin: true }); return btns; }
       if (u.lifted) { B(0, 'Land', 'L', setPending('land'), {}); btns[0].fn = () => { this.placing = { def: d, builder: u, land: true, tx: 0, ty: 0 }; }; return btns; }
-      for (const id of d.produces) { const ud = DATA.units[id]; const ok = p.hasReq(ud); B(i++, ud.name, ud.hk, () => G.queueUnit(u, id), { cost: ud, enabled: ok, dim: !ok, why: why(ud) }); }
+      for (const id of d.produces) { const ud = DATA.units[id]; const ok = p.hasReq(ud); B(i++, ud.name, ud.hk, () => G.queueUnit(target(), id), { cost: ud, enabled: ok, dim: !ok, why: why(ud) }); }
       if (d.id === 'reaver' || d.id === 'carrier') { }
       for (const id of d.upg) { const ud = DATA.upgrades[id]; const lvl = p.upgLevel(id); if (lvl >= 3) continue; const rq = ud.req[lvl]; const ok = !rq || p.hasBuilding(rq); B(i++, ud.name + ' L' + (lvl + 1), ud.hk, () => G.queueUpgrade(u, id), { cost: { min: ud.min[lvl], gas: ud.gas[lvl], time: ud.time[lvl] }, enabled: ok && !p.researching.has(id), dim: !ok || p.researching.has(id), why: !ok && rq ? 'Requires ' + DATA.buildings[rq].name : p.researching.has(id) ? 'Already researching.' : null }); }
       for (const id of d.tech) { const td = DATA.techs[id]; if (p.tech.has(id)) continue; const ok = !td.req || p.hasReq(td); B(i++, td.name, td.hk, () => G.queueTech(u, id), { cost: td, enabled: ok && !p.researching.has(id), dim: !ok || p.researching.has(id), why: !ok ? why(td) : p.researching.has(id) ? 'Already researching.' : null }); }
@@ -656,8 +703,8 @@ const UI = {
       else if (ab.kind === 'toggle' || ab.kind === 'instant') B(i++, label, ab.hk, () => mobile.forEach(x => Abilities.issue(x, id)));
       else if (ab.kind === 'morph') B(i++, label, ab.hk, () => mobile.forEach(x => Abilities.issue(x, id)), { cost: DATA.units[ab.unit] });
       else if (ab.kind === 'merge') B(i++, label, ab.hk, () => Abilities.merge(mobile, id));
-      else if (ab.kind === 'produce') B(i++, label, ab.hk, () => mobile.forEach(x => G.queueUnit(x, ab.unit)), { cost: DATA.units[ab.unit] });
-      else B(i++, label, ab.hk, () => { this.pending = { kind: 'ability', abil: id }; }, { energy: ab.energy });
+      else if (ab.kind === 'produce') B(i++, label, ab.hk, () => mobile.forEach(x => G.queueUnit(x, ab.unit)), { cost: DATA.units[ab.unit], abil: id });
+      else B(i++, label, ab.hk, () => { this.pending = { kind: 'ability', abil: id }; }, { energy: ab.energy, abil: id });
     }
     if (mobile.some(x => x.cargo.length) && !abils.includes('unload')) B(Math.min(8, i++), 'Unload', 'U', setPending('unload'));
     // A ferry route. Offered on anything that can actually carry something, loaded or not -- the whole
@@ -670,14 +717,97 @@ const UI = {
   cardRect() { const ch = this.consoleH, k = Math.min(1, (ch - 12) / 164); const bw = Math.round(66 * k), bh = Math.round(52 * k); const w = this.CARD_COLS * bw + 8, h = this.CARD_ROWS * bh + 8; return { x: Render.W - w - 10, y: Render.H - ch + 6, w, h, bw: bw - 4, bh: bh - 4 }; },
   consoleClick(x, y, button) {
     if (this.inMinimap(x, y)) { const [wx, wy] = this.miniToWorld(x, y); if (button === 2) { const t = this.unitAt(wx, wy); if (this.pending) this.execPending(t, wx, wy, false); else this.smartCommand(t, wx, wy, this.keys.Shift); } else if (this.pending) { this.execPending(null, wx, wy, false); } else { this.centerOn(wx, wy); this.miniDrag = true; } return; }
-    if (button !== 0) return;
+    // Right-click on a card button ARMS an autocastable ability (M12 item 6). This used to return
+    // immediately on any non-left button, so the card had no right-click behaviour at all.
     const cr = this.cardRect();
+    if (button === 2) {
+      for (const b of this.currentCard()) {
+        const gap = cr.gap !== undefined ? cr.gap : 4;
+        const bx = cr.x + 4 + (b.slot % this.CARD_COLS) * (cr.bw + gap), by = cr.y + 4 + Math.floor(b.slot / this.CARD_COLS) * (cr.bh + gap);
+        if (x < bx || x >= bx + cr.bw || y < by || y >= by + cr.bh) continue;
+        const id = b.abil; const ab = id && DATA.abilities[id];
+        if (!ab || !ab.autocast) return;
+        const units = this.ownSel().filter(u => (u.def.abil || []).includes(id) || (u.def.produces || []).includes(ab.unit));
+        if (!units.length) return;
+        const on = G.setAutocast(units, id);
+        G.players[G.human].msg(ab.name + (on ? ' autocast ON' : ' autocast OFF'), 'info');
+        Sound.click(); return;
+      }
+      return;
+    }
+    if (button !== 0) return;
     for (const b of this.currentCard()) { const gap = cr.gap !== undefined ? cr.gap : 4; const bx = cr.x + 4 + (b.slot % this.CARD_COLS) * (cr.bw + gap), by = cr.y + 4 + Math.floor(b.slot / this.CARD_COLS) * (cr.bh + gap); if (x >= bx && x < bx + cr.bw && y >= by && y < by + cr.bh) { this.press(b); return; } }
     // info panel: selection wireframes / queue / cargo
     for (const h of this.hotspots) if (x >= h.x && x < h.x + h.w && y >= h.y && y < h.y + h.h) { h.fn(); Sound.click(); return; }
   },
   hotspots: [],
   // ---------------- drawing: console ----------------
+  // The selection grid. Brood War's twelve-unit cap is gone (M12 item 2), so this has to stay legible
+  // from two units to two hundred, and the fixed 6x2 grid of 44 px tiles it replaces does not.
+  //
+  // Three regimes, and the third is the one that matters. Up to SEL_FULL the tiles are full size and
+  // you can read a health bar per unit. Between that and SEL_TILES they shrink to fit. Past SEL_TILES
+  // individual portraits stop being information -- two hundred 9 px squares tell you nothing you can
+  // act on -- so it switches to one tile PER TYPE with a count and a summed health bar. That is the
+  // view you actually want once you have selected an army: not "here are your units" but "you have 40
+  // marines and 12 tanks, and the tanks are hurt".
+  //
+  // Clicking a type tile selects every unit of that type, which makes the summary a filter rather than
+  // a readout.
+  SEL_FULL: 24, SEL_TILES: 48,
+  drawSelGrid(ctx, sel, ix, y0, iw, ch) {
+    const pad = 8, top = y0 + 12, availW = iw - pad * 2, availH = ch - 24;
+    if (sel.length > this.SEL_TILES) {
+      const byType = new Map();
+      for (const u of sel) { let g = byType.get(u.def.id); if (!g) byType.set(u.def.id, g = { def: u.def, n: 0, hp: 0, max: 0, units: [] }); g.n++; g.hp += u.hp; g.max += u.maxHp; g.units.push(u); }
+      const groups = [...byType.values()].sort((a, b) => b.n - a.n || (a.def.id < b.def.id ? -1 : 1));
+      const tw = 74, th = 40, cols = Math.max(1, Math.floor(availW / tw));
+      groups.forEach((g, i) => {
+        if (Math.floor(i / cols) * th > availH - th) return;
+        const bx = ix + pad + (i % cols) * tw, by = top + Math.floor(i / cols) * th;
+        ctx.fillStyle = '#222a33'; ctx.fillRect(bx, by, tw - 4, th - 4);
+        const icon = Sprites.icon(g.def.id, G.players[G.human].color, 26);
+        if (icon) ctx.drawImage(icon, bx + 2, by + 4, 26, 26);
+        ctx.fillStyle = '#eee'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText('x' + g.n, bx + 32, by + 18);
+        const hr = g.max ? g.hp / g.max : 1;
+        ctx.fillStyle = hr > .66 ? '#3f3' : hr > .33 ? '#ff3' : '#f33';
+        ctx.fillRect(bx + 32, by + 24, (tw - 40) * hr, 3);
+        ctx.fillStyle = '#8a94a2'; ctx.font = '9px sans-serif';
+        ctx.fillText(g.def.name.slice(0, 10), bx + 2, by + 36);
+        this.hotspots.push({ x: bx, y: by, w: tw - 4, h: th - 4, fn: () => this.select(g.units.slice()) });
+      });
+      ctx.fillStyle = '#aab'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'right';
+      ctx.fillText(sel.length + ' units, ' + groups.length + ' types', ix + iw - pad, y0 + ch - 12);
+      ctx.textAlign = 'left';
+      return;
+    }
+    const full = sel.length <= this.SEL_FULL;
+    let cw = full ? 44 : 30, chh = full ? 52 : 34;
+    let cols = Math.max(1, Math.floor(availW / cw)), rows = Math.max(1, Math.floor(availH / chh));
+    while (cols * rows < sel.length && cw > 20) { cw -= 2; chh -= 2; cols = Math.max(1, Math.floor(availW / cw)); rows = Math.max(1, Math.floor(availH / chh)); }
+    const tw = cw - 4, th = chh - 6;
+    sel.forEach((u, i) => {
+      if (i >= cols * rows) return;
+      const bx = ix + pad + (i % cols) * cw, by = top + Math.floor(i / cols) * chh;
+      ctx.fillStyle = '#222a33'; ctx.fillRect(bx, by, tw, th);
+      const hr = u.hp / u.maxHp;
+      ctx.fillStyle = hr > .66 ? '#3f3' : hr > .33 ? '#ff3' : '#f33';
+      ctx.fillRect(bx + 2, by + th - 6, (tw - 4) * hr, 3);
+      ctx.save(); ctx.beginPath(); ctx.rect(bx, by, tw, th); ctx.clip();
+      const k = tw / 50;
+      ctx.translate(bx + tw / 2, by + th / 2 - 2); ctx.scale(k, k); ctx.translate(-u.x, -u.y);
+      u._x = u.x; u._y = u.y; u._alpha = 1; Render.drawUnit(ctx, u, u.x, u.y);
+      ctx.restore();
+      if (full) { ctx.fillStyle = '#aaa'; ctx.font = '9px sans-serif'; ctx.fillText(u.def.name.slice(0, 9), bx + 2, by + 9); }
+      this.hotspots.push({ x: bx, y: by, w: tw, h: th, fn: () => { if (this.keys.Shift) this.selection = this.selection.filter(v => v !== u); else this.select([u]); } });
+    });
+    if (sel.length > cols * rows) {
+      ctx.fillStyle = '#aab'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'right';
+      ctx.fillText('+' + (sel.length - cols * rows) + ' more', ix + iw - pad, y0 + ch - 12);
+      ctx.textAlign = 'left';
+    }
+  },
   drawConsole() {
     const ctx = Render.ctx, W = Render.W, H = Render.H, ch = this.consoleH, y0 = H - ch;
     ctx.fillStyle = '#1b1f26'; ctx.fillRect(0, y0, W, ch); ctx.fillStyle = '#2c3340'; ctx.fillRect(0, y0, W, 3);
@@ -695,12 +825,16 @@ const UI = {
     const ix = mr.x + mr.s + 16, iw = Render.W - ix - (3 * 66 + 30); ctx.fillStyle = '#12151a'; ctx.fillRect(ix, y0 + 6, iw, ch - 12);
     const sel = this.selection; ctx.fillStyle = '#ddd'; ctx.font = '13px sans-serif';
     if (sel.length === 1) this.drawUnitInfo(ctx, sel[0], ix, y0 + 6, iw, ch - 12);
-    else if (sel.length > 1) { sel.forEach((u, i) => { const bx = ix + 8 + (i % 6) * 44, by = y0 + 12 + Math.floor(i / 6) * 52; ctx.fillStyle = '#222a33'; ctx.fillRect(bx, by, 40, 46); const hr = u.hp / u.maxHp; ctx.fillStyle = hr > .66 ? '#3f3' : hr > .33 ? '#ff3' : '#f33'; ctx.fillRect(bx + 2, by + 40, 36 * hr, 3); ctx.save(); ctx.translate(bx + 20, by + 20); ctx.scale(0.8, 0.8); ctx.translate(-u.x, -u.y); u._x = u.x; u._y = u.y; u._alpha = 1; Render.drawUnit(ctx, u, u.x, u.y); ctx.restore(); ctx.fillStyle = '#aaa'; ctx.font = '9px sans-serif'; ctx.fillText(u.def.name.slice(0, 9), bx + 2, by + 9); this.hotspots.push({ x: bx, y: by, w: 40, h: 46, fn: () => { if (this.keys.Shift) this.selection = this.selection.filter(v => v !== u); else this.select([u]); } }); }); }
+    else if (sel.length > 1) this.drawSelGrid(ctx, sel, ix, y0, iw, ch);
     else { ctx.fillStyle = '#667'; ctx.font = '12px sans-serif'; ctx.fillText('F1: help   F10: menu   Speed ' + this.SPEEDS[this.speedIdx] + 'x (+/-)   ' + this.fps + ' fps', ix + 10, y0 + 24); ctx.fillText('Map seed ' + G.map.seed + '   Frame ' + G.frame, ix + 10, y0 + 44); }
     // command card
     const cr = this.cardRect(); ctx.fillStyle = '#12151a'; ctx.fillRect(cr.x, cr.y, cr.w, cr.h);
     const btns = this.currentCard(); const p = G.players[G.human];
-    for (const b of btns) { const bx = cr.x + 4 + (b.slot % this.CARD_COLS) * 66, by = cr.y + 4 + Math.floor(b.slot / this.CARD_COLS) * 52; const hov = this.mouse.x >= bx && this.mouse.x < bx + cr.bw && this.mouse.y >= by && this.mouse.y < by + cr.bh; const active = this.pending && ((this.pending.kind === 'ability' && b.label === (DATA.abilities[this.pending.abil] || {}).name) || (this.pending.kind !== 'ability' && b.label.toLowerCase().startsWith(this.pending.kind))); ctx.fillStyle = active ? '#3a5a3a' : hov ? '#38404c' : b.dim ? '#1c2026' : '#262c36'; ctx.fillRect(bx, by, cr.bw, cr.bh); ctx.strokeStyle = b.dim ? '#333' : '#556'; ctx.strokeRect(bx + .5, by + .5, cr.bw - 1, cr.bh - 1); ctx.fillStyle = b.dim ? '#666' : '#eee'; ctx.font = '10px sans-serif'; const words = b.label.split(' '); let ly = by + 14; let line = ''; for (const w of words) { if ((line + ' ' + w).trim().length > 11 && line) { ctx.fillText(line, bx + 3, ly); ly += 11; line = w; } else line = (line + ' ' + w).trim(); } ctx.fillText(line, bx + 3, ly); ctx.fillStyle = '#ff5'; ctx.font = 'bold 10px sans-serif'; ctx.fillText(b.hk === 'Escape' ? 'Esc' : b.hk, bx + cr.bw - 14, by + cr.bh - 4); if (b.cost && b.cost.min !== undefined) { ctx.fillStyle = p.minerals >= b.cost.min ? '#5df' : '#f55'; ctx.font = '9px sans-serif'; ctx.fillText(b.cost.min, bx + 3, by + cr.bh - 4); if (b.cost.gas) { ctx.fillStyle = p.gas >= b.cost.gas ? '#6d5' : '#f55'; ctx.fillText(b.cost.gas, bx + 24, by + cr.bh - 4); } } if (b.energy) { ctx.fillStyle = '#c6f'; ctx.font = '9px sans-serif'; ctx.fillText(b.energy + 'e', bx + 3, by + cr.bh - 4); }
+    // An armed ability gets a ring. Without it autocast is invisible state and the player has no way to
+    // know which of two identical medics is armed -- which is the whole reason BW draws one too.
+    const armedIds = (() => { const out = new Set(); for (const u of this.ownSel()) if (u.armed) for (const a of u.armed) out.add(a); return out; })();
+    for (const b of btns) { const bx = cr.x + 4 + (b.slot % this.CARD_COLS) * 66, by = cr.y + 4 + Math.floor(b.slot / this.CARD_COLS) * 52;
+      if (b.abil && armedIds.has(b.abil)) { ctx.strokeStyle = '#5fd06a'; ctx.lineWidth = 2; ctx.strokeRect(bx + 1, by + 1, cr.bw - 2, cr.bh - 2); ctx.lineWidth = 1; } const hov = this.mouse.x >= bx && this.mouse.x < bx + cr.bw && this.mouse.y >= by && this.mouse.y < by + cr.bh; const active = this.pending && ((this.pending.kind === 'ability' && b.label === (DATA.abilities[this.pending.abil] || {}).name) || (this.pending.kind !== 'ability' && b.label.toLowerCase().startsWith(this.pending.kind))); ctx.fillStyle = active ? '#3a5a3a' : hov ? '#38404c' : b.dim ? '#1c2026' : '#262c36'; ctx.fillRect(bx, by, cr.bw, cr.bh); ctx.strokeStyle = b.dim ? '#333' : '#556'; ctx.strokeRect(bx + .5, by + .5, cr.bw - 1, cr.bh - 1); ctx.fillStyle = b.dim ? '#666' : '#eee'; ctx.font = '10px sans-serif'; const words = b.label.split(' '); let ly = by + 14; let line = ''; for (const w of words) { if ((line + ' ' + w).trim().length > 11 && line) { ctx.fillText(line, bx + 3, ly); ly += 11; line = w; } else line = (line + ' ' + w).trim(); } ctx.fillText(line, bx + 3, ly); ctx.fillStyle = '#ff5'; ctx.font = 'bold 10px sans-serif'; ctx.fillText(b.hk === 'Escape' ? 'Esc' : b.hk, bx + cr.bw - 14, by + cr.bh - 4); if (b.cost && b.cost.min !== undefined) { ctx.fillStyle = p.minerals >= b.cost.min ? '#5df' : '#f55'; ctx.font = '9px sans-serif'; ctx.fillText(b.cost.min, bx + 3, by + cr.bh - 4); if (b.cost.gas) { ctx.fillStyle = p.gas >= b.cost.gas ? '#6d5' : '#f55'; ctx.fillText(b.cost.gas, bx + 24, by + cr.bh - 4); } } if (b.energy) { ctx.fillStyle = '#c6f'; ctx.font = '9px sans-serif'; ctx.fillText(b.energy + 'e', bx + 3, by + cr.bh - 4); }
       if (hov && b.cost) { this.tooltip = { text: b.label + (b.cost.min !== undefined ? `  ${b.cost.min}m ${b.cost.gas ? b.cost.gas + 'g ' : ''}${b.cost.sup ? b.cost.sup + 's ' : ''}${b.cost.time ? Math.round(b.cost.time / TPS) + 's' : ''}` : ''), x: bx, y: by - 8 }; } }
     if (this.tooltip) { ctx.font = '11px sans-serif'; const tw = ctx.measureText(this.tooltip.text).width + 10; ctx.fillStyle = '#000c'; ctx.fillRect(this.tooltip.x - tw + 60, this.tooltip.y - 14, tw, 18); ctx.fillStyle = '#fff'; ctx.fillText(this.tooltip.text, this.tooltip.x - tw + 65, this.tooltip.y - 1); this.tooltip = null; }
   },
