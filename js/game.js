@@ -24,7 +24,15 @@ const SUPPLY_CAP = 500;
 // Twelve minutes a cycle, of which roughly a third is properly dark, with long dusks either side --
 // night is a window you plan a raid inside, not a light switch. The render half reads G.daylight; the
 // simulation half is the sight penalty in Unit.sight.
-const DAY_CYCLE = 24 * 60 * 12, NIGHT_SIGHT = 0.6;
+//
+// NIGHT_SIGHT is what deep night multiplies sight by; NIGHT_DET is the FRACTION of that penalty a
+// detector pays. Both were retuned after playtesting a night map: at 0.6 with detectors fully exempt,
+// a drone saw 4.2 tiles while the overlord next to it still saw 9, so the only thing on the map that
+// could see anything was the detector. That reads as a broken renderer rather than as weather. The
+// reason detectors were exempt at all is that cloak must stay answerable, and that is a claim about
+// detection RANGE -- so they now pay half the penalty instead of none, which keeps them the best eye
+// on a dark map without making them the only one.
+const DAY_CYCLE = 24 * 60 * 12, NIGHT_SIGHT = 0.75, NIGHT_DET = 0.5;
 function daylightAt(frame) {
   const t = ((frame % DAY_CYCLE) + DAY_CYCLE) % DAY_CYCLE / DAY_CYCLE;   // 0..1 through the cycle
   // A raised cosine: flat-ish day, flat-ish night, and a real dusk between them rather than a ramp.

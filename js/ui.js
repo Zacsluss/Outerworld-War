@@ -767,6 +767,25 @@ const UI = {
     ctx.textAlign = 'left';
   },
   menuClick(x, y) { for (const r of this.menuRects || []) if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) { r.fn(); return; } },
+  // The codex, opened from the main menu where there is no game. Two things stand in the way and both
+  // are invisible from the button's side. UI.loop returns early unless `running`, and `running` only
+  // becomes true when a match starts -- so before the first game there is no render loop at all and
+  // nothing would ever call Codex.draw. And #menu is `position:absolute; inset:0`, so leaving it
+  // displayed paints a full-screen gradient over the canvas the codex draws on. Hence a loop of its
+  // own that draws the codex and nothing else, and a swap of the two divs that undoes itself when the
+  // codex closes. Render.frame is deliberately NOT called: it reads G, and there is no G yet.
+  openCodexFromMenu() {
+    if (typeof Codex === 'undefined') return;
+    const menu = document.getElementById('menu'), game = document.getElementById('game');
+    menu.style.display = 'none'; game.style.display = 'block'; Render.resize(); Codex.open();
+    const tick = () => {
+      if (!Codex.isOpen()) { game.style.display = 'none'; menu.style.display = 'flex'; return; }
+      const c = Render.ctx; c.setTransform(Render.dpr, 0, 0, Render.dpr, 0, 0);
+      c.fillStyle = '#05070a'; c.fillRect(0, 0, Render.W, Render.H);
+      Codex.draw(c); requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  },
   toMenu() { this.running = false; this.menu = null; this.loading = null; if (this.refreshMapList) this.refreshMapList(); if (typeof Net !== 'undefined' && Net.active) Net.disconnect(); if (typeof Music !== 'undefined') Music.stop(); document.getElementById('menu').style.display = 'flex'; document.getElementById('game').style.display = 'none'; const ab = document.getElementById('autosaveBtn'); if (ab) ab.style.display = Replay.hasAutosave() ? 'block' : 'none'; },
 };
 
@@ -801,7 +820,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const sbk = $('settingsBack'); if (sbk) sbk.addEventListener('click', () => showSettings(false));
   // The codex opens with no game running -- it reads DATA, not G -- so it belongs on the main menu
   // as well as on F3 in game. It draws over the canvas, so the canvas has to be visible for it.
-  const cbx = $('codexBtn'); if (cbx) cbx.addEventListener('click', () => { if (typeof Codex !== 'undefined') { document.getElementById('game').style.display = 'block'; Render.resize(); Codex.open(); } });
+  const cbx = $('codexBtn'); if (cbx) cbx.addEventListener('click', () => UI.openCodexFromMenu());
   const qc = $('mute'); if (qc) { qc.checked = Sound.muted; qc.addEventListener('change', () => Sound.setMuted(qc.checked)); }
   const vc = $('voice'), mc = $('music'); if (vc) { vc.checked = Voice.on; vc.addEventListener('change', () => Voice.set(vc.checked)); } if (mc) { mc.checked = Music.on; mc.addEventListener('change', () => Music.set(mc.checked)); }
   const nc = $('netConnect'); if (nc) { $('netUrl').placeholder = Net.defaultUrl(); nc.addEventListener('click', () => Net.connect($('netUrl').value.trim() || Net.defaultUrl(), $('netName').value.trim() || 'Player', 'R')); }

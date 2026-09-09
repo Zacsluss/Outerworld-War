@@ -52,7 +52,13 @@ const r = vm.runInContext(SRC, ctx);
 ok(r.plainMapAlwaysDay.every(v => v === 1), 'a map without dayNight is always full day', JSON.stringify(r.plainMapAlwaysDay));
 ok(r.dayAtStart && r.darkAtMid, 'a night map starts in daylight and gets properly dark', JSON.stringify(r.curve));
 ok(r.night.unit < r.night.was && r.night.unit >= 2, "night shortens a unit's sight, with a floor", JSON.stringify(r.night));
-ok(r.night.det === r.night.detWas, 'a detector is exempt -- it is a sensor, not an eye', JSON.stringify(r.night));
+// A detector pays HALF the night penalty, not none. It was exempt outright until a night playtest
+// showed the consequence: the detector was the only thing on the map that could see, which reads as a
+// broken renderer rather than as weather. Half keeps it the best eye in the dark without making it the
+// only one, and the ratio is what this pins -- a future retune of NIGHT_SIGHT should not silently
+// re-exempt them.
+ok(r.night.det < r.night.detWas, 'a detector is dimmed by the dark too', JSON.stringify(r.night));
+ok(r.night.det / r.night.detWas > r.night.unit / r.night.was, 'but a detector keeps more of its sight than an eye does', JSON.stringify(r.night));
 ok(r.rememberedWhileSeen, 'an enemy building is remembered while it is visible');
 ok(r.stillRememberedUnseen && r.memoryContents === 'spawning_pool', 'and stays remembered once you look away', r.memoryContents);
 ok(r.liesAfterDeath, 'a building destroyed while you were not watching stays on your map -- the lie');
