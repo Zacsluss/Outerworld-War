@@ -1,297 +1,103 @@
-# PLAYTEST.md — human play-test log
-
-Milestone M2 task 1. Every entry has repro steps; entries marked **fixed** were fixed in the same commit.
-
-## Sessions
-
-| # | Matchup | Map | Length | JS errors | Stuck units | Result |
-|---|---|---|---|---|---|---|
-| 1 | Terran vs Zerg (normal) | Lost Ruins | 25:51 | 0 | 0 | Victory (cheats used to compress the endgame) |
-| 2 | Protoss vs Terran (normal) | Twilight Valley | 11:44 | 0 | 0 | Victory |
-| 3 | Zerg vs Protoss (normal) | Blood Pit | 8:04 | 0 | 0 | Victory |
-
-All three were played in the desktop app browser pane through the real UI (mouse, drag boxes, hotkeys, minimap, command card, chat cheats, F1/F9/F10 menus). Errors were captured with a `window.onerror` + `console.error` hook. The pane renders at 1–8 fps but the sim ran at full speed, which is what exposed the stale-card hotkey bug below.
-
-The same three matchups also run headless for 20 minutes each through `node test/playtest.js` (a scripted player that drives `UI.select`/`smartCommand`/`execPending`/command-card buttons/hotkeys, ~10k UI actions per game, cheats at 6:00 so late-game spells get exercised). It flags JS errors, units that stop moving with an unfinished movement order, units inside building footprints, cargo/transport mismatches and supply-accounting drift. Current result: 0 errors, 0 stuck, 0 invariant violations for all three.
-
-## Bugs found and fixed
-
-1. **Scanner Sweep could not be cast by a human** (also Nydus Exit). Repro: select a Comsat Station (or its Command Center), click Scanner Sweep, click the map. Nothing happens. `UI.execPending` skipped every building in the selection. **Fixed**: abilities are now executed for buildings, and abilities offered on a parent's card (Comsat via the CC) are cast by the add-on itself.
-2. **Land button on a lifted building started a new construction.** Repro: lift a Barracks, press L on the card, click a spot. A second Barracks starts building (and costs 150) while the lifted one keeps floating. `confirmPlacement` issued a `build` order for a `land` placement. **Fixed**.
-3. **"Continue playing" after the result screen froze the game.** `checkVictory` re-triggered `G.over` on the next check. **Fixed** with a `G.freePlay` flag.
-4. **Units could not board Bunkers from most angles.** Repro: build a Bunker, right-click it with a Marine standing to its left. The Marine walks to the blocked centre tile, the path ends short and it stands next to the wall forever in a `load` order. Same for any unit told to load into something it cannot enter (Vulture into a Bunker, units into an Overlord without Ventral Sacs): they waited forever. **Fixed**: loading into buildings uses the building-approach mover, and a refused load drops the order.
-5. **Two touching buildings trapped a builder.** Repro: put a Supply Depot directly above a Factory site and send an SCV from the left. The approach point rounds into the depot's tile (unit sits exactly on a tile boundary), A* returns an empty path and the SCV stands 8 px from the Factory without building. **Fixed**: building approaches fall back to the nearest passable perimeter point; construction progress uses rectangle distance instead of centre distance.
-6. **Workers crawled along resource corners.** Repro: send an SCV through a gap next to a mineral field; it slid at 0.5 px/frame for seconds. The blocked-step fallback used the tiny axis component of the intended step. **Fixed**: blocked units now slide along the obstacle at full speed.
-7. **Shift-queued orders after a gather never ran.** Repro: select a mining worker, shift-click a build placement. The worker keeps mining forever. The gather/return loop never advanced the queue. **Fixed**: queued orders run after the current mineral/gas trip.
-8. **Hotkeys pressed quickly after opening a menu were ignored** (e.g. B then S within one render frame; always in the throttled browser pane). The card was only rebuilt during rendering. **Fixed**: input rebuilds the card itself (`UI.currentCard`).
-9. **Command-card click hit-boxes were off by up to 12 px on the bottom row.** `consoleClick` used the old 66/52 px grid while the HUD draws 68/58. **Fixed**: shared geometry.
-10. **Both players spawned in the same base on Twilight Valley.** `startOrder [0,3]` referenced a fourth main that a 2-player layout does not have, so the AI's refinery landed on the human's geyser. **Fixed** (`[0,1]`, and unlisted mains are appended instead of dropped).
-11. **Expansions could not be placed at most bases.** The hall spots designed into the layouts were within 3 tiles of a geyser (all Blood Pit bases including the mains, 8 Lost Ruins bases, 3 Twilight Valley bases) and the Valley natural sat on a mirrored ramp with rocks between it and its minerals. The AI silently failed to expand there. **Fixed**: geysers moved, the stray Valley plateau/ramp removed, rocks moved behind the mineral line; `test/playtest.js` and a validation snippet now confirm every base hall spot is placeable and ground-reachable from every start.
-12. **Auto-acquire targeted eggs and larvae.** A patrolling Ghost spent minutes shooting an Egg for 0.5 damage a shot. **Fixed**: auto-acquisition ignores larvae/eggs (explicit attack orders still work).
-13. **Sieged tanks / burrowed Lurkers with an out-of-range attack target did nothing.** **Fixed**: they fire at whatever is in range while the order stands.
-14. **Unload hotkey unloaded in place.** The `instant` branch of the card caught the Unload ability before the targeted-unload branch. **Fixed**: U now asks for a drop point; cargo wireframes still unload single units.
-15. **Archon merge unavailable with a mixed selection.** Two High Templar plus one Dark Templar showed no Summon button. **Fixed**: merge buttons appear whenever two templar of a kind are selected.
-16. **Duplicate hotkeys on one card** (first match won, the other action was unreachable by keyboard): Hydralisk Den vs Hatchery (H), Reaver vs Set Rally (R), Heal vs Hold (H), Summon Archon / Dark Archon vs Stop (S), Build Scarab vs Stop (S). **Fixed**: Hydralisk Den D, Reaver V, Heal E, Summon W, Build Scarab B. Comsat abilities shown on the CC card drop their hotkey when it collides with SCV.
-17. **Right-clicking your own building with a combat unit made it "follow" the building.** Now a plain move. **Fixed**.
-18. **Landing next to an orphaned add-on** did not re-attach it. **Fixed**.
-19. **Mind Control left the old owner's mineral/gas bookkeeping and selection dirty**, Hallucination accepted buildings. **Fixed**.
-20. **Transport unload over unwalkable ground** kept the transport hovering forever. **Fixed**: wider search, then "Cannot unload here." and the order is dropped.
-
-## Annoyances (not fixed, noted for later)
-
-- Camera jump with Space to an alert can land on a fully black (never explored) spot when the attacked unit died before its vision was recorded. Cosmetic.
-- The browser pane throttles rendering to a few fps; a normal browser tab is fine. Keep the sim on `setInterval`.
-- Giving several build orders to a multi-worker selection without Shift replaces the previous order on the same worker (Brood War does the same, but the first worker in the selection is not obvious).
-- Larvae wander; clicking them needs some precision. Brood War's "select larva" button on the Hatchery card does not exist yet.
-- New workers from a hall with a ground rally point idle at the rally instead of mining unless the rally is on a mineral.
-- Attack-move stacks of melee units jam around a single building for several seconds before spreading out.
-- Zerg AI on Normal reached 100 units by 9:30 against a slow human opener; balance is task 3.
-
-## Round two: issues found while finishing M2 (tasks 3-6)
-
-21. **The AI never expanded as Terran or Protoss.** It spent every mineral on units the moment it had them, so it could never bank the 400 for a Command Center or Nexus. Fixed with a money reservation; workers, urgent supply, gas and research are exempt so saving never starves the economy.
-22. **Mass-zergling armies crowded out everything.** The AI picked its next unit by comparing unit *counts* against weights, so the cheapest unit always won and Zerg fielded 110 zerglings. Weights are now a share of army supply.
-23. **Zerg could deadlock on a Spire it could not afford**, because its second Extractor sat behind the Spire in the build order and the script's give-up timer was being reset every think by the new early-returns.
-24. **Ultralisks got stuck inside sunken colony footprints.** Any ground unit whose centre tile ends up inside a building is now pushed out.
-25. **A render crash on a zero-sized canvas.** Starting a mission while the canvas was hidden made `drawImage` throw every frame. The renderer now clamps its size and skips frames with no viewport.
-26. **Infestation and Reclamation could not be won** once the objective became impossible (the last Command Center died, or the beacon holder was killed). Razing every enemy structure now completes any mission.
-27. **The map editor's default base layout was unplaceable**: the geyser sat inside the town hall's 3-tile resource exclusion, so no map validated until the geyser was moved clear.
-
-## How the log was produced
-
-- Browser: `node test/serve.js 8765`, desktop app browser pane at 1280x800, errors captured by a page hook, cheats typed into the chat box (`show me the money`, `operation cwal`, `food for thought`, `medieval man`, `power overwhelming`, `there is no cow level`).
-- Headless: `node test/playtest.js all 28800 3 --quiet` (options: matchup `TZ|PT|ZP|all`, frames, seed, `--diff=easy|normal|hard`, `--cheat=<minutes>`).
-
-## Round three: M3 task 2
-
-The three ladder matchups were re-run on **Normal** (M2 ran them on Easy) now that the AI macros properly, and the eight campaign missions were driven through the UI layer for the first time. `test/playtest.js` grew a `missions` mode for this: it starts each mission the way the menu button does, dismisses the briefing through its own menu item, runs the matching race script, and reports the objective outcome alongside the usual error/stuck/invariant checks.
-
-| session | JS errors | stuck units | invariant violations |
-|---|---|---|---|
-| `node test/playtest.js all 28800 3 --diff=normal` (TvZ, PvT, ZvP) | 0 | 0 | 0 |
-| `node test/playtest.js missions 21600` (all eight missions) | 0 | 0 | 0 |
-| Browser pane, mission t1 through the real UI at 1280x800 | 0 | 0 | — |
-
-The browser pass used the real DOM/canvas input path (menu, `<details>` campaign section, Begin mission, drag box-select, `A` + click attack-move) with a `window.onerror` + `console.error` hook. Selection and orders behaved correctly and nothing threw.
-
-### Bugs found and fixed
-
-28. **Burrowed units silently swallowed every movement order.** Repro: in `z3 Tunnel Vision`, burrow a Zergling, then right-click an Overlord with Ventral Sacs. The Zergling keeps a `load` order for the rest of the game without moving. `moveTo` returns `false` immediately for a burrowed unit, so the order can never complete and nothing ever cancels it. **Fixed** for the case that matters: a burrowed unit with a `load` order surfaces and keeps the order, which is what Brood War does. The general case (a burrowed unit given a plain move order does nothing) is still open, see below.
-29. **The Nydus Canal exit was placed a tile off the cursor.** Repro: select a Nydus Canal, click Build Nydus Exit, click a spot that is exactly wide enough. Placement is refused. Every other placement in the game centres the footprint on the cursor (`UI.confirmPlacement` uses `floor(x / TILE - def.w / 2 + .5)`) but `nydus_exit` put the building's top-left corner there instead, so it landed a tile down and right of where the player aimed and failed against anything nearby. **Fixed**: the exit now uses the same centring as every other placement. This was breaking the core mechanic of `z3 Tunnel Vision`.
-
-### Investigated and deliberately not changed
-
-- **An unreachable goal is never abandoned.** `Pathfinder.find` returns a best-effort partial path rather than failing, so a unit ordered somewhere it cannot reach walks into the obstacle and slides along it forever with a live order. `u.stuck` does not catch it because the unit *is* moving. A movement watchdog was written and measured (give up after ten seconds without getting closer, then let `follow`/`patrol`/`construct`/`load` drop the order). It fixed every case it was aimed at, but it also made units go idle *inside* building footprints in `z1`/`z2`, which were clean before. Reverted: the cure was worse. Worth another attempt with the push-out logic in mind.
-- **Burrowed units and plain move orders.** The obvious fix is to unburrow on any movement order, as Brood War does. It is not safe here yet: the AI burrows Lurkers and then keeps issuing `attackmove` to its whole army every think, so auto-unburrowing would make Lurkers surface immediately and oscillate. `army()` skips `u.sieged` but not `u.burrowed`; fixing both together is the real change.
-
-### Annoyances (not fixed)
-
-- Mission briefing text overflows the panel horizontally on a narrow window; the longest line is clipped at both edges.
-- Below roughly 900x600 the fixed-height console leaves almost no map viewport. 1280x800 is fine.
-
-## Round three: M4 task 6 — auditing the AI instead of watching it
-
-Watching replays is the obvious way to do this, but "the AI does something no human would" is
-measurable, so `test/aiaudit.js` counts it instead. It plays nine AI-vs-AI games (three matchups x
-three seeds), samples the state once a game-second and reports rates. It has no pass/fail: it is a
-before/after instrument for AI changes.
-
-Baseline over 125 game-minutes, and after the supply fix below:
-
-| what a human would never do | before | after |
-|---|---|---|
-| production buildings idle while the money to fill them is banked (per minute, both players) | 158.9 | 121.7 |
-| spellcasters sitting on a full energy bar (per minute) | 33.4 | **2.2** |
-| army standing idle while its own base is being hit (per minute) | 3.3 | 1.2 |
-| share of time over 700 minerals unspent | 3% | **0%** |
-| share of time over 700 gas unspent | 1% | 3% |
-| share of time supply blocked | 13% | 10% |
-| share of time attacking into two or more static defences | 1% | 0% |
-
-### Fixed
-
-30. **Supply blocked 13% of the time.** The supply margin was `4 + production * 2`, but a Supply Depot
-    takes 25 seconds and late-game production eats supply faster than that, and only one could be in
-    flight until there were more than six production buildings. The margin is now `6 + production * 3`
-    and two or three can be building at once once there is real production to feed. This is the change
-    the "after" column measures; it also cleared the floating minerals and almost all of the hoarded
-    caster energy, because a supply-blocked AI banks money it cannot spend and never gets round to
-    casting.
-
-### Known, measured, not yet fixed
-
-- **Production buildings idle about a fifth of the time** even after the fix. Part of this is
-  deliberate — the composition hold banks for up to eight seconds so the army does not drift to the
-  cheapest unit — but not all of it. Worth attacking next; it is the largest remaining number.
-- **Supply still blocked 10% of the time.** Better, not solved.
-- **Six or seven idle workers per minute.** Usually workers whose mineral patch was mined out, or who
-  were bumped off a build site.
-
-## Round four: M5 task 6
-
-Same instrument as round three (`test/aiaudit.js`), now that the AI retreats and the money reserve has
-been loosened. Nine AI-vs-AI games, sampled once a game-second.
-
-| what a human would never do | M4 | M5 |
-|---|---|---|
-| production buildings idle with the money banked (per minute, both players) | 203.1 | **105.7** |
-| spellcasters sitting on a full energy bar | 24.2/min | 36.4/min, i.e. **23% of caster-seconds** |
-| army idle while its own base is being hit (per minute) | 3.1 | 2.2 |
-| idle workers (per minute) | 6.4 | 5.9 |
-| share of time over 700 minerals unspent | 2% | 1% |
-| share of time supply blocked | 7% | 9% |
-| share of time attacking into 2+ static defences | 2% | 1% |
-
-The caster number needed a second look: as a raw rate it appears to have got worse, but the AI now fields
-161 casters per minute against far fewer before, so it is reported as a share of caster-seconds instead.
-23% of the time a caster has a full bar is a real inefficiency, not a regression.
-
-Shape of the game, measured over twelve games (`retreats / army wipes / recoveries`):
-
-| | M4 | M5 |
-|---|---|---|
-| games decided before the frame cap | 11 of 12 | 10 of 12 |
-| mean game length | 14.4 min | 15.9 min |
-| retreats | 0 | 66 |
-| recoveries after an army wipe | 33% | 35% |
-
-### Fixed
-
-31. **A patrol between two points it could not path to swapped endpoints every tick and stood still.**
-    `moveTo` returns true both when a unit arrives and when it gives up because the path ended short, and
-    only the first of those is an arrival. The give-up now sets `moveFailed`, which patrol already checks,
-    so the unit drops the order instead of looking busy while going nowhere for the rest of the game.
-32. **The stuck-unit check measured displacement, not distance walked.** A unit patrolling between two
-    nearby points, or circling a target, ends each sample near where it started and was reported as stuck
-    when it was moving perfectly well. It now uses `u.walkDist`.
-33. **A Carrier hovering while its interceptors fight was reported as stuck.** It is not: the interceptors
-    are doing the work. The check exempts a unit with interceptors out.
-
-### Known, measured, not fixed
-
-- **A Carrier with no interceptors left is inert.** It holds position in range of its target and does
-  nothing, with no feedback to the player. This is what Brood War does too, and the answer is to build
-  interceptors, but a human would at least be told. It is the one remaining stuck-unit report in the
-  ladder suite (1 of 3 games); the missions suite is clean.
-- **Production buildings are still idle about an eighth of the time.** Halved from M4, not solved. The
-  composition hold accounts for 7.9% of production calls; the money reserve, now at 40%, for most of the
-  rest.
-- **`test/net.js` failed two checks once** while a 216-game balance run was saturating every core, and
-  passed five times in a row afterwards, including immediately after the same batch of tests. Its
-  rejoin phase is timing-sensitive under load.
-
-## Round five: M6 task 6
-
-The first round since M2 played through the browser pane again rather than only measured, and that is the
-whole finding: **the audit watches the AI, and M6's alerts are for the human, so nothing was watching the
-thing M6 had just built.** Nine AI-vs-AI games say nothing about what the console looks like to a person.
-
-One game was played in the browser pane as Terran vs a Normal Zerg on Lost Ruins, seed 11, driven
-through the real UI (`UI.select` / command card / hotkeys / placement, the same entry points
-`test/playtest_bot.js` uses) with the project's own scripted human loaded into the page. It was played
-deliberately badly in the four ways the M6 alerts exist for: depots always a beat late, the barracks
-ignored from 6:00 to 9:00, and a third base taken with nothing guarding it.
-
-### The measured half, for continuity with rounds three and four
-
-`node test/aiaudit.js 24000 1,2,3` — nine games, 131 game-minutes, on the shipping code:
-
-| what a human would never do | M4 | M5 | M6 |
-|---|---|---|---|
-| production buildings idle with the money banked (per minute, both players) | 203.1 | 105.7 | **86.7** |
-| spellcasters sitting on a full energy bar | 24.2/min | 36.4/min, 23% of caster-seconds | **21.0/min, 11%** |
-| army idle while its own base is being hit (per minute) | 3.1 | 2.2 | **1.3** |
-| idle workers (per minute) | 6.4 | 5.9 | 6.4 |
-| share of time over 700 minerals unspent | 2% | 1% | **0%** |
-| share of time supply blocked | 7% | 9% | 9% |
-| share of time attacking into 2+ static defences | 2% | 1% | **0%** |
-
-Better on five of seven and no worse on the other two. The energy row is M6 task 2's headline holding up
-on a different set of seeds, and the breakdown is still the same two units doing all of it: medics 77% of
-the waste (11% full, down from 23%) and comsats 23% (25% full, down from 43%).
-
-Two units appear in the breakdown that had **zero** caster-seconds when M6 task 2 measured it: science
-vessel at 99s and wraith at 67s. Both are tiny and the seeds differ, so treat it as noise until someone
-measures it on purpose — but Defiler, Arbiter, Queen, Ghost, Battlecruiser and Dark Archon are still
-absent from the table entirely, which is the finding that matters.
-
-### The alerts themselves are right
-
-Every alert fired at a moment a player would agree with, and none fired when it should not have:
-
-| | fired at | true? |
-|---|---|---|
-| supply | 1:06, 2:53, 3:49, 4:48, 5:41 | yes -- on the cap every time, with 274 to 724 minerals banked |
-| idle production | 5:14, 6:27, 7:12 | yes -- 560, then 1266, then 1948 minerals with the barracks empty |
-| expansion undefended | scenario | fires on the first pass, pings the base, Space centres the camera on it |
-| carrier | not reachable as Terran | covered by `test/alerts.js` |
-
-The ping and the camera jump were checked end to end: an undefended expansion under attack raises one
-console line, drops a minimap ping on the building's own coordinates, and Space moves the camera to it.
-
-### 28. The supply line drowned the console, and the audit could not see it
-
-**Fixed.** 48 console lines in eight minutes and **41 of them were "Additional supply depots required."**,
-one every three seconds from 2:53 to 6:20. The console holds six, so for three and a half minutes it held
-six copies of one sentence -- burying "Stim Packs research complete", both "Your forces are under attack"
-lines and all three idle-production alerts. The voice line rides the same path, so it also said it aloud
-41 times.
-
-M6 task 3 fixed half of this: it silenced `Unit.tickProduction`, the path for a unit already queued that
-cannot start. It left `G.queueUnit`, `G.larvaMorph` and the Zerg morph in `abilities.js`, which speak on
-every *refused click* and ran on `Player.msg`'s own 72-frame de-dupe rather than the alert's 40-second
-cooldown. The refusal does have to say something -- otherwise the button silently does nothing -- so what
-was wrong was two cooldowns for one condition. `G.supplyRefused` speaks through the alert's own slot.
-Same game replayed: **48 lines down to 14, the supply line 41 down to 6**, and the eight lines that carry
-information are all visible.
-
-Why four rounds of auditing missed it: `test/alerts.js` plays the human seat with the ordinary AI, and
-the AI checks its supply before it queues, so it never makes a refused click. **The entire class of
-"player asks for something the game refuses" is unaudited**, because the audit's player never asks for
-anything it cannot have. The new check in `test/alerts.js` leans on the button for five minutes -- 2880
-refused clicks -- and requires the console lines to fit the alert cooldown; against the old code it
-reports 41 lines where 4 are allowed, which is the number the played game produced.
-
-### 29. At 200/200 the game asked for supply depots
-
-**Fixed.** Found while checking the fix above, by asking when else the refusal speaks. At the 200 cap
-`G.queueUnit` refuses, and it said "Additional supply depots required." — telling the player to build
-something that cannot help, which is the one thing an alert must never do. `tickAlerts` already knew
-better: its `blocked` test is gated on `supMax < 200`, so the alert pass stays quiet at the cap and only
-the refusal spoke. It now says "Maximum supply reached." instead. Two checks in `test/alerts.js` cover
-it, because the cap is reachable in any long game and the old line is the kind of thing a player learns
-to ignore the whole alert for.
-
-### 30. `z3 "Tunnel Vision"` is winnable after all
-
-**Fixed, by accident.** Round four left this as the one mission the scripted bot could not finish, with
-the right diagnosis — 22,354 commands where every other mission issues 1,100-4,400, a loop rather than a
-hard fight, the nydus block re-selecting idle zerglings and right-clicking the canal every six frames
-forever — and the wrong culprit. It was not the script and not the objective: the zerglings could not
-path to the canal, because the A* closed set had been broken since the 256th search of the game (see
-HANDOFF.md). With that fixed z3 wins at frame 19,368 on 2,577 commands. With only that one change
-reverted it still runs to the 28,800 cap on exactly 22,354, which is how we know.
-
-**The scripted bot now wins all eight missions**, zero JS errors and zero stuck units.
-
-### What the audit still cannot see
-
-- **Anything about the console.** It counts what the AI does, not what the player is shown. A second
-  source for a message, a line that scrolls past unread, a ping on a spot the player cannot see -- none
-  of it is countable by watching the AI play itself.
-- **Refused actions.** See above. The audit's human is an AI that never clicks something it cannot
-  afford, cannot supply, or cannot place.
-- **Whether the player acted on it.** The idle-production alert fired at 5:14 with 560 minerals banked,
-  again at 6:27 with 1266 and again at 7:12 with 1948 — as often as its 45-second cooldown allows, from
-  the first eight seconds the condition held. The alert did its job three times and the bank still grew,
-  because the scripted player was written to ignore it. Nothing in the alert pass or the audit can tell
-  "the player was not told" from "the player was told and did nothing", and only the second of those is
-  the game working correctly.
-
-### Known, measured, not fixed
-
-- **The AI never fields an advanced caster**, unchanged from M6 task 2's finding: 28 of the 30 spells
-  have working code and a working autocast and are never reached in a normal-length game. Composition
-  and tech timing, not energy.
-- **`test/net.js` is not timing-sensitive under load.** Round four recorded that reading and it was
-  wrong. See HANDOFF.md: two real bugs, both now fixed.
+# M11 playtest guide
+
+Everything accepted from the three brainstorms is built. Branch `m10-overnight`, 40 test suites green,
+0 JS errors across scripted playthroughs. This is what to go and look at, and how to reach it.
+
+**Start here:** most of wave two is invisible from the old menu. Click **SKIRMISH SETUP** on the main
+menu — that screen is where map sizes, AI play styles, derelicts, wildlife, weather and day/night live.
+
+---
+
+## Wave one — attrition, position, consequence
+
+- **Supply cap 500.** Armies get big. Tier-1 units stay on the field far longer.
+- **Veterancy with scars.** Units rank up from kills — more damage, +1 armour at rank 2 — and damage
+  they take leaves a permanent mark. A veteran unit is worth pulling out of a fight.
+- **Directional armour.** Hits from the flank do 1.15×, from behind 1.35×. Flanking is a mechanic now,
+  not a figure of speech. A tank line has a front that can be turned.
+- **Suppression.** Sustained ranged fire pins a unit at 45% speed. Researched per-unit at the building
+  that trains it.
+- **Softened counters (0.65–1.0).** The big one. A wrong-target shot used to do a *quarter* damage;
+  now it does 65%. Counters are still legible, but position, range, splash and facing decide fights.
+- **Attrition economy.** Minerals are finite *and visible*: working a patch strips the ground around
+  it permanently. You can read how long a base has been running off how bare the rock is.
+- **Craters and wreckage.** Explosions permanently churn the ground (costs up to 25% movement speed).
+  A razed building leaves a **hulk** that blocks pathing and sight for 90 seconds — a dead tank, 25s.
+  Hulks clear; craters never do.
+- **Fog that lies.** Explored ground shows its *last known* state. A building you scouted an hour ago
+  is still drawn there whether or not it still exists. Only going back and looking corrects it.
+- **Weather and day/night.** Sandstorms on some maps; night on others (try **Nightfall**). Night cuts
+  sight to 75%, detectors to ~88%. There is a real light wash — the map visibly darkens and light
+  pools around firing units.
+- **Weapon arcs and reload cadence.** Fire is readable — you can see who is about to shoot.
+- **Diegetic per-race UI.** The console is Terran stamped steel with amber phosphor, Zerg chitin and
+  membrane, Protoss floating psionic glass. **It takes damage**: as you lose units and buildings it
+  cracks, corrodes, bleeds and glitches. Lose badly and watch the HUD tear.
+- **Combat audio state.** The soundscape changes when a fight starts and when it ends.
+- **Unit flavour.** Five distinct weapon voices; per-unit lines.
+- **Moral objectives + campaign attrition.** Three new missions (`t3` The Terrace, `z4` The Rearguard,
+  `p4` Two Gates), each with a cheap answer and an expensive one, and nothing scores you. `t4` Cold
+  Start reads your choices back. **Losing the Assembly in Two Gates closes Protoss air for the rest
+  of the campaign.** Campaign missions are under the main menu.
+
+## Wave two — the map is a player
+
+- **Skirmish setup screen.** Per-opponent race, difficulty, **play style** and team; map size modes;
+  procedural archetypes; weather, light, destructibles, derelicts and wildlife; starting bank; seed
+  with a ROLL button, and a plain-English summary of what you are about to play.
+- **AI play styles.** Standard / Turtle / Rusher / … — set per opponent.
+- **Codex.** In-game manual with a damage calculator that reads the sim's own tables. **F3**, or the
+  CODEX button on the main menu (that button was broken; it works now).
+- **Four map sizes that are different rules**, not just different dimensions.
+- **Vertical layers.** High ground now *matters*: +15% range and sight shooting down, and shooting
+  **uphill does 30% less damage**. A ramp is neutral — halfway up you have gained nothing.
+- **New buildings**: field hospital (heals) and jammer (shortens enemy sight, blinds detectors).
+- **Walls** you can build. **Destructible map features**: rocks, bridges, spires, a floodgate whose
+  channel floods for good once broken.
+- **Hazards** — the sandstorm on `dustbowl`.
+- **Neutral hostile life.** Carrion grubs, maws and warrens **buried** in the ground, on the expansions
+  you want. A tell on the surface is your only warning — **no detector reveals them**. Walking wakes a
+  grub; only building or mining wakes a maw. They guard their ground and do not chase you across the
+  map. An awake warren starts breeding, so clearing a site early is cheaper than clearing it late.
+- **Capturable derelicts.** A Foundry, an Archive and a Watchtower stand ruined and owned by nobody.
+  **Send a worker to repair one and it becomes yours** (~30–65s solo, and it costs resources). The
+  Foundry builds a **Sentinel** — a unit nothing else in the game can build. The Archive grants a
+  permanent free armour level. The Watchtower gives 18 tiles of vision while you hold it. Your army
+  will *not* auto-attack them, so you choose whether to take one or deny it.
+
+## Wave three — feel and control
+
+- **Strategic zoom.** Mouse wheel. Below 0.5 it swaps to icons and the whole map becomes one bitmap —
+  zooming out is the *cheapest* state in the game. Zoom anchors on the cursor.
+- **Ferry routes.** Select a transport, press **Y** (or the Ferry button), click a destination. It
+  loads idle units where it stands, flies, unloads, and comes back — forever. It will not pick up a
+  worker that has a job.
+- **Branching replay.** Watch a replay, hit **Ctrl+B**, and take control from that frame. The AI keeps
+  playing. Save afterwards and you get a *whole* game: the original opening, then your what-if.
+- **Threat-aware targeting**, **no build refunds**, **unit weight and settle**, **drag-line formation**
+  (drag with right-click to form a line), **formation shapes**, and legibility work at 400+ units.
+
+---
+
+## Quality-of-life keys
+
+| key | does |
+|---|---|
+| `,` | select next idle worker |
+| `Ctrl+A` | select all army |
+| `Tab` | cycle subgroup |
+| `Backspace` | centre camera on selection |
+| `F3` | codex |
+| `F10` | pause menu |
+| `Y` | ferry route (transport selected) |
+| wheel | zoom |
+| `Ctrl+B` | take control of a replay |
+| `Ctrl+V`, `[` `]`, `O` | in a replay: view all, switch player, production overlay |
+
+## Known and deliberate
+
+- **No balance run has been made, and every balance number in HANDOFF.md is stale.** Softening the
+  counter matrix invalidated all of it, which is why it landed last. The run is waiting on your
+  explicit go-ahead.
+- A scripted 26,000-frame game left exactly one zergling idle inside a hatchery footprint. Pre-existing
+  class of issue, benign, not chased.
