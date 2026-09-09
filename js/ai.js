@@ -34,7 +34,7 @@ const AI_COMP = {
   P: [['zealot', 4], ['dragoon', 5], ['high_templar', 2], ['dark_templar', 1], ['reaver', 1], ['shuttle', 1], ['observer', 1], ['corsair', 1], ['scout', 1], ['carrier', 2], ['arbiter', 1]],
 };
 const AI_RESEARCH = {
-  T: ['stim', 'siege_tech', 'u238', 'infW', 'infA', 'ion_thrusters', 'spider_mines_tech', 'vehW', 'charon', 'vehA', 'irradiate_tech', 'emp_tech', 'personnel_cloaking', 'lockdown_tech', 'yamato_tech', 'shipW', 'cloaking_field', 'suppress_inf', 'suppress_veh', 'restoration_tech', 'optical_flare_tech', 'caduceus', 'moebius', 'ocular', 'apollo', 'titan', 'colossus'],
+  T: ['stim', 'siege_tech', 'u238', 'infW', 'infA', 'ion_thrusters', 'spider_mines_tech', 'vehW', 'charon', 'vehA', 'irradiate_tech', 'emp_tech', 'personnel_cloaking', 'lockdown_tech', 'yamato_tech', 'shipW', 'shipA', 'cloaking_field', 'suppress_inf', 'suppress_veh', 'restoration_tech', 'optical_flare_tech', 'caduceus', 'moebius', 'ocular', 'apollo', 'titan', 'colossus'],
   Z: ['metabolic', 'flyW', 'lurker_aspect', 'carapace', 'meleeW', 'grooved', 'muscular', 'missW', 'flyA', 'burrow_tech', 'pneumatized', 'anabolic', 'chitinous', 'adrenal', 'consume_tech', 'plague_tech', 'suppress_hyd', 'suppress_air', 'spawn_broodling_tech', 'ensnare_tech', 'ventral_sacs', 'antennae', 'gamete', 'metasynaptic'],
   P: ['singularity', 'gW', 'leg_enhancements', 'gA', 'psi_storm_tech', 'shields', 'scarab_damage', 'gravitic_drive', 'airW', 'carrier_capacity', 'stasis_tech', 'khaydarin_amulet', 'airA', 'recall_tech', 'suppress_gate', 'suppress_bay', 'maelstrom_tech', 'mind_control_tech', 'hallucination_tech', 'disruption_web_tech', 'reaver_capacity', 'gravitic_boosters', 'sensor_array', 'apial_sensors', 'gravitic_thrusters', 'argus_talisman', 'argus_jewel', 'khaydarin_core'],
 };
@@ -404,6 +404,28 @@ class AI {
     }
     cands.sort((a, b) => a[0] - b[0]);
     if (!cands.length) return;
+    // A NYDUS CANAL WITH NO EXIT DOES NOTHING. The script has built one since M10 and nothing ever
+    // placed the far end, so Zerg spent 150 minerals on an inert building every game and the ability
+    // that justifies it -- Unit.order 'nydus', which teleports a ground army across the map -- could
+    // never fire, because it refuses a canal whose nydusLink is missing.
+    //
+    // The exit goes at the furthest base this player owns from the canal, which is the only placement
+    // that is worth anything: a link between two points you already hold is a shortcut, and a link to
+    // somewhere you do not hold is a gift to the enemy.
+    if (this.race === 'Z') {
+      for (const cn of this.mine(u => u.def.nydus && u.done && !u.nydusLink)) {
+        if (p.minerals < DATA.buildings.nydus_canal.min) break;
+        let best = null, bd = -1;
+        for (const b of this.mine(u => u.def.depot && u.done)) {
+          const d = distPt(b.x, b.y, cn.x, cn.y);
+          if (d > bd) { bd = d; best = b; }
+        }
+        if (!best || bd < 12 * TILE) break;                 // both ends in one base is not a shortcut
+        const t = G.map.findFreeTile(best.tx, best.ty + best.def.h + 1, 8);
+        if (t) Abilities.issue(cn, 'nydus_exit', null, (t[0] + 0.5) * TILE, (t[1] + 0.5) * TILE);
+        break;                                              // one a turn; it costs minerals
+      }
+    }
     // Zerg morphs: hydras -> lurkers, mutas -> guardians
     if (this.race === 'Z' && p.hasTech('lurker_aspect') && (counts.lurker || 0) < (counts.hydralisk || 0) / 1.5 && p.minerals >= 50 && p.gas >= 100) { const h = this.mine(u => u.def.id === 'hydralisk' && u.order.type !== 'attack' && u.done); if (h.length) { Abilities.morph(h[0], 'lurker'); return; } }
     if (this.race === 'Z' && p.hasBuilding('greater_spire') && (counts.guardian || 0) < 4 && p.minerals >= 50 && p.gas >= 100) { const m = this.mine(u => u.def.id === 'mutalisk'); if (m.length > 4) { Abilities.morph(m[0], 'guardian'); return; } }
