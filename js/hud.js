@@ -9,20 +9,37 @@ const HUD = {
   // A 90s RTS console is a piece of the faction's own material -- Terran is stamped steel with hazard
   // paint, Zerg is carapace, Protoss is gilded stone -- so each race gets a palette and a texture,
   // and the frame is built from them rather than hard-coded.
+  // Each race's console is a different machine, not the same machine in a different colour. `grain`
+  // picks the whole treatment -- texture, the top edge, the section ribs, the corner brackets and the
+  // bezel round every recessed screen -- so a Zerg console has no rivets anywhere on it and a Protoss
+  // one has no straight corners.
   SKINS: {
-    T: { hi: '#3a4452', lo: '#161b22', edge: '#7d93ad', accent: '#d7a13c', rivet: '#0a0d11', ink: '#0b0e13', grain: 'brushed', stripe: true },
-    Z: { hi: '#3f2c3d', lo: '#150f16', edge: '#a86ad0', accent: '#c07ad8', rivet: '#160b18', ink: '#0d070e', grain: 'organic', stripe: false },
-    P: { hi: '#3b3524', lo: '#16130d', edge: '#e0b84a', accent: '#62d4ff', rivet: '#0d0a06', ink: '#0a0805', grain: 'gilded', stripe: false },
+    T: { hi: '#3a4452', lo: '#161b22', edge: '#7d93ad', accent: '#d7a13c', rivet: '#0a0d11', ink: '#0b0e13', grain: 'brushed', stripe: true, glow: 'rgba(215,161,60,', btn: '#1e2530', btnHov: '#2a3240', btnDim: '#151920', slot: '#141922' },
+    Z: { hi: '#452f43', lo: '#221623', edge: '#a86ad0', accent: '#c07ad8', rivet: '#160b18', ink: '#0d070e', grain: 'organic', stripe: false, glow: 'rgba(200,120,240,', btn: '#251a28', btnHov: '#35243c', btnDim: '#170f19', slot: '#1a121c' },
+    P: { hi: '#3b3524', lo: '#16130d', edge: '#e0b84a', accent: '#62d4ff', rivet: '#0d0a06', ink: '#0a0805', grain: 'gilded', stripe: false, glow: 'rgba(98,212,255,', btn: '#262114', btnHov: '#37301b', btnDim: '#17130a', slot: '#1a1610' },
   },
-  skin() { return this.SKINS[G.players[G.human].race] || this.SKINS.T; },
+  // The codex draws itself in the material of whichever race's tab is up, and both it and the main menu
+  // can be on screen with no game running at all -- so this must survive G.players being empty.
+  skinOverride: null,
+  raceKey() { const p = (typeof G !== 'undefined' && G.players) ? G.players[G.human] : null; return this.skinOverride || (p && p.race) || 'T'; },
+  skin() { return this.SKINS[this.raceKey()] || this.SKINS.T; },
   accent() { return this.skin().edge; },
 
   // The console background is the same pixels every frame, so it is built once into a canvas and
   // blitted. Drawing the texture live cost more than the whole rest of the HUD; cached it is one
-  // drawImage. Keyed on race and size because those are the only things that change it.
-  panel(w, h) {
-    const r = G.players[G.human].race, key = r + '|' + w + '|' + h;
-    if (this._panelKey === key) return this._panel;
+  // drawImage.
+  //
+  // A MAP, NOT ONE SLOT. This used to keep a single cached canvas keyed on race|w|h, which is correct
+  // exactly while one panel size exists. The pause menu already broke it -- `drawMenu` calls `frame` at
+  // the dialog's size every frame while `drawConsole` calls it at the console's, so with a menu open
+  // both were rebuilt from scratch sixty times a second, ninety ellipses and all. The codex is a third
+  // size and would have made it three. Four entries is enough for every panel on screen at once; the
+  // cache is dropped wholesale past eight so a window being dragged to resize cannot grow it forever.
+  panel(w, h, ribs) {
+    const key = this.raceKey() + '|' + w + '|' + h + '|' + (ribs ? 1 : 0);
+    this._panels = this._panels || new Map();
+    const hitc = this._panels.get(key); if (hitc) return hitc;
+    if (this._panels.size > 8) this._panels.clear();
     const s = this.skin(), cv = document.createElement('canvas'); cv.width = w; cv.height = h; const c = cv.getContext('2d');
     // Lit hard along the top and falling away fast, the way a plate tilted toward the room catches
     // light. A flat top-to-bottom ramp reads as a coloured rectangle; the kink at 0.18 is what makes
@@ -30,34 +47,127 @@ const HUD = {
     const g = c.createLinearGradient(0, 0, 0, h);
     g.addColorStop(0, s.hi); g.addColorStop(0.18, s.hi); g.addColorStop(0.55, s.lo); g.addColorStop(1, s.ink);
     c.fillStyle = g; c.fillRect(0, 0, w, h);
-    // texture. Deterministic from a fixed seed so the panel does not shimmer when the window resizes.
+    // Deterministic from a fixed seed so the panel does not shimmer when the window resizes.
     let seed = 1234567;
     const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
     c.save();
-    if (s.grain === 'brushed') { // horizontal tooling marks, like rolled plate
-      for (let i = 0; i < h * 1.4; i++) { const y = rnd() * h; c.strokeStyle = 'rgba(255,255,255,' + (0.012 + rnd() * 0.022).toFixed(3) + ')'; c.beginPath(); c.moveTo(rnd() * w * 0.5, y); c.lineTo(w * (0.4 + rnd() * 0.6), y); c.stroke(); }
-    } else if (s.grain === 'organic') { // carapace: overlapping dark cells with a wet highlight
-      for (let i = 0; i < 90; i++) { const x = rnd() * w, y = rnd() * h, rx = 14 + rnd() * 40, ry = 6 + rnd() * 14; c.fillStyle = 'rgba(0,0,0,' + (0.10 + rnd() * 0.16).toFixed(3) + ')'; c.beginPath(); c.ellipse(x, y, rx, ry, rnd() * 0.6 - 0.3, 0, 7); c.fill(); c.strokeStyle = 'rgba(190,140,210,0.05)'; c.lineWidth = 1; c.beginPath(); c.ellipse(x, y - 1, rx, ry, 0, 3.6, 5.8); c.stroke(); }
-    } else { // gilded: fine vertical fluting and a warm sheen
-      for (let x = 0; x < w; x += 6) { c.fillStyle = 'rgba(255,225,150,' + (0.018 + (x % 12 ? 0 : 0.02)).toFixed(3) + ')'; c.fillRect(x, 0, 2, h); }
-      const sh = c.createLinearGradient(0, 0, w, h); sh.addColorStop(0, 'rgba(255,220,140,0.05)'); sh.addColorStop(0.5, 'rgba(0,0,0,0)'); sh.addColorStop(1, 'rgba(255,220,140,0.04)'); c.fillStyle = sh; c.fillRect(0, 0, w, h);
-    }
+    if (s.grain === 'brushed') this.grainT(c, w, h, s, rnd);
+    else if (s.grain === 'organic') this.grainZ(c, w, h, s, rnd);
+    else this.grainP(c, w, h, s, rnd);
     c.restore();
-    // the lit top edge, and Terran's hazard stripe under it
-    c.fillStyle = s.edge; c.globalAlpha = 0.75; c.fillRect(0, 0, w, 2); c.globalAlpha = 1;
-    if (s.stripe) { c.save(); c.beginPath(); c.rect(0, 2, w, 5); c.clip(); for (let x = -20; x < w + 20; x += 14) { c.fillStyle = (x / 14 | 0) % 2 ? 'rgba(215,161,60,0.5)' : 'rgba(20,24,30,0.5)'; c.beginPath(); c.moveTo(x, 7); c.lineTo(x + 7, 2); c.lineTo(x + 14, 2); c.lineTo(x + 7, 7); c.closePath(); c.fill(); } c.restore(); }
-    // Ribs where the console divides into minimap / unit panel / command card. A real one is bolted
-    // together out of sections and the seams are where the eye rests; without them the whole bar is
-    // one undifferentiated slab however good the texture is.
-    for (const fx of [0.155, 0.815]) {
-      const x = Math.round(w * fx);
-      c.fillStyle = 'rgba(0,0,0,0.55)'; c.fillRect(x - 3, 4, 3, h - 8);
-      c.fillStyle = 'rgba(255,255,255,0.10)'; c.fillRect(x, 4, 2, h - 8);
-      c.fillStyle = s.edge; c.globalAlpha = 0.18; c.fillRect(x - 1, 4, 1, h - 8); c.globalAlpha = 1;
-      for (let ry = 12; ry < h - 10; ry += 22) { c.fillStyle = s.rivet; c.beginPath(); c.arc(x - 1, ry, 2, 0, 7); c.fill(); c.fillStyle = 'rgba(255,255,255,0.22)'; c.beginPath(); c.arc(x - 1.5, ry - .6, 0.9, 0, 7); c.fill(); }
-    }
+    this.topEdge(c, w, h, s, rnd);
+    if (ribs) for (const fx of [0.155, 0.815]) this.rib(c, Math.round(w * fx), h, s);
     c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(0, h - 1, w, 1);
-    this._panelKey = key; return this._panel = cv;
+    this._panels.set(key, cv); return cv;
+  },
+
+  // ---- the three materials ------------------------------------------------
+  // Terran: rolled plate. Tooling marks along the grain, horizontal seams where two plates are lapped
+  // and bolted, rivet rows down every seam, and the scuffs and weld spatter of something that is
+  // repaired in the field rather than replaced.
+  grainT(c, w, h, s, rnd) {
+    for (let i = 0; i < h * 1.4; i++) { const y = rnd() * h; c.strokeStyle = 'rgba(255,255,255,' + (0.012 + rnd() * 0.022).toFixed(3) + ')'; c.beginPath(); c.moveTo(rnd() * w * 0.5, y); c.lineTo(w * (0.4 + rnd() * 0.6), y); c.stroke(); }
+    // lapped plate seams with a bolt row along each
+    for (let y = Math.round(h * 0.42); y < h - 12; y += Math.max(26, Math.round(h * 0.34))) {
+      c.fillStyle = 'rgba(0,0,0,0.45)'; c.fillRect(0, y, w, 2);
+      c.fillStyle = 'rgba(255,255,255,0.08)'; c.fillRect(0, y + 2, w, 1);
+      for (let x = 14; x < w - 8; x += 38) this.bolt(c, x, y + 6, 2, s);
+    }
+    // bolt rows along the top and bottom rails, which is what makes it read as bolted to something
+    for (let x = 10; x < w - 6; x += 34) { this.bolt(c, x, h - 7, 2.2, s); }
+    // scuffs and weld spatter
+    for (let i = 0; i < 26; i++) { const x = rnd() * w, y = h * (0.2 + rnd() * 0.75), l = 6 + rnd() * 22; c.strokeStyle = 'rgba(0,0,0,' + (0.10 + rnd() * 0.14).toFixed(3) + ')'; c.lineWidth = 1 + rnd(); c.beginPath(); c.moveTo(x, y); c.lineTo(x + l, y + rnd() * 2 - 1); c.stroke(); }
+    c.lineWidth = 1;
+  },
+  bolt(c, x, y, r, s) { c.fillStyle = s.rivet; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); c.fillStyle = 'rgba(255,255,255,0.22)'; c.beginPath(); c.arc(x - r * 0.35, y - r * 0.35, r * 0.42, 0, 7); c.fill(); },
+
+  // Zerg: carapace. Overlapping chitin cells, the veins under them, pores, and a wet specular that
+  // sits on top of the plates rather than in them. Nothing here is straight and nothing is bolted.
+  grainZ(c, w, h, s, rnd) {
+    for (let i = 0; i < 110; i++) {
+      const x = rnd() * w, y = rnd() * h, rx = 14 + rnd() * 40, ry = 6 + rnd() * 14;
+      c.fillStyle = 'rgba(0,0,0,' + (0.10 + rnd() * 0.16).toFixed(3) + ')';
+      c.beginPath(); c.ellipse(x, y, rx, ry, rnd() * 0.6 - 0.3, 0, 7); c.fill();
+      c.strokeStyle = 'rgba(210,155,235,0.10)'; c.lineWidth = 1;
+      c.beginPath(); c.ellipse(x, y - 1, rx, ry, 0, 3.6, 5.8); c.stroke();
+    }
+    // veins: branching filaments that run the length of the console under the plates
+    c.lineCap = 'round';
+    for (let i = 0; i < 9; i++) {
+      let x = rnd() * w, y = 6 + rnd() * (h - 12);
+      c.strokeStyle = 'rgba(120,50,140,' + (0.10 + rnd() * 0.14).toFixed(3) + ')'; c.lineWidth = 1 + rnd() * 2;
+      c.beginPath(); c.moveTo(x, y);
+      for (let k = 0; k < 5; k++) { const nx = x + (rnd() * 70 - 20), ny = clamp(y + rnd() * 22 - 11, 3, h - 3); c.quadraticCurveTo((x + nx) / 2, ny + rnd() * 10 - 5, nx, ny); x = nx; y = ny; }
+      c.stroke();
+    }
+    // pores, and the wet highlight that makes it look alive rather than painted
+    for (let i = 0; i < 40; i++) { const x = rnd() * w, y = rnd() * h, r = 1 + rnd() * 2.4; c.fillStyle = 'rgba(0,0,0,0.35)'; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); c.fillStyle = 'rgba(220,170,240,0.10)'; c.beginPath(); c.arc(x - r * 0.3, y - r * 0.4, r * 0.5, 0, 7); c.fill(); }
+    for (let i = 0; i < 14; i++) { const x = rnd() * w, y = h * (0.05 + rnd() * 0.5); c.strokeStyle = 'rgba(240,210,255,' + (0.05 + rnd() * 0.06).toFixed(3) + ')'; c.lineWidth = 1.5; c.beginPath(); c.ellipse(x, y, 10 + rnd() * 26, 4 + rnd() * 8, rnd() - 0.5, 3.5, 5.4); c.stroke(); }
+    c.lineWidth = 1;
+  },
+
+  // Protoss: cut stone with gold inlay. Fluting, a woven filigree band, and khaydarin facets set into
+  // the surface. The psionic part of it is light coming out of the material, not a lamp bolted onto it.
+  grainP(c, w, h, s, rnd) {
+    for (let x = 0; x < w; x += 6) { c.fillStyle = 'rgba(255,225,150,' + (0.018 + (x % 12 ? 0 : 0.02)).toFixed(3) + ')'; c.fillRect(x, 0, 2, h); }
+    const sh = c.createLinearGradient(0, 0, w, h); sh.addColorStop(0, 'rgba(255,220,140,0.05)'); sh.addColorStop(0.5, 'rgba(0,0,0,0)'); sh.addColorStop(1, 'rgba(255,220,140,0.04)'); c.fillStyle = sh; c.fillRect(0, 0, w, h);
+    // the filigree band: one repeating angular motif, drawn in gold, low enough not to fight the type
+    const by = Math.round(h * 0.30), bh = Math.max(8, Math.round(h * 0.10));
+    c.strokeStyle = 'rgba(230,190,90,0.16)'; c.lineWidth = 1.2;
+    for (let x = 4; x < w; x += 26) { c.beginPath(); c.moveTo(x, by + bh); c.lineTo(x + 8, by); c.lineTo(x + 18, by); c.lineTo(x + 26, by + bh); c.stroke(); }
+    c.strokeStyle = 'rgba(230,190,90,0.10)'; c.beginPath(); c.moveTo(0, by + bh + 2); c.lineTo(w, by + bh + 2); c.stroke();
+    // khaydarin facets set along the lower band, each lit from inside
+    for (let x = 20; x < w - 12; x += 74) {
+      const y = h - Math.max(12, Math.round(h * 0.16)), r = 5;
+      c.fillStyle = 'rgba(0,0,0,0.45)'; c.beginPath(); c.moveTo(x, y - r - 1); c.lineTo(x + r + 1, y); c.lineTo(x, y + r + 1); c.lineTo(x - r - 1, y); c.closePath(); c.fill();
+      const gg = c.createRadialGradient(x, y, 0.5, x, y, r); gg.addColorStop(0, s.glow + '0.65)'); gg.addColorStop(1, s.glow + '0)');
+      c.fillStyle = gg; c.beginPath(); c.moveTo(x, y - r); c.lineTo(x + r, y); c.lineTo(x, y + r); c.lineTo(x - r, y); c.closePath(); c.fill();
+    }
+    c.lineWidth = 1;
+  },
+
+  // ---- the top edge, which is the first thing the eye reads ---------------
+  topEdge(c, w, h, s, rnd) {
+    c.fillStyle = s.edge; c.globalAlpha = 0.75; c.fillRect(0, 0, w, 2); c.globalAlpha = 1;
+    if (s.grain === 'brushed') {  // hazard paint on the rail, the way a real machine marks its edges
+      c.save(); c.beginPath(); c.rect(0, 2, w, 5); c.clip();
+      for (let x = -20; x < w + 20; x += 14) { c.fillStyle = (x / 14 | 0) % 2 ? 'rgba(215,161,60,0.5)' : 'rgba(20,24,30,0.5)'; c.beginPath(); c.moveTo(x, 7); c.lineTo(x + 7, 2); c.lineTo(x + 14, 2); c.lineTo(x + 7, 7); c.closePath(); c.fill(); }
+      c.restore();
+    } else if (s.grain === 'organic') {  // a scalloped chitin ridge: overlapping plates, not a rail
+      c.save();
+      for (let x = -6; x < w + 12; x += 17) {
+        c.fillStyle = 'rgba(0,0,0,0.40)'; c.beginPath(); c.ellipse(x + 9, 1, 11, 7, 0, 0, Math.PI); c.fill();
+        c.strokeStyle = 'rgba(200,140,230,0.22)'; c.lineWidth = 1.2; c.beginPath(); c.ellipse(x + 9, 1, 11, 7, 0, 0.15, Math.PI - 0.15); c.stroke();
+      }
+      c.restore();
+    } else {  // a psionic seam: light bleeding up out of the stone
+      const gg = c.createLinearGradient(0, 0, 0, 10); gg.addColorStop(0, s.glow + '0.34)'); gg.addColorStop(1, s.glow + '0)');
+      c.fillStyle = gg; c.fillRect(0, 2, w, 10);
+      c.fillStyle = 'rgba(230,184,74,0.5)'; c.fillRect(0, 2, w, 1);
+    }
+  },
+
+  // ---- the section ribs ---------------------------------------------------
+  // Where the console divides into minimap / unit panel / command card. A real one is built out of
+  // sections and the seams are where the eye rests; without them the whole bar is one slab however
+  // good the texture is. What the seam is MADE of is the per-race part: bolted plate, a chitin spine,
+  // or a column of set crystal.
+  rib(c, x, h, s) {
+    c.fillStyle = 'rgba(0,0,0,0.55)'; c.fillRect(x - 3, 4, 3, h - 8);
+    c.fillStyle = 'rgba(255,255,255,0.10)'; c.fillRect(x, 4, 2, h - 8);
+    c.fillStyle = s.edge; c.globalAlpha = 0.18; c.fillRect(x - 1, 4, 1, h - 8); c.globalAlpha = 1;
+    if (s.grain === 'brushed') { for (let ry = 12; ry < h - 10; ry += 22) this.bolt(c, x - 1, ry, 2, s); }
+    else if (s.grain === 'organic') {
+      for (let ry = 10; ry < h - 8; ry += 14) {
+        c.fillStyle = 'rgba(0,0,0,0.45)'; c.beginPath(); c.ellipse(x - 1, ry, 5, 8, 0, 0, 7); c.fill();
+        c.strokeStyle = 'rgba(200,140,230,0.20)'; c.lineWidth = 1; c.beginPath(); c.ellipse(x - 1, ry - 1, 5, 8, 0, 3.4, 6.0); c.stroke();
+      }
+    } else {
+      for (let ry = 14; ry < h - 10; ry += 20) {
+        const gg = c.createRadialGradient(x - 1, ry, 0.5, x - 1, ry, 5); gg.addColorStop(0, s.glow + '0.5)'); gg.addColorStop(1, s.glow + '0)');
+        c.fillStyle = gg; c.beginPath(); c.moveTo(x - 1, ry - 5); c.lineTo(x + 3, ry); c.lineTo(x - 1, ry + 5); c.lineTo(x - 5, ry); c.closePath(); c.fill();
+      }
+    }
   },
   // Trebuchet is a 1996 *web* face and reads like one. The console fonts of this era were condensed,
   // heavy and squared off, so this asks for those first and keeps Trebuchet only as the last resort.
@@ -78,24 +188,73 @@ const HUD = {
       ctx.beginPath(); ctx.moveTo(x + w - i - .5, y + i + .5); ctx.lineTo(x + w - i - .5, y + h - i - .5); ctx.lineTo(x + i + .5, y + h - i - .5); ctx.stroke();
     }
   },
-  frame(ctx, x, y, w, h) {
+  // `opts.ribs === false` drops the two section seams, which only mean anything on the console itself --
+  // the codex is one full-screen sheet and a seam at 15% of its width would cut through the unit list.
+  frame(ctx, x, y, w, h, opts) {
     const s = this.skin();
-    ctx.drawImage(this.panel(Math.max(1, Math.round(w)), Math.max(1, Math.round(h))), x, y);
+    const W = Math.max(1, Math.round(w)), H = Math.max(1, Math.round(h));
+    // Past 2.5 megapixels the texture is built at half size and blitted up. The console never gets
+    // there (3840 x 220 is 845,000) and neither does a full-screen panel at 1080p, but one at 4K is
+    // 3840 x 2160 -- 33 MB of canvas per race tab, holding grain. Bevels and corners are still drawn
+    // at full size, so nothing with an edge is softened.
+    const k = W * H > 2500000 ? 2 : 1;
+    const p = this.panel(Math.ceil(W / k), Math.ceil(H / k), !opts || opts.ribs !== false);
+    ctx.drawImage(p, 0, 0, p.width, p.height, x, y, W, H);
     this.bevel(ctx, x + 2, y + 2, w - 4, h - 4, true, 'rgba(0,0,0,0)');
-    // Corner brackets rather than four loose rivets: an L of plate with a rivet through it, which is
-    // the detail that makes a console read as bolted together instead of drawn on.
+    for (const [cx, cy, sx, sy] of [[x + 4, y + 4, 1, 1], [x + w - 4, y + 4, -1, 1], [x + 4, y + h - 4, 1, -1], [x + w - 4, y + h - 4, -1, -1]]) this.corner(ctx, cx, cy, sx, sy, s);
+  },
+  // The corner is where a frame says what it is made of, and four identical brackets said "one machine
+  // in three paint jobs". Terran gets an L of plate with a bolt through it; Zerg a talon curling in off
+  // the edge; Protoss a mitred chamfer with a lit facet set in it.
+  corner(ctx, cx, cy, sx, sy, s) {
     const B = 16;
-    for (const [cx, cy, sx, sy] of [[x + 4, y + 4, 1, 1], [x + w - 4, y + 4, -1, 1], [x + 4, y + h - 4, 1, -1], [x + w - 4, y + h - 4, -1, -1]]) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.lineWidth = 2; ctx.beginPath();
-      ctx.moveTo(cx + sx * B, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + sy * B); ctx.stroke();
-      ctx.strokeStyle = s.edge; ctx.globalAlpha = 0.35; ctx.lineWidth = 1; ctx.beginPath();
-      ctx.moveTo(cx + sx * (B - 3), cy + sy * 3); ctx.lineTo(cx + sx * 3, cy + sy * 3); ctx.lineTo(cx + sx * 3, cy + sy * (B - 3)); ctx.stroke(); ctx.globalAlpha = 1;
-      const rx = cx + sx * 7, ry = cy + sy * 7;
-      ctx.fillStyle = s.rivet; ctx.beginPath(); ctx.arc(rx, ry, 2.6, 0, 7); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.beginPath(); ctx.arc(rx - .8, ry - .8, 1.1, 0, 7); ctx.fill();
+    if (s.grain === 'organic') {
+      ctx.strokeStyle = 'rgba(230,190,250,0.16)'; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(cx + sx * B, cy + sy * 1); ctx.quadraticCurveTo(cx + sx * 2, cy + sy * 2, cx + sx * 1, cy + sy * B); ctx.stroke();
+      ctx.strokeStyle = s.edge; ctx.globalAlpha = 0.30; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(cx + sx * (B - 4), cy + sy * 4); ctx.quadraticCurveTo(cx + sx * 5, cy + sy * 5, cx + sx * 4, cy + sy * (B - 4)); ctx.stroke(); ctx.globalAlpha = 1;
+      ctx.fillStyle = 'rgba(20,10,24,0.9)'; ctx.beginPath(); ctx.moveTo(cx + sx * 3, cy + sy * 3); ctx.lineTo(cx + sx * 11, cy + sy * 4); ctx.lineTo(cx + sx * 4, cy + sy * 11); ctx.closePath(); ctx.fill();
+      ctx.lineCap = 'butt'; ctx.lineWidth = 1; return;
+    }
+    if (s.grain === 'gilded') {
+      ctx.strokeStyle = 'rgba(255,235,180,0.20)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(cx + sx * B, cy + sy * 1); ctx.lineTo(cx + sx * 6, cy + sy * 6); ctx.lineTo(cx + sx * 1, cy + sy * B); ctx.stroke();
+      ctx.strokeStyle = s.edge; ctx.globalAlpha = 0.38; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(cx + sx * (B - 3), cy + sy * 4); ctx.lineTo(cx + sx * 8, cy + sy * 8); ctx.lineTo(cx + sx * 4, cy + sy * (B - 3)); ctx.stroke(); ctx.globalAlpha = 1;
+      const fx = cx + sx * 8.5, fy = cy + sy * 8.5;
+      ctx.fillStyle = s.accent; ctx.globalAlpha = 0.55; ctx.beginPath(); ctx.moveTo(fx, fy - 3); ctx.lineTo(fx + 3, fy); ctx.lineTo(fx, fy + 3); ctx.lineTo(fx - 3, fy); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
+      ctx.lineWidth = 1; return;
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.lineWidth = 2; ctx.beginPath();
+    ctx.moveTo(cx + sx * B, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + sy * B); ctx.stroke();
+    ctx.strokeStyle = s.edge; ctx.globalAlpha = 0.35; ctx.lineWidth = 1; ctx.beginPath();
+    ctx.moveTo(cx + sx * (B - 3), cy + sy * 3); ctx.lineTo(cx + sx * 3, cy + sy * 3); ctx.lineTo(cx + sx * 3, cy + sy * (B - 3)); ctx.stroke(); ctx.globalAlpha = 1;
+    this.bolt(ctx, cx + sx * 7, cy + sy * 7, 2.6, s);
+    ctx.lineWidth = 1;
+  },
+  // Every recessed screen on the console goes through here, so it is the cheapest place to make the
+  // three machines feel different: a bolted viewport, a socket in something living, or cut stone.
+  inset(ctx, x, y, w, h) {
+    const s = this.skin();
+    ctx.fillStyle = s.ink; ctx.fillRect(x, y, w, h);
+    this.bevel(ctx, x, y, w, h, false, 'rgba(0,0,0,0)');
+    ctx.strokeStyle = s.edge; ctx.globalAlpha = 0.22; ctx.lineWidth = 1;
+    if (s.grain === 'gilded') {   // no square corners anywhere on a Protoss console
+      const m = Math.min(6, w / 4, h / 4);
+      ctx.beginPath();
+      ctx.moveTo(x + 1.5 + m, y + 1.5); ctx.lineTo(x + w - 1.5 - m, y + 1.5); ctx.lineTo(x + w - 1.5, y + 1.5 + m);
+      ctx.lineTo(x + w - 1.5, y + h - 1.5 - m); ctx.lineTo(x + w - 1.5 - m, y + h - 1.5); ctx.lineTo(x + 1.5 + m, y + h - 1.5);
+      ctx.lineTo(x + 1.5, y + h - 1.5 - m); ctx.lineTo(x + 1.5, y + 1.5 + m); ctx.closePath(); ctx.stroke();
+    } else ctx.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
+    ctx.globalAlpha = 1;
+    if (s.grain === 'brushed') { for (const [dx, dy] of [[6, 6], [w - 6, 6], [6, h - 6], [w - 6, h - 6]]) this.bolt(ctx, x + dx, y + dy, 2, s); }
+    else if (s.grain === 'organic') {   // a socket in something living: a chitin lip at each corner
+      const r = Math.min(10, w / 3, h / 3);
+      ctx.strokeStyle = 'rgba(200,140,230,0.20)'; ctx.lineWidth = 2;
+      for (const [dx, dy, a0] of [[r, r, Math.PI], [w - r, r, -Math.PI / 2], [w - r, h - r, 0], [r, h - r, Math.PI / 2]]) { ctx.beginPath(); ctx.arc(x + dx, y + dy, r - 2, a0, a0 + Math.PI / 2); ctx.stroke(); }
+      ctx.lineWidth = 1;
     }
   },
-  inset(ctx, x, y, w, h) { const s = this.skin(); ctx.fillStyle = s.ink; ctx.fillRect(x, y, w, h); this.bevel(ctx, x, y, w, h, false, 'rgba(0,0,0,0)'); ctx.strokeStyle = s.edge; ctx.globalAlpha = 0.22; ctx.lineWidth = 1; ctx.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3); ctx.globalAlpha = 1; },
   // A hard black shell on all four sides rather than one offset shadow. Era UI text sat on top of
   // whatever the console was made of and had to stay legible over rivets and hazard paint, so it was
   // outlined, not drop-shadowed -- a shadow only works when what is behind it is flat.
@@ -136,6 +295,7 @@ Object.assign(UI, {
   cardRect() { const ch = this.consoleH, k = Math.min(1, (ch - 16) / 182); const bw = Math.round(64 * k), bh = Math.round(54 * k), gap = Math.max(2, Math.round(4 * k)); const w = 3 * (bw + gap) + 8, h = 3 * (bh + gap) + 8; return { x: Render.W - w - 12, y: Render.H - ch + 8, w, h, bw, bh, gap, k }; },
   drawConsole() {
     const ctx = Render.ctx, W = Render.W, H = Render.H, ch = this.consoleH, y0 = H - ch; const p = G.players[G.human];
+    const sk = HUD.skin();
     HUD.frame(ctx, 0, y0, W, ch);
     // ---- minimap ----
     const mr = this.miniRect(); HUD.inset(ctx, mr.x - 3, mr.y - 3, mr.s + 6, mr.s + 6);
@@ -152,7 +312,7 @@ Object.assign(UI, {
     const ix = mr.x + mr.s + 18, iw = cr.x - ix - 14; HUD.inset(ctx, ix, y0 + 8, iw, ch - 16);
     const sel = this.selection;
     if (sel.length === 1) this.drawUnitInfo(ctx, sel[0], ix, y0 + 8, iw, ch - 16);
-    else if (sel.length > 1) { const cols = Math.min(6, Math.floor((iw - 16) / 46)); sel.forEach((u, i) => { const bx = ix + 10 + (i % cols) * 46, by = y0 + 16 + Math.floor(i / cols) * 58; HUD.bevel(ctx, bx, by, 42, 52, true, '#141922'); const hr = u.hp / u.maxHp; const tint = hr > .66 ? 'rgba(60,230,60,0.8)' : hr > .33 ? 'rgba(240,220,60,0.8)' : 'rgba(255,60,60,0.8)'; ctx.drawImage(Sprites.tinted(u.def.id, G.players[u.owner].color, 36, tint), bx + 3, by + 3); if (u.maxSh) { ctx.fillStyle = '#5aa8ff'; ctx.fillRect(bx + 3, by + 42, 36 * u.sh / u.maxSh, 2); } ctx.fillStyle = hr > .66 ? '#3fe83f' : hr > .33 ? '#f0e040' : '#ff3c3c'; ctx.fillRect(bx + 3, by + 46, 36 * hr, 3); this.hotspots.push({ x: bx, y: by, w: 42, h: 52, fn: () => { if (this.keys.Shift) this.selection = this.selection.filter(v => v !== u); else this.select([u]); } }); }); }
+    else if (sel.length > 1) { const cols = Math.min(6, Math.floor((iw - 16) / 46)); sel.forEach((u, i) => { const bx = ix + 10 + (i % cols) * 46, by = y0 + 16 + Math.floor(i / cols) * 58; HUD.bevel(ctx, bx, by, 42, 52, true, sk.slot); const hr = u.hp / u.maxHp; const tint = hr > .66 ? 'rgba(60,230,60,0.8)' : hr > .33 ? 'rgba(240,220,60,0.8)' : 'rgba(255,60,60,0.8)'; ctx.drawImage(Sprites.tinted(u.def.id, G.players[u.owner].color, 36, tint), bx + 3, by + 3); if (u.maxSh) { ctx.fillStyle = '#5aa8ff'; ctx.fillRect(bx + 3, by + 42, 36 * u.sh / u.maxSh, 2); } ctx.fillStyle = hr > .66 ? '#3fe83f' : hr > .33 ? '#f0e040' : '#ff3c3c'; ctx.fillRect(bx + 3, by + 46, 36 * hr, 3); this.hotspots.push({ x: bx, y: by, w: 42, h: 52, fn: () => { if (this.keys.Shift) this.selection = this.selection.filter(v => v !== u); else this.select([u]); } }); }); }
     else { HUD.text(ctx, RACE_INFO[p.race].name + ' Command', ix + 12, y0 + 30, HUD.accent(), 13); HUD.text(ctx, 'F1 help  ·  F10 menu  ·  F5 save  ·  Enter chat  ·  speed ' + this.speedName() + ' (+/-)  ·  ' + this.fps + ' fps', ix + 12, y0 + 50, '#8a93a0', 11, false); HUD.text(ctx, 'Seed ' + G.map.seed + '   Frame ' + G.frame, ix + 12, y0 + 68, '#8a93a0', 11, false); }
     // ---- command card ----
     HUD.inset(ctx, cr.x, cr.y, cr.w, cr.h);
@@ -161,7 +321,7 @@ Object.assign(UI, {
       const bx = cr.x + 4 + (b.slot % 3) * (cr.bw + cr.gap), by = cr.y + 4 + Math.floor(b.slot / 3) * (cr.bh + cr.gap);
       const hov = this.mouse.x >= bx && this.mouse.x < bx + cr.bw && this.mouse.y >= by && this.mouse.y < by + cr.bh;
       const active = this.pending && ((this.pending.kind === 'ability' && b.label === (DATA.abilities[this.pending.abil] || {}).name) || (this.pending.kind !== 'ability' && b.label.toLowerCase().startsWith(this.pending.kind)));
-      HUD.bevel(ctx, bx, by, cr.bw, cr.bh, !active, active ? '#2f4a2f' : hov ? '#2a3240' : b.dim ? '#151920' : '#1e2530');
+      HUD.bevel(ctx, bx, by, cr.bw, cr.bh, !active, active ? '#2f4a2f' : hov ? sk.btnHov : b.dim ? sk.btnDim : sk.btn);
       // icon
       const defId = b.cost && b.cost.id && DATA.all[b.cost.id] ? b.cost.id : null; const gl = HUD.iconFor(b);
       ctx.save(); if (b.dim) ctx.globalAlpha = 0.4;
@@ -177,9 +337,10 @@ Object.assign(UI, {
     if (this.tooltip) { const t = this.tooltip; ctx.font = HUD.font(11); const tw = Math.max(...t.lines.map(l => ctx.measureText(l).width)) + 16, th = t.lines.length * 15 + 8; const tx = Math.min(t.x, Render.W - tw - 4), ty = t.y - th - 6; HUD.bevel(ctx, tx, ty, tw, th, true, 'rgba(10,12,16,0.95)'); t.lines.forEach((l, i) => HUD.text(ctx, l, tx + 8, ty + 15 + i * 15, i ? (l.includes('minerals') ? '#6fe0ff' : l.includes('gas') ? '#7ee07a' : l.includes('energy') ? '#c86aff' : '#c8d0d8') : '#ffe45a', 11, i === 0)); }
   },
   drawUnitInfo(ctx, u, x, y, w, h) {
-    const p = G.players[u.owner]; ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
-    // portrait
-    HUD.bevel(ctx, x + 8, y + 8, 80, 80, false, '#0a0d12'); const g = ctx.createRadialGradient(x + 48, y + 48, 4, x + 48, y + 48, 44); g.addColorStop(0, '#1e2a3a'); g.addColorStop(1, '#05070a'); ctx.fillStyle = g; ctx.fillRect(x + 9, y + 9, 78, 78);
+    const p = G.players[u.owner], sk = HUD.skin(); ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+    // portrait. The backlight behind it is the console's own material, so a Zerg wireframe sits in a
+    // fleshy socket and a Protoss one in lit stone rather than all three in the same blue tube.
+    HUD.bevel(ctx, x + 8, y + 8, 80, 80, false, sk.ink); const g = ctx.createRadialGradient(x + 48, y + 48, 4, x + 48, y + 48, 44); g.addColorStop(0, sk.hi); g.addColorStop(1, sk.ink); ctx.fillStyle = g; ctx.fillRect(x + 9, y + 9, 78, 78);
     ctx.save(); ctx.beginPath(); ctx.rect(x + 9, y + 9, 78, 78); ctx.clip(); ctx.translate(x + 48, y + 50 + Math.sin(G.frame * 0.05) * 1.5);
     if (u.isBuilding) { const s = Sprites.building(u); const k = Math.min(72 / s.cv.width, 72 / s.cv.height) * 1.05; ctx.scale(k, k); ctx.drawImage(s.cv, -s.cv.width / 2, -s.cv.height / 2 + 4); }
     else { const s = Sprites.unit(u, Sprites.dirOf(-Math.PI / 2 + Math.sin(G.frame * 0.02) * 0.5, u), Render.animOf(u)); const k = Math.min(2.4, 36 / u.r); ctx.scale(k, k); Sprites.draw(ctx, s, 0, 0); }
@@ -195,8 +356,8 @@ Object.assign(UI, {
       if (u.isBuilding && u.def.spawnsLarva) line(`Larvae ${u.larvae.length}`, '#9aa4b0');
       if (u.isBuilding && !u.done) line(`Constructing ${Math.floor(100 * u.progress / u.def.time)}%` + (u.def.race === 'T' && !(u.builder && u.builder.alive && u.builder.order.target === u) ? '  (no SCV)' : ''), '#ffe45a');
       if (u.isBuilding && u.addon) line(`Add-on: ${u.addon.def.name}${u.addon.done ? '' : ' (building)'}`, '#9aa4b0');
-      if (u.prod.length) { const qx = tx, qy = ly + 2; u.prod.forEach((it, i) => { const name = it.kind === 'unit' ? DATA.units[it.id].name : it.kind === 'upg' ? DATA.upgrades[it.id].name + ' L' + it.level : it.kind === 'tech' ? DATA.techs[it.id].name : DATA.buildings[it.id].name; const bx = qx + i * 50; HUD.bevel(ctx, bx, qy, 46, 40, true, '#141922'); if (it.kind === 'unit' || it.kind === 'morph') ctx.drawImage(Sprites.icon(it.id, p.color, 28), bx + 9, qy + 2); else { ctx.font = HUD.font(8); ctx.fillStyle = '#cfd6de'; ctx.fillText(name.slice(0, 9), bx + 3, qy + 18); } if (i === 0) { ctx.fillStyle = '#000'; ctx.fillRect(bx + 3, qy + 32, 40, 5); ctx.fillStyle = '#3fe83f'; ctx.fillRect(bx + 3, qy + 32, 40 * it.progress / it.total, 5); } this.hotspots.push({ x: bx, y: qy, w: 46, h: 40, fn: () => G.cancelProd(u, i) }); }); if (u.prod[0]) { const it = u.prod[0]; const name = it.kind === 'unit' ? DATA.units[it.id].name : it.kind === 'upg' ? DATA.upgrades[it.id].name + ' ' + it.level : it.kind === 'tech' ? DATA.techs[it.id].name : DATA.buildings[it.id].name; HUD.text(ctx, name, tx + u.prod.length * 50 + 6, qy + 26, '#ffe45a', 11); } ly += 46; }
-      if (u.cargo.length) { u.cargo.forEach((c, i) => { const bx = tx + i * 34, by = ly + 2; HUD.bevel(ctx, bx, by, 30, 30, true, '#141922'); ctx.drawImage(Sprites.icon(c.def.id, p.color, 26), bx + 2, by + 2); this.hotspots.push({ x: bx, y: by, w: 30, h: 30, fn: () => G.unloadCargo(u, c) }); }); ly += 36; }
+      if (u.prod.length) { const qx = tx, qy = ly + 2; u.prod.forEach((it, i) => { const name = it.kind === 'unit' ? DATA.units[it.id].name : it.kind === 'upg' ? DATA.upgrades[it.id].name + ' L' + it.level : it.kind === 'tech' ? DATA.techs[it.id].name : DATA.buildings[it.id].name; const bx = qx + i * 50; HUD.bevel(ctx, bx, qy, 46, 40, true, sk.slot); if (it.kind === 'unit' || it.kind === 'morph') ctx.drawImage(Sprites.icon(it.id, p.color, 28), bx + 9, qy + 2); else { ctx.font = HUD.font(8); ctx.fillStyle = '#cfd6de'; ctx.fillText(name.slice(0, 9), bx + 3, qy + 18); } if (i === 0) { ctx.fillStyle = '#000'; ctx.fillRect(bx + 3, qy + 32, 40, 5); ctx.fillStyle = '#3fe83f'; ctx.fillRect(bx + 3, qy + 32, 40 * it.progress / it.total, 5); } this.hotspots.push({ x: bx, y: qy, w: 46, h: 40, fn: () => G.cancelProd(u, i) }); }); if (u.prod[0]) { const it = u.prod[0]; const name = it.kind === 'unit' ? DATA.units[it.id].name : it.kind === 'upg' ? DATA.upgrades[it.id].name + ' ' + it.level : it.kind === 'tech' ? DATA.techs[it.id].name : DATA.buildings[it.id].name; HUD.text(ctx, name, tx + u.prod.length * 50 + 6, qy + 26, '#ffe45a', 11); } ly += 46; }
+      if (u.cargo.length) { u.cargo.forEach((c, i) => { const bx = tx + i * 34, by = ly + 2; HUD.bevel(ctx, bx, by, 30, 30, true, sk.slot); ctx.drawImage(Sprites.icon(c.def.id, p.color, 26), bx + 2, by + 2); this.hotspots.push({ x: bx, y: by, w: 30, h: 30, fn: () => G.unloadCargo(u, c) }); }); ly += 36; }
       if (u.def.upgA && !u.isBuilding) { const parts = []; if (p.upgLevel(u.def.upgA)) parts.push(`Armor +${p.upgLevel(u.def.upgA)}`); const wpn = u.def.gw || u.def.aw; if (wpn && wpn.upgKey && p.upgLevel(wpn.upgKey)) parts.push(`Weapons +${p.upgLevel(wpn.upgKey)}`); if (u.maxSh && p.upgLevel('shields')) parts.push(`Shields +${p.upgLevel('shields')}`); if (parts.length) line(parts.join('  '), '#9fb8d8'); }
     } else line(p.name, p.color);
     ctx.restore();
