@@ -49,6 +49,7 @@ const TESTS = [
   { name: 'cardsay', args: ['cardsay.js'], what: 'every greyed command-card button says why' },
   { name: 'wrongthing', args: ['wrongthing.js'], what: 'doing the wrong thing on purpose neither crashes nor hangs' },
   { name: 'aiscripts', args: ['aiscripts.js'], what: 'the AI build scripts are ordered and name only real things' },
+  { name: 'aistyles', args: ['aistyles.js'], what: 'each AI play style is constructible, ordered, and plays differently' },
   { name: 'veterancy', args: ['veterancy.js'], what: 'rank and scars are derived, and survive a snapshot' },
   { name: 'facing', args: ['facing.js'], what: 'a hit from behind hurts more, and explosions have no direction' },
   { name: 'suppress', args: ['suppress.js'], what: 'suppressing fire is researched per production line and pins what it hits' },
