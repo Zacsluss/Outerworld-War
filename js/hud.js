@@ -25,6 +25,168 @@ const HUD = {
   skin() { return this.SKINS[this.raceKey()] || this.SKINS.T; },
   accent() { return this.skin().edge; },
 
+  // ==========================================================================
+  // The console is a thing in the world, so the world happens to it
+  // ==========================================================================
+  // A HUD in this genre normally floats: the same clean overlay at 4:00 with a full army as at 24:00
+  // with three buildings burning. This one is the commander's own hardware -- Terran stamped steel and
+  // amber phosphor, Zerg chitin and membrane, Protoss psionic glass with nothing holding it up -- and
+  // because it is a piece of equipment standing in the same war, it gets damaged and it loses sync.
+  //
+  // Three rules govern all of it, and each one is here because the alternative is a real bug:
+  //
+  // 1. CONDITION IS DERIVED, NEVER STORED. Not a counter the renderer ticks: a pure function of what
+  //    the simulation currently is. Every ingredient below is a field the reflective snapshot already
+  //    captures -- a building's hit points, `Player.stats`, `Unit.lastHit`, `Player.msgs` -- so a
+  //    replay seek to frame N produces the same console it produced the first time through.
+  //
+  //    The obvious shape is a decaying accumulator the draw pass adds to, and it is wrong in a way
+  //    nothing on screen would ever show you: it looks perfect until somebody drags the replay
+  //    scrubber, at which point the seek restores a pristine simulation under a wrecked console.
+  //    test/diegetic.js's negative control is precisely that substitution, and the check that catches
+  //    it is a snapshot taken over a burning base and restored after the base has been healed.
+  //
+  // 2. NOTHING CALLS Math.random(). Glitch timing is `noise(frame, salt)` -- the same discipline as
+  //    daylightAt(frame) in js/game.js and GameMap.hazardState(frame), where the whole state of a
+  //    sandstorm is recomputed from the frame number and stored nowhere. Same frame, same tear.
+  //
+  // 3. THE CHROME IS BAKED, THE GLITCH IS NOT. Painting cracks and corrosion is two hundred canvas
+  //    ops; doing that per frame is the mistake M8 measured on the muzzle flash (0.8 ms live, 0.3 ms
+  //    baked). So damage goes into the texture `panel()` already caches, keyed by a five-step bucket,
+  //    and only the tear -- which by definition has to be different every frame -- is drawn live. The
+  //    tear is a handful of drawImage calls for the whole console, not one per anything.
+  WEAR_BUCKETS: 5,
+  SHOCK_WINDOW: 120,        // 5 s. How long a hit still counts as "you are being shot at right now".
+  EVENT_WINDOW: 72,         // 3 s. How long an alert still tears the display.
+  BUILDING_LOSS: 5,         // one structure is worth five units of attrition; losing a base is not a trade
+  EVENT_W: { nuke: 1, attack: 0.6 },   // Player.msgs kinds that count as a shock; error/info do not
+  // Forces a condition for the tests and for looking at the thing without losing a game to do it.
+  // Same idea as `skinOverride` above, and null in every real code path.
+  wearOverride: null,
+  _cond: null,
+  // Declared rather than created lazily on first use: both are inspected from outside (test/codex.js
+  // reads _panels.size, test/diegetic.js caps both), and a cache that does not exist until something
+  // has been drawn is a cache that reads as absent rather than as empty.
+  _panels: new Map(),
+  _fx: new Map(),
+  // What each race calls the thing that is failing. Not decoration: "HULL" and "CARAPACE" and "MATRIX"
+  // are three different claims about what the console is made of.
+  INTEGRITY: { T: 'HULL', Z: 'CARAPACE', P: 'MATRIX', N: 'HULL' },
+
+  // What the hardware has been through, as one number, plus the parts it was made of.
+  //   base      how burnt the standing buildings are RIGHT NOW. Repair mends it; that is the point.
+  //   attrition what has been lost against what still stands. Cumulative, and it never mends.
+  //   shock     the share of your own units hit in the last five seconds. Twitchy on purpose.
+  //
+  // Global monotonicity in "damage" is deliberately NOT claimed and test/diegetic.js does not assert
+  // it: a building that finally falls stops dragging `base` down and starts weighing on `attrition`
+  // instead, so the exact frame it dies can move the total either way by a hair. Each term on its own
+  // is monotone, which is the claim worth making and the one the test pins.
+  condition() {
+    if (this.wearOverride != null) { const w = clamp(+this.wearOverride || 0, 0, 1); return this._shape({ base: w, attrition: w, shock: w, lost: 0, lostB: 0, event: 0, forced: true }); }
+    const g = (typeof G !== 'undefined') ? G : null;
+    const p = (g && g.players && g.players.length) ? g.players[g.human] : null;
+    // The codex and the main menu both draw console material with no game under them at all.
+    if (!p || !g.units) return this._shape({ base: 0, attrition: 0, shock: 0, lost: 0, lostB: 0, event: 0 });
+    const st0 = p.stats || {}, gone0 = (st0.unitsLost || 0) + (st0.buildingsLost || 0) * this.BUILDING_LOSS;
+    // Memoised on four things, and each of them earns its place. The FRAME is the obvious one, and the
+    // one that carries a normal game. PLAYER IDENTITY, because G.init builds new Player objects and a
+    // frame number alone would let a second game seeded the same open on the previous game's console.
+    // UNIT COUNT and CUMULATIVE LOSSES, because those are the two ways the answer can change without
+    // the frame moving -- a snapshot restored onto the frame it was taken at, a cheat, a test.
+    //
+    // Four keys and not a plain "recompute every time" because drawConsole, drawTop, panel() and the
+    // codex can all ask inside one frame; four keys and not one because a memo that can go stale is a
+    // stored condition wearing a pure function's coat, which is the exact bug this whole design is
+    // built to avoid. test/diegetic.js never clears this by hand -- an earlier draft did, and it made
+    // the negative control (replace the key with `if (this._cond) return it`) pass.
+    const c = this._cond; if (c && c.p === p && c.f === g.frame && c.n === g.units.length && c.gone === gone0) return c;
+    let bHp = 0, bMax = 0, hit = 0, live = 0, lost = 0, lostB = 0;
+    // ONE WALK for all of it. Dead units are read here too, and that is not a bug: G.units is reaped
+    // on `frame % 24 === 0` (js/game.js) and nowhere else, so anything killed inside the last second
+    // is still sitting in the array with `alive === false`. That is a real, frame-accurate, entirely
+    // snapshot-safe "what did I just lose" -- the alternative was G.effects, which js/snapshot.js
+    // clears on restore precisely because it is render-only. The window sawtooths between 0 and 24
+    // frames depending on where the reap is; a burst that lasts between zero and one second is the
+    // right cadence for a HUD lurch anyway, so it is left alone rather than smoothed.
+    for (const u of g.units) {
+      if (u.owner !== p.id) continue;
+      const d = u.def; if (!d || d.larva || d.notUnit) continue;
+      if (!u.alive) { lost++; if (u.isBuilding) lostB++; continue; }
+      if (u.inside) continue;
+      live++;
+      if (g.frame - u.lastHit < this.SHOCK_WINDOW) hit++;
+      if (u.isBuilding) { bHp += u.hp; bMax += u.maxHp; }
+    }
+    // The alert log is the simulation's own frame-stamped record of what just happened to this player,
+    // and it is a Player field, so it snapshots. A nuke tears harder than a raid, and both fade.
+    let event = 0;
+    for (const m of (p.msgs || [])) {
+      const wgt = this.EVENT_W[m.kind]; if (!wgt) continue;
+      const age = g.frame - m.t; if (age < 0 || age >= this.EVENT_WINDOW) continue;
+      event = Math.max(event, wgt * (1 - age / this.EVENT_WINDOW));
+    }
+    if (lost > 0) event = Math.max(event, clamp(0.3 + lost * 0.12 + lostB * 0.4, 0, 1));
+    const out = this._shape({
+      base: bMax > 0 ? clamp(1 - bHp / bMax, 0, 1) : 0,
+      attrition: gone0 > 0 ? gone0 / (gone0 + Math.max(4, live)) : 0,
+      shock: live > 0 ? hit / live : 0,
+      lost, lostB, event,
+    });
+    out.p = p; out.f = g.frame; out.n = g.units.length; out.gone = gone0; this._cond = out; return out;
+  },
+  // `wear` is what the glitch runs on and moves every frame. `slow` is what the TEXTURE is baked from
+  // and deliberately drops `shock`, which is the one term that can flicker: a bucket boundary crossed
+  // twice a second would rebuild an 1920x220 texture twice a second, and that is a stutter rather than
+  // a look. base and attrition both walk in one direction at a few parts in ten thousand per frame, so
+  // a boundary is crossed once and left behind.
+  _shape(t) {
+    t.slow = clamp(0.56 * t.base + 0.44 * t.attrition, 0, 1);
+    t.wear = clamp(0.42 * t.base + 0.33 * t.attrition + 0.25 * t.shock, 0, 1);
+    t.v = 1 - t.wear;
+    t.bucket = Math.min(this.WEAR_BUCKETS - 1, Math.max(0, Math.floor(t.slow * this.WEAR_BUCKETS)));
+    return t;
+  },
+  wear() { return this.condition().wear; },
+  wearBucket() { return this.condition().bucket; },
+  // What a bucket is worth as a 0..1 severity, which is what the painters take. Bucket 0 paints
+  // nothing at all, so a healthy console is byte-for-byte the console that shipped before this.
+  bucketWear(k) { return k / (this.WEAR_BUCKETS - 1); },
+
+  // Deterministic value noise. Integer in, 0..1 out, no state, no Math.random -- the constraint every
+  // sim file lives under, applied here because a replay that tears in different places is a replay
+  // that does not reproduce. `salt` keeps two effects on the same frame from moving together.
+  noise(a, salt = 0) {
+    let x = Math.imul((a | 0) + 0x9e3779b9, 374761393) + Math.imul((salt | 0) + 0x85ebca6b, 668265263);
+    x = Math.imul(x ^ (x >>> 13), 1274126177);
+    return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
+  },
+  // The glitch, as numbers. Pure in (frame, wear, event): the draw code below only reads this, so the
+  // whole of "what does the HUD do this frame" is one testable function with no canvas in it.
+  //
+  // Two sources, taken as a maximum rather than a sum. AMBIENT is a burst that opens on some windows
+  // and not others -- a display that stutters at random intervals reads as failing hardware, where one
+  // that stutters every N frames reads as an animation. EVENT is the discrete half: a nuke, a raid, a
+  // structure lost, each punching in at full strength and decaying over three seconds.
+  glitch(frame, wear, event) {
+    if (frame === undefined) { const c = this.condition(); frame = (typeof G !== 'undefined' && G.frame) || 0; wear = c.wear; event = c.event; }
+    wear = clamp(wear || 0, 0, 1); event = clamp(event || 0, 0, 1);
+    // No ambient floor. A console in perfect condition never tears on its own -- only an event can do
+    // it -- because a HUD that flickers on a good day is a screen effect, and the whole point of this
+    // one is that it means something. The threshold is the wear itself, so the glitch rate IS the
+    // damage: half the windows at total ruin, none at none.
+    const B = 21, win = Math.floor(frame / B), ph = (frame - win * B) / B;
+    const fires = this.noise(win, 7) < wear * 0.5;
+    const amb = fires ? (1 - ph) * (0.28 + wear * 0.72) : 0;
+    const i = clamp(Math.max(amb, event), 0, 1);
+    return {
+      i, seed: win, frame, wear,
+      bands: i > 0.2 ? 1 + Math.floor(this.noise(frame, 3) * 3) : 0,   // 1..3 torn slices, 0 below the floor
+      roll: ((frame * (2 + Math.round(wear * 6))) % 240) / 240,        // where the scanline sweep is, 0..1
+      hiss: i * (0.25 + wear * 0.75),                                  // static / fleck / fringe strength
+    };
+  },
+
   // The console background is the same pixels every frame, so it is built once into a canvas and
   // blitted. Drawing the texture live cost more than the whole rest of the HUD; cached it is one
   // drawImage.
@@ -34,12 +196,20 @@ const HUD = {
   // the dialog's size every frame while `drawConsole` calls it at the console's, so with a menu open
   // both were rebuilt from scratch sixty times a second, ninety ellipses and all. The codex is a third
   // size and would have made it three. Four entries is enough for every panel on screen at once; the
-  // cache is dropped wholesale past eight so a window being dragged to resize cannot grow it forever.
-  panel(w, h, ribs) {
-    const key = this.raceKey() + '|' + w + '|' + h + '|' + (ribs ? 1 : 0);
-    this._panels = this._panels || new Map();
+  // cache is dropped wholesale past its cap so a window being dragged to resize cannot grow it forever.
+  //
+  // THE CAP WENT FROM EIGHT TO TWENTY when the console started taking damage, because the key gained a
+  // condition bucket. The LIVE set is unchanged -- a panel of a given size only ever exists at one
+  // bucket, the current one -- but each bucket the game passes through leaves its old textures behind,
+  // and at eight the fourth crossing would have evicted the texture the console was drawing from. Five
+  // buckets times three or four concurrent sizes is twenty, and the wholesale clear at the cap is kept
+  // rather than an LRU: it costs one rebuild of what is actually on screen, once, and it is four lines
+  // shorter than a policy that would need its own test.
+  panel(w, h, ribs, bucket) {
+    const k = bucket === undefined ? this.wearBucket() : bucket;
+    const key = this.raceKey() + '|' + w + '|' + h + '|' + (ribs ? 1 : 0) + '|' + k;
     const hitc = this._panels.get(key); if (hitc) return hitc;
-    if (this._panels.size > 8) this._panels.clear();
+    if (this._panels.size > 20) this._panels.clear();
     const s = this.skin(), cv = document.createElement('canvas'); cv.width = w; cv.height = h; const c = cv.getContext('2d');
     // Lit hard along the top and falling away fast, the way a plate tilted toward the room catches
     // light. A flat top-to-bottom ramp reads as a coloured rectangle; the kink at 0.18 is what makes
@@ -55,9 +225,16 @@ const HUD = {
     else if (s.grain === 'organic') this.grainZ(c, w, h, s, rnd);
     else this.grainP(c, w, h, s, rnd);
     c.restore();
+    // The chrome pass: the part of each race's console that is equipment rather than material. It sits
+    // between the grain and the frame furniture on purpose -- scanlines have to lie over the plate and
+    // under the rivets, or the rivets look printed on the glass.
+    c.save(); this.chrome(c, w, h, s, rnd); c.restore();
     this.topEdge(c, w, h, s, rnd);
     if (ribs) for (const fx of [0.155, 0.815]) this.rib(c, Math.round(w * fx), h, s);
     c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(0, h - 1, w, 1);
+    // ...and the damage, last, so it lies over everything including the rivets and the seams. Bucket 0
+    // paints nothing, so an undamaged console is exactly the console that shipped before this.
+    if (k > 0) { c.save(); this.wearLayer(c, w, h, s, this.bucketWear(k), rnd); c.restore(); }
     this._panels.set(key, cv); return cv;
   },
 
@@ -126,6 +303,203 @@ const HUD = {
     c.lineWidth = 1;
   },
 
+  // ---- the chrome: what each console IS, over and above what it is made of ----
+  // grainT/Z/P give the three materials. This gives the three machines. A plate of steel is not a CRT
+  // until something on it glows and scans; carapace is not a carapace until it has a bone ridge and a
+  // wet membrane over it; cut stone is not psionic glass until the slabs stop touching each other.
+  chrome(c, w, h, s, rnd) {
+    if (s.grain === 'brushed') this.chromeT(c, w, h, s, rnd);
+    else if (s.grain === 'organic') this.chromeZ(c, w, h, s, rnd);
+    else this.chromeP(c, w, h, s, rnd);
+  },
+  // Terran: a cathode ray tube bolted into a plate. Amber phosphor pooling under the top rail where the
+  // gun points, scanlines the whole height of the glass, and stencilled service lettering -- the thing
+  // a real machine has that a UI never does, because a real machine is maintained by somebody.
+  chromeT(c, w, h, s, rnd) {
+    const g = c.createLinearGradient(0, 0, 0, h * 0.75);
+    g.addColorStop(0, 'rgba(226,164,58,0.13)'); g.addColorStop(0.35, 'rgba(226,164,58,0.05)'); g.addColorStop(1, 'rgba(226,164,58,0)');
+    c.fillStyle = g; c.fillRect(0, 0, w, h * 0.75);
+    // Every third row, one pixel, and a brighter row every twelfth -- the interlace beat. Drawn once
+    // into the texture: at 220 px that is 73 fillRects at bake time and none at draw time.
+    for (let y = 2; y < h; y += 3) { c.fillStyle = y % 12 < 3 ? 'rgba(0,0,0,0.20)' : 'rgba(0,0,0,0.13)'; c.fillRect(0, y, w, 1); }
+    // stencilled service lettering along the bottom rail, and a placard at the left
+    c.font = this.font(9); c.fillStyle = 'rgba(232,214,180,0.075)';
+    const mark = this.caps('terran dominion  ·  fleet console mk iv  ·  do not open while energised   ');
+    // Bounded by an iteration count and not only by `sx < w`: `spaced` returns a measured width, and a
+    // font stack that measures to zero (which is every headless canvas stub in test/) would otherwise
+    // spin here forever inside a bake nobody is watching.
+    for (let i = 0, sx = 8; i < 40 && sx < w; i++) sx += this.spaced(c, mark, sx, h - 16, 1.6) + 26;
+    c.fillStyle = 'rgba(232,214,180,0.10)'; c.font = this.font(8);
+    this.spaced(c, this.caps('cmd-' + (1 + Math.floor(rnd() * 8)) + '/' + (10 + Math.floor(rnd() * 89))), 10, 20, 1.4);
+    // the amber ready lamp, which is the one thing on the plate that is lit rather than reflecting
+    const lx = w - 26, ly = 18, lg = c.createRadialGradient(lx, ly, 0.5, lx, ly, 9);
+    lg.addColorStop(0, 'rgba(255,196,86,0.55)'); lg.addColorStop(1, 'rgba(255,196,86,0)');
+    c.fillStyle = lg; c.beginPath(); c.arc(lx, ly, 9, 0, 7); c.fill();
+  },
+  // Zerg: the console is an organ. A bone ridge growing up out of the bottom edge and arching over the
+  // sockets, a membrane stretched across the whole of it catching light like something wet, and
+  // bioluminescence in the veins -- light coming from inside a living thing, not from a lamp.
+  chromeZ(c, w, h, s, rnd) {
+    // Bone ridges: pale ribs rising from the lower edge, each with a dark socket at its root. The
+    // spacing and the height are both jittered, which matters more than it sounds -- an even row of
+    // equal ribs at 13% white read as a comb of teeth along the bottom of the screen rather than as
+    // something grown, and that is what the first version looked like.
+    for (let x = 12; x < w; x += 46 + rnd() * 52) {
+      const bh = h * (0.16 + rnd() * 0.20), bw = 5 + rnd() * 6;
+      c.fillStyle = 'rgba(198,184,166,0.10)';
+      c.beginPath(); c.moveTo(x - bw, h); c.quadraticCurveTo(x - bw * 0.5, h - bh, x, h - bh - 4); c.quadraticCurveTo(x + bw * 0.5, h - bh, x + bw, h); c.closePath(); c.fill();
+      c.strokeStyle = 'rgba(230,218,200,0.12)'; c.lineWidth = 1; c.beginPath(); c.moveTo(x, h - 2); c.lineTo(x, h - bh - 3); c.stroke();
+      c.fillStyle = 'rgba(0,0,0,0.35)'; c.beginPath(); c.ellipse(x, h - 3, bw * 1.2, 4, 0, 0, 7); c.fill();
+    }
+    // the membrane: one broad sheen laid over everything, brightest where it is stretched tightest
+    const mg = c.createLinearGradient(0, 0, w * 0.35, h);
+    mg.addColorStop(0, 'rgba(236,206,250,0.075)'); mg.addColorStop(0.45, 'rgba(180,120,210,0.02)'); mg.addColorStop(1, 'rgba(236,206,250,0.06)');
+    c.fillStyle = mg; c.fillRect(0, 0, w, h);
+    for (let i = 0; i < 7; i++) { const x = rnd() * w, y = h * (0.1 + rnd() * 0.7); c.strokeStyle = 'rgba(255,240,255,0.055)'; c.lineWidth = 2 + rnd() * 2; c.beginPath(); c.ellipse(x, y, 24 + rnd() * 50, 9 + rnd() * 14, rnd() * 0.5 - 0.25, 3.5, 5.5); c.stroke(); }
+    // bioluminescent nodes along the veins: sickly, not pretty
+    for (let i = 0; i < 16; i++) {
+      const x = rnd() * w, y = 6 + rnd() * (h - 12), r = 4 + rnd() * 7;
+      const gg = c.createRadialGradient(x, y, 0.5, x, y, r);
+      gg.addColorStop(0, 'rgba(180,255,170,0.20)'); gg.addColorStop(0.5, 'rgba(150,90,200,0.10)'); gg.addColorStop(1, 'rgba(150,90,200,0)');
+      c.fillStyle = gg; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill();
+    }
+  },
+  // Protoss: nothing is bolted to anything. The console is a row of slabs of lit glass held apart by
+  // whatever holds a Protoss building three metres off the ground, so what says "no physical frame" is
+  // the GAP -- a dark void between slabs, lit along both edges, and a top seam that stops and starts
+  // instead of running the width of the machine.
+  //
+  // The gaps are painted voids and not a real `destination-out` cut. A cut was tried and it is worse
+  // in the one place it matters: the console sits over the battlefield, so true holes show moving
+  // terrain through the middle of the HUD and the eye chases it. A void reads as a gap and stays put.
+  // Two to five gaps, whatever the console is wide. Capped rather than proportional for two reasons:
+  // a row of eighteen thin slabs at 4K reads as louvres rather than as architecture, and the desync
+  // below moves ONE SLAB PER DRAW CALL, so an uncapped count would put the glitch's cost on the user's
+  // monitor width. Five is the most that still reads as separate objects.
+  pGaps(w) { const out = [], n = clamp(Math.round(w / 420), 2, 5); for (let i = 1; i <= n; i++) out.push(Math.round(w * i / (n + 1))); return out; },
+  chromeP(c, w, h, s, rnd) {
+    for (const gx of this.pGaps(w)) {
+      const gw = 4;
+      c.fillStyle = 'rgba(4,6,10,0.86)'; c.fillRect(gx - gw / 2, 0, gw, h);
+      // each slab's cut face: bright at the top where the light lives, falling away down the edge
+      for (const e of [gx - gw / 2 - 1, gx + gw / 2]) { const eg = c.createLinearGradient(0, 0, 0, h); eg.addColorStop(0, s.glow + '0.42)'); eg.addColorStop(0.5, 'rgba(230,184,74,0.12)'); eg.addColorStop(1, s.glow + '0)'); c.fillStyle = eg; c.fillRect(e, 0, 1, h); }
+      c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(gx - gw / 2 - 3, 0, 3, h);   // the shadow one slab casts on the next
+    }
+    // finer filigree than grainP's band: a nested chevron chain, the geometry Protoss architecture is
+    // made of, small enough to read as inlay rather than as a second border
+    c.strokeStyle = 'rgba(255,232,178,0.13)'; c.lineWidth = 1;
+    const fy = Math.round(h * 0.62);
+    for (let x = 10; x < w - 10; x += 34) {
+      c.beginPath(); c.moveTo(x, fy + 5); c.lineTo(x + 9, fy - 4); c.lineTo(x + 18, fy + 5); c.stroke();
+      c.beginPath(); c.moveTo(x + 4, fy + 5); c.lineTo(x + 9, fy - 0.5); c.lineTo(x + 14, fy + 5); c.stroke();
+    }
+    // and the hover: a lit line along the top of every slab, a dark one along the bottom
+    c.fillStyle = 'rgba(255,238,190,0.10)'; c.fillRect(0, 3, w, 1);
+    const ug = c.createLinearGradient(0, h - 14, 0, h); ug.addColorStop(0, 'rgba(0,0,0,0)'); ug.addColorStop(1, 'rgba(0,0,0,0.45)');
+    c.fillStyle = ug; c.fillRect(0, h - 14, w, 14);
+  },
+
+  // ---- what the war does to it -------------------------------------------
+  // `k` is 0..1 severity, quantised to a bucket by the caller. Everything here is baked into the
+  // panel texture, so a wrecked console costs exactly the same per frame as a pristine one.
+  wearLayer(c, w, h, s, k, rnd) {
+    if (s.grain === 'brushed') this.wearT(c, w, h, s, k, rnd);
+    else if (s.grain === 'organic') this.wearZ(c, w, h, s, k, rnd);
+    else this.wearP(c, w, h, s, k, rnd);
+    // Soot, shared. It pools where a hand does not reach: the corners and the bottom edge.
+    const vg = c.createRadialGradient(w / 2, h * 0.45, h * 0.25, w / 2, h * 0.45, w * 0.62);
+    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(6,4,3,' + (0.30 * k).toFixed(3) + ')');
+    c.fillStyle = vg; c.fillRect(0, 0, w, h);
+  },
+  // Terran: steel does not rot gracefully. It cracks along the seams it was welded on, it blooms rust
+  // out of every rivet that lost its paint, it chars where something burned against it, and the tube
+  // loses bands of phosphor that never come back.
+  wearT(c, w, h, s, k, rnd) {
+    const n = Math.round(2 + k * 7);
+    for (let i = 0; i < n; i++) {
+      let x = rnd() * w, y = h * (0.15 + rnd() * 0.7), a = rnd() * Math.PI * 2;
+      const path = [[x, y]];
+      for (let seg = 0; seg < 3 + Math.floor(k * 4); seg++) { a += rnd() * 1.1 - 0.55; x += Math.cos(a) * (8 + rnd() * 22); y += Math.sin(a) * (5 + rnd() * 12); path.push([x, y]); }
+      for (const [off, col, wd] of [[1, 'rgba(226,232,240,0.16)', 1], [0, 'rgba(0,0,0,0.72)', 1.6 + k]]) {
+        c.strokeStyle = col; c.lineWidth = wd; c.beginPath(); c.moveTo(path[0][0] + off, path[0][1] + off);
+        for (let j = 1; j < path.length; j++) c.lineTo(path[j][0] + off, path[j][1] + off);
+        c.stroke();
+      }
+    }
+    // corrosion: oxide blooming out of the fixings, which is where water sits on a real plate
+    for (let i = 0; i < Math.round(3 + k * 12); i++) {
+      const x = rnd() * w, y = rnd() * h, r = 5 + rnd() * (10 + k * 22);
+      const g = c.createRadialGradient(x, y, 0.5, x, y, r);
+      g.addColorStop(0, 'rgba(158,74,26,' + (0.30 * k).toFixed(3) + ')'); g.addColorStop(0.6, 'rgba(120,58,22,' + (0.16 * k).toFixed(3) + ')'); g.addColorStop(1, 'rgba(120,58,22,0)');
+      c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill();
+      c.fillStyle = 'rgba(40,20,8,' + (0.35 * k).toFixed(3) + ')'; c.beginPath(); c.arc(x, y, 1 + rnd() * 2, 0, 7); c.fill();   // the pit itself
+    }
+    // char: something burned against the plate and the paint went with it
+    for (let i = 0; i < Math.round(k * 5); i++) { const x = rnd() * w, y = h * (0.25 + rnd() * 0.7); c.fillStyle = 'rgba(12,10,9,' + (0.42 * k).toFixed(3) + ')'; c.beginPath(); c.ellipse(x, y, 12 + rnd() * 34, 6 + rnd() * 14, rnd() * 0.7 - 0.35, 0, 7); c.fill(); }
+    // dead phosphor: bands of the tube that stopped answering. This is the cue that reads first,
+    // because it is the only one that breaks the scanlines the eye has already learned.
+    for (let i = 0; i < Math.round(k * 3.4); i++) { const y = rnd() * h, bh = 2 + rnd() * (3 + k * 7); c.fillStyle = 'rgba(0,0,0,' + (0.34 + 0.3 * k).toFixed(3) + ')'; c.fillRect(0, y, w, bh); c.fillStyle = 'rgba(226,164,58,0.06)'; c.fillRect(0, y - 1, w, 1); }
+  },
+  // Zerg: it does not corrode, it necrotises. Chitin splits and what is under it is wet; the plates
+  // around a split go grey and dry; and the light in the veins goes out patch by patch.
+  wearZ(c, w, h, s, k, rnd) {
+    for (let i = 0; i < Math.round(2 + k * 8); i++) {
+      let x = rnd() * w, y = h * (0.1 + rnd() * 0.8), a = rnd() * Math.PI * 2;
+      const path = [[x, y]];
+      for (let seg = 0; seg < 3 + Math.floor(k * 3); seg++) { a += rnd() * 0.9 - 0.45; x += Math.cos(a) * (10 + rnd() * 24); y += Math.sin(a) * (4 + rnd() * 10); path.push([x, y]); }
+      c.lineCap = 'round';
+      c.strokeStyle = 'rgba(6,2,6,0.72)'; c.lineWidth = 2.5 + k * 3.5; c.beginPath(); c.moveTo(path[0][0], path[0][1]); for (let j = 1; j < path.length; j++) c.lineTo(path[j][0], path[j][1]); c.stroke();
+      c.strokeStyle = 'rgba(150,20,40,' + (0.30 + 0.28 * k).toFixed(3) + ')'; c.lineWidth = 1 + k * 2; c.beginPath(); c.moveTo(path[0][0], path[0][1] + 1); for (let j = 1; j < path.length; j++) c.lineTo(path[j][0], path[j][1] + 1); c.stroke();
+      c.strokeStyle = 'rgba(255,190,210,0.10)'; c.lineWidth = 1; c.beginPath(); c.moveTo(path[0][0], path[0][1] - 1); for (let j = 1; j < path.length; j++) c.lineTo(path[j][0], path[j][1] - 1); c.stroke();
+      c.lineCap = 'butt';
+    }
+    // necrosis: the carapace around a split goes grey-green and stops being wet
+    for (let i = 0; i < Math.round(2 + k * 10); i++) {
+      const x = rnd() * w, y = rnd() * h, r = 8 + rnd() * (10 + k * 26);
+      const g = c.createRadialGradient(x, y, 0.5, x, y, r);
+      g.addColorStop(0, 'rgba(96,104,72,' + (0.32 * k).toFixed(3) + ')'); g.addColorStop(0.65, 'rgba(58,60,44,' + (0.20 * k).toFixed(3) + ')'); g.addColorStop(1, 'rgba(58,60,44,0)');
+      c.fillStyle = g; c.beginPath(); c.ellipse(x, y, r, r * (0.5 + rnd() * 0.5), rnd() * 1.2, 0, 7); c.fill();
+    }
+    // bled, then dried: dark spatter that has run downward under its own weight
+    for (let i = 0; i < Math.round(k * 22); i++) { const x = rnd() * w, y = rnd() * h; c.fillStyle = 'rgba(70,8,20,' + (0.28 + 0.34 * k).toFixed(3) + ')'; c.beginPath(); c.ellipse(x, y, 1 + rnd() * 3, 2 + rnd() * 7, 0, 0, 7); c.fill(); }
+    // the light going out, patch by patch
+    for (let i = 0; i < Math.round(k * 6); i++) { const x = rnd() * w, y = rnd() * h; c.fillStyle = 'rgba(10,4,12,' + (0.30 * k).toFixed(3) + ')'; c.beginPath(); c.ellipse(x, y, 20 + rnd() * 50, 8 + rnd() * 20, rnd(), 0, 7); c.fill(); }
+  },
+  // Protoss: glass. It does not bend, so it fractures -- one impact point and a web out of it -- and
+  // where a slab loses its feed it stops being lit and goes cold and grey while the rest stay gold.
+  wearP(c, w, h, s, k, rnd) {
+    for (let i = 0; i < Math.round(1 + k * 4); i++) {
+      const cx = rnd() * w, cy = h * (0.15 + rnd() * 0.7), R = 14 + rnd() * (16 + k * 46), arms = 5 + Math.floor(rnd() * 5);
+      const ends = [];
+      for (let a = 0; a < arms; a++) { const ang = a / arms * Math.PI * 2 + rnd() * 0.5, r = R * (0.5 + rnd() * 0.5); ends.push([cx + Math.cos(ang) * r, cy + Math.sin(ang) * r]); }
+      c.strokeStyle = 'rgba(4,8,14,0.60)'; c.lineWidth = 1.6;
+      for (const [ex, ey] of ends) { c.beginPath(); c.moveTo(cx, cy); c.lineTo(ex, ey); c.stroke(); }
+      c.strokeStyle = 'rgba(190,236,255,' + (0.22 + 0.2 * k).toFixed(3) + ')'; c.lineWidth = 0.8;
+      for (const [ex, ey] of ends) { c.beginPath(); c.moveTo(cx + 1, cy + 1); c.lineTo(ex + 1, ey + 1); c.stroke(); }
+      // the concentric rings of a web, which is what makes it read as glass and not as a starburst
+      for (let ring = 1; ring <= 2 + Math.floor(k * 2); ring++) {
+        c.strokeStyle = 'rgba(4,8,14,0.34)'; c.lineWidth = 1; c.beginPath();
+        for (let a = 0; a <= arms; a++) { const p = ends[a % arms], f = ring / (3 + k * 2); const px = cx + (p[0] - cx) * f, py = cy + (p[1] - cy) * f; a ? c.lineTo(px, py) : c.moveTo(px, py); }
+        c.stroke();
+      }
+      const gg = c.createRadialGradient(cx, cy, 0.5, cx, cy, 6); gg.addColorStop(0, 'rgba(255,255,255,0.30)'); gg.addColorStop(1, 'rgba(255,255,255,0)');
+      c.fillStyle = gg; c.beginPath(); c.arc(cx, cy, 6, 0, 7); c.fill();
+    }
+    // Slabs that lost their feed: the light goes and the gold with it. Held to roughly two slabs in
+    // five even at total ruin, and to a wash rather than a blackout -- a Protoss console carries the
+    // unit panel and the command card, and the first version put half the card behind 62% black,
+    // which is a legibility bug dressed as atmosphere.
+    const gaps = [0].concat(this.pGaps(w), [w]);
+    for (let i = 0; i < gaps.length - 1; i++) {
+      if (rnd() > k * 0.45) continue;
+      const x0 = gaps[i] + 2, x1 = gaps[i + 1] - 2;
+      c.fillStyle = 'rgba(6,7,10,' + (0.22 + 0.20 * k).toFixed(3) + ')'; c.fillRect(x0, 0, x1 - x0, h);
+      c.fillStyle = 'rgba(120,140,160,0.05)'; c.fillRect(x0, 0, x1 - x0, 1);
+    }
+    // and the gold itself dulling: a cold desaturating wash over the whole sheet
+    c.fillStyle = 'rgba(30,40,58,' + (0.22 * k).toFixed(3) + ')'; c.fillRect(0, 0, w, h);
+  },
+
   // ---- the top edge, which is the first thing the eye reads ---------------
   topEdge(c, w, h, s, rnd) {
     c.fillStyle = s.edge; c.globalAlpha = 0.75; c.fillRect(0, 0, w, 2); c.globalAlpha = 1;
@@ -143,7 +517,15 @@ const HUD = {
     } else {  // a psionic seam: light bleeding up out of the stone
       const gg = c.createLinearGradient(0, 0, 0, 10); gg.addColorStop(0, s.glow + '0.34)'); gg.addColorStop(1, s.glow + '0)');
       c.fillStyle = gg; c.fillRect(0, 2, w, 10);
-      c.fillStyle = 'rgba(230,184,74,0.5)'; c.fillRect(0, 2, w, 1);
+      // BROKEN INTO SEGMENTS, one per slab, with the gap left dark. A continuous gold line along the
+      // top is a frame, and a Protoss console is not framed -- it is a row of things hovering next to
+      // each other. This is the cheapest place the difference registers, because the top rail is the
+      // first edge the eye finds, and it costs one extra fillRect per gap at bake time.
+      const gaps = [0].concat(this.pGaps(w), [w]);
+      c.fillStyle = 'rgba(230,184,74,0.5)';
+      for (let i = 0; i < gaps.length - 1; i++) { const x0 = gaps[i] + (i ? 4 : 0), x1 = gaps[i + 1] - (i + 2 < gaps.length ? 4 : 0); if (x1 > x0) c.fillRect(x0, 2, x1 - x0, 1); }
+      c.fillStyle = 'rgba(0,0,0,0.55)';
+      for (const gx of this.pGaps(w)) c.fillRect(gx - 5, 0, 10, 3);
     }
   },
 
@@ -255,6 +637,127 @@ const HUD = {
       ctx.lineWidth = 1;
     }
   },
+  // ==========================================================================
+  // The glitch: the only part of this that cannot be baked
+  // ==========================================================================
+  // A tear has to be different every frame or it is an animation, so this is the one pass that runs
+  // live -- and it is written in DRAW CALLS, because that is the currency M9 measured this renderer
+  // in. A full-strength Protoss desync is nine calls for the whole console. Nothing here is per unit,
+  // per button or per pixel; a wrecked console and a pristine one differ by under a dozen calls.
+  //
+  // The tear reads slices out of the canvas it is drawing to and puts them back offset. That is not a
+  // trick, it is what a torn frame IS -- the display showing you last scanline's contents at this
+  // scanline's position -- and it means the tear carries whatever was actually on the console: the
+  // minimap, the portrait, the command card. An overlay of pre-baked noise cannot do that, and it was
+  // the first thing tried; it looks like a filter laid over the HUD rather than the HUD failing.
+  //
+  // Source rectangles are in DEVICE pixels and destinations in CSS pixels, because the canvas is sized
+  // in device pixels (Render.resize) while the HUD draws under Render.base's dpr transform. Getting
+  // that backwards is invisible at dpr 1 and tears the wrong part of the screen on a scaled display.
+  slice(ctx, cv, dpr, sx, sy, sw, sh, dx, dy) {
+    const CW = cv.width | 0, CH = cv.height | 0;
+    if (CW <= 0 || CH <= 0) return 0;
+    let X = Math.round(sx * dpr), Y = Math.round(sy * dpr), W = Math.round(sw * dpr), H = Math.round(sh * dpr);
+    if (X < 0) { W += X; X = 0; } if (Y < 0) { H += Y; Y = 0; }
+    if (X + W > CW) W = CW - X; if (Y + H > CH) H = CH - Y;
+    if (W <= 0 || H <= 0) return 0;
+    ctx.drawImage(cv, X, Y, W, H, dx, dy, W / dpr, H / dpr);
+    return 1;
+  },
+  // Small baked tiles for the effects that would otherwise build a gradient per frame -- the exact
+  // cost M8 measured on the muzzle flash and moved into a cache. Two entries, both Zerg's, for the
+  // life of the process -- and warmed by the test before it counts anything, because baking ninety
+  // ellipses into the first frame that asked for them looks exactly like a frame that costs 99 calls.
+  fxTile(kind) {
+    const got = this._fx.get(kind); if (got) return got;
+    const cv = document.createElement('canvas'); cv.width = 64; cv.height = 64; const c = cv.getContext('2d');
+    if (kind === 'pulse') { const g = c.createRadialGradient(32, 32, 1, 32, 32, 32); g.addColorStop(0, 'rgba(214,120,255,0.55)'); g.addColorStop(0.55, 'rgba(150,40,120,0.22)'); g.addColorStop(1, 'rgba(120,20,90,0)'); c.fillStyle = g; c.fillRect(0, 0, 64, 64); }
+    else { // flecks: blood thrown at the inside of the membrane, baked once and blitted at an offset
+      let seed = 20250909; const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+      for (let i = 0; i < 90; i++) { const x = rnd() * 64, y = rnd() * 64, r = 0.6 + rnd() * 2.2; c.fillStyle = 'rgba(' + (110 + rnd() * 70 | 0) + ',10,30,' + (0.35 + rnd() * 0.5).toFixed(2) + ')'; c.beginPath(); c.ellipse(x, y, r, r * (1 + rnd()), 0, 0, 7); c.fill(); }
+    }
+    this._fx.set(kind, cv); return cv;
+  },
+  // The entry point. Returns how many draw calls it made, which is what test/diegetic.js budgets on.
+  glitchDraw(ctx, x, y, w, h) {
+    if (!ctx || !ctx.canvas || !(w > 0) || !(h > 0)) return 0;
+    const g = this.glitch();
+    if (g.i <= 0.03) return 0;            // an intact console is byte-identical to the one before this
+    const s = this.skin(), cv = ctx.canvas;
+    const dpr = (typeof Render !== 'undefined' && Render.dpr > 0) ? Render.dpr : 1;
+    let n = 0; ctx.save();
+    if (s.grain === 'brushed') n = this.glitchT(ctx, cv, dpr, x, y, w, h, s, g);
+    else if (s.grain === 'organic') n = this.glitchZ(ctx, cv, dpr, x, y, w, h, s, g);
+    else n = this.glitchP(ctx, cv, dpr, x, y, w, h, s, g);
+    ctx.restore(); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    return n;
+  },
+  // Terran: the tube loses vertical hold. Slices slip sideways, a bright sync bar rolls down the
+  // glass, and the gaps between them fill with snow.
+  glitchT(ctx, cv, dpr, x, y, w, h, s, g) {
+    let n = 0;
+    for (let k = 0; k < g.bands; k++) {
+      const by = y + this.noise(g.frame, 30 + k) * (h - 6);
+      const bh = 3 + this.noise(g.frame, 60 + k) * h * 0.16;
+      const dx = (this.noise(g.frame, 90 + k) * 2 - 1) * 14 * g.i;
+      n += this.slice(ctx, cv, dpr, x, by, w, Math.min(bh, y + h - by), x + dx, by);
+    }
+    const ry = y + g.roll * h;                                  // the sync bar
+    ctx.globalAlpha = 0.16 * g.i; ctx.fillStyle = s.accent; ctx.fillRect(x, ry, w, 2 + 7 * g.i); n++;
+    ctx.globalAlpha = 0.30 * g.i; ctx.fillStyle = '#000'; ctx.fillRect(x, ry + 3 + 7 * g.i, w, 2); n++;
+    // Snow, as three wide bars rather than a noise texture: at this alpha the eye reads interference
+    // either way, and a per-frame ImageData is the one thing in a draw pass that genuinely is slow.
+    ctx.globalAlpha = 0.10 * g.hiss;
+    for (let k = 0; k < 3; k++) { ctx.fillStyle = k & 1 ? '#e8eef6' : '#05070a'; ctx.fillRect(x, y + this.noise(g.frame, 120 + k) * h, w, 1 + this.noise(g.frame, 150 + k) * 3); n++; }
+    ctx.globalAlpha = 1; return n;
+  },
+  // Zerg: it does not lose sync, it flinches. The whole thing swells once from underneath and throws
+  // flecks against the inside of the membrane.
+  glitchZ(ctx, cv, dpr, x, y, w, h, s, g) {
+    let n = 0;
+    // The swell: a slab of the console lifted a couple of pixels, which reads as flesh moving rather
+    // than as a display error. Only ever vertical, and never more than four pixels.
+    for (let k = 0; k < g.bands; k++) {
+      const by = y + this.noise(g.frame, 41 + k) * (h - 10);
+      const bh = 6 + this.noise(g.frame, 71 + k) * h * 0.3;
+      const dy = (this.noise(g.frame, 101 + k) * 2 - 1) * 4 * g.i;
+      n += this.slice(ctx, cv, dpr, x, by, w, Math.min(bh, y + h - by), x, by + dy);
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.28 * g.i;
+    const px = x + this.noise(g.seed, 5) * w;
+    ctx.drawImage(this.fxTile('pulse'), px - h * 1.4, y - h * 0.2, h * 2.8, h * 1.4); n++;
+    ctx.globalCompositeOperation = 'source-over';
+    // Four clusters, not a tiling. Tiling a 64 px sheet across a 4K console is sixty draw calls to
+    // paint something the eye reads as spatter either way, and spatter is not uniform in the first
+    // place -- it lands where it was thrown from.
+    ctx.globalAlpha = 0.42 * g.hiss;
+    const fl = this.fxTile('fleck');
+    for (let k = 0; k < 4; k++) { const s2 = 60 + this.noise(g.frame, 160 + k) * 90; ctx.drawImage(fl, x + this.noise(g.frame, 11 + k) * (w - s2), y + this.noise(g.frame, 130 + k) * Math.max(1, h - s2), s2, s2); n++; }
+    ctx.globalAlpha = 1; return n;
+  },
+  // Protoss: nothing is bolted to anything, so when the field stutters the slabs stop agreeing with
+  // each other. Each one steps out of line and the light between them splits into its colours.
+  glitchP(ctx, cv, dpr, x, y, w, h, s, g) {
+    let n = 0, moved = 0;
+    const gaps = [0].concat(this.pGaps(w), [w]);
+    for (let i = 0; i < gaps.length - 1 && moved < 4; i++) {
+      const x0 = x + gaps[i], x1 = x + gaps[i + 1];
+      const dy = (this.noise(g.frame, 200 + i) * 2 - 1) * 5 * g.i;
+      const dx = (this.noise(g.frame, 230 + i) * 2 - 1) * 4 * g.i;
+      if (Math.abs(dy) < 0.4 && Math.abs(dx) < 0.4) continue;
+      moved++;
+      n += this.slice(ctx, cv, dpr, x0, y, x1 - x0, h, x0 + dx, y + dy);
+      // Chromatic fringing on the slab's own edges: cyan on one side, magenta on the other, added
+      // rather than blended, which is what a prism does and what a colour-separated frame looks like.
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.5 * g.hiss;
+      ctx.fillStyle = '#00b4ff'; ctx.fillRect(x0 + dx, y + dy, 2, h); n++;
+      ctx.fillStyle = '#ff3ca8'; ctx.fillRect(x1 + dx - 2, y + dy, 2, h); n++;
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    ctx.globalAlpha = 1; return n;
+  },
+
   // A hard black shell on all four sides rather than one offset shadow. Era UI text sat on top of
   // whatever the console was made of and had to stay legible over rivets and hazard paint, so it was
   // outlined, not drop-shadowed -- a shadow only works when what is behind it is flat.
@@ -315,7 +818,11 @@ Object.assign(UI, {
     const sel = this.selection;
     if (sel.length === 1) this.drawUnitInfo(ctx, sel[0], ix, y0 + 8, iw, ch - 16);
     else if (sel.length > 1) { const cols = Math.min(6, Math.floor((iw - 16) / 46)); sel.forEach((u, i) => { const bx = ix + 10 + (i % cols) * 46, by = y0 + 16 + Math.floor(i / cols) * 58; HUD.bevel(ctx, bx, by, 42, 52, true, sk.slot); const hr = u.hp / u.maxHp; const tint = hr > .66 ? 'rgba(60,230,60,0.8)' : hr > .33 ? 'rgba(240,220,60,0.8)' : 'rgba(255,60,60,0.8)'; ctx.drawImage(Sprites.tinted(u.def.id, G.players[u.owner].color, 36, tint), bx + 3, by + 3); if (u.maxSh) { ctx.fillStyle = '#5aa8ff'; ctx.fillRect(bx + 3, by + 42, 36 * u.sh / u.maxSh, 2); } ctx.fillStyle = hr > .66 ? '#3fe83f' : hr > .33 ? '#f0e040' : '#ff3c3c'; ctx.fillRect(bx + 3, by + 46, 36 * hr, 3); this.hotspots.push({ x: bx, y: by, w: 42, h: 52, fn: () => { if (this.keys.Shift) this.selection = this.selection.filter(v => v !== u); else this.select([u]); } }); }); }
-    else { HUD.text(ctx, RACE_INFO[p.race].name + ' Command', ix + 12, y0 + 30, HUD.accent(), 13); HUD.text(ctx, 'F1 help  ·  F10 menu  ·  F5 save  ·  Enter chat  ·  speed ' + this.speedName() + ' (+/-)  ·  ' + this.fps + ' fps', ix + 12, y0 + 50, '#8a93a0', 11, false); HUD.text(ctx, 'Seed ' + G.map.seed + '   Frame ' + G.frame, ix + 12, y0 + 68, '#8a93a0', 11, false); }
+    // The console's own condition, said out loud in the one place there is room for it. A HUD that
+    // degrades and never says why is atmosphere; a HUD that names the thing degrading is a readout,
+    // and the word it uses is the third thing (after the material and the damage) that says which
+    // race's machine you are sitting at.
+    else { const cd = HUD.condition(); HUD.text(ctx, RACE_INFO[p.race].name + ' Command', ix + 12, y0 + 30, HUD.accent(), 13); HUD.text(ctx, 'F1 help  ·  F10 menu  ·  F5 save  ·  Enter chat  ·  speed ' + this.speedName() + ' (+/-)  ·  ' + this.fps + ' fps', ix + 12, y0 + 50, '#8a93a0', 11, false); HUD.text(ctx, 'Seed ' + G.map.seed + '   Frame ' + G.frame + '   ' + HUD.INTEGRITY[p.race] + ' ' + Math.round(cd.v * 100) + '%', ix + 12, y0 + 68, cd.v < 0.5 ? '#c98a6a' : '#8a93a0', 11, false); }
     // ---- command card ----
     HUD.inset(ctx, cr.x, cr.y, cr.w, cr.h);
     const btns = this.currentCard(); this.tooltip = null;
@@ -337,6 +844,11 @@ Object.assign(UI, {
       if (hov && (b.cost || b.energy)) { const parts = [b.label]; if (b.cost && b.cost.min !== undefined) { parts.push(b.cost.min + ' minerals'); if (b.cost.gas) parts.push(b.cost.gas + ' gas'); if (b.cost.sup) parts.push(b.cost.sup + ' supply'); if (b.cost.time) parts.push(Math.round(b.cost.time / TPS) + 's'); } if (b.energy) parts.push(b.energy + ' energy'); this.tooltip = { lines: parts, x: bx, y: by }; }
     }
     if (this.tooltip) { const t = this.tooltip; ctx.font = HUD.font(11); const tw = Math.max(...t.lines.map(l => ctx.measureText(l).width)) + 16, th = t.lines.length * 15 + 8; const tx = Math.min(t.x, Render.W - tw - 4), ty = t.y - th - 6; HUD.bevel(ctx, tx, ty, tw, th, true, 'rgba(10,12,16,0.95)'); t.lines.forEach((l, i) => HUD.text(ctx, l, tx + 8, ty + 15 + i * 15, i ? (l.includes('minerals') ? '#6fe0ff' : l.includes('gas') ? '#7ee07a' : l.includes('energy') ? '#c86aff' : '#c8d0d8') : '#ffe45a', 11, i === 0)); }
+    // LAST, and only over the console band. The glitch tears what is already on the glass, so it has
+    // to run after everything that draws on it -- and it is confined to the console rather than the
+    // whole window because the cursor and the world are not part of the commander's hardware. Tearing
+    // the cursor was tried once and it makes the game feel broken rather than the console.
+    HUD.glitchDraw(ctx, 0, y0, W, ch);
   },
   drawUnitInfo(ctx, u, x, y, w, h) {
     const p = G.players[u.owner], sk = HUD.skin(); ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
