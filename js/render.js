@@ -61,11 +61,34 @@ const DPR_CAP = 2;
 // eighth of a second, which is a flash, and anything longer reads as a unit that is permanently on
 // fire once forty marines are shooting at once.
 const MUZZLE_F = 3, SHIELD_F = 8, RECOIL_F = 5;
+// Weight, continued. RECOIL_F above is the first half of this language -- a kick straight back along
+// the barrel, biggest for the heavy guns -- and these are the second: the same axis, driven by the
+// unit's own acceleration instead of by its weapon.
+//
+// A body on a chassis is a mass on a spring. Feed it the frame-to-frame change in speed and it lags
+// behind under acceleration, overshoots forward under braking, and rings down to rest in about half a
+// second: start, stop and settle, from one integrator with no special cases. SETTLE_K is the spring,
+// SETTLE_D the damping (under 1, or it never stops), SETTLE_IMP how hard a change in speed shoves it,
+// and SETTLE_MAX the clamp -- past about three pixels the sprite visibly separates from its own shadow.
+const SETTLE_K = 0.20, SETTLE_D = 0.66, SETTLE_IMP = 0.62, SETTLE_MAX = 3.4;
+// The same acceleration, as a stretch along the direction of travel: a body leaning into the pull. Kept
+// small deliberately -- this is anticipation, and at more than a few percent a marine reads as rubber.
+const LEAN_STRETCH = 0.075;
+// Legibility at scale. Below RIM_ON units on screen a battle is legible on its own and the rim is off
+// entirely; by RIM_FULL it is at full strength. Tying it to the count means a twelve-marine skirmish
+// looks exactly as it did and a four-hundred-unit brawl gets the help, which is the situation the idea
+// is actually about. RIM_A is the ceiling, and it is low on purpose: this is meant to be read, not seen.
+const RIM_ON = 80, RIM_FULL = 240, RIM_A = 0.5, RIM_HURT = 0.35;
 // How far the baked crystal cluster's scree sits above the bottom of its own canvas, so drawResource
 // can line that up with the bottom of the patch's tiles rather than centring the two.
 const MINERAL_FOOT = 0;
 const Render = {
   canvas: null, ctx: null, dpr: 1, W: 0, H: 0, camX: 0, camY: 0, viewW: 0, viewH: 0, fogCanvas: null, shadowBuf: null, shadowCtx: null, creepOn: undefined, built: false, lastFrameTime: 0, mini: null,
+  // Render-side motion state, keyed by unit id: the settle spring and the last speed it saw. It lives
+  // here rather than on the unit for the reason invariant 3 exists -- a field on a Unit is inside the
+  // reflective snapshot walk and would travel into saves and across the network, where a cosmetic
+  // spring has no business being. Keyed by id and pruned, so a dead unit's entry goes away by itself.
+  motion: new Map(), motionFrame: -1, hazeBuf: null, hazeCtx: null,
   init(canvas) { this.canvas = canvas; this.ctx = canvas.getContext('2d'); this.resize(); },
   resize() { // a hidden or unlaid-out canvas reports 0 and every drawImage of it throws
     const c = this.canvas;
@@ -78,7 +101,7 @@ const Render = {
   // The base transform every draw on the main context sits on: set at the top of a frame and never
   // reset to identity, so the HUD, the menus and the shadow blit all inherit it.
   base(ctx) { ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0); },
-  reset() { Terrain.reset(G.map.seed); Sprites.clear(); FX.reset(); this.built = false; },
+  reset() { Terrain.reset(G.map.seed); Sprites.clear(); FX.reset(); this.built = false; this.motion.clear(); this.motionFrame = -1; },
   // The pooled shadow layer, cleared and put into world space so the draw calls above can keep using
   // world coordinates unchanged. Reallocated only when the viewport changes size.
   shadowLayer() {
@@ -131,6 +154,7 @@ const Render = {
     const seen = (x, y) => { const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); return m.inb(tx, ty) && vis[ty * m.w + tx] > 0; };
     const visNow = (x, y) => { const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); return m.inb(tx, ty) && vis[ty * m.w + tx] === 2; };
     if (UI.placing && UI.placing.def.needsPsi) { const p = m.psi[G.human]; if (p) { ctx.fillStyle = 'rgba(80,140,255,0.13)'; for (let ty = Math.floor(cy / TILE); ty < (cy + this.viewH) / TILE; ty++) for (let tx = Math.floor(cx / TILE); tx < (cx + this.viewW) / TILE; tx++) if (m.inb(tx, ty) && p[m.idx(tx, ty)]) ctx.fillRect(tx * TILE, ty * TILE, TILE, TILE); } }
+    FX.drawTracks(ctx, inView);   // under the decals: a corpse fell on top of the ruts, not into them
     FX.drawDecals(ctx, inView, visNow);
     for (const r of m.resources) { if (!inView(r.cx, r.cy, 70) || !seen(r.cx, r.cy)) continue; this.drawResource(ctx, r); }
     for (const f of G.fields) { if (!inView(f.x, f.y, f.r * TILE + 40)) continue; if (f.kind !== 'storm' && f.kind !== 'nuke_target' && !visNow(f.x, f.y) && f.owner !== G.human) continue; FX.drawField(ctx, f, G.frame); }
@@ -144,6 +168,7 @@ const Render = {
       u._x = x; u._y = y; list.push(u);
     }
     list.sort((a, b) => (a.fly - b.fly) || (b.isBuilding - a.isBuilding) || (a._y - b._y));
+    this.tickMotion(list);   // one pass per SIM frame, whatever the frame rate; see tickMotion
     // Shadows. The unit's own silhouette, sheared away from the light and flattened onto the ground,
     // rather than the ellipse this used to draw -- a marine's shadow is now marine-shaped. The light
     // direction has to match the one baked into the sprites (Sprites.light and the rasterizer both
@@ -184,10 +209,16 @@ const Render = {
     ctx.globalAlpha = 1;
     for (const u of list) if (!u.fly) this.drawUnit(ctx, u);
     for (const u of list) if (u.fly) this.drawUnit(ctx, u);
+    this.drawRims(ctx, list);
     // projectiles
     for (const p of G.projectiles) { if (!inView(p.x, p.y, 10) || !visNow(p.x, p.y)) continue; ctx.save(); ctx.globalCompositeOperation = 'lighter'; const col = p.kind === 'interceptor' ? '#cfe6ff' : p.kind === 'yamato' ? '#ff6a4a' : '#ffd060'; const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.kind === 'yamato' ? 14 : 7); g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, p.kind === 'yamato' ? 14 : 7, 0, 7); ctx.fill(); if (p.kind === 'interceptor') { ctx.fillStyle = '#ffe9a0'; ctx.beginPath(); ctx.arc(p.x, p.y, 2.5, 0, 7); ctx.fill(); } ctx.restore(); }
     for (const e of G.effects) { if (!inView(e.x, e.y, 220)) continue; if (!visNow(e.x, e.y) && !(e.tx !== undefined && visNow(e.tx, e.ty)) && e.kind !== 'nuke') continue; FX.drawEffect(ctx, e); }
     FX.drawParticles(ctx);
+    // Weather goes over the world and under the interface. Everything below this line -- selection
+    // rings, health bars, rally lines, the placement ghost, order markers -- is how the player reads
+    // and gives orders, and a storm that buried those would be a storm that took the game away rather
+    // than one that made it harder. The units, the ground and the corpses are all behind it.
+    this.drawHazard(ctx);
     for (const u of UI.selection) { if (!u.alive || u.inside) continue; this.drawSelection(ctx, u, true); }
     this.drawRallies(ctx);
     if (UI.hover && UI.hover.alive && !UI.selection.includes(UI.hover)) this.drawSelection(ctx, UI.hover, false);
@@ -226,6 +257,190 @@ const Render = {
     fc.putImageData(img, 0, 0);
     ctx.save(); ctx.imageSmoothingEnabled = true; ctx.drawImage(this.fogCanvas, cx / TILE - 0.5, cy / TILE - 0.5, this.viewW / TILE, this.viewH / TILE, cx, cy, this.viewW, this.viewH); ctx.restore();
   },
+  // ---------------- weather ----------------
+  // The sandstorm. js/map.js has had a fully tested hazard for a milestone and nothing drew it, so the
+  // one map that has one played as an invisible force that removed hit points -- which is the worst
+  // possible version of a hazard, because a player cannot answer what they cannot see.
+  //
+  // Everything here is derived from `GameMap.hazardState(G.frame)`, which is a pure function of the
+  // frame number and is READ ONLY. That is not politeness: the whole reason the hazard survives a
+  // replay seek or a rejoin is that it stores nothing, and a renderer that wrote to it would put
+  // render-side state into the simulation's answer. The renderer asks the same question the damage
+  // pass asks -- including hazardSafe, so the sheltered ground around a main visibly clears.
+  //
+  // The pass composes into a half-resolution layer for the same two reasons the shadow pool does.
+  // Cost: the whole storm is about a dozen draw calls whatever it covers, because a gradient or a
+  // pattern fill is one call however many pixels it lands on, and M9's dpr measurement is the proof
+  // that fill area is not what this pass is bound by. Correctness: the safe zones are erased with
+  // `destination-out`, which needs somewhere to erase that is not the scene.
+  HAZE_SS: 0.5, HAZE_A: 0.68, HAZE_STEPS: 14, HAZE_WOB: 30,
+  hazeLayer() {
+    const w = Math.max(1, Math.ceil(this.viewW * this.HAZE_SS)), h = Math.max(1, Math.ceil(this.viewH * this.HAZE_SS));
+    let cv = this.hazeBuf;
+    if (!cv || cv.width !== w || cv.height !== h) { cv = this.hazeBuf = document.createElement('canvas'); cv.width = w; cv.height = h; this.hazeCtx = cv.getContext('2d'); this._pat = null; }
+    const c = this.hazeCtx; if (!c) return null;
+    c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, w, h);
+    c.setTransform(this.HAZE_SS, 0, 0, this.HAZE_SS, -this.camX * this.HAZE_SS, -this.camY * this.HAZE_SS);
+    return c;
+  },
+  // The dust is made of the ground it came off, so it takes the tileset's own mote colour -- the same
+  // table the ambient drift uses. A sandstorm on the ice map is spindrift and on the space platform is
+  // vented particulate, for free, because the palette already knew what the air there is full of.
+  dustCol() { return (typeof FX !== 'undefined' && FX.AMBIENT[Terrain.setId]) || [196, 170, 120]; },
+  dustRGB(c, a, k = 1) {
+    const q = v => Math.max(0, Math.min(255, Math.round(v * k)));
+    return 'rgba(' + q(c[0]) + ',' + q(c[1]) + ',' + q(c[2]) + ',' + a + ')';
+  },
+  // One tileable 128px cloud, baked per tileset. Nine copies of every blob so the tile wraps: a pattern
+  // with a visible seam reads as wallpaper scrolling past, not as air.
+  dustTile() {
+    if (this._dust && this._dustSet === Terrain.setId) return this._dust;
+    const S = 128, cv = document.createElement('canvas'); cv.width = cv.height = S; const c = cv.getContext('2d');
+    if (c) {
+      const col = this.dustCol(); let s = 20250909;
+      const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+      for (let i = 0; i < 30; i++) {
+        const x = rnd() * S, y = rnd() * S, r = 12 + rnd() * 26, a = 0.06 + rnd() * 0.13, k = 0.7 + rnd() * 0.6;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const bx = x + dx * S, by = y + dy * S;
+          if (bx + r < 0 || by + r < 0 || bx - r > S || by - r > S) continue;
+          const g = c.createRadialGradient(bx, by, 0, bx, by, r);
+          g.addColorStop(0, this.dustRGB(col, a, k)); g.addColorStop(1, this.dustRGB(col, 0, k));
+          c.fillStyle = g; c.fillRect(bx - r, by - r, r * 2, r * 2);
+        }
+      }
+    }
+    this._dustSet = Terrain.setId; return this._dust = cv;
+  },
+  dustPattern(c) {
+    if (this._pat !== undefined && this._pat !== null && this._patSet === Terrain.setId) return this._pat;
+    this._patSet = Terrain.setId;
+    try { this._pat = c.createPattern(this.dustTile(), 'repeat'); } catch (e) { this._pat = null; }
+    return this._pat;
+  },
+  drawHazard(ctx) {
+    const m = G.map; if (!m || !m.hazard || !m.hazardState) return;
+    const s = m.hazardState(G.frame); if (!s) return;
+    if (s.active) this.drawStorm(ctx, s);
+    else if (s.warning) this.drawStormWarn(ctx, s);
+  },
+  // The warning, and the reason it is two things. At t = 0 the front is still a full band-width OFF the
+  // map, so there is nothing at all to see from inside it -- a tell that only draws the front would show
+  // nothing for the whole ten seconds and then hit. So: dust gathering at the map edge it will enter
+  // from, which is truthful and is there if you are looking at that edge; and a wash across the leading
+  // side of the SCREEN, which is there wherever the camera is. FX.wind() does the third part, leaning
+  // the ambient drift over and speeding it up, which is what makes the air itself feel like it moved.
+  drawStormWarn(ctx, s) {
+    const h = G.map.hazard, k = Math.min(1, s.phase / Math.max(1, h.warn)), col = this.dustCol();
+    const vert = s.axis === 'y';
+    const camA = vert ? this.camY : this.camX, lenA = vert ? this.viewH : this.viewW;
+    const edge = s.dir > 0 ? 0 : s.span * TILE, depth = h.band * TILE * (0.3 + k * 0.6);
+    const a0 = Math.min(edge, edge + depth * s.dir), a1 = Math.max(edge, edge + depth * s.dir);
+    if (a1 > camA && a0 < camA + lenA) {
+      const g = vert ? ctx.createLinearGradient(0, edge, 0, edge + depth * s.dir) : ctx.createLinearGradient(edge, 0, edge + depth * s.dir, 0);
+      g.addColorStop(0, this.dustRGB(col, 0.66 * k, 0.5)); g.addColorStop(0.4, this.dustRGB(col, 0.3 * k, 0.62)); g.addColorStop(1, this.dustRGB(col, 0, 0.7));
+      ctx.save(); ctx.fillStyle = g;
+      if (vert) ctx.fillRect(this.camX - 8, a0, this.viewW + 16, a1 - a0);
+      else ctx.fillRect(a0, this.camY - 8, a1 - a0, this.viewH + 16);
+      ctx.restore();
+    }
+    // Squared, so the first half of the window is almost nothing and the last two seconds are
+    // unmistakable, and a slow throb at the end because a light that pulses is read as an alarm.
+    const puls = k > 0.7 ? 1 + Math.sin(G.frame * 0.32) * 0.22 * ((k - 0.7) / 0.3) : 1;
+    ctx.save(); this.base(ctx);
+    const g2 = vert ? ctx.createLinearGradient(0, s.dir > 0 ? 0 : this.viewH, 0, s.dir > 0 ? this.viewH * 0.8 : this.viewH * 0.2)
+      : ctx.createLinearGradient(s.dir > 0 ? 0 : this.viewW, 0, s.dir > 0 ? this.viewW * 0.8 : this.viewW * 0.2, 0);
+    // Darker than the ground, like the wall it is announcing: the light on that side is going.
+    g2.addColorStop(0, this.dustRGB(col, 0.34 * k * k * puls, 0.55)); g2.addColorStop(1, this.dustRGB(col, 0, 0.7));
+    ctx.fillStyle = g2; ctx.fillRect(0, 0, this.viewW, this.viewH);
+    ctx.restore();
+  },
+  // The front itself. `.t0`/`.t1` are its near and far edges in TILES along `.axis`; which of the two is
+  // the LEADING edge depends on `.dir`, because the pair is always returned in ascending order.
+  drawStorm(ctx, s) {
+    const vert = s.axis === 'y', WOB = this.HAZE_WOB, N = this.HAZE_STEPS;
+    const camA = vert ? this.camY : this.camX, camB = vert ? this.camX : this.camY;
+    const lenA = vert ? this.viewH : this.viewW, lenB = vert ? this.viewW : this.viewH;
+    const n0 = s.t0 * TILE, n1 = s.t1 * TILE;
+    if (n1 + WOB <= camA || n0 - WOB >= camA + lenA) return;   // off camera; the cheapest frame is the one not drawn
+    const c = this.hazeLayer(); if (!c) return;
+    const col = this.dustCol(), lead = s.dir > 0 ? n1 : n0, back = s.dir > 0 ? n0 : n1;
+    const P = (a, b) => vert ? [b, a] : [a, b];                // (along, across) -> (x, y), so one body of code serves either axis
+    const b0 = camB - 24, b1 = camB + lenB + 24;
+    // The crest wanders. Two sine waves of different period and drift, so the wall rolls rather than
+    // arriving as a rectangle, and both are functions of world position and G.frame only -- nothing is
+    // stored, so a replay of this frame draws the identical storm.
+    const crest = i => { const b = b0 + (i / N) * (b1 - b0); return [lead + (Math.sin(b * 0.0075 + G.frame * 0.026) * WOB + Math.sin(b * 0.019 - G.frame * 0.017) * WOB * 0.45) * s.dir, b]; };
+    c.beginPath();
+    for (let i = 0; i <= N; i++) { const [a, b] = crest(i), [x, y] = P(a, b); if (i) c.lineTo(x, y); else c.moveTo(x, y); }
+    { const [x, y] = P(back, b1); c.lineTo(x, y); } { const [x, y] = P(back, b0); c.lineTo(x, y); }
+    c.closePath(); c.save(); c.clip();
+    const ra = Math.min(n0, n1) - WOB * 2, rb = Math.max(n0, n1) + WOB * 2;
+    const [rx, ry] = P(ra, b0), [rx2, ry2] = P(rb, b1), rw = rx2 - rx, rh = ry2 - ry;
+    // A lit face and a dark body, in that order, and the value gap between them is the whole effect.
+    // The first version tinted the whole band with the tileset's own dust colour and was nearly
+    // invisible on the one map that ships with a hazard -- dust-coloured dust over a desert reads as
+    // slightly warmer desert. What a sandstorm actually does is put out the sun, so the front carries a
+    // bright rim where the light still catches it and everything behind that goes DARKER than the
+    // ground it is covering. That works on ice and on a space platform too, because it is a value
+    // relationship rather than a hue.
+    const [gx0, gy0] = P(lead, 0), [gx1, gy1] = P(back, 0);
+    const g = c.createLinearGradient(gx0, gy0, gx1, gy1);
+    g.addColorStop(0, this.dustRGB(col, 0.86, 1.05)); g.addColorStop(0.1, this.dustRGB(col, 0.86, 0.6));
+    g.addColorStop(0.36, this.dustRGB(col, 0.74, 0.44)); g.addColorStop(0.78, this.dustRGB(col, 0.42, 0.4));
+    g.addColorStop(1, this.dustRGB(col, 0, 0.4));
+    c.fillStyle = g; c.fillRect(rx, ry, rw, rh);
+    const mod = (v, n) => ((v % n) + n) % n;
+    // Three scrolling copies of one baked tile at different speeds and scales. Parallax is most of what
+    // separates "a volume of moving air" from "a coloured rectangle", and it is three draw calls.
+    // The scroll offset is wrapped to one tile: a game an hour in would otherwise be translating the
+    // pattern by a quarter of a million pixels, which is the same picture at worse float precision.
+    const pat = this.dustPattern(c);
+    if (pat) {
+      c.fillStyle = pat;
+      for (let l = 0; l < 3; l++) {
+        const sc = 1 + l * 0.7, [ox, oy] = P(mod(-G.frame * (2.2 + l * 1.7) * s.dir, 128 * sc), Math.sin(G.frame * 0.004 + l) * 26);
+        c.save(); c.globalAlpha = 0.5 - l * 0.12; c.translate(ox, oy); c.scale(sc, sc);
+        c.fillRect((rx - ox) / sc, (ry - oy) / sc, rw / sc, rh / sc); c.restore();
+      }
+      c.globalAlpha = 1;
+    }
+    // Streaks: the fast stuff at the face of the front. One path, one stroke.
+    const span = Math.max(1, rb - ra);
+    c.beginPath();
+    for (let i = 0; i < 20; i++) {
+      const b = b0 + mod(i * 137 + G.frame * 4, b1 - b0), a = ra + mod(i * 271 + G.frame * 11 * s.dir, span);
+      const [x0, y0] = P(a, b), [x1, y1] = P(a + 30 * s.dir, b + 3);
+      c.moveTo(x0, y0); c.lineTo(x1, y1);
+    }
+    c.strokeStyle = this.dustRGB(col, 0.3, 1.2); c.lineWidth = 2; c.lineCap = 'round'; c.stroke();
+    c.restore();
+    // The lit face of the wall: the sun is still on the outside of it, which is what makes it read as a
+    // solid thing arriving rather than as a wash over the screen.
+    c.beginPath();
+    for (let i = 0; i <= N; i++) { const [a, b] = crest(i), [x, y] = P(a, b); if (i) c.lineTo(x, y); else c.moveTo(x, y); }
+    c.strokeStyle = this.dustRGB(col, 0.5, 1.3); c.lineWidth = 8; c.lineJoin = 'round'; c.stroke();
+    // The settled ground around a start base takes no damage (GameMap.hazardSafe), so it takes no dust
+    // either. Drawing the same answer the damage pass gives is the difference between weather a player
+    // can plan around and weather that merely happens to them.
+    const r = (G.map.hazard.safe || 0) * TILE;
+    if (r > 0 && c.globalCompositeOperation !== undefined) {
+      c.globalCompositeOperation = 'destination-out';
+      for (const b of G.map.starts) {
+        const a = vert ? b.cy : b.cx;
+        if (a + r < ra || a - r > rb) continue;
+        if (b.cx + r < this.camX || b.cx - r > this.camX + this.viewW || b.cy + r < this.camY || b.cy - r > this.camY + this.viewH) continue;
+        const g3 = c.createRadialGradient(b.cx, b.cy, r * 0.5, b.cx, b.cy, r);
+        g3.addColorStop(0, 'rgba(0,0,0,0.94)'); g3.addColorStop(1, 'rgba(0,0,0,0)');
+        c.fillStyle = g3; c.beginPath(); c.arc(b.cx, b.cy, r, 0, 7); c.fill();
+      }
+      c.globalCompositeOperation = 'source-over';
+    }
+    ctx.save(); this.base(ctx); ctx.globalAlpha = this.HAZE_A;
+    ctx.drawImage(this.hazeBuf, 0, 0, this.hazeBuf.width, this.hazeBuf.height, 0, 0, this.viewW, this.viewH);
+    ctx.restore();
+  },
+
   // A mineral field and a geyser are on screen from the first second of every game to the last, and
   // they were the two least detailed things in it: five flat quads and an ellipse with a gradient.
   // Both are now baked once per (kind, richness) into a small canvas and blitted, because they are
@@ -304,6 +519,100 @@ const Render = {
       }
     }
   },
+  // ---------------- weight ----------------
+  // How much a thing weighs, for the settle spring. Size is the honest axis -- a marine and an
+  // ultralisk differ by size, not by hit points -- and metal is given a little more than meat because a
+  // chassis does not absorb its own momentum the way a body does.
+  massOf(d) { return (d.size === 'large' ? 1 : d.size === 'medium' ? 0.62 : 0.3) * (d.mech ? 1.15 : 0.9); },
+  // One pass per SIM frame, not per drawn frame. The spring is integrated in sim time, so a 144 Hz
+  // display and a throttled browser pane settle a tank over the same quarter of a second; making it a
+  // function of wall-clock dt instead would have made weight a property of the machine watching.
+  //
+  // The input is the distance the unit covered during the tick that just ran -- u.px/u.py is where the
+  // sim put it at the top of the tick, which is the same pair the draw pass interpolates from, so this
+  // needs nothing added to the simulation and reads nothing that is not already on screen.
+  tickMotion(list) {
+    if (this.motionFrame === G.frame) return;
+    this.motionFrame = G.frame;
+    const M = this.motion;
+    for (const u of list) {
+      if (u.isBuilding || u.burrowed || u.def.mine || u.def.larva || u.def.egg) continue;
+      let s = M.get(u.id); if (!s) M.set(u.id, s = { spd: 0, p: 0, v: 0, f: 0 });
+      s.f = G.frame;
+      const sp = Math.hypot(u.x - u.px, u.y - u.py), acc = sp - s.spd, mass = this.massOf(u.def);
+      s.spd = sp;
+      // Mass on a spring: acceleration shoves it back, braking throws it forward, the spring rings it
+      // down. Start, stop and settle out of one integrator, with no state machine and no special case
+      // for "has just stopped" -- which is the whole reason it reads as weight rather than as an effect.
+      s.v = (s.v - acc * SETTLE_IMP * mass - s.p * SETTLE_K) * SETTLE_D;
+      s.p = clamp(s.p + s.v, -SETTLE_MAX * mass, SETTLE_MAX * mass);
+      if (u.fly || u.def.worker || typeof FX === 'undefined') continue;
+      const d = u.def;
+      // Ruts for anything with a drive train, dust for anything that hovers or is simply enormous.
+      // Staggered by id so a column of tanks does not lay its marks in lockstep.
+      if (sp > 0.4) {
+        if (d.mech && !d.hover && (G.frame + u.id) % 10 === 0) FX.track(u.x, u.y + u.r * 0.32, u.facing, u.r * 0.5, u.r * 0.55);
+        else if ((d.hover || d.size === 'large') && (G.frame + u.id) % 14 === 0 && FX.particles.length < FX.MAX_PARTICLES * 0.7) FX.dust(u.x, u.y + u.r * 0.4, 1, 0.5 + mass * 0.7);
+      }
+      // Braking throws dirt forward -- the same event as the forward lurch, told by the ground.
+      if (acc < -0.8 && mass > 0.5 && FX.particles.length < FX.MAX_PARTICLES * 0.7)
+        FX.dust(u.x + Math.cos(u.facing) * u.r * 0.6, u.y + Math.sin(u.facing) * u.r * 0.5 + u.r * 0.3, 2, 0.7 + mass * 0.7);
+    }
+    // A unit that died or walked off camera stops being asked about; sweep its entry eventually.
+    if (M.size > 512 && (G.frame & 63) === 0) for (const [id, st] of M) if (G.frame - st.f > 120) M.delete(id);
+  },
+  // ---------------- legibility at scale ----------------
+  // A thin ellipse in the owner's colour around every unit's feet, and a hotter one around anything
+  // nearly dead. Drawn AFTER every sprite, which is the point of it: with four hundred sprites
+  // overlapping, what is lost first is not detail but WHOSE and WHICH ONES ARE ABOUT TO DIE, and
+  // neither of those is recoverable from a silhouette that the unit in front has painted over.
+  //
+  // It costs one draw call per player plus one, not one per unit, and that is the entire design
+  // constraint: every ring goes into a single path per owner and each path is stroked once. The rule
+  // this pass exists under is the one at the top of the file -- an extra per-unit BLIT is 2 ms and there
+  // is no room for another one, but per-unit geometry batched into a handful of fills is nearly free.
+  // Measured at 400 units: see test/renderfeel.js, which counts both the draw calls and how many units
+  // are still identifiable after everything in front of them has been painted.
+  //
+  // It fades in with the crowd. Below RIM_ON units on screen there is nothing to disambiguate and the
+  // rim is not drawn at all, so a twelve-marine skirmish looks exactly as it always did.
+  rimCol(owner, a) {
+    const cache = this._rimRGB || (this._rimRGB = {});
+    let c = cache[owner];
+    if (!c) {
+      const h = String((G.players[owner] && G.players[owner].color) || '#ffffff').replace('#', '');
+      c = cache[owner] = [parseInt(h.slice(0, 2), 16) || 0, parseInt(h.slice(2, 4), 16) || 0, parseInt(h.slice(4, 6), 16) || 0];
+    }
+    // Lifted toward white, because a saturated team colour at 1 px on top of a sprite of the same
+    // colour is invisible -- the ring has to be lighter than what it is drawn over, not merely coloured.
+    return 'rgba(' + Math.min(255, c[0] + 70) + ',' + Math.min(255, c[1] + 70) + ',' + Math.min(255, c[2] + 70) + ',' + a.toFixed(3) + ')';
+  },
+  drawRims(ctx, list) {
+    const n = list.length; if (n < RIM_ON) return;
+    const k = Math.min(1, (n - RIM_ON) / (RIM_FULL - RIM_ON));
+    const by = this._rimBins || (this._rimBins = []), hurt = this._rimHurt || (this._rimHurt = []);
+    for (const b of by) if (b) b.length = 0;   // sparse: owner ids are the indices, and a game need not have player 0
+    hurt.length = 0;
+    for (const u of list) {
+      if (u.isBuilding || u.burrowed || u.def.mine || u.def.larva || u.def.egg || u._alpha < 0.3) continue;
+      (by[u.owner] || (by[u.owner] = [])).push(u);
+      if (u.hp < u.maxHp * RIM_HURT) hurt.push(u);
+    }
+    ctx.save();
+    if (hurt.length) {   // drawn first and wider, so it reads as a halo around the ring rather than as one
+      ctx.beginPath();
+      for (const u of hurt) { const yy = u._y + (u.fly ? 0 : u.r * 0.4), rx = u.r + 4, ry = rx * (u.fly ? 0.62 : 0.5); ctx.moveTo(u._x + rx, yy); ctx.ellipse(u._x, yy, rx, ry, 0, 0, 7); }
+      ctx.strokeStyle = 'rgba(255,70,60,' + (0.55 * k).toFixed(3) + ')'; ctx.lineWidth = 2; ctx.stroke();
+    }
+    ctx.lineWidth = 1.4;
+    for (let o = 0; o < by.length; o++) {
+      const b = by[o]; if (!b || !b.length) continue;
+      ctx.beginPath();
+      for (const u of b) { const yy = u._y + (u.fly ? 0 : u.r * 0.4), rx = u.r + 2, ry = rx * (u.fly ? 0.62 : 0.5); ctx.moveTo(u._x + rx, yy); ctx.ellipse(u._x, yy, rx, ry, 0, 0, 7); }
+      ctx.strokeStyle = this.rimCol(o, RIM_A * k); ctx.stroke();
+    }
+    ctx.restore();
+  },
   drawUnit(ctx, u) {
     const x = u._x, y = u._y;
     if (u.isBuilding && !u.lifted) { this.drawBuilding(ctx, u); return; }
@@ -341,7 +650,11 @@ const Render = {
     // as it finishes -- no history required.
     // Recoil: a kick straight back along the barrel for the first few frames after a shot, biggest for
     // the heavy guns. This is what makes a siege tank feel like it weighs sixty tons.
-    let lean = 0, kick = 0;
+    // Settle: the same axis again, driven by the unit's own acceleration instead of by its weapon --
+    // the body lags going, overshoots stopping, and rings down. Recoil and settle are deliberately ONE
+    // language, a displacement along the facing, because two different vocabularies for "this thing has
+    // mass" read as two unrelated effects. Both come off Render.tickMotion; see there.
+    let lean = 0, kick = 0, pitch = 0, stretch = 0;
     if (!u.isBuilding) {
       if (u.moving && (u.order.type === 'move' || u.order.type === 'attackmove' || u.order.type === 'patrol') && u.order.x !== undefined) {
         let d = Math.atan2(u.order.y - u.y, u.order.x - u.x) - u.facing;
@@ -352,9 +665,16 @@ const Render = {
         const w = u.def.gw || u.def.aw;
         kick = (1 - (G.frame - u.lastFire) / RECOIL_F) * Math.min(3.2, ((w && w.dmg) || 8) * 0.05);
       }
+      const mo = this.motion.get(u.id);
+      // The stretch is the same number as the lag, not a second one: a body pulling away from its own
+      // feet is elongated along the direction it is pulling. Deriving both from one quantity is what
+      // keeps them in phase -- two independent easings would drift apart and read as a wobble.
+      if (mo) { pitch = mo.p; stretch = -mo.p / (SETTLE_MAX * this.massOf(u.def)) * LEAN_STRETCH; }
     }
-    ctx.translate(x - Math.cos(u.facing) * kick, y + bob - Math.sin(u.facing) * kick);
+    const push = pitch - kick;
+    ctx.translate(x + Math.cos(u.facing) * push, y + bob + Math.sin(u.facing) * push);
     if (lean) ctx.rotate(lean);
+    if (stretch > 0.004 || stretch < -0.004) { ctx.rotate(u.facing); ctx.scale(1 + stretch, 1 - stretch * 0.55); ctx.rotate(-u.facing); }
     if (sc !== 1) ctx.scale(sc, 1 / sc);
     if (u.def.id === 'archon' || u.def.id === 'dark_archon') { ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(0, 0, 2, 0, 0, u.r * 1.8); g.addColorStop(0, u.def.id === 'archon' ? 'rgba(120,200,255,0.6)' : 'rgba(200,80,255,0.6)'); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, u.r * 1.8 + Math.sin(G.frame * 0.3) * 3, 0, 7); ctx.fill(); ctx.globalCompositeOperation = 'source-over'; }
     Sprites.draw(ctx, s, 0, 0);
