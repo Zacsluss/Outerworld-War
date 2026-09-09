@@ -6,32 +6,47 @@
 <style>
   html, body { margin: 0; padding: 0; background: #000; overflow: hidden; font-family: sans-serif; color: #ddd; }
   #game { display: none; cursor: none; }
-  #menu { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 50% 30%, #1a2233, #05070a 70%); }
-  .panel { background: #151a22; border: 1px solid #3a4452; padding: 28px 36px; width: 420px; box-shadow: 0 0 40px #000; }
+  /* margin:auto rather than align-items:center: the skirmish panel is tall, and a centred flex child
+     taller than its container has its top clipped away with no way to scroll back to it. */
+  #menu { position: absolute; inset: 0; display: flex; justify-content: center; overflow: auto; background: radial-gradient(circle at 50% 30%, #1a2233, #05070a 70%); }
+  .panel { background: #151a22; border: 1px solid #3a4452; padding: 28px 36px; width: 420px; margin: auto; box-shadow: 0 0 40px #000; }
+  .panel.wide { width: 560px; }
   h1 { margin: 0 0 4px; font-size: 30px; letter-spacing: 3px; color: #e8d890; }
   .sub { color: #778; font-size: 12px; margin-bottom: 22px; }
   .row { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
   label { width: 110px; color: #aab; font-size: 14px; }
   select, input { background: #0e1117; color: #eee; border: 1px solid #3a4452; padding: 6px 8px; font-size: 14px; }
+  select:disabled, input:disabled { color: #5a6270; border-color: #262f3a; }
   button { margin-top: 18px; width: 100%; padding: 12px; font-size: 18px; background: #2c3a4c; color: #fff; border: 1px solid #5a6a7c; cursor: pointer; letter-spacing: 2px; }
   button:hover { background: #3c4c60; }
   details { margin-top: 12px; color: #aab; } summary { cursor: pointer; font-size: 13px; letter-spacing: 1px; color: #cdd; } .chk { width: auto; margin-right: 12px; color: #ccd; } .lobbyList { margin: 8px 0; font-size: 13px; color: #dde; } .lp { padding: 3px 0; border-bottom: 1px solid #2a3340; } .lp a { color: #f66; text-decoration: none; margin-left: 8px; } #lbStart { margin-top: 10px; }
   .row2 { display: flex; gap: 8px; } .row2 button, button.small { font-size: 13px; padding: 8px; margin-top: 8px; letter-spacing: 1px; }
   .help { margin-top: 16px; font-size: 11px; color: #667; line-height: 1.5; }
+  /* Skirmish setup. A section rule instead of a second nested panel: the screen is one form with four
+     parts, and boxing each part made it read as four unrelated dialogs stacked on top of each other. */
+  .sect { margin: 20px 0 6px; padding-bottom: 4px; font-size: 11px; letter-spacing: 2px; color: #8a94a4; border-bottom: 1px solid #2a3340; }
+  .lb2 { width: auto; margin-left: 4px; }
+  .grow { flex: 1; min-width: 0; }
+  .oprow select { flex: 1; min-width: 0; }
+  button.inline { width: auto; margin-top: 0; padding: 6px 10px; font-size: 12px; letter-spacing: 1px; }
+  /* The summary line. It is the one thing on this screen that says, in words rather than in dropdowns,
+     what pressing START will actually produce -- so it is given the gold rule the title has. */
+  /* pre-line, because UI.skirmishSummary returns three plain-text lines: it is asserted in node, so it
+     cannot return markup, and three sentences run together are not a summary. */
+  .sum { margin-top: 18px; padding: 10px 12px; background: #10141b; border-left: 3px solid #e8d890; font-size: 12px; color: #b8c2cf; line-height: 1.6; min-height: 32px; white-space: pre-line; }
 </style>
 </head>
 <body>
 <div id="menu">
-  <div class="panel">
+  <div class="panel" id="mainPanel">
     <h1>BROOD WAR</h1>
     <div class="sub">Fan remake. Three races, full tech trees, fog of war, AI opponents. No original assets.</div>
-    <div class="row"><label>Your race</label><select id="race"><option value="T">Terran</option><option value="Z">Zerg</option><option value="P">Protoss</option><option value="R">Random</option></select></div>
-    <div class="row"><label>Opponents</label><select id="nopp"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option></select></div>
-    <div id="opps"></div>
-    <div class="row"><label>Your team</label><select id="team"><option value="1">Team 1</option><option value="2">Team 2</option><option value="3">Team 3</option><option value="4">Team 4</option></select></div>
-    <div class="row"><label>Map</label><select id="layout"></select></div>
-    <div class="row"><label>Map seed</label><input id="seed" type="number" value="1" style="width:100px"></div>
+    <!-- The match controls moved to #skirmishPanel so there is exactly one place a game is configured.
+         What stays here is the one-click start and a sentence saying what that click will produce, so
+         quick-start is still quick and is no longer a game you cannot see the shape of. -->
+    <div class="sum" id="menuSummary"></div>
     <button id="start">START GAME</button>
+    <button id="setupBtn" class="small">SKIRMISH SETUP</button>
     <div class="row2"><button id="loadBtn" class="small">LOAD SAVED GAME</button><button id="replayBtn" class="small">WATCH REPLAY</button></div>
     <button id="autosaveBtn" class="small" style="display:none">CONTINUE AUTOSAVE</button>
     <input type="file" id="loadFile" accept=".json" hidden><input type="file" id="replayFile" accept=".json" hidden><input type="file" id="mapFile" accept=".json" hidden>
@@ -48,6 +63,47 @@
     <div class="help">In game: Ctrl+M mutes, F10 opens the pause menu, and Settings there changes the same options.<br>
       Tab cycles the selected kind, comma finds an idle worker, Ctrl+A selects the army, Backspace centres on the selection.</div>
     <button id="settingsBack" class="small">BACK</button>
+  </div>
+  <!-- ==================================================================================
+       Skirmish setup (M11 wave two, item 22). The surface for everything the sim already
+       knows how to do and the menu had no way to ask for: the four map sizes, the AI play
+       styles, procedural archetypes, weather, and the map's own life.
+
+       Every control here is READ ONLY ONCE, by UI.readSetup(), into a plain object that
+       UI.skirmishOptions() turns into the G.init options. Nothing on this screen talks to
+       the simulation directly -- see the long comment above UI.skirmishOptions in js/ui.js
+       for why that indirection is the whole point rather than an affectation.
+
+       It sits AFTER #settingsPanel in the document deliberately. The panel swap used to be
+       `settingsPanel.previousElementSibling`, so a new panel in between would have made
+       SETTINGS hide the wrong thing; UI.showPanel is id-based now, but the ordering is left
+       harmless anyway.
+       ================================================================================== -->
+  <div class="panel wide" id="skirmishPanel" style="display:none">
+    <h1>SKIRMISH</h1>
+    <div class="sub">Everything below ends up in the options object the game starts from, so a seed and these settings are the whole match.</div>
+
+    <div class="sect">PLAYERS</div>
+    <div class="row"><label>Your race</label><select id="race"><option value="T">Terran</option><option value="Z">Zerg</option><option value="P">Protoss</option><option value="R">Random</option></select><label class="lb2">Team</label><select id="team"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
+    <div class="row"><label>Opponents</label><select id="nopp"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option></select><span class="sub" style="margin:0">race, difficulty, play style, team</span></div>
+    <div id="opps"></div>
+
+    <div class="sect">MAP</div>
+    <div class="row"><label>Map</label><select id="layout" class="grow"></select></div>
+    <div class="row"><label>Size</label><select id="mapSize" class="grow"></select><label class="lb2">Seed</label><input id="seed" type="number" value="1" style="width:88px"><button id="seedRoll" class="small inline">ROLL</button></div>
+    <div class="row"><label>Weather</label><select id="optHazard" class="grow"></select><select id="optNight" class="grow"></select></div>
+    <div class="row"><label>Terrain</label><select id="optFeatures" class="grow"></select></div>
+
+    <div class="sect">THE MAP'S OWN LIFE</div>
+    <div class="row"><label>Derelicts</label><select id="optDerelicts" class="grow"></select><label class="lb2">Wildlife</label><select id="optWildlife" class="grow"></select></div>
+    <div class="help" id="neutralNote" style="margin-top:2px"></div>
+
+    <div class="sect">RULES</div>
+    <div class="row"><label>Starting bank</label><select id="optStart" class="grow"></select></div>
+
+    <div class="sum" id="setupSummary"></div>
+    <button id="setupStart">START GAME</button>
+    <button id="setupBack" class="small">BACK</button>
   </div>
 </div>
 <canvas id="game"></canvas>

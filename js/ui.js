@@ -79,7 +79,12 @@ const UI = {
   start(opts) {
     opts = Object.assign({}, opts, { players: opts.players.map(p => Object.assign({}, p, { race: p.race === 'R' ? ['T', 'Z', 'P'][Math.floor(Math.random() * 3)] : p.race })) });
     this.lastOpts = opts; this.mode = opts.mode || 'play'; this.viewAll = false; this.prodOverlay = false; this.chat = null; this.loading = null; if (this.speedIdx > this.maxSpeedIdx()) this.speedIdx = this.maxSpeedIdx();
-    G.init(opts); G.recording = this.mode === 'play'; G.log = []; G.pendingCmds = null; G.mission = null; if (opts.mission && typeof Missions !== 'undefined') Missions.begin(opts.mission);
+    // A composed skirmish layout id describes its own map, so it can be rebuilt rather than shipped.
+    // This is the one place that has to happen, and it has to happen BEFORE G.init: GameMap resolves
+    // the id in its constructor, and G.daylight looks the layout up in MAP_LAYOUTS by name on every
+    // frame. A no-op for every id that is not composed. See UI.skirmishOptions for the whole argument.
+    this.registerSkirmishLayout(opts.layout);
+    G.init(opts); this.applyStartingBank(opts); G.recording = this.mode === 'play'; G.log = []; G.pendingCmds = null; G.mission = null; if (opts.mission && typeof Missions !== 'undefined') Missions.begin(opts.mission);
     Render.reset(); if (typeof Music !== 'undefined' && Music.on && !Sound.muted) Music.start(); this.net = !!opts.net; if (this.net) G.paused = false; this.selection = []; this.groups = {}; this.pending = null; this.placing = null; this.menu = null; this.markers = []; this.pings = []; this.msgLog = []; if (G.mission) this.menu = 'brief';
     const hp = G.players[G.human]; Render.camX = hp.startX - Render.viewWorldW() / 2; Render.camY = hp.startY - Render.viewWorldH() / 2 + 40; this.clampCam();
     const hall = G.units.find(u => u.owner === G.human && u.isBuilding); if (hall) this.select([hall]);
@@ -801,6 +806,7 @@ const UI = {
     Render.resize(); Codex.open(); this.menuCodex = true;
     if (!this._loop) { this._loop = t => this.loop(t); requestAnimationFrame(this._loop); }   // no game has run yet, so the chain does not exist
   },
+<<<<<<< HEAD
   // One frame of the menu codex. Render.frame is deliberately not called: it reads a G that does not
   // exist yet. Closing the codex is what puts the menu back, so Escape, F3 and the panel's own close
   // button all work without any of them knowing this mode exists.
@@ -816,60 +822,486 @@ const UI = {
     Codex.draw(c);
   },
   toMenu() { this.running = false; this.menuCodex = false; this.menu = null; this.loading = null; if (this.refreshMapList) this.refreshMapList(); if (typeof Net !== 'undefined' && Net.active) Net.disconnect(); if (typeof Music !== 'undefined') Music.stop(); document.getElementById('menu').style.display = 'flex'; document.getElementById('game').style.display = 'none'; const ab = document.getElementById('autosaveBtn'); if (ab) ab.style.display = Replay.hasAutosave() ? 'block' : 'none'; },
+=======
+  toMenu() { this.running = false; this.menu = null; this.loading = null; if (this.refreshMapList) this.refreshMapList(); if (typeof Net !== 'undefined' && Net.active) Net.disconnect(); if (typeof Music !== 'undefined') Music.stop(); if (this.showPanel) this.showPanel('mainPanel'); document.getElementById('menu').style.display = 'flex'; document.getElementById('game').style.display = 'none'; const ab = document.getElementById('autosaveBtn'); if (ab) ab.style.display = Replay.hasAutosave() ? 'block' : 'none'; },
+
+  // ==========================================================================
+  // Skirmish setup (M11 wave two, item 22)
+  // ==========================================================================
+  // A milestone of gameplay had shipped that the player could not reach. Four map sizes that are
+  // different RULES, four AI play styles, four procedural archetypes, weather of two kinds, the
+  // per-map toggles for derelicts and wildlife -- all of it tested, all of it in the tables, and the
+  // menu offered race, opponent count and map. This is the surface for it.
+  //
+  // THE SHAPE, AND WHY IT IS THIS SHAPE. The screen is a form; a form is DOM; DOM cannot be tested in
+  // node without a browser or a fake one. So the screen is split in two, and the seam is a plain
+  // object:
+  //
+  //     the DOM  --readSetup()-->  a settings object  --skirmishOptions()-->  G.init options
+  //                                (plain, inert)        (pure, no DOM)
+  //
+  // Everything that can be wrong -- a setting that does not reach the sim, a default that is not
+  // today's default, a preset name nothing resolves, a seed that does not round-trip -- is wrong in
+  // the RIGHT half, which test/skirmish.js exercises directly with no document at all. The left half
+  // is reading `.value` off a select, and the one bug it can still have (a control id in the wiring
+  // that does not exist in index.html) is caught by parsing index.html as text.
+  //
+  // WHY THE OUTPUT IS ONLY { players, seed, layout }, AND NOTHING ELSE.
+  // That object is what a replay and a network join reproduce. js/commands.js's `Replay.data()` saves
+  // `seed`, `layout`, `G.setup.players`, `human` and `mission` -- and NOTHING ELSE -- and
+  // UI.startFromLog hands exactly those back to UI.start. So a top-level option of my own invention
+  // (`opts.hazard`, say) would work perfectly until the moment somebody saved the game, and then the
+  // reload would silently be a different match. There are therefore exactly two places a setting is
+  // allowed to live, and every control on this screen goes to one of them:
+  //
+  //   * PER PLAYER   -- race, difficulty, play style, team, starting bank. These ride on the
+  //                     players[] entries, which round-trip verbatim.
+  //   * IN THE MAP   -- size, archetype, weather, destructibles, derelicts, wildlife. These are
+  //                     properties of the LAYOUT, which is named by one string, and that string
+  //                     round-trips.
+  //
+  // The map half is the interesting one, and the answer is stolen wholesale from `Archetypes.id()`:
+  // MAKE THE ID DESCRIBE THE MAP. "arch:islands:97:large" is already a layout id that two clients can
+  // each turn into the same ground without shipping the ground, and this does the same one level up:
+  //
+  //     sk:<comma-separated overrides>:<any other layout id>
+  //     sk:hz=sandstorm,dn=1,dr=standard:arch:islands:97:large
+  //
+  // `skirmishLayout()` turns that back into a layout object, purely, from constants every client has.
+  // `UI.start` registers the result into MAP_LAYOUTS before G.init, which is what js/editor.js already
+  // does for '__preview' and for every 'custom:' map. Registering after load means js/build.js does not
+  // hash it -- and that is FINE HERE, exactly as it is fine for 'arch:', because the id is the whole
+  // description: two clients on the same build cannot read the same id and build different ground. It
+  // would NOT be fine for a custom editor map, whose tiles live only in one browser's localStorage,
+  // and that hole is pre-existing and not this screen's to close.
+  //
+  // WHY AN UNCHANGED SCREEN MUST PRODUCE A BYTE-IDENTICAL OPTIONS OBJECT. Every balance figure in
+  // HANDOFF.md was measured against the default AI, and 'standard' is a zero delta chosen so those
+  // numbers stay true. If this screen wrote `style: 'standard'` and `minerals: 50` into every game, the
+  // options object would differ from today's for no reason, replays would differ in the bytes they
+  // save, and the next person to diff two saves would be chasing a ghost. So every field is OMITTED
+  // when it is the default, and `skirmishLayoutId` returns the bare base id when nothing is overridden.
+  // test/skirmish.js asserts that against a hard-coded copy of what the old menu produced.
+  //
+  // ROADS NOT TAKEN:
+  //   * a `derelicts` key on the options object, resolved in G.init -- the honest place for it, and it
+  //     does not survive Replay.data(). Rejected for that alone.
+  //   * a second seed for the map, separate from the game seed. Two seeds is two things to write down
+  //     to reproduce a match, and the whole point of the field is that one number is enough.
+  //   * offering to ADD destructibles to a hand-written map. Placement is the generator's job -- it has
+  //     `repairConnectivity` and a mirror to honour -- so the terrain control only takes them AWAY,
+  //     which can never strand a player: js/map.js floods the map with every feature forced shut and
+  //     carves a corridor to any base it cannot reach, so a map that is legal with them all shut is
+  //     legal with them all absent.
+  //   * a supply-cap control. SUPPLY_CAP is a const in js/game.js clamped into `p.supMax` every tick by
+  //     G.recomputeSupply, so nothing outside that file can move it. It is reported in the summary
+  //     instead, because a player should at least know what it is.
+
+  // The settings object that reproduces the old menu exactly: Terran, one Random normal opponent on
+  // team 2, Lost Ruins, seed 1, and 'as the map defines' for every map property. 'map' rather than
+  // 'none' is deliberate -- no shipping layout declares derelicts or wildlife today, so the two read
+  // the same now, but they stop reading the same the moment a map does, and 'as the map defines' is
+  // the answer that stays right.
+  setupDefaults() {
+    return {
+      race: 'T', team: 1, seed: 1, map: 'temple', size: 'auto', bank: 'standard',
+      hazard: 'map', night: 'map', features: 'map', derelicts: 'map', wildlife: 'map',
+      opponents: [{ race: 'R', difficulty: 'normal', style: 'standard', team: 2 }],
+    };
+  },
+  SETUP_DIFFS: [['easy', 'Easy'], ['normal', 'Normal'], ['hard', 'Hard']],
+  // Labels only. The KEYS come from AI.prototype.styleDeltas() so a fifth style appears in the menu the
+  // day it appears in the table, and an unlabelled one falls back to its own id rather than vanishing.
+  SETUP_STYLE_NAMES: {
+    standard: 'Standard', turtle: 'Turtle', rusher: 'Rusher', expander: 'Expander', harasser: 'Harasser',
+  },
+  SETUP_STYLE_BLURB: {
+    standard: 'the base build order, unchanged',
+    turtle: 'static defence early, a bigger army before it commits, expands late',
+    rusher: 'production before tech, minimal upgrades, attacks early',
+    expander: 'more bases sooner and the workers to fill them',
+    harasser: 'small waves often, mobile units, twice as many drops',
+  },
+  // Starting banks. There is nothing in the sim to derive these from -- Player's constructor hard-codes
+  // 50 and 0 -- so this is a UI table, and 'standard' has to be exactly those two numbers.
+  SETUP_BANKS: [
+    ['standard', 'Standard  (50 minerals)', 50, 0],
+    ['fast', 'Fast  (400 / 100)', 400, 100],
+    ['rich', 'Rich  (1500 / 700)', 1500, 700],
+  ],
+  // [key, label, what it actually does]. The third entry is the option's tooltip: "Turtle" and
+  // "Harasser" are evocative and say nothing, and a player choosing between five words with no idea
+  // what any of them changes is not being offered a choice.
+  setupStyles() {
+    let keys = ['standard'];
+    try { if (typeof AI !== 'undefined' && AI.prototype.styleDeltas) keys = Object.keys(AI.prototype.styleDeltas()); } catch (e) { }
+    return keys.map(k => [k, this.SETUP_STYLE_NAMES[k] || (k.charAt(0).toUpperCase() + k.slice(1)), this.SETUP_STYLE_BLURB[k] || '']);
+  },
+  setupBank(key) { return this.SETUP_BANKS.find(b => b[0] === key) || this.SETUP_BANKS[0]; },
+  // The preset names for a per-map toggle, straight out of DATA. Absent tables are the normal case in a
+  // worktree where the neutral sim half has not landed yet, so this returns [] and the caller offers
+  // nothing rather than throwing.
+  setupPresets(which) {
+    try {
+      const t = typeof DATA !== 'undefined' && DATA[which === 'wildlife' ? 'wildlifePresets' : 'derelictPresets'];
+      return t ? Object.keys(t) : [];
+    } catch (e) { return []; }
+  },
+
+  // The base layout id a settings object names, before any override is layered on. Three kinds:
+  // 'gen:<archetype>' is generated from the seed, anything else is a MAP_LAYOUTS key or an 'arch:' id
+  // handed through untouched. An archetype nothing recognises falls back to the default map rather than
+  // throwing -- Archetypes.layout() does throw on an unknown key, and a stale saved setting must not be
+  // able to take the menu down.
+  skirmishBaseId(s) {
+    const m = String((s && s.map) || 'temple');
+    if (m.slice(0, 4) !== 'gen:') return m;
+    const key = m.slice(4);
+    if (typeof Archetypes === 'undefined' || !Archetypes.keys.includes(key)) return 'temple';
+    const seed = this.skirmishSeed(s);
+    const size = (typeof MAP_SIZES !== 'undefined' && MAP_SIZES[s && s.size]) ? s.size : null;
+    return Archetypes.id(key, seed, size);
+  },
+  skirmishSeed(s) { const n = parseInt(s && s.seed, 10); return (isFinite(n) && n) ? (n >>> 0) || 1 : 1; },
+
+  // The layout id for a whole settings object: the base, plus the overrides that differ from the map's
+  // own answer. Order is fixed so the same settings always produce the same string -- ids get compared.
+  skirmishLayoutId(s) {
+    s = s || {}; const base = this.skirmishBaseId(s), o = [];
+    if (s.hazard && s.hazard !== 'map') o.push('hz=' + (s.hazard === 'none' ? '0' : s.hazard));
+    if (s.night && s.night !== 'map') o.push('dn=' + (s.night === 'on' ? '1' : '0'));
+    if (s.features === 'none') o.push('ft=0');
+    if (s.derelicts && s.derelicts !== 'map') o.push('dr=' + (s.derelicts === 'none' ? '0' : s.derelicts));
+    if (s.wildlife && s.wildlife !== 'map') o.push('wl=' + (s.wildlife === 'none' ? '0' : s.wildlife));
+    return o.length ? 'sk:' + o.join(',') + ':' + base : base;
+  },
+  // The inverse: a composed id back into a layout object, purely. Everything it needs is a constant
+  // every client holds, which is what makes the id sufficient to ship instead of the map.
+  //
+  // The clone is not politeness either. MAP_LAYOUTS entries and the Archetypes cache are SHARED objects
+  // that GameMap reads on every generation, so writing `L.hazard` onto one of them would put a
+  // sandstorm on Lost Ruins for the rest of the session, including for the next replay loaded.
+  skirmishLayout(id) {
+    const str = String(id || '');
+    if (str.slice(0, 3) !== 'sk:') return null;
+    const c2 = str.indexOf(':', 3); if (c2 < 0) return null;
+    const overrides = str.slice(3, c2), baseId = str.slice(c2 + 1);
+    if (typeof MAP_LAYOUTS === 'undefined') return null;
+    const base = (typeof Archetypes !== 'undefined' && Archetypes.resolve(baseId)) || MAP_LAYOUTS[baseId] || MAP_LAYOUTS.temple;
+    if (!base) return null;
+    let L; try { L = JSON.parse(JSON.stringify(base)); } catch (e) { return null; }
+    const tags = [];
+    for (const part of overrides.split(',')) {
+      const eq = part.indexOf('='); if (eq < 0) continue;
+      const k = part.slice(0, eq), v = part.slice(eq + 1);
+      if (k === 'hz') {
+        // A hazard on the layout is the OBJECT HAZARDS builds, not its name -- js/map.js copies it
+        // straight onto the map. The span it is fed is the map's own width, which is what
+        // MapModes.layout does; a band sized for a 128 map on a 256 one is a quarter of the front it
+        // should be, and it is the sort of thing that reads as "the storm feels weak" forever.
+        if (v === '0') { delete L.hazard; tags.push('no storm'); }
+        else if (typeof HAZARDS !== 'undefined' && typeof HAZARDS[v] === 'function') { L.hazard = HAZARDS[v](L.w || 128); tags.push(v); }
+      } else if (k === 'dn') {
+        if (v === '1') { L.dayNight = true; tags.push('day/night'); } else { delete L.dayNight; tags.push('daylight'); }
+      } else if (k === 'ft') {
+        if (v === '0' && L.features && L.features.length) { L.features = []; tags.push('no destructibles'); }
+      } else if (k === 'dr' || k === 'wl') {
+        const field = k === 'dr' ? 'derelicts' : 'wildlife';
+        if (v === '0') delete L[field];
+        else { L[field] = v; tags.push(v + ' ' + field); }
+      }
+    }
+    // The name is what the player sees in the pause menu and the replay list, so it says what was done
+    // to the map rather than repeating the base map's name and lying about it.
+    L.name = (base.name || baseId) + (tags.length ? ' (' + tags.join(', ') + ')' : '');
+    return L;
+  },
+  // Idempotent, and a no-op for every id that is not composed -- which is every id the game had before
+  // this screen existed. Called from UI.start, so it runs on the quick start, on a replay loaded in a
+  // fresh page, and on Restart from the pause menu, all through the one funnel.
+  registerSkirmishLayout(id) {
+    if (typeof MAP_LAYOUTS === 'undefined' || typeof id !== 'string' || id.slice(0, 3) !== 'sk:') return null;
+    if (MAP_LAYOUTS[id]) return MAP_LAYOUTS[id];
+    const L = this.skirmishLayout(id);
+    if (L) MAP_LAYOUTS[id] = L;      // and if it did not compose, layoutDef() falls back to Lost Ruins
+    return L || null;
+  },
+
+  // THE function this screen exists to produce. Pure: a settings object in, the G.init options out, no
+  // DOM, no globals written, no clock. test/skirmish.js calls it directly.
+  skirmishOptions(s) {
+    const d = this.setupDefaults(); s = s || {};
+    const pick = k => (s[k] === undefined || s[k] === null || s[k] === '' ? d[k] : s[k]);
+    const bank = this.setupBank(pick('bank'));
+    // Written onto every player rather than once at the top level, because per-player is the only
+    // shape that survives Replay.data(). It also happens to be the shape a handicap wants, which is
+    // where the next version of this control goes.
+    const purse = p => { if (bank[2] !== 50) p.minerals = bank[2]; if (bank[3] !== 0) p.gas = bank[3]; return p; };
+    const players = [purse({ race: String(pick('race')), human: true, name: 'Player', team: parseInt(pick('team'), 10) || 1 })];
+    const opps = Array.isArray(s.opponents) ? s.opponents : d.opponents;
+    opps.forEach((o, i) => {
+      o = o || {};
+      const p = { race: String(o.race || 'R'), human: false, difficulty: String(o.difficulty || 'normal'), name: 'Computer ' + (i + 1), team: parseInt(o.team, 10) || (i + 2) };
+      // 'standard' is the zero delta and is what AI's constructor falls back to, so leaving the key off
+      // keeps a default game's options byte-identical to the ones the old menu produced.
+      if (o.style && o.style !== 'standard') p.style = String(o.style);
+      players.push(purse(p));
+    });
+    return { players, seed: this.skirmishSeed(s), layout: this.skirmishLayoutId(s) };
+  },
+
+  // What the chosen settings actually resolve to, along the same path GameMap.layoutDef will take.
+  // One resolution, used by the summary, by the opponent cap and by the size control's enabled state,
+  // so the three cannot disagree about what map is selected.
+  setupMapInfo(s) {
+    const id = this.skirmishLayoutId(s || {});
+    let L = null;
+    try {
+      L = (id.slice(0, 3) === 'sk:' ? this.skirmishLayout(id) : null)
+        || (typeof Archetypes !== 'undefined' && Archetypes.resolve(id))
+        || (typeof MAP_LAYOUTS !== 'undefined' ? MAP_LAYOUTS[id] : null) || null;
+    } catch (e) { L = null; }
+    return {
+      id, layout: L, ok: !!L,
+      name: (L && L.name) || id, w: (L && L.w) || 128, h: (L && L.h) || 128,
+      players: (L && L.players) || 4, bases: (L && L.bases) ? L.bases.length : 0,
+      size: (L && L.size) || null, archetype: (L && L.archetype) || null, tileset: (L && L.tileset) || null,
+      hazard: !!(L && L.hazard), night: !!(L && L.dayNight),
+      features: (L && L.features) ? L.features.length : 0,
+      // The KINDS, not the count. L.features is a list of quadrant-0 definitions that GameMap mirrors
+      // four ways, so "2 destructibles" on a map with eight of them on the ground is a small lie that
+      // a player would notice; the kinds are what they actually want to know anyway.
+      featureKinds: (L && L.features || []).map(f => f.kind).filter((k, i, a) => a.indexOf(k) === i)
+        .map(k => (typeof MAP_FEATURES !== 'undefined' && MAP_FEATURES[k] ? MAP_FEATURES[k].name : k)),
+      derelicts: (L && L.derelicts) || null, wildlife: (L && L.wildlife) || null,
+    };
+  },
+  setupMaxOpponents(s) { return Math.max(1, Math.min(3, this.setupMapInfo(s).players - 1)); },
+
+  // The sentence under the form. Three lines, and each one answers a question a player actually has:
+  // who am I playing, what am I playing it on, and what are the rules. It is plain text rather than
+  // markup so it can be asserted in node, and it never says "default" -- a summary whose job is to say
+  // what you are about to play cannot answer with the name of a setting.
+  skirmishSummary(s) {
+    const d = this.setupDefaults(); s = Object.assign({}, d, s || {});
+    const opts = this.skirmishOptions(s), m = this.setupMapInfo(s);
+    const race = r => (typeof RACE_INFO !== 'undefined' && RACE_INFO[r] ? RACE_INFO[r].name : r === 'R' ? 'Random' : r);
+    const styleName = k => this.SETUP_STYLE_NAMES[k] || k;
+    const me = opts.players[0], foes = opts.players.slice(1);
+    const teams = new Set(opts.players.map(p => p.team));
+    const l1 = race(me.race) + ' on team ' + me.team + ' against ' + foes.length + ' opponent' + (foes.length === 1 ? '' : 's') + ': '
+      + foes.map(p => race(p.race) + ', ' + p.difficulty + ', ' + styleName(p.style || 'standard') + ', team ' + p.team).join('; ')
+      + (teams.size === 2 && opts.players.length > 2 ? '  (two teams)' : '') + '.';
+    const bits = [m.w + 'x' + m.h, m.players + ' starts', m.bases ? m.bases + ' bases a player' : null];
+    if (m.archetype) bits.push('procedural');
+    if (m.hazard) bits.push('sandstorm');
+    if (m.night) bits.push('day/night cycle');
+    if (m.featureKinds.length) bits.push('destructible ' + m.featureKinds.map(k => k.toLowerCase() + 's').join(' and '));
+    if (m.derelicts) bits.push('derelicts: ' + m.derelicts);
+    if (m.wildlife) bits.push('wildlife: ' + m.wildlife);
+    const l2 = m.name + ' -- ' + bits.filter(Boolean).join(', ') + '.';
+    const bank = this.setupBank(s.bank);
+    const l3 = 'Start with ' + bank[2] + ' minerals' + (bank[3] ? ' and ' + bank[3] + ' gas' : '') + '. '
+      + 'Supply cap ' + (typeof SUPPLY_CAP !== 'undefined' ? SUPPLY_CAP : 200) + '. Seed ' + opts.seed + '.';
+    return l1 + '\n' + l2 + '\n' + l3;
+  },
+
+  // Starting resources, applied straight after G.init. It belongs in G.init beside the Player
+  // construction and it is one line there -- `if (po.minerals != null) p.minerals = po.minerals;` --
+  // but js/game.js is not this change's to edit, so it is done here instead, through the same options
+  // object and before a single tick has run. It is therefore still deterministic and it still
+  // round-trips: UI.start is the one funnel every entry point uses (quick start, the setup screen,
+  // Restart, a loaded save, a watched replay, the map editor's test game), and Replay.data() saves
+  // G.setup.players verbatim. The one gap is a LAN game, because js/net.js rebuilds the players array
+  // from the relay's lobby with five fields and drops anything else -- and the network lobby has no
+  // control for this, so a LAN game correctly gets the standard bank.
+  applyStartingBank(opts) {
+    if (typeof G === 'undefined' || !G.players || !opts || !Array.isArray(opts.players)) return;
+    opts.players.forEach((po, i) => {
+      const p = G.players[i]; if (!p || !po) return;
+      if (typeof po.minerals === 'number' && isFinite(po.minerals)) p.minerals = Math.max(0, Math.round(po.minerals));
+      if (typeof po.gas === 'number' && isFinite(po.gas)) p.gas = Math.max(0, Math.round(po.gas));
+    });
+  },
+>>>>>>> worktree-agent-a400bd22010d4b08f
 };
 
 // ---------------- boot ----------------
 window.addEventListener('DOMContentLoaded', () => {
   UI.init();
   const $ = id => document.getElementById(id);
+  const cap = s => String(s).charAt(0).toUpperCase() + String(s).slice(1);
+  const el = (tag, props) => Object.assign(document.createElement(tag), props);
+  // Every select on the skirmish screen is filled from the sim's own tables rather than written out in
+  // index.html. That is the same decision the map dropdown already made and for the same reason: the
+  // four size modes and the hazard map appeared in the menu the day they were added, with nobody
+  // remembering to add an <option>, and a fifth AI style will do the same.
+  const fill = (id, items, value) => {
+    const sel = $(id); if (!sel) return null;
+    sel.innerHTML = '';
+    for (const [v, t] of items) sel.appendChild(el('option', { value: v, textContent: t }));
+    if (value != null) sel.value = value;
+    return sel;
+  };
+
+  // ---- panels -------------------------------------------------------------
+  // Id-based, not `previousElementSibling`. The settings panel found the main panel by walking one
+  // element back, which was true when there were two panels and quietly wrong the moment there were
+  // three -- the kind of breakage that shows up as "SETTINGS hides the wrong screen" and is invisible
+  // in a diff. Everything with class .panel inside #menu is now a page, and exactly one is shown.
+  UI.showPanel = id => {
+    const menu = $('menu'); if (!menu || !menu.querySelectorAll) return;
+    for (const p of menu.querySelectorAll('.panel')) p.style.display = p.id === id ? '' : 'none';
+  };
+  const sb = $('settingsBtn'); if (sb) sb.addEventListener('click', () => UI.showPanel('settingsPanel'));
+  const sbk = $('settingsBack'); if (sbk) sbk.addEventListener('click', () => UI.showPanel('mainPanel'));
+
+  // ---- the skirmish form --------------------------------------------------
   const oppRows = $('opps');
-  const rebuildOpps = () => { const n = parseInt($('nopp').value); oppRows.innerHTML = ''; for (let i = 0; i < n; i++) oppRows.innerHTML += `<div class="row"><label>Opponent ${i + 1}</label><select class="orace"><option value="R">Random</option><option value="T">Terran</option><option value="Z">Zerg</option><option value="P">Protoss</option></select><select class="odiff"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select><select class="oteam" title="Team">${[1, 2, 3, 4].map(t => `<option value="${t}" ${t === i + 2 ? 'selected' : ''}>Team ${t}</option>`).join('')}</select></div>`; };
-  $('nopp').addEventListener('change', rebuildOpps); rebuildOpps();
+  const readOpponents = () => [...document.querySelectorAll('#opps .oprow')].map((r, i) => ({
+    race: (r.querySelector('.orace') || {}).value || 'R',
+    difficulty: (r.querySelector('.odiff') || {}).value || 'normal',
+    style: (r.querySelector('.ostyle') || {}).value || 'standard',
+    team: parseInt((r.querySelector('.oteam') || {}).value, 10) || (i + 2),
+  }));
+  // Rebuilt rather than added to, because the row count comes from a select. It reads the existing
+  // rows first: setting three opponents up and then changing the count to 2 used to reset all of them
+  // to Random/Normal, which with four controls a row instead of three is now genuinely annoying.
+  const rebuildOpps = () => {
+    if (!oppRows) return;
+    const n = parseInt(($('nopp') || { value: '1' }).value, 10) || 1, prev = readOpponents(), styles = UI.setupStyles();
+    const sel = (cls, items, chosen, title) => `<select class="${cls}"${title ? ' title="' + title + '"' : ''}>`
+      + items.map(([v, t, tip]) => `<option value="${v}"${tip ? ' title="' + tip + '"' : ''}${String(v) === String(chosen) ? ' selected' : ''}>${t}</option>`).join('') + '</select>';
+    let h = '';
+    for (let i = 0; i < n; i++) {
+      const p = prev[i] || { race: 'R', difficulty: 'normal', style: 'standard', team: i + 2 };
+      h += `<div class="row oprow"><label>Opponent ${i + 1}</label>`
+        + sel('orace', [['R', 'Random'], ['T', 'Terran'], ['Z', 'Zerg'], ['P', 'Protoss']], p.race, 'Race')
+        + sel('odiff', UI.SETUP_DIFFS, p.difficulty, 'Difficulty')
+        + sel('ostyle', styles, p.style, 'Play style -- how it opens, what it builds and when it attacks')
+        + sel('oteam', [1, 2, 3, 4].map(t => [t, 'Team ' + t]), p.team, 'Team')
+        + '</div>';
+    }
+    oppRows.innerHTML = h;
+  };
+
+  const sizeKeys = (typeof MapModes !== 'undefined' && MapModes.keys) ? MapModes.keys.slice() : [];
+  const buildLayoutList = () => {
+    const sel = $('layout'); if (!sel || typeof MAP_LAYOUTS === 'undefined') return;
+    const keep = sel.value; sel.innerHTML = '';
+    const group = label => { const g = el('optgroup', { label }); sel.appendChild(g); return g; };
+    const add = (g, value, textContent) => g.appendChild(el('option', { value, textContent }));
+    const fixed = group('Fixed maps'), custom = [];
+    for (const [id, L] of Object.entries(MAP_LAYOUTS)) {
+      // '__preview' is the editor's scratch entry and 'sk:' entries are compositions registered by
+      // UI.start; neither is a map anybody chose, and both would otherwise appear in this list.
+      if (!L || id === '__preview' || id.slice(0, 3) === 'sk:' || sizeKeys.includes(id)) continue;
+      if (L.custom) { custom.push([id, L]); continue; }
+      add(fixed, id, (L.name || id) + (L.players ? ' (' + L.players + ' players)' : '') + (L.archetype ? ' -- fixed sample' : ''));
+    }
+    if (sizeKeys.length) {
+      const g = group('Map sizes -- four different sets of rules');
+      for (const k of sizeKeys) { const L = MAP_LAYOUTS[k]; if (L) add(g, k, (L.name || k) + '  ' + L.w + 'x' + L.h + ', ' + L.players + ' players, ' + (L.bases || []).length + ' bases each'); }
+    }
+    if (typeof Archetypes !== 'undefined') {
+      const g = group('Procedural -- a new map from the seed');
+      for (const k of Archetypes.keys) add(g, 'gen:' + k, Archetypes.names[k] || cap(k));
+    }
+    if (custom.length) { const g = group('Made in the editor'); for (const [id, L] of custom) add(g, id, (L.name || id.slice(7)) + ' (custom)'); }
+    if (keep) sel.value = keep;
+    if (!sel.value) sel.value = 'temple';
+  };
+
+  const val = (id, dflt) => { const e = $(id); return e && e.value !== '' && e.value != null ? e.value : dflt; };
+  // The seam. Everything above this line is DOM; everything below it is a plain object that
+  // UI.skirmishOptions turns into a game, and that test/skirmish.js can build by hand.
+  const readSetup = () => {
+    const opps = readOpponents();
+    return {
+      race: val('race', 'T'), team: parseInt(val('team', '1'), 10) || 1, seed: parseInt(val('seed', '1'), 10) || 1,
+      map: val('layout', 'temple'), size: val('mapSize', 'auto'), bank: val('optStart', 'standard'),
+      hazard: val('optHazard', 'map'), night: val('optNight', 'map'), features: val('optFeatures', 'map'),
+      derelicts: val('optDerelicts', 'map'), wildlife: val('optWildlife', 'map'),
+      opponents: opps.length ? opps : undefined,     // undefined, not [], so the defaults fill it in
+    };
+  };
+  UI.readSetup = readSetup;
+
+  const refreshSetup = () => {
+    // Size only means something for a procedural map: every other entry in the list already IS a size,
+    // either because it is one of the four modes or because the layout says how big it is.
+    const lay = $('layout'), ms = $('mapSize');
+    const gen = lay ? String(lay.value || '').slice(0, 4) === 'gen:' : false;
+    if (ms) { ms.disabled = !gen; if (!gen) ms.value = 'auto'; }
+    let s = readSetup();
+    // G.init hands out start locations with `starts[i % starts.length]`, so more players than the map
+    // has starts is two armies in one main rather than an error. Cap instead.
+    const no = $('nopp'), maxOpp = UI.setupMaxOpponents(s);
+    if (no) {
+      for (const o of no.options) o.disabled = parseInt(o.value, 10) > maxOpp;
+      if ((parseInt(no.value, 10) || 1) > maxOpp) { no.value = String(maxOpp); rebuildOpps(); s = readSetup(); }
+    }
+    const text = UI.skirmishSummary(s);
+    const a = $('setupSummary'); if (a) a.textContent = text;
+    const b = $('menuSummary'); if (b) b.textContent = text;
+  };
+  UI.refreshSetup = refreshSetup;
+
+  fill('mapSize', [['auto', 'As the map defines']].concat(sizeKeys.map(k => [k, (MAP_SIZES[k].name || k) + '  ' + MAP_SIZES[k].w + 'x' + MAP_SIZES[k].h])), 'auto');
+  const hazKeys = typeof HAZARDS !== 'undefined' ? Object.keys(HAZARDS) : [];
+  fill('optHazard', [['map', 'Weather: as the map defines'], ['none', 'Weather: clear']].concat(hazKeys.map(k => [k, 'Weather: ' + cap(k)])), 'map');
+  fill('optNight', [['map', 'Light: as the map defines'], ['on', 'Light: day and night'], ['off', 'Light: permanent day']], 'map');
+  fill('optFeatures', [['map', 'Destructibles: as the map defines'], ['none', 'Destructibles: none']], 'map');
+  // Both lists come from DATA, and both are empty in a build where the neutral tables have not landed.
+  // An empty list leaves only 'as the map defines' and 'none', which are the same thing on every map
+  // that ships today -- so the screen degrades to telling the truth rather than to throwing.
+  const derPresets = UI.setupPresets('derelict'), wildPresets = UI.setupPresets('wildlife');
+  fill('optDerelicts', [['map', 'As the map defines'], ['none', 'None']].concat(derPresets.map(k => [k, cap(k)])), 'map');
+  fill('optWildlife', [['map', 'As the map defines'], ['none', 'None']].concat(wildPresets.map(k => [k, cap(k)])), 'map');
+  fill('optStart', UI.SETUP_BANKS.map(b => [b[0], b[1]]), 'standard');
+  const nn = $('neutralNote');
+  if (nn) nn.textContent = (derPresets.length || wildPresets.length)
+    ? 'Capturable derelicts and buried wildlife are properties of the map, like the weather, so they travel in the layout the seed names. Placement is still landing on the simulation side; the choice is carried either way.'
+    : 'This build carries no derelict or wildlife presets, so there are none to place.';
+
+  buildLayoutList();
+  rebuildOpps();
+
+  const panel = $('skirmishPanel');
+  if (panel) {
+    const onChange = e => { if (e.target && e.target.id === 'nopp') rebuildOpps(); refreshSetup(); };
+    panel.addEventListener('change', onChange); panel.addEventListener('input', onChange);
+  }
+  const sr = $('seedRoll'); if (sr) sr.addEventListener('click', () => { const e = $('seed'); if (e) { e.value = String(1 + Math.floor(Math.random() * 999999)); refreshSetup(); } });
+  const setupBtn = $('setupBtn'); if (setupBtn) setupBtn.addEventListener('click', () => { refreshSetup(); UI.showPanel('skirmishPanel'); });
+  const setupBack = $('setupBack'); if (setupBack) setupBack.addEventListener('click', () => UI.showPanel('mainPanel'));
+  // One start, two buttons. The main menu's START and the setup screen's START are the same click on
+  // the same settings -- if they could ever disagree, the summary on the main menu would be a lie.
+  const startSkirmish = () => UI.start(UI.skirmishOptions(readSetup()));
+  const startBtn = $('start'); if (startBtn) startBtn.addEventListener('click', startSkirmish);
+  const setupStart = $('setupStart'); if (setupStart) setupStart.addEventListener('click', startSkirmish);
+
+  // ---- everything else on the main menu, unchanged ------------------------
   const ms = $('mission'); if (ms) { for (const m of Missions.list) { const o = document.createElement('option'); o.value = m.id; o.textContent = `${RACE_INFO[m.race].name}: ${m.title}`; ms.appendChild(o); } $('missionBtn').addEventListener('click', () => { const m = Missions.get(ms.value); if (!m) return; UI.start({ players: [{ race: m.race, human: true, name: 'Player', team: 1 }, { race: m.enemy.race, human: false, difficulty: m.enemy.difficulty, name: 'Enemy', team: 2 }], seed: m.seed, layout: m.layout, mission: m.id }); }); }
   const hk = $('hotkeys'); if (hk) { try { hk.value = localStorage.getItem('bw_hotkeys') || 'bw'; } catch (e) { } UI.gridKeys = hk.value === 'grid'; hk.addEventListener('change', () => { UI.gridKeys = hk.value === 'grid'; try { localStorage.setItem('bw_hotkeys', hk.value); } catch (e) { } }); }
-  // The map list is built from MAP_LAYOUTS rather than written out in index.html, which is what let the
-  // four size modes and the hazard map appear without anyone remembering to add an <option> for each.
-  // Custom maps are registered into MAP_LAYOUTS too and are refreshed separately by refreshMapList.
-  const layoutSel = $('layout');
-  if (layoutSel && typeof MAP_LAYOUTS !== 'undefined') {
-    const cur = layoutSel.value;
-    layoutSel.innerHTML = '';
-    for (const [id, L] of Object.entries(MAP_LAYOUTS)) {
-      if (L.custom) continue;                       // refreshMapList owns those
-      const o = document.createElement('option');
-      o.value = id; o.textContent = (L.name || id) + (L.players ? ' (' + L.players + ' players)' : '');
-      layoutSel.appendChild(o);
-    }
-    if (cur) layoutSel.value = cur;
-    if (!layoutSel.value) layoutSel.value = 'temple';
-  }
-  const sp = $('settingsPanel'), setupPanel = sp && sp.previousElementSibling;
-  const showSettings = on => { if (!sp || !setupPanel) return; sp.style.display = on ? '' : 'none'; setupPanel.style.display = on ? 'none' : ''; };
-  const sb = $('settingsBtn'); if (sb) sb.addEventListener('click', () => showSettings(true));
-  const sbk = $('settingsBack'); if (sbk) sbk.addEventListener('click', () => showSettings(false));
   // The codex opens with no game running -- it reads DATA, not G -- so it belongs on the main menu
   // as well as on F3 in game. It draws over the canvas, so the canvas has to be visible for it.
   const cbx = $('codexBtn'); if (cbx) cbx.addEventListener('click', () => UI.openCodexFromMenu());
   const qc = $('mute'); if (qc) { qc.checked = Sound.muted; qc.addEventListener('change', () => Sound.setMuted(qc.checked)); }
   const vc = $('voice'), mc = $('music'); if (vc) { vc.checked = Voice.on; vc.addEventListener('change', () => Voice.set(vc.checked)); } if (mc) { mc.checked = Music.on; mc.addEventListener('change', () => Music.set(mc.checked)); }
   const nc = $('netConnect'); if (nc) { $('netUrl').placeholder = Net.defaultUrl(); nc.addEventListener('click', () => Net.connect($('netUrl').value.trim() || Net.defaultUrl(), $('netName').value.trim() || 'Player', 'R')); }
-  // custom maps made in the editor appear in the same dropdown as the built-ins
+  // Custom maps made in the editor appear in the same dropdown as the built-ins. Editor.register() is
+  // what puts them into MAP_LAYOUTS, so it has to run before the list is rebuilt from it; the whole
+  // select is rebuilt rather than patched because the list is grouped now and a saved map has to land
+  // in its own group rather than after whatever happened to be last.
   UI.refreshMapList = () => {
-    const sel = $('layout'); if (!sel || typeof Editor === 'undefined') return;
-    const keep = sel.value; for (const o of [...sel.options]) if (o.value.startsWith('custom:')) o.remove();
-    for (const name of Editor.register()) { const o = document.createElement('option'); o.value = 'custom:' + name; o.textContent = name + ' (custom)'; sel.appendChild(o); }
-    if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+    try { if (typeof Editor !== 'undefined') Editor.register(); } catch (e) { }
+    buildLayoutList(); refreshSetup();
   };
   UI.refreshMapList();
   const eb = $('editorBtn'); if (eb) eb.addEventListener('click', () => Editor.open());
   const mf = $('mapFile'); if (mf) mf.addEventListener('change', e => { if (e.target.files[0]) Editor.importFile(e.target.files[0]); e.target.value = ''; });
-  const ly = $('layout'); if (ly) ly.addEventListener('change', () => { const maxOpp = (MAP_LAYOUTS[ly.value] || {}).players ? MAP_LAYOUTS[ly.value].players - 1 : 3; const no = $('nopp'); if (parseInt(no.value) > maxOpp) { no.value = String(maxOpp); rebuildOpps(); } });
   const ab = $('autosaveBtn'); if (ab) { ab.style.display = Replay.hasAutosave() ? 'block' : 'none'; ab.addEventListener('click', () => Replay.loadAutosave()); }
   $('loadBtn').addEventListener('click', () => $('loadFile').click()); $('loadFile').addEventListener('change', e => { if (e.target.files[0]) Replay.fromFile(e.target.files[0], 'load'); e.target.value = ''; });
   $('replayBtn').addEventListener('click', () => $('replayFile').click()); $('replayFile').addEventListener('change', e => { if (e.target.files[0]) Replay.fromFile(e.target.files[0], 'watch'); e.target.value = ''; });
-  $('start').addEventListener('click', () => {
-    const players = [{ race: $('race').value, human: true, name: 'Player' }];
-    players[0].team = parseInt(($('team') || { value: 1 }).value) || 1; document.querySelectorAll('#opps .row').forEach((r, i) => players.push({ race: r.querySelector('.orace').value, human: false, difficulty: r.querySelector('.odiff').value, name: 'Computer ' + (i + 1), team: parseInt((r.querySelector('.oteam') || { value: i + 2 }).value) || (i + 2) }));
-    const opts = { players, seed: parseInt($('seed').value) || 1, layout: $('layout') ? $('layout').value : 'temple' }; UI.start(opts);
-  });
 });
