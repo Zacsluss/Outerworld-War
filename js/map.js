@@ -203,13 +203,321 @@ for (const k of MapModes.keys) MAP_LAYOUTS[k] = MapModes.layout(k);
 // desert paint, and a sandstorm across it every 160 seconds.
 MAP_LAYOUTS.dustbowl = MapModes.layout('large', { name: 'Dust Bowl', tileset: 'desert', hazard: 'sandstorm' });
 
+// ============================================================================
+// Destructible and dynamic map features. Ground that changes during the match.
+// ============================================================================
+// A feature is one rectangle of tiles whose PASSABILITY is a function of its own state, plus hit
+// points. That is the whole model, and everything else is a table entry:
+//
+//   kind        intact          broken            what destroying it does
+//   ---------------------------------------------------------------------------------------------
+//   rocks       impassable      open ground       OPENS a lane -- Brood War's destructible rocks
+//   bridge      open ground     a chasm           CLOSES a lane, and drops whoever was on it
+//   spire       impassable      open ground       OPENS a lane AND a sightline (see below)
+//   floodgate   a tidal lane    flooded for good  CLOSES a lane permanently, and drowns the lane
+//
+// Three things about this are load-bearing and none of them is decoration.
+//
+// **It changes pathing, because it changes `walk`.** `GameMap.walkable` is what the A* and
+// `G.passable` both read, so the moment a feature's tiles flip the next path found goes somewhere
+// else. Nothing caches a path across the change: `Pathfinder` keeps no state between searches (see
+// the `closed` comment below) and a unit re-paths when its current one runs out.
+//
+// **The spire changes vision, because it changes `height`.** `G.updateVision` marks a tile seen only
+// when `m.height[i] <= uh` -- the height of the unit doing the looking. A spire is a cliff-ringed
+// pillar of height 2 standing on low ground, so while it stands it is a hole in every ground army's
+// vision that only an air unit or a unit on other high ground can see into. Collapse it and it is
+// height 0: the ground it stood on becomes visible, and therefore targetable, from below. That is the
+// only lever terrain has on vision in this engine -- vision is a circle plus a height test, not a
+// raycast -- so a feature that wants to move vision has to move `height`.
+//
+// **The state is stored where a snapshot already looks.** This is the same problem the sandstorm
+// solved by deriving itself from the frame, and features cannot do that, because a rock formation
+// remembers who shot it. What they do instead is live in `G.map.resById` -- the by-id registry
+// js/snapshot.js already walks, tags references through, and restores IN PLACE. A feature is an
+// object with an `id` in that map, so `Snapshot.take` writes its hit points and its broken flag into
+// `s.resGone` for free, `Snapshot.restore` applies them back onto the very same object, and
+// `Snapshot._tag` will resolve a reference to a feature the way it resolves a reference to a mineral
+// patch. Nothing in js/snapshot.js had to learn what a feature is.
+//
+// Two consequences of that choice, written down because they are not obvious:
+//   * `walk` and `blocked` are captured by the snapshot as well, so after a restore they are already
+//     right and the feature's own state agrees with them.
+//   * `height` and `cliff` are NOT captured, so they have to be re-derived. `broken` is therefore an
+//     ACCESSOR: writing it -- which is exactly what `Snapshot.restore`'s `_apply` does -- repaints
+//     that feature's tiles. `syncFeature` is idempotent and reads no clock, so doing it during a
+//     restore is safe, and a backward replay seek onto a map whose bridge was dropped comes back with
+//     the chasm still there.
+//
+// The static geometry -- `tiles`, `t0`, `baseH` (the ground that was under it before it was placed)
+// and the back-reference to the map -- is defined non-enumerable, so it is neither serialised into
+// every checkpoint nor deleted by `_apply`'s "remove what is not in the snapshot" pass. All of it is
+// regenerated identically by `new GameMap(seed, layout)` on any client, which is what a rejoining one
+// does before it restores anything.
+const FEATURE_ID0 = 100000;   // feature ids sit above every resource id, in the same id space as them
+const FEAT_BLOCKED = -4;      // blocked[]: -1 free, -2 mineral, -3 geyser, -4 a map feature is standing here
+const MAP_FEATURES = {
+  // hp is what it takes to remove one; they are deliberately in the range of a few units for a few
+  // seconds rather than a siege operation, because the decision is WHETHER to open the lane and when,
+  // not whether you can be bothered.
+  //   intactOpen  is the lane passable while the feature stands?
+  //   shutCliff   what cliff[] says while the lane is shut: 2 boulders/chasm, 1 a cliff face
+  //   shutHeight  height[] while shut, and openHeight while open. NULL means "whatever the ground
+  //               under it was when the map was generated", which is what lets a rock formation sit
+  //               in a ramp without flattening it. Only the spire moves height, and moving height is
+  //               the only way anything can move vision -- see above.
+  rocks: { name: 'Rock Formation', hp: 1200, intactOpen: false, shutCliff: 2, shutHeight: null, openHeight: null },
+  bridge: { name: 'Bridge', hp: 700, intactOpen: true, shutCliff: 2, shutHeight: null, openHeight: null },
+  spire: { name: 'Spire', hp: 1800, intactOpen: false, shutCliff: 1, shutHeight: 2, openHeight: 0 },
+  // The dynamic one. While it stands the lane drains and floods on a fixed cycle derived from the
+  // frame -- the sandstorm's discipline, and for the sandstorm's reason: a tide that remembered a
+  // countdown would drift between two clients and desync a minute later. Break the gate and the lane
+  // floods for good: the other three take a lane away or give one back once, and this is the only one
+  // whose destruction takes away something that was going to keep coming back.
+  floodgate: {
+    name: 'Floodgate', hp: 1400, intactOpen: true, shutCliff: 2, shutHeight: null, openHeight: null,
+    tide: { period: 24 * 100, wet: 24 * 28, warn: 24 * 8 },
+  },
+};
+const FEATURE_SAYS = { bridge: 'A bridge has collapsed.', rocks: 'A rock formation has been cleared.', spire: 'A spire has collapsed.', floodgate: 'The floodgate has broken. The channel is flooding.' };
+
+// ============================================================================
+// Procedural map archetypes. Named shapes, infinite maps inside each one.
+// ============================================================================
+// A generator that produces "some terrain" produces maps nobody wants to play twice. What makes a
+// map worth replaying is that you know what KIND of map it is before you see it -- that a chokepoint
+// map will be decided at two gaps and an open basin will be decided by who can hold four expansions
+// at once. So there are four generators, each of which always produces its own shape, and the seed
+// decides everything inside that shape: where the plateaus are, how wide the gaps are, how many
+// expansions, which tileset, and where the destructibles sit.
+//
+//   chokepoint   corner plateau per player, a rock wall across the middle with two ways through, one
+//                of them a rock formation you can open. A floodgate crosses the centre.
+//   basin        no plateau at the mains, one big contested one in the middle, four bases a player
+//                and a spire on each approach. Whoever wants to be safe has to take ground.
+//   islands      two channels cut each quadrant into pieces. Every piece has one permanent causeway
+//                and one bridge, so dropping a bridge costs the attacker the short way, never the
+//                defender's ability to walk home.
+//   cliffs       three terraces. The main and its natural are both on high ground, the middle is not,
+//                and rock formations sit in two of the ramps.
+//
+// EVERY GENERATOR IS SEEDED AND PURE. Same key, same seed, same size -> byte-identical layout, on any
+// machine and in any call order; test/mapfeatures.js compares two generations tile for tile. The RNG
+// is the same xorshift GameMap uses on its own seed, never Math.random.
+//
+// Reachability is not left to luck. `GameMap.repairConnectivity` runs after generation on archetype
+// maps only, floods the map with EVERY FEATURE FORCED SHUT, and carves a mirrored corridor to any
+// base it cannot reach. Because every feature's other state only ever adds walkable ground, a map
+// that is connected in that worst case is connected in all 2^n of them -- which is what makes
+// "destroying everything never strands a player" a property rather than a hope.
+//
+// A NOTE ON THE BUILD STAMP. js/build.js hashes MAP_LAYOUTS and the source of GameMap's methods; it
+// does not know this object exists, exactly as it does not know MapModes or HAZARDS exist. The four
+// registered sample layouts below carry a digest of eight seeds of every generator, so changing a
+// generator moves the stamp and two clients cannot disagree about what `arch:islands:97` means while
+// agreeing about the build.
+const ARCH_CACHE = new Map();   // layout id -> layout; generation is pure, so a cache cannot change an answer
+const Archetypes = {
+  keys: ['chokepoint', 'basin', 'islands', 'cliffs'],
+  names: { chokepoint: 'Chokepoint Valley', basin: 'Open Basin', islands: 'Island Chain', cliffs: 'Vertical Cliffs' },
+  // the size mode each archetype is built for by default; any of the four sizes can be asked for
+  sizes: { chokepoint: 'medium', basin: 'large', islands: 'medium', cliffs: 'medium' },
+  salt: { chokepoint: 0x9e3779b1, basin: 0x85ebca6b, islands: 0xc2b2ae35, cliffs: 0x27d4eb2f },
+  rng(seed) { let s = (seed >>> 0) || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return (s % 100000) / 100000; }; },
+  ri(R, a, b) { return a + Math.floor(R() * (b - a + 1)); },      // inclusive integer in [a,b]
+  rf(R, a, b) { return a + R() * (b - a); },
+  pick(R, arr) { return arr[Math.floor(R() * arr.length) % arr.length]; },
+
+  // "arch:<key>:<seed>[:<size>]" is the whole identity of a generated map. It is the layout id the
+  // engine is given, so two clients handed the same id build the same ground without shipping it.
+  id(key, seed, size) { return 'arch:' + key + ':' + ((seed >>> 0) || 0) + (size ? ':' + size : ''); },
+  parse(id) {
+    const p = String(id).split(':');
+    if (p[0] !== 'arch' || !this.keys.includes(p[1])) return null;
+    return { key: p[1], seed: (+p[2] >>> 0) || 0, size: MAP_SIZES[p[3]] ? p[3] : null };
+  },
+  resolve(id) {
+    const a = this.parse(id); if (!a) return null;
+    let L = ARCH_CACHE.get(id);
+    if (!L) { L = this.layout(a.key, a.seed, a.size); ARCH_CACHE.set(id, L); if (ARCH_CACHE.size > 64) ARCH_CACHE.delete(ARCH_CACHE.keys().next().value); }
+    return L;
+  },
+
+  layout(key, seed, size) {
+    if (!this.keys.includes(key)) throw new Error('unknown map archetype ' + key);
+    const sk = MAP_SIZES[size] ? size : this.sizes[key], S = MAP_SIZES[sk];
+    const R = this.rng((Math.imul(seed >>> 0, 2654435761) ^ this.salt[key]) >>> 0);
+    for (let i = 0; i < 8; i++) R();                     // let the xorshift leave its first, low-entropy words behind
+    const L = {
+      name: this.names[key] + ' ' + ((seed >>> 0) % 10000), archetype: key, seed: seed >>> 0, size: sk,
+      players: S.players, w: S.w, h: S.h, tileset: this.pick(R, TILESET_IDS), startOrder: S.startOrder,
+      high: [], ramps: [], rocks: [], features: [], bases: [],
+    };
+    // A two-player size puts both mains on the diagonal and gives every base the same pair of
+    // quadrants, so the map stays a mirror of itself rather than half a four-player map.
+    L.quads = S.players === 2 ? [0, 3] : null;
+    this[key](L, S, R);
+    for (const b of L.bases) if (L.quads) b.quadrants = L.quads.slice();
+    for (const f of L.features) if (L.quads && !f.quadrants) f.quadrants = L.quads.slice();
+    delete L.quads;
+    return L;
+  },
+  // One base in the shape every layout in this file already uses, with this size's patch counts.
+  //
+  // The guard is the difference between a generator and a map. A base is a hall plus a mineral ring
+  // plus a geyser spread over sixteen tiles by ten, and the engine refuses a town hall within three
+  // tiles of ANY resource -- so two bases the seed happened to put nine tiles apart produce a map
+  // where a player cannot build in their own expansion, and `canPlace` says "Too close to resources"
+  // about a patch belonging to the base next door. It has to be checked before the map exists, which
+  // is here. A base that will not fit is nudged along the map's diagonal a few times and then
+  // dropped: fewer expansions is variety, an unbuildable one is a bug.
+  //
+  // Everything is also kept strictly inside quadrant 0, because the four-fold mirror would otherwise
+  // put a base and its own reflection on top of each other down the centre line.
+  base(L, S, x, y, role) {
+    const box = (bx, by) => [bx - 6, by - 6, 16, 10];
+    const hits = (a, b) => a[0] < b[0] + b[2] && a[0] + a[2] > b[0] && a[1] < b[1] + b[3] && a[1] + a[3] > b[1];
+    for (let t = 0; t < 5; t++) {
+      const bx = x + t * 3, by = y + t * 3, r = box(bx, by);
+      if (r[0] >= 2 && r[1] >= 2 && r[0] + r[2] <= S.w / 2 && r[1] + r[3] <= S.h / 2
+        && !L.bases.some(o => hits(r, box(o.hall[0], o.hall[1])))) {
+        L.bases.push(MapModes.base(bx, by, S.patches[role] || S.patches.expo, S.patch, S.gas, role));
+        return true;
+      }
+    }
+    return false;
+  },
+  feat(L, kind, x, y, w, h, quadrants) { const f = { kind, x, y, w, h }; if (quadrants) f.quadrants = quadrants.slice(); L.features.push(f); },
+
+  // ---- chokepoint valley -------------------------------------------------
+  // A river across the middle of the map with two fords near the edges and a tidal crossing in the
+  // centre, and, at home, a rock wall in front of the natural with one gap that a rock formation is
+  // sitting in. So there are two scales of chokepoint on it: the one you fight the game at, and the
+  // one you decide whether to open.
+  chokepoint(L, S, R) {
+    const W = S.w, H = S.h, fx = f => Math.round(f * W), fy = f => Math.round(f * H);
+    const pw = fx(this.rf(R, 0.22, 0.27)), ph = fy(this.rf(R, 0.19, 0.23));
+    L.high.push(['rect', 3, 3, pw, ph], ['ellipse', pw * 0.55, ph * 0.55, pw * 0.5, ph * 0.5]);
+    const rw = Math.max(4, fx(0.035)), rx = 3 + pw - rw, ry = 3 + ph - 2;
+    L.ramps.push([rx, ry, rw, Math.max(6, fy(0.06))]);                              // down from the plateau's inner corner
+    this.base(L, S, Math.max(8, fx(0.08)), Math.max(8, fy(0.08)), 'main');
+    this.base(L, S, rx + fx(0.025), ry + fy(0.075), 'natural');
+    this.base(L, S, Math.max(8, fx(0.06)), fy(this.rf(R, 0.32, 0.36)), 'expo');
+    this.base(L, S, fx(this.rf(R, 0.32, 0.36)), Math.max(8, fy(0.06)), 'expo');
+    // the river: one band across the whole map, so its 4-fold mirror is itself
+    L.rocks.push(['rect', 0, Math.round(H / 2) - 2, W, 4]);
+    const ford = fx(this.rf(R, 0.13, 0.20));
+    L.causeways = [[ford, Math.round(H / 2) - 2, Math.max(6, fx(0.055)), 4]];
+    this.feat(L, 'floodgate', Math.round(W / 2) - 6, Math.round(H / 2) - 2, 12, 4);  // the crossing that comes and goes
+    // the home wall: a band in front of the natural with a rock formation in its one gap
+    const wy = ry + fy(this.rf(R, 0.16, 0.20)), gap = Math.max(4, fx(0.045));
+    L.rocks.push(['rect', 3, wy, rx + fx(0.02), 3], ['rect', rx + fx(0.02) + gap, wy, fx(0.12), 3]);
+    this.feat(L, 'rocks', rx + fx(0.02), wy, gap, 3);
+  },
+
+  // ---- open basin --------------------------------------------------------
+  // No defender's terrain at home at all -- the only high ground on the map is one big plateau in the
+  // middle, and it is worth taking. Four bases a player, spread, and a spire on each approach so that
+  // there is somewhere an army can be that you cannot see.
+  basin(L, S, R) {
+    const W = S.w, H = S.h, fx = f => Math.round(f * W), fy = f => Math.round(f * H);
+    L.high.push(['ellipse', W / 2 - 0.5, H / 2 - 0.5, fx(this.rf(R, 0.13, 0.17)), fy(this.rf(R, 0.13, 0.17))]);
+    L.ramps.push([fx(0.5) - fx(0.02), fy(this.rf(R, 0.32, 0.36)), Math.max(5, fx(0.045)), Math.max(6, fy(0.06))]);
+    this.base(L, S, Math.max(8, fx(0.08)), Math.max(8, fy(0.08)), 'main');
+    this.base(L, S, fx(this.rf(R, 0.20, 0.24)), fy(this.rf(R, 0.20, 0.24)), 'natural');
+    this.base(L, S, Math.max(8, fx(0.07)), fy(this.rf(R, 0.33, 0.39)), 'expo');
+    this.base(L, S, fx(this.rf(R, 0.33, 0.39)), Math.max(8, fy(0.07)), 'expo');
+    for (let i = 0; i < 3; i++) L.rocks.push(['ellipse', fx(this.rf(R, 0.26, 0.44)), fy(this.rf(R, 0.26, 0.44)), this.ri(R, 3, 5), this.ri(R, 3, 5)]);
+    this.feat(L, 'spire', fx(this.rf(R, 0.29, 0.33)), fy(this.rf(R, 0.16, 0.20)), 4, 4);
+    this.feat(L, 'spire', fx(this.rf(R, 0.16, 0.20)), fy(this.rf(R, 0.29, 0.33)), 4, 4);
+    this.feat(L, 'rocks', fx(0.5) - 2, fy(this.rf(R, 0.38, 0.41)), 4, 3);            // in front of the plateau ramp
+  },
+
+  // ---- island chain ------------------------------------------------------
+  // Two channels cut every quadrant into quarters. Each channel has one causeway that is part of the
+  // ground and one bridge that is not, so dropping a bridge takes away the short road and never the
+  // road -- which is the rule that keeps "destroy everything" from stranding anyone.
+  islands(L, S, R) {
+    const W = S.w, H = S.h, fx = f => Math.round(f * W), fy = f => Math.round(f * H);
+    const pw = fx(this.rf(R, 0.16, 0.20)), ph = fy(this.rf(R, 0.14, 0.18));
+    L.high.push(['rect', 3, 3, pw, ph]);
+    L.ramps.push([3 + pw - fx(0.03), 3 + ph - 2, Math.max(4, fx(0.03)), Math.max(5, fy(0.05))]);
+    this.base(L, S, Math.max(8, fx(0.07)), Math.max(8, fy(0.07)), 'main');
+    this.base(L, S, fx(this.rf(R, 0.23, 0.26)), fy(this.rf(R, 0.23, 0.26)), 'natural');
+    this.base(L, S, Math.max(8, fx(0.06)), fy(this.rf(R, 0.38, 0.43)), 'expo');
+    this.base(L, S, fx(this.rf(R, 0.38, 0.43)), Math.max(8, fy(0.06)), 'expo');
+    // horizontal channel, then vertical, each a rock band with a causeway gap and a bridge over it
+    const cy = fy(this.rf(R, 0.32, 0.36)), cx = fx(this.rf(R, 0.32, 0.36)), bw = 3;
+    const causeH = fx(this.rf(R, 0.05, 0.09)), bridgeH = fx(this.rf(R, 0.26, 0.32));
+    const causeV = fy(this.rf(R, 0.05, 0.09)), bridgeV = fy(this.rf(R, 0.26, 0.32));
+    L.rocks.push(['rect', 3, cy, fx(0.45), bw], ['rect', cx, 3, bw, fy(0.45)]);
+    // The causeway is a gap punched back out of the band after the rocks are painted; the bridge is a
+    // second crossing that can be taken away. Two crossings per channel is the whole invariant here.
+    L.causeways = [[causeH, cy, 4, bw], [cx, causeV, bw, 4]];
+    this.feat(L, 'bridge', bridgeH, cy, 4, bw);
+    this.feat(L, 'bridge', cx, bridgeV, bw, 4);
+  },
+
+  // ---- vertical cliffs ---------------------------------------------------
+  // Three terraces: the main, the natural above it, and a plateau in the middle that belongs to
+  // nobody. The ramp onto the natural has a rock formation sitting in it, so a player who wants a
+  // second way into their own expansion has to make one, and the attacker gets it too.
+  cliffs(L, S, R) {
+    const W = S.w, H = S.h, fx = f => Math.round(f * W), fy = f => Math.round(f * H);
+    const rw = Math.max(4, fx(0.03)), rh = Math.max(7, fy(0.065));
+    const pw = fx(this.rf(R, 0.23, 0.27)), ph = fy(this.rf(R, 0.20, 0.24));
+    L.high.push(['rect', 3, 3, pw, ph]);                                             // terrace 1: the main
+    const t2w = fx(this.rf(R, 0.11, 0.13)), t2h = fy(this.rf(R, 0.11, 0.13));
+    const t2x = 3 + pw + fx(0.02), t2y = 3 + ph + fy(0.02);
+    L.high.push(['rect', t2x, t2y, t2w, t2h]);                                       // terrace 2: the natural, also up
+    L.high.push(['ellipse', W / 2 - 0.5, H / 2 - 0.5, fx(this.rf(R, 0.10, 0.12)), fy(this.rf(R, 0.10, 0.12))]);
+    const r1 = [3 + pw - rw, 3 + ph - 2, rw, rh];                                    // main -> low ground
+    const r2 = [t2x + Math.round(t2w / 2), t2y + t2h - 2, rw, rh];                   // low ground -> terrace 2
+    const r3 = [Math.round(W / 2) - Math.round(rw / 2), Math.round(H / 2) - fy(0.13) - 2, rw + 2, rh + 4];   // onto the middle
+    L.ramps.push(r1, r2, r3);
+    this.base(L, S, Math.max(8, fx(0.08)), Math.max(8, fy(0.08)), 'main');
+    this.base(L, S, t2x + Math.round(t2w / 2) - 2, t2y + Math.round(t2h / 2) - 2, 'natural');
+    this.base(L, S, Math.max(8, fx(0.06)), fy(this.rf(R, 0.36, 0.42)), 'expo');
+    this.base(L, S, fx(this.rf(R, 0.36, 0.42)), Math.max(8, fy(0.06)), 'expo');
+    L.rocks.push(['ellipse', fx(this.rf(R, 0.30, 0.36)), fy(this.rf(R, 0.30, 0.36)), this.ri(R, 4, 6), this.ri(R, 4, 6)]);
+    this.feat(L, 'rocks', r2[0], r2[1] + r2[3] - 2, rw, 2);                           // rocks in the ramp onto terrace 2
+    this.feat(L, 'spire', fx(this.rf(R, 0.24, 0.29)), fy(this.rf(R, 0.40, 0.45)), 4, 4);
+  },
+
+  // A digest of eight seeds of every generator, folded into the sample layouts below so that
+  // js/build.js's hash of MAP_LAYOUTS covers what these functions DO and not merely that they exist.
+  digest() {
+    let a = 0x811c9dc5 | 0;
+    const eat = s => { for (let i = 0; i < s.length; i++) a = Math.imul(a ^ s.charCodeAt(i), 16777619); };
+    for (const k of this.keys) for (let seed = 1; seed <= 8; seed++) {
+      const L = this.layout(k, seed);
+      eat(k + '|' + L.w + 'x' + L.h + '|' + L.tileset + '|');
+      for (const arr of [L.high, L.ramps, L.rocks]) eat(JSON.stringify(arr));
+      eat(JSON.stringify(L.features));
+      eat(L.bases.map(b => b.hall.join(',') + ';' + b.minerals.length + ';' + b.amount + ';' + b.gas).join('|'));
+      eat(JSON.stringify(L.causeways || null));
+    }
+    return (a >>> 0).toString(16).padStart(8, '0');
+  },
+};
+// One fixed-seed sample of every archetype, registered at load like the size modes are, so each shape
+// is reachable from a menu without composing anything and so the stamp covers the generators.
+{
+  const stamp = Archetypes.digest();
+  for (const k of Archetypes.keys) {
+    const L = Archetypes.layout(k, 1);
+    L.name = Archetypes.names[k]; L.archStamp = stamp;
+    MAP_LAYOUTS['arch_' + k] = L;
+  }
+}
+
 class GameMap {
   constructor(seed = 1, layout = 'temple') {
     this.layout = layout;
     // Size comes from the layout, for editor maps and for the four size modes alike; a layout with no
     // w/h stays at the historical 128x128, which is every layout hand-written above. Clamped because the
     // codec and the spatial hash both scale with area.
-    const LZ = MAP_LAYOUTS[layout] || MAP_LAYOUTS.temple;
+    const LZ = this.layoutDef();
     const lim = v => Math.max(64, Math.min(256, v | 0));
     this.w = lim(LZ.w || 128); this.h = lim(LZ.h || 128);
     const n = this.w * this.h;
@@ -229,6 +537,11 @@ class GameMap {
     for (let i = 0; i < n; i++) this.noise[i] = Math.floor(this.rand() * 255);
     this.generate();
   }
+  // The layout this map is built from. A plain id is a MAP_LAYOUTS key; an "arch:<key>:<seed>[:<size>]"
+  // id is generated on the spot instead of being registered, because there are four billion of them
+  // per archetype and MAP_LAYOUTS is hashed into the build stamp. Both clients hold the generator, so
+  // the id is enough for both to build the same ground -- which is the point of putting the seed in it.
+  layoutDef() { return Archetypes.resolve(this.layout) || MAP_LAYOUTS[this.layout] || MAP_LAYOUTS.temple; }
   idx(x, y) { return y * this.w + x; }
   inb(x, y) { return x >= 0 && y >= 0 && x < this.w && y < this.h; }
   H(x, y) { return this.inb(x, y) ? this.height[this.idx(x, y)] : 0; }
@@ -248,9 +561,11 @@ class GameMap {
     const setH = v => (x, y) => { this.height[this.idx(x, y)] = v; };
     const rock = (x, y) => { this.walk[this.idx(x, y)] = 0; this.cliff[this.idx(x, y)] = 2; };
     const ramp = (x, y) => { const i = this.idx(x, y); this.walk[i] = 1; this.cliff[i] = 0; this.height[i] = 1; };
-    const L = MAP_LAYOUTS[this.layout] || MAP_LAYOUTS.temple;
+    const L = this.layoutDef();
     this.name = L.name; this.players = L.players; this.tileset = TILESET_IDS.includes(L.tileset) ? L.tileset : 'badlands';
     this.size = L.size || null;
+    this.archetype = L.archetype || null;
+    this.features = []; this.featTile = null;
     // Static config, never mutated by the tick -- see the hazard block above for why that matters.
     this.hazard = L.hazard ? Object.assign({}, L.hazard) : null;
     if (L.custom) return this.generateCustom(L);
@@ -271,6 +586,10 @@ class GameMap {
     this.rect(0, 0, 2, Hh, (x, y) => rock(x, y)); this.rect(W - 2, 0, 2, Hh, (x, y) => rock(x, y));
     // --- rocks / chokes ---
     for (const [kind, ...a] of L.rocks) { if (kind === 'rect') this.rect(a[0], a[1], a[2], a[3], (x, y) => this.sym(x, y, rock)); else this.ellipse(a[0], a[1], a[2], a[3], (x, y) => this.sym(x, y, rock)); }
+    // --- causeways: gaps punched back out of a rock band, after it is painted ---
+    // A generator that wants a wall with a hole in it can only describe the wall, because `rocks` is
+    // additive. This is the hole. It runs before the bases so a base can still clear over it.
+    for (const c of (L.causeways || [])) this.rect(c[0], c[1], c[2], c[3], (x, y) => this.sym(x, y, (px, py) => { const i = this.idx(px, py); this.walk[i] = 1; this.cliff[i] = 0; if (this.height[i] === 2) this.height[i] = 0; }));
     // --- bases (defined in quadrant 0, mirrored) ---
     for (let q = 0; q < 4; q++) for (const bd of L.bases) {
       if (bd.quadrants && !bd.quadrants.includes(q)) continue;
@@ -297,7 +616,297 @@ class GameMap {
     // start order: spread players across the map (diagonal first)
     const order = L.startOrder || [0, 3, 1, 2]; const mains = this.starts; this.starts = order.map(i => mains[i]).filter(Boolean); for (const b of mains) if (!this.starts.includes(b)) this.starts.push(b);
     for (const r of this.resources) this.rect(r.x, r.y, r.w, r.h, (x, y) => { this.cliff[this.idx(x, y)] = 0; });
+    // Features go in after the bases so that a base's clearing pass cannot half-erase one, and before
+    // the connectivity repair so that the repair sees them.
+    this.placeFeatures(L);
+    if (this.archetype) { this.flattenBases(); this.repairConnectivity(); }
     this.resById = new Map(this.resources.map(r => [r.id, r]));
+    for (const f of this.features) this.resById.set(f.id, f);   // see the MAP_FEATURES comment: this is what snapshots them
+  }
+
+  // ---------------- features ----------------
+  //
+  // READ-ONLY QUERY CONTRACT. This is everything js/render.js, js/hud.js, js/ui.js and js/ai.js are
+  // meant to use, and none of it mutates anything. Nothing outside js/map.js should read `features`,
+  // `featTile` or the grids directly to decide what a feature is doing -- ask here instead, because
+  // these five are the only things guaranteed to stay true across a snapshot restore.
+  //
+  //   map.featureView(frame)    an array of plain values, one per feature, safe to call every frame:
+  //                             { id, kind, name, x, y, w, h, cx, cy, hp, maxHp, broken, open,
+  //                               height, wet, warning, until }
+  //                             `open` is the live passability of its tiles; `broken` is whether it
+  //                             has been destroyed; the two differ for a tidal channel, which is shut
+  //                             while it is `wet` and intact. `warning` is the eight seconds before a
+  //                             flood, which is when to run water up the channel, and `until` is the
+  //                             frames left in the current half of the cycle. `frame` may be omitted,
+  //                             in which case G.frame is used.
+  //   map.featureRev()          a small integer that changes when, and only when, some feature's
+  //                             terrain changed. INVALIDATE THE TERRAIN CHUNK CACHE ON IT: Terrain
+  //                             bakes `cliff`, `walk` and `height` into chunk canvases and will
+  //                             happily draw a bridge that is no longer there for the rest of the
+  //                             game. `Terrain.chunks.clear()` when the number moves is enough. It is
+  //                             derived from the grids, not counted, so it is right after a seek too.
+  //   map.featureAt(tx,ty)      the feature occupying a tile, or null. Cheap: one array lookup.
+  //   map.featureAtPx(px,py)    the same in world pixels -- what a click, or a shot, should ask.
+  //   map.featureOpen(f)        can ground units cross it right now.
+  //
+  // WHAT IS NOT WIRED, and where it goes. A feature has hit points and `map.damageFeature(f, amount)`
+  // takes them off, but nothing in this build calls it, because every file that fires a weapon belongs
+  // to another change. Three call sites finish it:
+  //   * js/combat.js Combat.splash(), after the unit loop:
+  //       G.map.damageFeatureAt(x, y, dmg);
+  //     That alone makes siege tanks, reavers and nukes able to open a lane, which is most of it.
+  //   * js/sim.js / js/ui.js: an attack order whose target is a feature. `map.featureAtPx` under the
+  //     cursor gives you one, and it is safe to hold across a snapshot -- features are in
+  //     G.map.resById, so Snapshot tags a reference to one the way it tags a mineral patch, and
+  //     js/commands.js `deref` already resolves the "r<id>" form.
+  //   * js/ai.js: an AI that never clears the rocks in front of its third base is playing a different
+  //     map from the human. `map.featureAt` on the path to an expansion is the question to ask.
+  // Until those land the dynamic half still runs -- tidal channels flood on their own -- and the
+  // destructible half is reachable only from a test. That is deliberate: half a feature that is
+  // correct is worth more than a whole one spread over five files nobody owns.
+  //
+  // Quadrant-0 definitions, mirrored exactly as the bases are. A feature that would land on a
+  // resource, inside a base's cleared footprint, on the map border or on top of another feature is
+  // dropped whole rather than half-placed, which keeps every quadrant's copy identical or absent.
+  placeFeatures(L) {
+    const defs = L.features || []; if (!defs.length) return;
+    const baseRects = this.bases.map(b => [b.x - 2, b.y - 2, 8, 7]);
+    const free = (x, y, K) => {
+      if (!this.inb(x, y) || x < 2 || y < 2 || x >= this.w - 2 || y >= this.h - 2) return false;
+      const i = this.idx(x, y);
+      if (this.blocked[i] !== -1) return false;                                      // resources, buildings
+      if (K.shutHeight !== null && this.height[i] === 1) return false;               // a spire may not eat a ramp
+      if (this.featTile && this.featTile[i] >= 0) return false;
+      for (const r of baseRects) if (x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3]) return false;
+      return true;
+    };
+    for (let q = 0; q < 4; q++) for (const fd of defs) {
+      if (fd.quadrants && !fd.quadrants.includes(q)) continue;
+      const K = MAP_FEATURES[fd.kind]; if (!K) continue;
+      const w = Math.max(1, fd.w | 0), h = Math.max(1, fd.h | 0);
+      let [tx, ty] = this.mirrorPt(fd.x, fd.y, q); if (q === 1 || q === 3) tx -= w - 1; if (q === 2 || q === 3) ty -= h - 1;
+      const tiles = [];
+      for (let y = ty; y < ty + h; y++) for (let x = tx; x < tx + w; x++) { if (!free(x, y, K)) { tiles.length = 0; break; } tiles.push(this.idx(x, y)); }
+      if (tiles.length !== w * h) continue;
+      if (!this.featTile) { this.featTile = new Int32Array(this.w * this.h).fill(-1); }
+      const fi = this.features.length;
+      const f = { id: FEATURE_ID0 + fi, kind: fd.kind, fi, x: tx, y: ty, w, h, cx: (tx + w / 2) * TILE, cy: (ty + h / 2) * TILE, hp: K.hp, maxHp: K.hp };
+      // Static geometry, hidden from Object.keys so Snapshot neither serialises it into every
+      // checkpoint nor deletes it when it applies one. Regenerated identically by the constructor.
+      Object.defineProperty(f, 'tiles', { value: tiles, enumerable: false });
+      Object.defineProperty(f, 't0', { value: tiles[0], enumerable: false });
+      Object.defineProperty(f, 'baseH', { value: Uint8Array.from(tiles, i => this.height[i]), enumerable: false });
+      Object.defineProperty(f, '_m', { value: this, enumerable: false });
+      // `broken` is an accessor on purpose: Snapshot.restore assigns straight through it, and that
+      // assignment is the only chance the map gets to put `height` and `cliff` back -- neither of
+      // which the snapshot carries. See the MAP_FEATURES comment.
+      let brk = false;
+      Object.defineProperty(f, 'broken', { enumerable: true, configurable: true, get() { return brk; }, set(v) { brk = !!v; f._m.syncFeature(f); } });
+      for (const i of tiles) this.featTile[i] = fi;
+      this.features.push(f);
+      // The opening state, painted from frame 0 rather than from syncFeature -- a tidal channel is cut
+      // out of the river band it crosses, so its tiles start unwalkable and syncFeature, which reads
+      // the grid on purpose, would take that for the tide being in.
+      this.paintFeature(f, K.tide ? !this.tideState(f, 0).wet : K.intactOpen);
+    }
+  }
+  // Write a feature's tiles for one state. The only function that touches terrain on their behalf.
+  paintFeature(f, open) {
+    const K = MAP_FEATURES[f.kind], hv = open ? K.openHeight : K.shutHeight;
+    for (let k = 0; k < f.tiles.length; k++) {
+      const i = f.tiles[k];
+      this.height[i] = hv === null ? f.baseH[k] : hv;
+      if (open) { this.walk[i] = 1; this.cliff[i] = 0; if (this.blocked[i] === FEAT_BLOCKED) this.blocked[i] = -1; }
+      else { this.walk[i] = 0; this.cliff[i] = K.shutCliff; if (this.blocked[i] === -1) this.blocked[i] = FEAT_BLOCKED; }
+    }
+  }
+  // Put the derived grids back in step with one feature's state, reading no clock. A standing tidal
+  // lane is left exactly as it is, because whether it is wet right now is the frame's business and
+  // the snapshot already restored `walk` for it -- so this is safe to call at any moment, including
+  // halfway through a restore, which is precisely when it is called.
+  syncFeature(f) {
+    const K = MAP_FEATURES[f.kind];
+    if (K.tide && !f.broken) this.paintFeature(f, this.walk[f.t0] === 1);
+    else this.paintFeature(f, f.broken ? !K.intactOpen : K.intactOpen);
+  }
+  syncFeatures() { for (const f of this.features) this.syncFeature(f); return this.features.length; }
+  featureAt(tx, ty) { if (!this.featTile || !this.inb(tx, ty)) return null; const fi = this.featTile[this.idx(tx, ty)]; return fi >= 0 ? this.features[fi] : null; }
+  featureAtPx(px, py) { return this.featureAt(Math.floor(px / TILE), Math.floor(py / TILE)); }
+  featureOpen(f) { return this.walk[f.t0] === 1; }
+  // Where a tidal lane is in its cycle at a frame. Pure function of the frame, like the sandstorm and
+  // for the same reason: nothing here may remember a countdown across a snapshot.
+  tideState(f, frame) {
+    const t = MAP_FEATURES[f.kind].tide; if (!t) return null;
+    const ph = ((frame % t.period) + t.period) % t.period;
+    // The flood sits in the middle of the cycle rather than at its end, so a cycle is dry, warning,
+    // wet, dry -- one rise and one fall inside every period, which is what the HUD wants to count.
+    const start = Math.round((t.period - t.wet) / 2), end = start + t.wet, wet = ph >= start && ph < end;
+    return { phase: ph, period: t.period, wet, warning: !wet && ph >= start - t.warn && ph < start,
+      until: wet ? end - ph : ph < start ? start - ph : t.period - ph + start };
+  }
+  // A number that changes whenever any feature's terrain changed, and never otherwise. Derived from
+  // the grids rather than counted, so it is still right after a snapshot restore -- the renderer keys
+  // its cached terrain chunks on it (see the contract above tickHazard).
+  featureRev() { let h = 0; for (const f of this.features) h = (Math.imul(h, 31) + (f.broken ? 2 : 0) + (this.walk[f.t0] === 1 ? 1 : 0)) | 0; return h; }
+  // Everything the renderer, the HUD and the AI are allowed to know, as plain values.
+  featureView(frame) {
+    return this.features.map(f => {
+      const K = MAP_FEATURES[f.kind], td = K.tide ? this.tideState(f, frame == null ? (typeof G !== 'undefined' ? G.frame : 0) : frame) : null;
+      return { id: f.id, kind: f.kind, name: K.name, x: f.x, y: f.y, w: f.w, h: f.h, cx: f.cx, cy: f.cy,
+        hp: f.hp, maxHp: f.maxHp, broken: f.broken, open: this.walk[f.t0] === 1, height: this.height[f.t0],
+        wet: !!td && td.wet, warning: !!td && td.warning, until: td ? td.until : 0 };
+    });
+  }
+
+  // Damage and destruction. `amount` is raw hit points: features have no armour, no shields and no
+  // facing, because none of those are decisions anyone makes about a rock.
+  damageFeature(f, amount) {
+    if (!f || f.broken || !(amount > 0)) return f ? f.hp : 0;
+    f.hp -= amount;
+    if (f.hp <= 0) this.breakFeature(f);
+    return Math.max(0, f.hp);
+  }
+  damageFeatureAt(px, py, amount) { const f = this.featureAtPx(px, py); return f ? this.damageFeature(f, amount) : 0; }
+  breakFeature(f) {
+    if (!f || f.broken) return false;
+    f.hp = 0;
+    const wasOpen = this.walk[f.t0] === 1;
+    f.broken = true;                       // the setter repaints the tiles; see placeFeatures
+    if (wasOpen && this.walk[f.t0] !== 1) this.crush(f);
+    this.sayAt(f, FEATURE_SAYS[f.kind] || 'The ground has changed.');
+    return true;
+  }
+  // Tell the players who can SEE it. A map-wide announcement would be a free sensor: drop a bridge in
+  // a corner nobody has scouted and everyone learns that someone is in that corner.
+  sayAt(f, text) {
+    if (typeof G === 'undefined' || G.map !== this || !G.players) return;
+    for (const p of G.players) if (G.visibleAt(p.id, f.cx, f.cy)) p.msg(text, 'attack');
+  }
+  // Ground that stops being ground takes what was standing on it. Air is fine, cargo is fine, and a
+  // building cannot be there in the first place -- canPlace refuses a feature's tiles.
+  //
+  // The `G.map === this` test in here and in sayAt is not paranoia: the editor's validation pass, the
+  // map preview and every test in the repository build a GameMap that is not the one being played,
+  // and a feature broken on one of those must not reach into the live game and kill things in it.
+  crush(f, units) {
+    const list = units || (typeof G !== 'undefined' && G.map === this ? G.units : null);
+    if (!list) return 0;
+    let n = 0;
+    for (const u of [...list]) {
+      if (!u.alive || u.fly || u.inside || u.isBuilding) continue;
+      const tx = Math.floor(u.x / TILE), ty = Math.floor(u.y / TILE);
+      if (this.featureAt(tx, ty) !== f) continue;
+      n++; G.kill(u, null);
+    }
+    return n;
+  }
+  // One frame of every dynamic feature. Called from tickHazard, which is the map's single per-frame
+  // entry point from G.tick; see the contract there. Writes only when the state actually changed, so
+  // the usual frame costs two comparisons a feature and does not churn the renderer's chunk cache.
+  tickFeatures(frame, units) {
+    let changed = 0;
+    for (const f of this.features) {
+      const K = MAP_FEATURES[f.kind]; if (!K.tide || f.broken) continue;
+      const want = !this.tideState(f, frame).wet, have = this.walk[f.t0] === 1;
+      if (want === have) continue;
+      this.paintFeature(f, want); changed++;
+      if (!want) { this.crush(f, units); this.sayAt(f, 'The channel is flooding.'); }
+    }
+    return changed;
+  }
+
+  // ---------------- connectivity, with every feature against you ----------------
+  // The walkability grid as it would be if every feature on the map were in its MOST BLOCKING state at
+  // once: rocks and spires standing, bridges dropped, channels flooded. Every feature's other state
+  // only ever adds walkable ground, so a map that is connected here is connected in all 2^n
+  // combinations -- which is how "destroying everything never strands a player" is a property of the
+  // map and not a property of the game that happened to be played on it.
+  worstWalk() { const w = this.walk.slice(); for (const f of this.features) for (const i of f.tiles) w[i] = 0; return w; }
+  // 4-way flood over a walkability grid. 4-way rather than 8-way on purpose: the pathfinder refuses to
+  // cut a corner between two blocked tiles, so a diagonal-only join is not a route.
+  floodWalk(w, sx, sy) {
+    const seen = new Uint8Array(w.length); if (!this.inb(sx, sy)) return seen;
+    const q = [this.idx(sx, sy)]; seen[q[0]] = 1;
+    for (let h = 0; h < q.length; h++) {
+      const i = q[h], x = i % this.w, y = (i / this.w) | 0;
+      if (x > 0 && !seen[i - 1] && w[i - 1] === 1) { seen[i - 1] = 1; q.push(i - 1); }
+      if (x < this.w - 1 && !seen[i + 1] && w[i + 1] === 1) { seen[i + 1] = 1; q.push(i + 1); }
+      if (y > 0 && !seen[i - this.w] && w[i - this.w] === 1) { seen[i - this.w] = 1; q.push(i - this.w); }
+      if (y < this.h - 1 && !seen[i + this.w] && w[i + this.w] === 1) { seen[i + this.w] = 1; q.push(i + this.w); }
+    }
+    return seen;
+  }
+  // A tile inside a base that a worker could stand on. Not the hall's own corner, which is under the
+  // town hall the moment the game starts.
+  baseAnchor(b) { const t = this.findFreeTile(b.x + 2, b.y + 4, 8) || this.findFreeTile(b.x + 2, b.y + 1, 10); return t ? this.idx(t[0], t[1]) : this.idx(b.x + 2, b.y + 1); }
+  // What is wrong with this map, in the words a generator or the editor would want. Empty is good.
+  connectivityProblems(hallDef) {
+    const out = [], w = this.worstWalk();
+    if (!this.starts.length) return ['no start locations'];
+    const seen = this.floodWalk(w, this.starts[0].x + 2, this.starts[0].y + 4);
+    for (const b of this.bases) if (!seen[this.baseAnchor(b)]) out.push('base ' + b.x + ',' + b.y + ' unreachable with every feature shut');
+    if (hallDef) for (const b of this.bases) { const e = this.canPlace(hallDef, b.x, b.y, { id: 0 }, [], null); if (e) out.push('base ' + b.x + ',' + b.y + ': ' + e); }
+    return out;
+  }
+  // Make the hall's footprint buildable by force: one height over the whole clearing, no cliff, no
+  // rock. Archetype maps only, because it moves ground and every hand-written layout was drawn with
+  // its bases already legal. It flattens to the height of the hall's own centre, so a main on a
+  // plateau stays on the plateau instead of having a hole cut in it.
+  flattenBases() {
+    for (const b of this.bases) {
+      const h = this.height[this.idx(b.x + 1, b.y + 1)] === 1 ? 0 : this.height[this.idx(b.x + 1, b.y + 1)];
+      this.rect(b.x - 1, b.y - 1, 6, 5, (x, y) => { const i = this.idx(x, y); if (this.blocked[i] !== -1) return; this.height[i] = h; this.cliff[i] = 0; this.walk[i] = 1; });
+    }
+  }
+  // The safety net that makes a random generator legal. Floods with every feature shut and, for any
+  // base it cannot reach, carves the cheapest corridor to reachable ground -- cost 0 through ground
+  // that is already walkable and 1 through anything else, so the carve is as short as the map allows.
+  // The carve is mirrored, because a repair that fixed one player's quadrant and not the other three
+  // would be worse than the fault it fixed. Returns the number of tiles it had to open.
+  repairConnectivity() {
+    if (!this.starts.length) return 0;
+    let w = this.worstWalk(), carved = 0;
+    let seen = this.floodWalk(w, this.starts[0].x + 2, this.starts[0].y + 4);
+    const border = i => { const x = i % this.w, y = (i / this.w) | 0; return x < 3 || y < 3 || x >= this.w - 3 || y >= this.h - 3; };
+    for (const b of this.bases) {
+      const a = this.baseAnchor(b);
+      if (seen[a]) continue;
+      // 0-1 BFS, one bucket per cost: a free step stays in the bucket being drained, a paid step goes
+      // into the next one. Linear, where a heap or a spliced deque would not be on a 256x256 grid.
+      const dist = new Int32Array(w.length).fill(0x7fffffff), from = new Int32Array(w.length).fill(-1);
+      let cur = [a], next = [], d = 0, goal = -1; dist[a] = 0;
+      while (cur.length && goal < 0) {
+        for (let h = 0; h < cur.length && goal < 0; h++) {
+          const i = cur[h]; if (dist[i] !== d) continue;
+          if (seen[i]) { goal = i; break; }
+          const x = i % this.w, y = (i / this.w) | 0;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const nx = x + dx, ny = y + dy; if (nx < 2 || ny < 2 || nx >= this.w - 2 || ny >= this.h - 2) continue;
+            const j = ny * this.w + nx;
+            if (this.featTile && this.featTile[j] >= 0) continue;            // never carve through a feature: it is shut by assumption
+            if (this.blocked[j] !== -1 && this.blocked[j] !== FEAT_BLOCKED) continue;   // nor through a mineral line
+            const nd = d + (w[j] === 1 ? 0 : 1);
+            if (nd >= dist[j]) continue;
+            dist[j] = nd; from[j] = i;
+            if (nd === d) cur.push(j); else next.push(j);
+          }
+        }
+        if (goal < 0) { cur = next; next = []; d++; }
+      }
+      if (goal < 0) continue;                                                // nothing to join to; connectivityProblems will say so
+      for (let i = goal; i !== -1 && i !== a; i = from[i]) {
+        if (w[i] === 1) continue;
+        const x = i % this.w, y = (i / this.w) | 0;
+        this.sym(x, y, (px, py) => {
+          const k = this.idx(px, py); if (border(k) || (this.featTile && this.featTile[k] >= 0) || this.blocked[k] !== -1) return;
+          if (this.walk[k] !== 1) carved++;
+          this.walk[k] = 1; this.cliff[k] = 0; if (this.height[k] === 2) this.height[k] = 1;   // a cut through a plateau is a ramp
+        });
+      }
+      w = this.worstWalk(); seen = this.floodWalk(w, this.starts[0].x + 2, this.starts[0].y + 4);
+    }
+    return carved;
   }
 
   // ---------------- custom (editor-made) maps ----------------
@@ -365,6 +974,10 @@ class GameMap {
     for (let y = ty; y < ty + def.h; y++) for (let x = tx; x < tx + def.w; x++) {
       if (!this.inb(x, y)) return 'Out of bounds';
       const i = this.idx(x, y);
+      // A bridge deck and a dry channel are walkable, so without this a supply depot could be built on
+      // one and then find itself standing in a river. Nothing else in the engine has ground that stops
+      // being ground, so nothing else needed to say this.
+      if (this.featTile && this.featTile[i] >= 0) return 'Cannot build on a map feature';
       if (this.walk[i] !== 1) return 'Cannot build there';
       if (this.blocked[i] !== -1) return 'Location is blocked';
       const hh = this.height[i]; if (hh === 1) return 'Cannot build on ramps';
@@ -471,6 +1084,10 @@ class GameMap {
   }
   // One frame of the hazard. Returns how many units it touched, which is what the tests measure.
   tickHazard(frame, units) {
+    // The map's one per-frame entry point from G.tick, so the dynamic features ride on it rather than
+    // asking js/game.js for a second line. The return value is still the hazard's own count, because
+    // that is what test/mapmodes.js measures.
+    if (this.features.length) this.tickFeatures(frame, units);
     const h = this.hazard; if (!h || typeof G === 'undefined') return 0;
     const period = h.warn + h.sweep + h.calm;
     if (frame % period === 0) for (const p of G.players) p.msg(HAZARD_SAYS[h.kind] || 'An environmental hazard is closing in.', 'attack');
