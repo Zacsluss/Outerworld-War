@@ -47,14 +47,171 @@ const MapCodec = {
 const TILESET_IDS = ['badlands', 'jungle', 'ice', 'desert', 'space'];
 const TILESET_NAMES = { badlands: 'Badlands', jungle: 'Jungle', ice: 'Ice', desert: 'Desert', space: 'Space Platform' };
 
+// ============================================================================
+// Map sizes as MODES. Four sizes that are different rules, not four tile counts.
+// ============================================================================
+// A bigger map that is only bigger changes nothing: the same two bases, the same timings, more empty
+// ground between them. What actually decides how a match plays is how much you can mine without
+// leaving home and how long it takes to reach anyone -- so each size moves five things at once, and
+// they move together:
+//
+//   size    tiles      players  bases/player  patch  gas   spawns apart  terrain
+//   small    96x96        2         2         2000  6000     64 tiles    no high ground at all
+//   medium  128x128       4         3         1500  5000    142 tiles    main plateau, one ramp
+//   large   192x192       4         5         1500  5000    233 tiles    plateau + a central one
+//   huge    256x256       4         7         1100  4000    323 tiles    plateau + a big central one
+//
+// "spawns apart" is the first two spawn points, which the start order puts on the diagonal on every
+// size but small -- where they are deliberately mirrored left-to-right instead.
+//
+// Read down the columns rather than across:
+//
+//   * SMALL is a duel over one bank. Two mains, mirrored left-to-right rather than diagonally, so the
+//     walk between them is a third of medium's; two contested bases on the centre line that belong to
+//     nobody. There is no high ground anywhere, so there is no defender's terrain and no ramp to hold
+//     -- the only way to be safe is for the other player to be dead. To make a one-base game last long
+//     enough to be a game, the mains are fat: nine patches at 2000 is 18,000 minerals, half again what
+//     a medium main holds.
+//   * MEDIUM is the historical feel. 128x128, four players, main + natural + one expansion, 1500 a
+//     patch -- the numbers every balance run in this repository was measured against.
+//   * LARGE gives each player five bases and a central plateau worth taking, so there is more than one
+//     front and holding all of your ground costs army.
+//   * HUGE gives seven, but each patch holds 1100 rather than 1500. A player's whole territory is worth
+//     about what large's is (49,500 minerals either way) -- it is just spread over seven bases that run
+//     dry 27% faster, so standing still is losing even when nobody is shooting at you. That, plus a
+//     323-tile diagonal -- 2.3 times medium's -- is what makes travel time a decision rather than a
+//     loading screen.
+//
+// The one thing that is NOT a rule difference: unit stats. Nothing here touches js/data.js.
+const MAP_SIZES = {
+  small: {
+    name: 'Close Quarters', w: 96, h: 96, players: 2, tileset: 'badlands', startOrder: [0, 1],
+    patch: 2000, gas: 6000, patches: { main: 9, natural: 7, expo: 7 },
+    // Mains mirrored left-to-right (quadrants 0 and 1) so they are 64 tiles apart, not 90 on the
+    // diagonal. The two expansions sit on the centre line with one copy each, which is the whole
+    // point of them: they are equidistant from both mains and cannot be held quietly.
+    bases: [{ x: 14, y: 40, role: 'main', q: [0, 1] }, { x: 46, y: 12, role: 'expo', q: [0, 2] }],
+    high: [], ramps: [], rocks: [['ellipse', 32, 28, 5, 4]],
+  },
+  medium: {
+    name: 'Contested Ground', w: 128, h: 128, players: 4, tileset: 'jungle', startOrder: [0, 3, 1, 2],
+    patch: 1500, gas: 5000, patches: { main: 8, natural: 7, expo: 6 },
+    bases: [{ x: 12, y: 12, role: 'main' }, { x: 30, y: 38, role: 'natural' }, { x: 12, y: 50, role: 'expo' }],
+    high: [['rect', 4, 4, 32, 26], ['ellipse', 20, 17, 18, 15]],
+    ramps: [[31, 28, 4, 5]],
+    rocks: [['rect', 4, 32, 14, 3], ['ellipse', 46, 46, 5, 4]],
+  },
+  large: {
+    name: 'Broken Expanse', w: 192, h: 192, players: 4, tileset: 'badlands', startOrder: [0, 3, 1, 2],
+    patch: 1500, gas: 5000, patches: { main: 8, natural: 7, expo: 6 },
+    bases: [{ x: 12, y: 12, role: 'main' }, { x: 34, y: 40, role: 'natural' },
+      { x: 12, y: 58, role: 'expo' }, { x: 58, y: 12, role: 'expo' }, { x: 66, y: 66, role: 'expo' }],
+    high: [['rect', 4, 4, 34, 28], ['ellipse', 21, 18, 19, 16], ['ellipse', 95.5, 95.5, 22, 20]],
+    ramps: [[33, 30, 5, 6], [92, 70, 4, 10]],
+    rocks: [['rect', 4, 40, 20, 3], ['ellipse', 50, 50, 6, 5]],
+  },
+  huge: {
+    name: 'The Long March', w: 256, h: 256, players: 4, tileset: 'ice', startOrder: [0, 3, 1, 2],
+    patch: 1100, gas: 4000, patches: { main: 8, natural: 7, expo: 6 },
+    bases: [{ x: 12, y: 12, role: 'main' }, { x: 36, y: 44, role: 'natural' },
+      { x: 12, y: 58, role: 'expo' }, { x: 58, y: 12, role: 'expo' }, { x: 70, y: 70, role: 'expo' },
+      { x: 12, y: 102, role: 'expo' }, { x: 102, y: 12, role: 'expo' }],
+    high: [['rect', 4, 4, 36, 30], ['ellipse', 22, 19, 20, 17], ['rect', 100, 100, 28, 28], ['ellipse', 127.5, 127.5, 34, 34]],
+    ramps: [[35, 32, 6, 8], [122, 88, 4, 12], [88, 122, 12, 4]],
+    rocks: [['rect', 4, 46, 24, 3], ['ellipse', 56, 56, 7, 6]],
+  },
+};
+
+// ============================================================================
+// Hazards. Periodic environmental danger, as a property of the LAYOUT.
+// ============================================================================
+// It is deliberately not a global rule. Every existing layout, every mission and every balance log in
+// this repository predates hazards, and a hazard that turned itself on everywhere would silently
+// change all of them; a layout without a `hazard` key has none and behaves exactly as it always did.
+//
+// The sandstorm is a front `band` tiles deep that crosses the map along one axis, and it is a PURE
+// FUNCTION OF THE FRAME NUMBER. That is not a stylistic choice -- it is what makes it survive
+// js/snapshot.js without snapshot.js knowing it exists. Snapshots capture creep, blocked, walk, psi
+// and the resources, and nothing else about the map; anything the hazard remembered between ticks
+// would be dropped on a replay seek or a rejoin and the two sides would storm at different times.
+// Derive it from G.frame, which the snapshot does restore, and there is nothing to lose.
+//
+// One cycle is: `warn` frames of nothing but a warning, `sweep` frames of the front crossing, then
+// `calm` frames of quiet. The direction alternates every cycle, so it does not always arrive from the
+// same side. Speed is a constant 0.1333 tiles a frame on every size -- what scales with the map is how
+// DEEP the front is, so a bigger map means longer spent inside it and more damage taken crossing:
+// 90 frames and ~11 damage on small, 240 frames and ~30 on huge.
+//
+// What it does NOT touch, and why:
+//   * buildings          -- weather that erodes bases is a chore, not a decision
+//   * anything loaded    -- a dropship is shelter
+//   * burrowed units     -- ground is shelter, which is a genuinely Zerg answer to it
+//   * larvae, eggs, and sub-units (interceptors, scarabs, nukes) -- none of them chose to be there
+//   * within `safe` tiles of a starting base -- the storm is about the field, not about grinding down
+//     mineral lines that neither player can move
+// Damage IGNORES SHIELDS AND ARMOUR and goes straight to hit points, the way js/sim.js's plague does.
+// Through G.damageRaw it would drain shields first, and a dragoon regenerates 1.08 shields a second
+// against a 3-a-second storm, so Protoss armies would simply have been immune to the weather.
+const HAZARD_PULSE = 12;   // damage lands twice a second rather than every frame; 12 divides every period below
+const HAZARD_SAYS = { sandstorm: 'A sandstorm is closing in.' };
+const HAZARDS = {
+  // span is the map's extent along the sweep axis, in tiles.
+  sandstorm(span, dps = 3) {
+    const band = Math.max(12, Math.round(span / 8));
+    const sweep = (span + 2 * band) * 15 / 2;   // 0.1333 tiles a frame, whatever the size
+    return { kind: 'sandstorm', axis: 'x', band, warn: 240, sweep, calm: sweep, dps, safe: 16 };
+  },
+};
+
+// Turns a MAP_SIZES entry into a MAP_LAYOUTS entry. Registration happens at load, below, so the layouts
+// exist before js/build.js first hashes MAP_LAYOUTS -- BUILD.hash() memoises, so a layout registered
+// later would be invisible to the stamp and two clients could disagree about a map while agreeing about
+// the build. New size/hazard combinations belong here, not in a runtime call.
+const MapModes = {
+  sizes: MAP_SIZES,
+  keys: ['small', 'medium', 'large', 'huge'],
+  // One base, arranged the way every hand-written layout in this file already arranges one: a column of
+  // patches west of the hall, a row north of it, and the geyser off the north-east corner. Fed the
+  // temple main's numbers (hall 12,12 and eight patches) this reproduces that base exactly, which is
+  // the point -- a size changes how many patches a base has and what is in them, never its shape.
+  base(x, y, patches, amount, gas, role) {
+    const min = [], col = Math.min(patches, 5), row = patches - col;
+    for (let i = 0; i < col; i++) min.push([x - 5, y - 3 + i * 2]);
+    for (let i = 0; i < row; i++) min.push([x - 2 + i * 2, y - 4]);
+    const b = { hall: [x, y], minerals: min, geyser: [x + 5, y - 5], amount, gas };
+    if (role === 'main') b.main = true; else if (role === 'natural') b.natural = true;
+    return b;
+  },
+  layout(key, opts = {}) {
+    const S = MAP_SIZES[key]; if (!S) throw new Error('unknown map size ' + key);
+    const L = {
+      name: opts.name || S.name, size: key, players: S.players, w: S.w, h: S.h,
+      tileset: opts.tileset || S.tileset, startOrder: S.startOrder,
+      high: S.high.map(a => a.slice()), ramps: S.ramps.map(a => a.slice()), rocks: S.rocks.map(a => a.slice()),
+      bases: S.bases.map(b => {
+        const o = this.base(b.x, b.y, S.patches[b.role], S.patch, S.gas, b.role);
+        if (b.q) o.quadrants = b.q.slice();
+        return o;
+      }),
+    };
+    if (opts.hazard) L.hazard = HAZARDS[opts.hazard === true ? 'sandstorm' : opts.hazard](S.w);
+    return L;
+  },
+};
+for (const k of MapModes.keys) MAP_LAYOUTS[k] = MapModes.layout(k);
+// The one shipping hazard map, so the feature is reachable without composing anything: large's ground,
+// desert paint, and a sandstorm across it every 160 seconds.
+MAP_LAYOUTS.dustbowl = MapModes.layout('large', { name: 'Dust Bowl', tileset: 'desert', hazard: 'sandstorm' });
+
 class GameMap {
   constructor(seed = 1, layout = 'temple') {
     this.layout = layout;
-    // Size comes from the layout so editor maps are not stuck at 128x128; the built-ins have no w/h and
-    // stay at the historical size. Clamped because the codec and the spatial hash both scale with area.
+    // Size comes from the layout, for editor maps and for the four size modes alike; a layout with no
+    // w/h stays at the historical 128x128, which is every layout hand-written above. Clamped because the
+    // codec and the spatial hash both scale with area.
     const LZ = MAP_LAYOUTS[layout] || MAP_LAYOUTS.temple;
     const lim = v => Math.max(64, Math.min(256, v | 0));
-    this.w = lim((LZ.custom && LZ.w) || 128); this.h = lim((LZ.custom && LZ.h) || 128);
+    this.w = lim(LZ.w || 128); this.h = lim(LZ.h || 128);
     const n = this.w * this.h;
     this.height = new Uint8Array(n);
     this.walk = new Uint8Array(n).fill(1);
@@ -93,6 +250,9 @@ class GameMap {
     const ramp = (x, y) => { const i = this.idx(x, y); this.walk[i] = 1; this.cliff[i] = 0; this.height[i] = 1; };
     const L = MAP_LAYOUTS[this.layout] || MAP_LAYOUTS.temple;
     this.name = L.name; this.players = L.players; this.tileset = TILESET_IDS.includes(L.tileset) ? L.tileset : 'badlands';
+    this.size = L.size || null;
+    // Static config, never mutated by the tick -- see the hazard block above for why that matters.
+    this.hazard = L.hazard ? Object.assign({}, L.hazard) : null;
     if (L.custom) return this.generateCustom(L);
     // --- high ground ---
     for (const [kind, ...a] of L.high) { if (kind === 'rect') this.rect(a[0], a[1], a[2], a[3], (x, y) => this.sym(x, y, setH(2))); else this.ellipse(a[0], a[1], a[2], a[3], (x, y) => this.sym(x, y, setH(2))); }
@@ -120,13 +280,13 @@ class GameMap {
       base.x = hx; base.y = hy; base.cx = (hx + 2) * TILE; base.cy = (hy + 1.5) * TILE;
       for (const m of bd.minerals) {
         const [mx, my] = tr(m[0], m[1], 2, 1);
-        const res = { type: 'mineral', x: mx, y: my, w: 2, h: 1, amount: bd.rich ? 5000 : 1500, cx: (mx + 1) * TILE, cy: (my + 0.5) * TILE, miner: null, id: this.resources.length };
+        const res = { type: 'mineral', x: mx, y: my, w: 2, h: 1, amount: bd.amount || (bd.rich ? 5000 : 1500), cx: (mx + 1) * TILE, cy: (my + 0.5) * TILE, miner: null, id: this.resources.length };
         this.resources.push(res); base.minerals.push(res);
         this.rect(mx, my, 2, 1, (x, y) => { this.blocked[this.idx(x, y)] = -2; this.walk[this.idx(x, y)] = 1; this.cliff[this.idx(x, y)] = 0; });
       }
       if (bd.geyser) {
         const [gx, gy] = tr(bd.geyser[0], bd.geyser[1], 4, 2);
-        const g = { type: 'geyser', x: gx, y: gy, w: 4, h: 2, amount: 5000, cx: (gx + 2) * TILE, cy: (gy + 1) * TILE, building: null, id: this.resources.length };
+        const g = { type: 'geyser', x: gx, y: gy, w: 4, h: 2, amount: bd.gas || 5000, cx: (gx + 2) * TILE, cy: (gy + 1) * TILE, building: null, id: this.resources.length };
         this.resources.push(g); base.geyser = g;
         this.rect(gx, gy, 4, 2, (x, y) => { this.blocked[this.idx(x, y)] = -3; this.walk[this.idx(x, y)] = 1; this.cliff[this.idx(x, y)] = 0; });
       }
@@ -165,12 +325,12 @@ class GameMap {
     for (const bd of (L.bases || [])) {
       const base = { minerals: [], geyser: null, main: !!bd.main, natural: !!bd.natural, quadrant: 0, x: bd.x, y: bd.y, cx: (bd.x + 2) * TILE, cy: (bd.y + 1.5) * TILE };
       for (const m of (bd.minerals || [])) {
-        const res = { type: 'mineral', x: m[0], y: m[1], w: 2, h: 1, amount: bd.rich ? 5000 : 1500, cx: (m[0] + 1) * TILE, cy: (m[1] + 0.5) * TILE, miner: null, id: this.resources.length };
+        const res = { type: 'mineral', x: m[0], y: m[1], w: 2, h: 1, amount: bd.amount || (bd.rich ? 5000 : 1500), cx: (m[0] + 1) * TILE, cy: (m[1] + 0.5) * TILE, miner: null, id: this.resources.length };
         this.resources.push(res); base.minerals.push(res);
         this.rect(m[0], m[1], 2, 1, (x, y) => { this.blocked[this.idx(x, y)] = -2; this.walk[this.idx(x, y)] = 1; this.cliff[this.idx(x, y)] = 0; });
       }
       if (bd.geyser) {
-        const g = { type: 'geyser', x: bd.geyser[0], y: bd.geyser[1], w: 4, h: 2, amount: 5000, cx: (bd.geyser[0] + 2) * TILE, cy: (bd.geyser[1] + 1) * TILE, building: null, id: this.resources.length };
+        const g = { type: 'geyser', x: bd.geyser[0], y: bd.geyser[1], w: 4, h: 2, amount: bd.gas || 5000, cx: (bd.geyser[0] + 2) * TILE, cy: (bd.geyser[1] + 1) * TILE, building: null, id: this.resources.length };
         this.resources.push(g); base.geyser = g;
         this.rect(g.x, g.y, 4, 2, (x, y) => { this.blocked[this.idx(x, y)] = -3; this.walk[this.idx(x, y)] = 1; this.cliff[this.idx(x, y)] = 0; });
       }
@@ -258,6 +418,78 @@ class GameMap {
       if (this.walkable(x, y) && (!pred || pred(x, y))) return [x, y];
     }
     return null;
+  }
+
+  // ---------------- hazard ----------------
+  // WIRING CONTRACT. The hazard needs one call a frame and it is not made yet, because js/game.js
+  // belongs to another change. To turn hazard maps on, add exactly this line to G.tick(), next to the
+  // other per-frame sim passes (after Abilities.tickFields(), before the AI loop):
+  //
+  //     this.map.tickHazard(this.frame, this.units);
+  //
+  // It is a no-op on every layout without a `hazard` key -- which is all of them except `dustbowl` --
+  // and on the eleven frames in twelve that are not a damage pulse, so it costs nothing to call
+  // unconditionally. Nothing else needs changing: the state is derived from the frame number, so
+  // snapshots, replay seeks and rejoins all reproduce it without knowing it exists.
+  //
+  // The renderer wants hazardState(G.frame) once a frame: `.active` says whether to draw anything,
+  // `.t0`/`.t1` are the front's near and far edges in TILES along `.axis`, and `.warning` is the ten
+  // seconds before a sweep, which is when to build the dust up at the edge it is about to come from
+  // (`.dir` is +1 for west-to-east, -1 for east-to-west; it alternates each cycle).
+
+  // Everything about the hazard at a frame, derived and never stored. Null on a map without one.
+  hazardState(frame) {
+    const h = this.hazard; if (!h) return null;
+    const period = h.warn + h.sweep + h.calm;
+    const cycle = Math.floor(frame / period), ph = frame - cycle * period;
+    const span = h.axis === 'y' ? this.h : this.w;
+    const dir = (cycle & 1) ? -1 : 1;
+    const active = ph >= h.warn && ph < h.warn + h.sweep;
+    const t = ph < h.warn ? 0 : active ? (ph - h.warn) / h.sweep : 1;
+    // The leading edge runs from one band-width off the near side to one band-width past the far side,
+    // so the whole front enters and the whole front leaves.
+    let t1 = -h.band + t * (span + 2 * h.band), t0 = t1 - h.band;
+    if (dir < 0) { const a = span - t1; t1 = span - t0; t0 = a; }
+    return { kind: h.kind, axis: h.axis, span, band: h.band, active, warning: ph < h.warn, phase: ph, period, cycle, dir, t, t0, t1 };
+  }
+  // Is this pixel in the storm right now? Sheltered ground reads as clear, so this is the same question
+  // tickHazard asks of a unit's centre.
+  hazardAt(frame, px, py) {
+    const s = this.hazardState(frame);
+    if (!s || !s.active) return false;
+    const a = (s.axis === 'y' ? py : px) / TILE;
+    return a >= s.t0 && a < s.t1 && !this.hazardSafe(px, py);
+  }
+  // The settled ground around a starting base. Without it the storm grinds down mineral lines that
+  // neither player is able to move, every cycle, for the whole game -- symmetric, unanswerable, and
+  // therefore not a decision.
+  hazardSafe(px, py) {
+    const r = (this.hazard && this.hazard.safe || 0) * TILE;
+    if (r <= 0) return false;
+    for (const b of this.starts) { const dx = b.cx - px, dy = b.cy - py; if (dx * dx + dy * dy < r * r) return true; }
+    return false;
+  }
+  // One frame of the hazard. Returns how many units it touched, which is what the tests measure.
+  tickHazard(frame, units) {
+    const h = this.hazard; if (!h || typeof G === 'undefined') return 0;
+    const period = h.warn + h.sweep + h.calm;
+    if (frame % period === 0) for (const p of G.players) p.msg(HAZARD_SAYS[h.kind] || 'An environmental hazard is closing in.', 'attack');
+    if (frame % HAZARD_PULSE !== 0) return 0;
+    const s = this.hazardState(frame); if (!s.active) return 0;
+    const amt = h.dps * HAZARD_PULSE / 24;
+    let hit = 0;
+    for (const u of (units || G.units)) {
+      if (!u.alive || u.isBuilding || u.inside || u.burrowed) continue;
+      const d = u.def; if (!d || d.larva || d.egg || d.notUnit) continue;
+      const a = (s.axis === 'y' ? u.y : u.x) / TILE;
+      if (a < s.t0 || a >= s.t1) continue;
+      if (this.hazardSafe(u.x, u.y)) continue;
+      hit++;
+      // Straight to hit points: no armour, no shields, no facing. See the HAZARDS comment.
+      u.hp -= amt; G.scar(u, amt);
+      if (u.hp <= 0) G.kill(u, null);
+    }
+    return hit;
   }
 }
 
