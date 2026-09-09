@@ -64,6 +64,7 @@ const TESTS = [
   { name: 'codex', args: ['codex.js'], what: 'the manual draws for every unit, and its damage numbers match real shots' },
   { name: 'mapfeatures', args: ['mapfeatures.js'], what: 'destructibles move pathing and vision, and the archetypes are seeded and legal' },
   { name: 'renderfeel', args: ['renderfeel.js'], what: 'the storm draws, weight settles, and 400 units stay legible' },
+  { name: 'campaign', args: ['campaign.js'], what: 'weighted choices resolve both ways, the record persists, narrowing cannot strand you' },
 ];
 
 const argv = process.argv.slice(2);
