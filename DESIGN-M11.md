@@ -231,3 +231,22 @@ scale (6).
   templar archives at seventeen. Most likely why PvT reads 66%.
 - **Tier-1 relevance at high supply** -- promised as a check rather than an assumption.
 - **Terrain-at-2x frame cost**, still never measured on a quiet machine.
+
+
+---
+
+# Decisions taken 2026-09-09
+
+1. **The command card becomes 4x3 AND paginates.** Twelve slots, and a page turn beyond that. Protoss
+   was at 16 of 16 and the morph-host workaround does not scale; several queued features want new
+   buildings.
+2. **The balance run does not happen until explicitly commanded, and is to be double-checked when it
+   is.** Not "after item 24" -- on command only.
+3. **Hard counters are SOFTENED, not removed.** Rock-paper-scissors stays legible, but role has to
+   matter too: the damage table compresses from its current 0.25-1.0 spread toward roughly 0.75-1.0, so
+   a wrong-target shot is a poor trade rather than a wasted one, and range, speed, splash and
+   positioning carry more of the difference. Still the last mechanic, still voids every balance number.
+4. **Day/night is in**, completing idea 19. The weather half shipped; the light half did not.
+5. **`repairable` becomes a positive flag on unit defs**, replacing the derived guard added when a
+   spider mine turned out to be repairable-by-accident and produced NaN hit points. A whitelist cannot
+   rot the way "has a build time and a cost" can.

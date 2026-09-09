@@ -315,7 +315,16 @@ const UI = {
     b.fn(); Sound.click();
   },
   // the command card as the player sees it right now (rebuilt on demand so input never depends on render timing)
-  currentCard() { const btns = this.buildCard(); if (this.gridKeys) for (const b of btns) if (b.hk !== 'Escape') b.hk = 'QWEASDZXC'[b.slot]; return btns; },
+  // The single choke point for the card: build it, page it, then relabel for grid hotkeys. Paginating
+  // HERE rather than in buildCard means every one of buildCard's many early returns is covered without
+  // each having to remember, and the grid keys are assigned to the slot a button actually occupies on
+  // the page it is on rather than the slot it asked for.
+  GRID_KEYS: 'QWERASDFZXCV',
+  currentCard() {
+    const btns = this.paginate(this.buildCard());
+    if (this.gridKeys) for (const b of btns) if (b.hk !== 'Escape') b.hk = this.GRID_KEYS[b.slot] || '';
+    return btns;
+  },
   // ---------------- commands ----------------
   ownSel() { return this.selection.filter(u => u.owner === G.human && u.alive); },
   // Idle worker, which Brood War has no equivalent of and StarCraft II players reach for constantly.
@@ -476,6 +485,39 @@ const UI = {
   },
   ping(x, y) { this.pings.push({ x, y, t: 90 }); this.lastAlertPos = { x, y }; },
   // ---------------- command card ----------------
+  // The card is 4 wide and 3 tall -- twelve slots -- and pages beyond that. It used to be 3x3 with
+  // Cancel pinned to slot 8, and nothing enforced the nine-entry ceiling: a tenth button drew
+  // UNDERNEATH Cancel and stayed clickable, and an eleventh fell off the bottom of the console. Neither
+  // threw. Protoss reached 16 of 16 build entries during M11 and only fitted its new structures by
+  // hanging them off a morph, which does not scale.
+  //
+  // Slot 11 is reserved: it is Cancel where a card has one, and the page turn where a card overflows.
+  CARD_COLS: 4, CARD_ROWS: 3,
+  get CARD_SLOTS() { return this.CARD_COLS * this.CARD_ROWS; },
+  cardPage: 0,
+  // Split an over-long card into pages, keeping any button that asked for the reserved slot pinned to
+  // it on every page -- Cancel has to stay reachable from page two.
+  paginate(btns) {
+    const last = this.CARD_SLOTS - 1;
+    // Pinned buttons are marked, not inferred from their slot. The first version treated slot >= last as
+    // "pinned", which is right for Cancel and wrong for everything else: buildCard hands out sequential
+    // slots, so an over-long card's own overflow buttons have high slot numbers too and were being
+    // mistaken for pins -- the card then reported one page and quietly dropped nothing, which is the
+    // exact class of bug this whole change exists to remove.
+    const pinned = btns.filter(b => b.pin);
+    const flow = btns.filter(b => !b.pin);
+    const per = pinned.length ? last : last + 1;
+    const pages = Math.max(1, Math.ceil(flow.length / per));
+    if (this.cardPage >= pages) this.cardPage = 0;
+    const page = flow.slice(this.cardPage * per, this.cardPage * per + per).map((b, i) => Object.assign({}, b, { slot: i }));
+    for (const b of pinned) page.push(Object.assign({}, b, { slot: last }));
+    if (pages > 1) {
+      const nx = (this.cardPage + 1) % pages;
+      page.push({ slot: pinned.length ? last - 1 : last, label: 'More ' + (this.cardPage + 1) + '/' + pages, hk: 'Tab',
+                  fn: () => { this.cardPage = nx; }, enabled: true, pin: true });
+    }
+    return page;
+  },
   buildCard() {
     const btns = []; const sel = this.ownSel(); this.cardButtons = btns; if (!sel.length) return btns;
     const p = G.players[G.human];
@@ -495,13 +537,13 @@ const UI = {
     const setPending = (kind, abil) => () => { this.pending = { kind, abil }; };
     if (this.cardMenu === 'basic' || this.cardMenu === 'adv') {
       const list = DATA.buildMenu[p.race][this.cardMenu]; list.forEach((id, i) => { const d = DATA.buildings[id]; const ok = p.hasReq(d); B(i, d.name, d.hk, () => { this.placing = { def: d, builder: u, tx: Math.floor(this.mouse.wx / TILE - d.w / 2 + .5), ty: Math.floor(this.mouse.wy / TILE - d.h / 2 + .5) }; }, { cost: d, enabled: ok, dim: !ok, why: why(d) }); });
-      B(8, 'Cancel', 'Escape', () => { this.cardMenu = null; }); return btns;
+      B(this.CARD_SLOTS - 1, 'Cancel', 'Escape', () => { this.cardMenu = null; }, { pin: true }); return btns;
     }
     // The morphed larva stays in the selection. larvaMorph reuses the object, so the egg IS the larva
     // and its rally can be set the instant it morphs; the filter drops only what actually died. Eggs are
     // skipped by the `l.def.larva` test below, so the next press still morphs the next larva.
     if (u.def.larva) { B(6, 'Set Rally', 'R', setPending('rally')); DATA.larvaMorphs.forEach((id, i) => { const d = DATA.units[id]; const ok = p.hasReq(d); B(i, d.name, d.hk, () => { for (const l of sel) if (l.def.larva) { if (G.larvaMorph(l, id)) { this.selection = this.selection.filter(x => x.alive); break; } } }, { cost: d, enabled: ok, dim: !ok, why: why(d) }); }); return btns; }
-    if (u.def.egg) { B(6, 'Set Rally', 'R', setPending('rally')); B(8, 'Cancel', 'Escape', () => { for (const e of sel) G.cancelProd(e, 0); }); return btns; }
+    if (u.def.egg) { B(6, 'Set Rally', 'R', setPending('rally')); B(this.CARD_SLOTS - 1, 'Cancel', 'Escape', () => { for (const e of sel) G.cancelProd(e, 0); }, { pin: true }); return btns; }
     // Several buildings at once. Brood War shows the first one's card and applies what you press to all
     // of them that can do it, which is what makes "select every hatchery, press S" work. The card is
     // built from `u` as before; only the actions below fan out. Buildings that cannot do the thing are
@@ -530,7 +572,7 @@ const UI = {
     }
     if (u.isBuilding && sel.length === 1) {
       const d = u.def; let i = 0;
-      if (!u.done) { B(8, 'Cancel', 'Escape', () => G.cancelBuilding(u)); return btns; }
+      if (!u.done) { B(this.CARD_SLOTS - 1, 'Cancel', 'Escape', () => G.cancelBuilding(u), { pin: true }); return btns; }
       if (u.lifted) { B(0, 'Land', 'L', setPending('land'), {}); btns[0].fn = () => { this.placing = { def: d, builder: u, land: true, tx: 0, ty: 0 }; }; return btns; }
       for (const id of d.produces) { const ud = DATA.units[id]; const ok = p.hasReq(ud); B(i++, ud.name, ud.hk, () => G.queueUnit(u, id), { cost: ud, enabled: ok, dim: !ok, why: why(ud) }); }
       if (d.id === 'reaver' || d.id === 'carrier') { }
@@ -591,12 +633,12 @@ const UI = {
     for (const [id, want] of [['summon_archon', 'high_templar'], ['summon_dark_archon', 'dark_templar']]) if (!abils.includes(id) && i <= 8 && mobile.filter(x => x.def.id === want && !x.disabled).length >= 2) { const ab = DATA.abilities[id]; B(i++, ab.name, ab.hk, () => Abilities.merge(mobile, id)); }
     return btns;
   },
-  cardRect() { const ch = this.consoleH, k = Math.min(1, (ch - 12) / 164); const bw = Math.round(66 * k), bh = Math.round(52 * k); const w = 3 * bw + 8, h = 3 * bh + 8; return { x: Render.W - w - 10, y: Render.H - ch + 6, w, h, bw: bw - 4, bh: bh - 4 }; },
+  cardRect() { const ch = this.consoleH, k = Math.min(1, (ch - 12) / 164); const bw = Math.round(66 * k), bh = Math.round(52 * k); const w = this.CARD_COLS * bw + 8, h = this.CARD_ROWS * bh + 8; return { x: Render.W - w - 10, y: Render.H - ch + 6, w, h, bw: bw - 4, bh: bh - 4 }; },
   consoleClick(x, y, button) {
     if (this.inMinimap(x, y)) { const [wx, wy] = this.miniToWorld(x, y); if (button === 2) { const t = this.unitAt(wx, wy); if (this.pending) this.execPending(t, wx, wy, false); else this.smartCommand(t, wx, wy, this.keys.Shift); } else if (this.pending) { this.execPending(null, wx, wy, false); } else { this.centerOn(wx, wy); this.miniDrag = true; } return; }
     if (button !== 0) return;
     const cr = this.cardRect();
-    for (const b of this.currentCard()) { const gap = cr.gap !== undefined ? cr.gap : 4; const bx = cr.x + 4 + (b.slot % 3) * (cr.bw + gap), by = cr.y + 4 + Math.floor(b.slot / 3) * (cr.bh + gap); if (x >= bx && x < bx + cr.bw && y >= by && y < by + cr.bh) { this.press(b); return; } }
+    for (const b of this.currentCard()) { const gap = cr.gap !== undefined ? cr.gap : 4; const bx = cr.x + 4 + (b.slot % this.CARD_COLS) * (cr.bw + gap), by = cr.y + 4 + Math.floor(b.slot / this.CARD_COLS) * (cr.bh + gap); if (x >= bx && x < bx + cr.bw && y >= by && y < by + cr.bh) { this.press(b); return; } }
     // info panel: selection wireframes / queue / cargo
     for (const h of this.hotspots) if (x >= h.x && x < h.x + h.w && y >= h.y && y < h.y + h.h) { h.fn(); Sound.click(); return; }
   },
@@ -624,7 +666,7 @@ const UI = {
     // command card
     const cr = this.cardRect(); ctx.fillStyle = '#12151a'; ctx.fillRect(cr.x, cr.y, cr.w, cr.h);
     const btns = this.currentCard(); const p = G.players[G.human];
-    for (const b of btns) { const bx = cr.x + 4 + (b.slot % 3) * 66, by = cr.y + 4 + Math.floor(b.slot / 3) * 52; const hov = this.mouse.x >= bx && this.mouse.x < bx + cr.bw && this.mouse.y >= by && this.mouse.y < by + cr.bh; const active = this.pending && ((this.pending.kind === 'ability' && b.label === (DATA.abilities[this.pending.abil] || {}).name) || (this.pending.kind !== 'ability' && b.label.toLowerCase().startsWith(this.pending.kind))); ctx.fillStyle = active ? '#3a5a3a' : hov ? '#38404c' : b.dim ? '#1c2026' : '#262c36'; ctx.fillRect(bx, by, cr.bw, cr.bh); ctx.strokeStyle = b.dim ? '#333' : '#556'; ctx.strokeRect(bx + .5, by + .5, cr.bw - 1, cr.bh - 1); ctx.fillStyle = b.dim ? '#666' : '#eee'; ctx.font = '10px sans-serif'; const words = b.label.split(' '); let ly = by + 14; let line = ''; for (const w of words) { if ((line + ' ' + w).trim().length > 11 && line) { ctx.fillText(line, bx + 3, ly); ly += 11; line = w; } else line = (line + ' ' + w).trim(); } ctx.fillText(line, bx + 3, ly); ctx.fillStyle = '#ff5'; ctx.font = 'bold 10px sans-serif'; ctx.fillText(b.hk === 'Escape' ? 'Esc' : b.hk, bx + cr.bw - 14, by + cr.bh - 4); if (b.cost && b.cost.min !== undefined) { ctx.fillStyle = p.minerals >= b.cost.min ? '#5df' : '#f55'; ctx.font = '9px sans-serif'; ctx.fillText(b.cost.min, bx + 3, by + cr.bh - 4); if (b.cost.gas) { ctx.fillStyle = p.gas >= b.cost.gas ? '#6d5' : '#f55'; ctx.fillText(b.cost.gas, bx + 24, by + cr.bh - 4); } } if (b.energy) { ctx.fillStyle = '#c6f'; ctx.font = '9px sans-serif'; ctx.fillText(b.energy + 'e', bx + 3, by + cr.bh - 4); }
+    for (const b of btns) { const bx = cr.x + 4 + (b.slot % this.CARD_COLS) * 66, by = cr.y + 4 + Math.floor(b.slot / this.CARD_COLS) * 52; const hov = this.mouse.x >= bx && this.mouse.x < bx + cr.bw && this.mouse.y >= by && this.mouse.y < by + cr.bh; const active = this.pending && ((this.pending.kind === 'ability' && b.label === (DATA.abilities[this.pending.abil] || {}).name) || (this.pending.kind !== 'ability' && b.label.toLowerCase().startsWith(this.pending.kind))); ctx.fillStyle = active ? '#3a5a3a' : hov ? '#38404c' : b.dim ? '#1c2026' : '#262c36'; ctx.fillRect(bx, by, cr.bw, cr.bh); ctx.strokeStyle = b.dim ? '#333' : '#556'; ctx.strokeRect(bx + .5, by + .5, cr.bw - 1, cr.bh - 1); ctx.fillStyle = b.dim ? '#666' : '#eee'; ctx.font = '10px sans-serif'; const words = b.label.split(' '); let ly = by + 14; let line = ''; for (const w of words) { if ((line + ' ' + w).trim().length > 11 && line) { ctx.fillText(line, bx + 3, ly); ly += 11; line = w; } else line = (line + ' ' + w).trim(); } ctx.fillText(line, bx + 3, ly); ctx.fillStyle = '#ff5'; ctx.font = 'bold 10px sans-serif'; ctx.fillText(b.hk === 'Escape' ? 'Esc' : b.hk, bx + cr.bw - 14, by + cr.bh - 4); if (b.cost && b.cost.min !== undefined) { ctx.fillStyle = p.minerals >= b.cost.min ? '#5df' : '#f55'; ctx.font = '9px sans-serif'; ctx.fillText(b.cost.min, bx + 3, by + cr.bh - 4); if (b.cost.gas) { ctx.fillStyle = p.gas >= b.cost.gas ? '#6d5' : '#f55'; ctx.fillText(b.cost.gas, bx + 24, by + cr.bh - 4); } } if (b.energy) { ctx.fillStyle = '#c6f'; ctx.font = '9px sans-serif'; ctx.fillText(b.energy + 'e', bx + 3, by + cr.bh - 4); }
       if (hov && b.cost) { this.tooltip = { text: b.label + (b.cost.min !== undefined ? `  ${b.cost.min}m ${b.cost.gas ? b.cost.gas + 'g ' : ''}${b.cost.sup ? b.cost.sup + 's ' : ''}${b.cost.time ? Math.round(b.cost.time / TPS) + 's' : ''}` : ''), x: bx, y: by - 8 }; } }
     if (this.tooltip) { ctx.font = '11px sans-serif'; const tw = ctx.measureText(this.tooltip.text).width + 10; ctx.fillStyle = '#000c'; ctx.fillRect(this.tooltip.x - tw + 60, this.tooltip.y - 14, tw, 18); ctx.fillStyle = '#fff'; ctx.fillText(this.tooltip.text, this.tooltip.x - tw + 65, this.tooltip.y - 1); this.tooltip = null; }
   },

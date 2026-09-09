@@ -6,6 +6,18 @@
 const TILE = 32;
 const TPS = 24;
 
+// Can an SCV repair this? A positive property on the def, not a rule derived from other fields.
+// The derived version -- "mechanical, and has a build time, and has a mineral cost" -- was written to
+// stop repairTick dividing by an undefined build time, which is how a SPIDER MINE ended up with NaN hit
+// points that spread through every comparison they touched. It worked, and it is the wrong shape: a
+// whitelist cannot rot, whereas a derived rule silently admits the next unit somebody adds without a
+// cost. Mechanical UNITS and every building are repairable; munitions, larvae, eggs and the sub-units
+// that are really ammunition are not.
+function repairableDef(d) {
+  if (d.mine || d.larva || d.egg || d.notUnit) return false;
+  if (d.id === 'scarab' || d.id === 'interceptor' || d.id === 'nuke' || d.id === 'spider_mine') return false;
+  return !!(d.isBuilding || d.mech);
+}
 const DMG_MULT = {
   normal:     { small: 1,   medium: 1,    large: 1 },
   concussive: { small: 1,   medium: 0.5,  large: 0.25 },

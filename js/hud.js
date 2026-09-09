@@ -292,7 +292,9 @@ const HUD = {
 Object.assign(UI, {
   miniRect() { return { x: 12, y: Render.H - this.consoleH + 10, s: this.consoleH - 22 }; },
   // The card shrinks with the console so a short window still shows all nine slots and the click boxes stay on them.
-  cardRect() { const ch = this.consoleH, k = Math.min(1, (ch - 16) / 182); const bw = Math.round(64 * k), bh = Math.round(54 * k), gap = Math.max(2, Math.round(4 * k)); const w = 3 * (bw + gap) + 8, h = 3 * (bh + gap) + 8; return { x: Render.W - w - 12, y: Render.H - ch + 8, w, h, bw, bh, gap, k }; },
+  // 4 wide, 3 tall. The buttons shrink a little so a twelve-slot card is no wider on screen than the
+  // nine-slot one was -- the console is the same height and the unit panel beside it keeps its room.
+  cardRect() { const ch = this.consoleH, k = Math.min(1, (ch - 16) / 182); const bw = Math.round(54 * k), bh = Math.round(54 * k), gap = Math.max(2, Math.round(4 * k)); const w = UI.CARD_COLS * (bw + gap) + 8, h = UI.CARD_ROWS * (bh + gap) + 8; return { x: Render.W - w - 12, y: Render.H - ch + 8, w, h, bw, bh, gap, k }; },
   drawConsole() {
     const ctx = Render.ctx, W = Render.W, H = Render.H, ch = this.consoleH, y0 = H - ch; const p = G.players[G.human];
     const sk = HUD.skin();
@@ -318,7 +320,7 @@ Object.assign(UI, {
     HUD.inset(ctx, cr.x, cr.y, cr.w, cr.h);
     const btns = this.currentCard(); this.tooltip = null;
     for (const b of btns) {
-      const bx = cr.x + 4 + (b.slot % 3) * (cr.bw + cr.gap), by = cr.y + 4 + Math.floor(b.slot / 3) * (cr.bh + cr.gap);
+      const bx = cr.x + 4 + (b.slot % UI.CARD_COLS) * (cr.bw + cr.gap), by = cr.y + 4 + Math.floor(b.slot / UI.CARD_COLS) * (cr.bh + cr.gap);
       const hov = this.mouse.x >= bx && this.mouse.x < bx + cr.bw && this.mouse.y >= by && this.mouse.y < by + cr.bh;
       const active = this.pending && ((this.pending.kind === 'ability' && b.label === (DATA.abilities[this.pending.abil] || {}).name) || (this.pending.kind !== 'ability' && b.label.toLowerCase().startsWith(this.pending.kind)));
       HUD.bevel(ctx, bx, by, cr.bw, cr.bh, !active, active ? '#2f4a2f' : hov ? sk.btnHov : b.dim ? sk.btnDim : sk.btn);

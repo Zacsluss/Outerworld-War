@@ -106,13 +106,12 @@ const Abilities = {
   },
   repairTick(u) {
     const t = u.order.target; const p = u.player;
-    // Repairable means mechanical AND buildable. A spider mine is mech but is a munition: it has no
-    // `time` and no `min`, so the rate below divides by undefined and the target's hp becomes NaN, which
-    // then spreads through every comparison it touches. The guard was always missing; nothing reached it
-    // until the AI was taught to repair in M10, and then a tank shooting a mine left NaN units on the
-    // map. Anything without a build time and a mineral cost is refused.
-    if (!t || !t.alive || (!t.def.mech && !t.isBuilding) || t.owner !== u.owner || t.hp >= t.maxHp || (t.isBuilding && !t.done)
-      || !t.def.time || t.def.min === undefined || t.def.mine) { u.nextOrder(); return; }
+    // repairableDef is a positive whitelist on the def (js/data.js) rather than a rule derived from
+    // other fields. A spider mine is mech but is a munition with no build time, so the rate below
+    // divided by undefined and the target's hp became NaN -- which then spread through every comparison
+    // it touched. Nothing reached that until the AI was taught to repair in M10, and then a tank
+    // shooting a mine left NaN units on the map.
+    if (!t || !t.alive || !repairableDef(t.def) || t.owner !== u.owner || t.hp >= t.maxHp || (t.isBuilding && !t.done)) { u.nextOrder(); return; }
     if (!(t.isBuilding ? u.moveToRect(t, 6) : dist(u, t) <= u.r + t.r + 8)) { if (!t.isBuilding) u.moveTo(t.x, t.y, t); return; }
     const rate = t.maxHp / Math.max(200, t.def.time * 0.6); const frac = rate / t.maxHp;
     const cm = t.def.min * 0.25 * frac, cg = t.def.gas * 0.25 * frac;
