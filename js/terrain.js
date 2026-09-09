@@ -110,7 +110,7 @@ const Terrain = {
   vnoise(x, y) { const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi; const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf); const a = this.hash(xi, yi), b = this.hash(xi + 1, yi), c = this.hash(xi, yi + 1), d = this.hash(xi + 1, yi + 1); return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v; },
   fbm(x, y, o = 3) { let s = 0, a = 0.5, f = 1, n = 0; for (let i = 0; i < o; i++) { s += this.vnoise(x * f, y * f) * a; n += a; a *= 0.5; f *= 2.1; } return s / n; },
   ridge(x, y) { return 1 - Math.abs(this.vnoise(x, y) * 2 - 1); },
-  reset(seed) { this.seed = seed; this.setId = (G.map && G.map.tileset) || 'badlands'; this.chunks.clear(); this.resetCreep(); this.clearStrips(); this.mini = null; },
+  reset(seed) { this.seed = seed; this.setId = (G.map && G.map.tileset) || 'badlands'; this.chunks.clear(); this.resetCreep(); this.clearStrips(); this.clearOverview(); this.mini = null; },
   // palette
   // ---- period look ------------------------------------------------------
   // The games this is imitating rendered to a small palette and covered the seams with an ordered
@@ -214,11 +214,21 @@ const Terrain = {
     x.putImageData(img, 0, 0);
     return this._ramp[key] = cv;
   },
+  checkDpr() { const k = this.bakeDpr(); if (k !== this._bakedAt) { this.chunks.clear(); this._bakedAt = k; } },   // a ratio change invalidates every cached chunk
   getChunk(cx, cy) {
-    const k = this.bakeDpr(); if (k !== this._bakedAt) { this.chunks.clear(); this._bakedAt = k; }   // a ratio change invalidates every cached chunk
+    this.checkDpr();
     const key = cx + ',' + cy; let c = this.chunks.get(key); if (c) return c;
-    c = this.renderChunk(cx, cy); this.chunks.set(key, c); return c;
+    c = this.renderChunk(cx, cy); this.chunks.set(key, c); this.trim(); return c;
   },
+  // The chunk cache had no bound, and did not need one while the camera never saw more than about
+  // thirty chunks: a game would cache a few hundred over an hour of scrolling and that was that.
+  // Zooming out to OVER_Z puts a hundred and forty in view AT ONCE, and panning a 256-tile map at
+  // that zoom would have cached all 1024 of them -- 256 MB of canvas at dpr 1 and a gigabyte at
+  // dpr 2. Bounded now at a little over one full strategic viewport. A Map iterates in insertion
+  // order, so re-inserting a chunk the moment it is drawn turns the eviction order into least
+  // recently SEEN, which is what stops the strategic view from evicting the ground it is standing on.
+  CHUNK_CAP: 160,
+  trim() { const c = this.chunks; while (c.size > this.CHUNK_CAP) { const k = c.keys().next().value; if (k === undefined) break; c.delete(k); } },
   // The ratio the chunk canvases are baked at. Terrain is most of the screen and it is the one cached
   // bitmap worth baking at the display's real resolution -- the sheets are not, because re-baking those
   // is a four-fold blow-up of the files and of the tinted-sheet ceiling with them.
@@ -325,16 +335,108 @@ const Terrain = {
     }
     return cv;
   },
-  draw(ctx, camX, camY, vw, vh) {
+  // ---- zoom: why the chunks are blitted scaled rather than re-baked -------
+  // Strategic zoom asks one question of this file: what happens to a cache that was baked at a fixed
+  // world scale when the world stops being drawn at that scale. Both answers were priced and the blit
+  // wins by a distance.
+  //
+  // RE-BAKING PER ZOOM LEVEL is what a first instinct reaches for, and it is unaffordable three
+  // separate ways. renderChunk is a per-pixel loop with fbm, ridge and vnoise inside it over 256x256
+  // pixels -- the creep work measured the same shape of loop at 27 ms a chunk -- and zooming out to
+  // 0.25 puts about four hundred chunks in the viewport where zoom 1 puts thirty. That is ten seconds
+  // of bake for one frame. It is 100 MB of canvas per zoom level at dpr 1, and continuous zoom is not
+  // a level: a wheel produces a new scale every notch, so the cache would be thrashed rather than
+  // filled. And it buys nothing anyway, because what re-baking would preserve is the 1 px ordered
+  // dither, which at zoom 0.25 is a quarter-pixel feature the display cannot show at any bake scale.
+  //
+  // SO: BLIT SCALED, and below OVER_Z stop blitting chunks at all. At that point a chunk's whole 8x8
+  // tiles land in under 100 screen pixels, every piece of detail in it is gone, and what the player is
+  // reading is the SHAPE of the map -- where the cliffs are, where the high ground is. That is a
+  // different picture, and it is one flat colour per tile: `overview()` bakes it once for the whole
+  // map at OVER_PX pixels a tile, and the strategic view is one blit of it.
+  //
+  // Between OVER_Z and 1 the chunks are still right but the view holds several times as many of them,
+  // so the bakes are budgeted and the overview is drawn UNDER them to fill whatever is not ready yet.
+  // The alternative is a stall of exactly the length of however many chunks the camera jumped over.
+  // At zoom 1 none of this runs: the branch is skipped, the rounding is unchanged, and the pass is
+  // byte for byte what it was.
+  OVER_Z: 0.45, OVER_PX: 4, CHUNK_BUDGET: 3,
+  clearOverview() { this._over = null; },
+  // The whole map at OVER_PX pixels a tile. Painted per TILE rather than per pixel -- one palette call
+  // and one noise sample for a 4x4 block instead of sixteen of each -- which is what makes it a
+  // one-off of a few milliseconds rather than the second and a half a per-pixel version would cost on
+  // a 256x256 map. It still goes through posterise(), so the strategic view is made of the same
+  // palette as the ground it is standing in for.
+  overview() {
+    const m = G.map, K = this.OVER_PX, W = m.w * K, H = m.h * K;
+    if (this._over && this._overSet === this.setId && this._over.width === W && this._over.height === H) return this._over;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d');
+    if (!x) return this._over = cv;
+    const img = x.createImageData(W, H), d = img.data, col = [0, 0, 0];
+    for (let ty = 0; ty < m.h; ty++) for (let tx = 0; tx < m.w; tx++) {
+      const i = m.idx(tx, ty), cl = m.cliff[i], hh = m.height[i];
+      const n = this.fbm(tx * TILE / 40, ty * TILE / 40, 2);
+      const base = cl === 2 ? this.pal.rock(0.45 + n * 0.35)
+        : cl === 1 ? this.pal.slope(0.5 + n * 0.3)
+          : hh === 1 ? this.pal.ramp(n)
+            : hh === 2 ? this.pal.high(n, 0) : this.pal.low(n, 0);
+      for (let p = 0; p < K; p++) {
+        const row = (ty * K + p) * W;
+        for (let q = 0; q < K; q++) {
+          col[0] = base[0]; col[1] = base[1]; col[2] = base[2];
+          this.posterise(col, tx * K + q, ty * K + p);
+          const o = (row + tx * K + q) * 4; d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = 255;
+        }
+      }
+    }
+    x.putImageData(img, 0, 0);
+    this._overSet = this.setId; return this._over = cv;
+  },
+  // Source and destination both clipped to the bitmap, because zooming out past the map fit leaves
+  // void on one axis and drawImage with a source rectangle off the edge of its image draws nothing at
+  // all on some engines rather than clamping.
+  drawOverview(ctx, camX, camY, vw, vh) {
+    const cv = this.overview(); if (!cv || !cv.width) return;
+    const P = this.OVER_PX / TILE;                        // overview pixels per world pixel
+    const sx0 = Math.max(0, camX * P), sy0 = Math.max(0, camY * P);
+    const sx1 = Math.min(cv.width, (camX + vw) * P), sy1 = Math.min(cv.height, (camY + vh) * P);
+    if (!(sx1 > sx0 && sy1 > sy0)) return;
+    ctx.save(); ctx.imageSmoothingEnabled = false;        // nearest neighbour: chunky and crisp beats soft and vague
+    ctx.drawImage(cv, sx0, sy0, sx1 - sx0, sy1 - sy0, sx0 / P - camX, sy0 / P - camY, (sx1 - sx0) / P, (sy1 - sy0) / P);
+    ctx.restore();
+  },
+  draw(ctx, camX, camY, vw, vh, zoom = 1) {
     const CH = this.CH * TILE; const x0 = Math.floor(camX / CH), y0 = Math.floor(camY / CH), x1 = Math.floor((camX + vw) / CH), y1 = Math.floor((camY + vh) / CH);
     const maxC = Math.ceil(G.map.w / this.CH);
+    if (zoom < this.OVER_Z) { this.drawOverview(ctx, camX, camY, vw, vh); return; }
+    this.checkDpr();
     // Blit on whole pixels. A chunk landed at a fractional offset goes through the bilinear filter, and
     // what that filter removes first is exactly the 1 px ordered dither the posterise pass above put in
     // -- half a pixel of camera offset undoes the period look on the whole screen. `centerOn` and a
     // minimap click both produce a fractional camera, so this is not a hypothetical. Every chunk shifts
     // by the same rounded amount, since their origins are all multiples of CH, so there are no seams.
-    const ox = Math.round(camX), oy = Math.round(camY);
-    for (let cy = Math.max(0, y0); cy <= Math.min(maxC - 1, y1); cy++) for (let cx = Math.max(0, x0); cx <= Math.min(maxC - 1, x1); cx++) ctx.drawImage(this.getChunk(cx, cy), cx * CH - ox, cy * CH - oy, CH, CH);   // source is CH*dpr wide; destination stays in CSS pixels
+    // Only at zoom 1: at any other zoom the blit is resampled regardless, and rounding the camera in
+    // world units would make the ground jitter by up to a whole pixel per scroll step instead.
+    const ox = zoom === 1 ? Math.round(camX) : camX, oy = zoom === 1 ? Math.round(camY) : camY;
+    const cx0 = Math.max(0, x0), cx1 = Math.min(maxC - 1, x1), cy0 = Math.max(0, y0), cy1 = Math.min(maxC - 1, y1);
+    let budget = Infinity;
+    if (zoom < 1) {
+      // Zoomed out: cap the bakes, and put the overview underneath if anything on screen is missing.
+      // The Map lookups are a hundred-odd hash hits and are free next to one bake, so once the view is
+      // fully cached the extra blit stops happening by itself.
+      budget = this.CHUNK_BUDGET;
+      let miss = false;
+      for (let cy = cy0; cy <= cy1 && !miss; cy++) for (let cx = cx0; cx <= cx1; cx++) if (!this.chunks.has(cx + ',' + cy)) { miss = true; break; }
+      if (miss) this.drawOverview(ctx, camX, camY, vw, vh);
+    }
+    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
+      const key = cx + ',' + cy; let c = this.chunks.get(key);
+      if (!c) { if (budget <= 0) continue; budget--; c = this.renderChunk(cx, cy); }
+      else this.chunks.delete(key);
+      this.chunks.set(key, c);                                // to the back of the eviction order; see CHUNK_CAP
+      ctx.drawImage(c, cx * CH - ox, cy * CH - oy, CH, CH);   // source is CH*dpr wide; destination stays in CSS pixels
+    }
+    this.trim();
   },
   // ---- creep -------------------------------------------------------------
   // Creep was the plainest thing on the screen and the reason was structural, not artistic. It was a

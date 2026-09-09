@@ -82,8 +82,30 @@ const RIM_ON = 80, RIM_FULL = 240, RIM_A = 0.5, RIM_HURT = 0.35;
 // How far the baked crystal cluster's scree sits above the bottom of its own canvas, so drawResource
 // can line that up with the bottom of the patch's tiles rather than centring the two.
 const MINERAL_FOOT = 0;
+// ---------------------------------------------------------------------------
+// Strategic zoom
+// ---------------------------------------------------------------------------
+// One number multiplies the base transform and everything downstream is written in world coordinates,
+// so the whole renderer follows for free. What does NOT follow for free is legibility, and that is the
+// entire feature: a marine drawn at 38 px is a marine, a marine drawn at 9 px is a smudge, and a screen
+// of smudges is worse than no zoom at all. Below ZOOM_ICON the sprites are replaced by role icons at a
+// fixed SCREEN size, so pulling further back stops making units smaller and starts making the map
+// smaller, which is the thing Supreme Commander got right and nobody copied.
+//
+// ZOOM_MAX is 2.6 because past that the baked sheets have no detail left to magnify -- the same
+// argument DPR_CAP is 2 for. ZOOM_MIN is a floor under the map-fit clamp in clampZoom, not the usual
+// limit: on any map bigger than the viewport the fit is the binding constraint and is much larger.
+//
+// ZOOM_ICON is 0.5 because that is where a small unit's sprite drops under about 20 px. It is a
+// crossover, not a cliff: at 0.5 the icons are barely bigger than the sprites they replace, and they
+// stay that size all the way out while everything else shrinks around them.
+const ZOOM_MIN = 0.1, ZOOM_MAX = 2.6, ZOOM_ICON = 0.5;
+// Icon half-size in SCREEN pixels by unit size class, and the floor for a building (whose icon is its
+// own footprint until the footprint gets too small to see). These are half-sizes, so a medium unit's
+// icon is 11 px across whatever the zoom is.
+const ICON_HS = { small: 4.6, medium: 5.5, large: 7 }, ICON_HB = 5;
 const Render = {
-  canvas: null, ctx: null, dpr: 1, W: 0, H: 0, camX: 0, camY: 0, viewW: 0, viewH: 0, fogCanvas: null, shadowBuf: null, shadowCtx: null, creepOn: undefined, built: false, lastFrameTime: 0, mini: null,
+  canvas: null, ctx: null, dpr: 1, W: 0, H: 0, camX: 0, camY: 0, viewW: 0, viewH: 0, zoom: 1, fogCanvas: null, shadowBuf: null, shadowCtx: null, creepOn: undefined, built: false, lastFrameTime: 0, mini: null,
   // Render-side motion state, keyed by unit id: the settle spring and the last speed it saw. It lives
   // here rather than on the unit for the reason invariant 3 exists -- a field on a Unit is inside the
   // reflective snapshot walk and would travel into saves and across the network, where a cosmetic
@@ -97,11 +119,78 @@ const Render = {
     c.width = Math.round(this.W * this.dpr); c.height = Math.round(this.H * this.dpr);
     c.style.width = this.W + 'px'; c.style.height = this.H + 'px';   // or the element lays out at its backing size
     this.viewW = this.W; this.viewH = Math.max(1, this.H - UI.consoleH);
+    this.zoom = this.clampZoom(this.zoom);   // the map-fit floor moves with the viewport
+    this.clampCam();
   },
   // The base transform every draw on the main context sits on: set at the top of a frame and never
-  // reset to identity, so the HUD, the menus and the shadow blit all inherit it.
+  // reset to identity, so the HUD, the menus and the shadow blit all inherit it. It is SCREEN space and
+  // deliberately carries no zoom -- the HUD, the console and the pooled layers are all composed in
+  // screen pixels, and every one of them blits back through here.
   base(ctx) { ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0); },
-  reset() { Terrain.reset(G.map.seed); Sprites.clear(); FX.reset(); this.built = false; this.motion.clear(); this.motionFrame = -1; },
+  // ---------------- the zoom API ----------------
+  // Three entry points and four derived readings. Nothing here is wired to an input device: js/ui.js
+  // owns the wheel, the keys and the camera clamp, and calls setZoom/zoomAt.
+  //
+  // The floor is the zoom at which the whole map fits in the viewport, because past that the extra
+  // screen is void. It is recomputed rather than stored: the viewport changes on every resize and the
+  // map changes on every game, and a stored floor would be wrong after either. Capped at 1 so a map
+  // SMALLER than the viewport -- a 64x64 in a tall window -- cannot produce a floor above 1 and jam
+  // the clamp inside out.
+  fitZoom() {
+    const m = (typeof G !== 'undefined' && G && G.map) || null;
+    if (!m || !m.w || !m.h) return ZOOM_MIN;
+    return Math.min(this.viewW / Math.max(1, m.w * TILE), this.viewH / Math.max(1, m.h * TILE));
+  },
+  clampZoom(z) {
+    if (typeof z !== 'number' || !isFinite(z) || z <= 0) return this.zoom;   // NaN, 0, Infinity, a string
+    const lo = Math.max(ZOOM_MIN, Math.min(1, this.fitZoom()));
+    return z < lo ? lo : z > ZOOM_MAX ? ZOOM_MAX : z;
+  },
+  // The live bounds, for anything outside this file that wants to show where the zoom is -- a slider,
+  // a readout, a minimap that draws the viewport rectangle. `lo` is what clampZoom will actually
+  // enforce on this map at this viewport, which is usually the map fit rather than ZOOM_MIN.
+  zoomLimits() { return { lo: Math.max(ZOOM_MIN, Math.min(1, this.fitZoom())), hi: ZOOM_MAX, icon: ZOOM_ICON, fit: this.fitZoom() }; },
+  // Zoom about the centre of the viewport, which is what a key or a slider should do.
+  setZoom(z) { return this.zoomAt(z, this.viewW / 2, this.viewH / 2); },
+  // Zoom about a screen point, which is what a wheel should do: the world under the cursor stays under
+  // the cursor. camX + sx/z is that world point, so holding it fixed across the change gives the camera
+  // shift directly. At a map edge clampCam wins and the point slides, which is correct -- there is no
+  // camera position that would have kept it.
+  zoomAt(z, sx, sy) {
+    const old = this.zoom, nz = this.clampZoom(z);
+    if (nz !== old && isFinite(sx) && isFinite(sy)) {
+      this.camX += sx / old - sx / nz;
+      this.camY += sy / old - sy / nz;
+      this.zoom = nz;
+    }
+    this.clampCam();
+    return this.zoom;
+  },
+  // How much WORLD the viewport shows. Every camera clamp, cull test and layer transform is written in
+  // terms of these two rather than viewW/viewH, which is the whole of what "make everything downstream
+  // respect it" comes to.
+  viewWorldW() { return this.viewW / this.zoom; },
+  viewWorldH() { return this.viewH / this.zoom; },
+  screenToWorld(sx, sy) { return [this.camX + sx / this.zoom, this.camY + sy / this.zoom]; },
+  worldToScreen(wx, wy) { return [(wx - this.camX) * this.zoom, (wy - this.camY) * this.zoom]; },
+  iconMode() { return this.zoom < ZOOM_ICON; },
+  // The camera clamp lives here rather than in js/ui.js because it now depends on the zoom, and two
+  // copies of a rule that has to agree is how a camera ends up in two places at once. When the view is
+  // WIDER than the map -- which zooming out past the fit does on the axis the fit was not decided by --
+  // there is no legal range at all, so the map is centred; clamp(v, 0, negative) returns 0 and would
+  // jam it against a corner instead.
+  clampCam() {
+    const m = (typeof G !== 'undefined' && G && G.map) || null; if (!m || !m.w) return;
+    const wW = this.viewWorldW(), wH = this.viewWorldH(), mw = m.w * TILE, mh = m.h * TILE;
+    this.camX = wW >= mw ? (mw - wW) / 2 : clamp(this.camX, 0, mw - wW);
+    this.camY = wH >= mh ? (mh - wH) / 2 : clamp(this.camY, 0, mh - wH);
+  },
+  // The team-colour caches go too. They are keyed on the owner's INDEX, and the same index is a
+  // different colour in the next game -- so a cache that survives `reset` draws the second game's
+  // rims and icons in the first game's colours. That was already true of the rim cache and had never
+  // been reachable, because nothing else was keyed that way; adding a second one of the same shape is
+  // reason enough to fix the pattern rather than copy it.
+  reset() { Terrain.reset(G.map.seed); Sprites.clear(); FX.reset(); this.built = false; this.motion.clear(); this.motionFrame = -1; this.zoom = 1; this._rimRGB = this._icoRGB = null; },
   // The pooled shadow layer, cleared and put into world space so the draw calls above can keep using
   // world coordinates unchanged. Reallocated only when the viewport changes size.
   shadowLayer() {
@@ -109,8 +198,11 @@ const Render = {
     let cv = this.shadowBuf;
     if (!cv || cv.width !== w || cv.height !== h) { cv = this.shadowBuf = document.createElement('canvas'); cv.width = w; cv.height = h; this.shadowCtx = cv.getContext('2d'); }
     const c = this.shadowCtx;
+    // The layer is viewport-sized and the zoom goes into its transform, not into its size: it is a
+    // screen-space buffer that happens to be addressed in world coordinates, exactly like the scene.
+    const s = SHADOW_SS * this.zoom;
     c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, w, h);
-    c.setTransform(SHADOW_SS, 0, 0, SHADOW_SS, -this.camX * SHADOW_SS, -this.camY * SHADOW_SS);
+    c.setTransform(s, 0, 0, s, -this.camX * s, -this.camY * s);
     return c;
   },
   buildStatic() {
@@ -134,16 +226,19 @@ const Render = {
   syncFeatures() {
     const m = G.map; if (!m.featureRev) return;
     const rev = m.featureRev();
-    if (rev !== this._featRev) { this._featRev = rev; Terrain.chunks.clear(); this.mini = Terrain.buildMini(); }
+    if (rev !== this._featRev) { this._featRev = rev; Terrain.chunks.clear(); Terrain.clearOverview(); this.mini = Terrain.buildMini(); }
   },
   drawCreep(ctx) {
     if (this.creepFrame !== G.frame && (G.frame % 12 === 0 || this.creepOn === undefined)) { this.creepOn = Terrain.syncCreep(); this.creepFrame = G.frame; }
     if (!this.creepOn) return;
-    const CH = Terrain.CH * TILE, nx = Terrain.creepNx();
+    const CH = Terrain.CH * TILE, nx = Terrain.creepNx(), z = this.zoom;
     const x0 = Math.max(0, Math.floor(this.camX / CH)), y0 = Math.max(0, Math.floor(this.camY / CH));
-    const x1 = Math.min(nx - 1, Math.floor((this.camX + this.viewW) / CH)), y1 = Math.min(Math.ceil(G.map.h / Terrain.CH) - 1, Math.floor((this.camY + this.viewH) / CH));
+    const x1 = Math.min(nx - 1, Math.floor((this.camX + this.viewWorldW()) / CH)), y1 = Math.min(Math.ceil(G.map.h / Terrain.CH) - 1, Math.floor((this.camY + this.viewWorldH()) / CH));
     Terrain.creepBudget = 2;   // at most two chunk bakes a frame; see Terrain.creepChunk
-    const ox = Math.round(this.camX), oy = Math.round(this.camY);   // whole pixels, or the filter eats the dither -- see Terrain.draw
+    // Whole pixels, or the filter eats the dither -- see Terrain.draw. Only at zoom 1: at any other
+    // zoom the blit is resampled anyway and rounding the camera would just make the creep crawl
+    // against the terrain under it by up to a pixel as you scroll.
+    const ox = z === 1 ? Math.round(this.camX) : this.camX, oy = z === 1 ? Math.round(this.camY) : this.camY;
     for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
       const cv = Terrain.creepChunk(cx, cy); if (cv) ctx.drawImage(cv, cx * CH - ox, cy * CH - oy);
     }
@@ -152,18 +247,27 @@ const Render = {
     const ctx = this.ctx, m = G.map; if (!ctx) return; this.base(ctx);
     if (this.viewW < 1 || this.viewH < 1) return; if (!this.built) this.buildStatic();
     const now = performance.now(); const dt = Math.min(0.1, (now - (this.lastFrameTime || now)) / 1000); this.lastFrameTime = now;
-    if (!G.paused && !UI.menu) { FX.update(dt); FX.ambient(this.camX, this.camY, this.viewW, this.viewH); }
+    // The zoom, and the two numbers everything downstream is written against. wW/wH is how much WORLD
+    // the viewport shows -- at zoom 1 it is exactly viewW/viewH and every expression below reduces to
+    // what it was, which is why turning the feature off is free rather than merely cheap.
+    const z = this.zoom, wW = this.viewW / z, wH = this.viewH / z, icons = z < ZOOM_ICON;
+    if (!G.paused && !UI.menu) { FX.update(dt); FX.ambient(this.camX, this.camY, wW, wH); }
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, this.viewW, this.viewH); ctx.clip();
+    // The clip is in screen pixels and is set before the scale on purpose; everything after it is in
+    // world coordinates. Skipped entirely at zoom 1 so the transform is bit-identical to before.
+    if (z !== 1) ctx.scale(z, z);
     const cx = this.camX, cy = this.camY;
     this.syncFeatures();
-    Terrain.draw(ctx, cx, cy, this.viewW, this.viewH);
+    Terrain.draw(ctx, cx, cy, wW, wH, z);
     this.drawCreep(ctx);
     ctx.translate(-cx, -cy);
     const hp = G.players[G.human]; const vis = UI.viewAll ? G.allVis() : hp.vis;
-    const inView = (x, y, r) => x + r > cx && x - r < cx + this.viewW && y + r > cy && y - r < cy + this.viewH;
+    const inView = (x, y, r) => x + r > cx && x - r < cx + wW && y + r > cy && y - r < cy + wH;
     const seen = (x, y) => { const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); return m.inb(tx, ty) && vis[ty * m.w + tx] > 0; };
     const visNow = (x, y) => { const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); return m.inb(tx, ty) && vis[ty * m.w + tx] === 2; };
-    if (UI.placing && UI.placing.def.needsPsi) { const p = m.psi[G.human]; if (p) { ctx.fillStyle = 'rgba(80,140,255,0.13)'; for (let ty = Math.floor(cy / TILE); ty < (cy + this.viewH) / TILE; ty++) for (let tx = Math.floor(cx / TILE); tx < (cx + this.viewW) / TILE; tx++) if (m.inb(tx, ty) && p[m.idx(tx, ty)]) ctx.fillRect(tx * TILE, ty * TILE, TILE, TILE); } }
+    // One fillRect per psi tile, so the cost is the number of TILES on screen -- which zooming out
+    // multiplies by up to twenty. Nobody places a pylon from orbit, so it is skipped in icon mode.
+    if (!icons && UI.placing && UI.placing.def.needsPsi) { const p = m.psi[G.human]; if (p) { ctx.fillStyle = 'rgba(80,140,255,0.13)'; for (let ty = Math.floor(cy / TILE); ty < (cy + wH) / TILE; ty++) for (let tx = Math.floor(cx / TILE); tx < (cx + wW) / TILE; tx++) if (m.inb(tx, ty) && p[m.idx(tx, ty)]) ctx.fillRect(tx * TILE, ty * TILE, TILE, TILE); } }
     FX.drawTracks(ctx, inView);   // under the decals: a corpse fell on top of the ruts, not into them
     FX.drawDecals(ctx, inView, visNow);
     for (const r of m.resources) { if (!inView(r.cx, r.cy, 70) || !seen(r.cx, r.cy)) continue; this.drawResource(ctx, r); }
@@ -185,6 +289,56 @@ const Render = {
     // put it at the upper left), or every unit looks lit from one side and shadowed from the other.
     // A flyer's shadow falls further and stays a soft blob, because a sharp silhouette that far from
     // the unit reads as a second unit.
+    // Below ZOOM_ICON the whole sprite half of the pass -- shadow layer, per-unit blit, rims, status
+    // marks, health bars -- is replaced by drawIcons, which is a handful of batched paths. That is not
+    // only for legibility: at zoom 0.25 the viewport holds twenty times the world, so it holds every
+    // unit in the game, and twenty times the sprite blits is not a budget anybody has.
+    if (icons) this.drawIcons(ctx, list);
+    else this.drawSprites(ctx, list);
+    // projectiles
+    for (const p of G.projectiles) { if (!inView(p.x, p.y, 10) || !visNow(p.x, p.y)) continue; ctx.save(); ctx.globalCompositeOperation = 'lighter'; const col = p.kind === 'interceptor' ? '#cfe6ff' : p.kind === 'yamato' ? '#ff6a4a' : '#ffd060'; const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.kind === 'yamato' ? 14 : 7); g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, p.kind === 'yamato' ? 14 : 7, 0, 7); ctx.fill(); if (p.kind === 'interceptor') { ctx.fillStyle = '#ffe9a0'; ctx.beginPath(); ctx.arc(p.x, p.y, 2.5, 0, 7); ctx.fill(); } ctx.restore(); }
+    for (const e of G.effects) { if (!inView(e.x, e.y, 220)) continue; if (!visNow(e.x, e.y) && !(e.tx !== undefined && visNow(e.tx, e.ty)) && e.kind !== 'nuke') continue; FX.drawEffect(ctx, e); }
+    FX.drawParticles(ctx);
+    // Weather goes over the world and under the interface. Everything below this line -- selection
+    // rings, health bars, rally lines, the placement ghost, order markers -- is how the player reads
+    // and gives orders, and a storm that buried those would be a storm that took the game away rather
+    // than one that made it harder. The units, the ground and the corpses are all behind it.
+    this.drawHazard(ctx);
+    // Night, in the same slot and for the same reason: it is weather, not interface.
+    this.drawNight(ctx, list);
+    for (const u of UI.selection) { if (!u.alive || u.inside) continue; this.drawSelection(ctx, u, true); }
+    this.drawRallies(ctx);
+    if (UI.hover && UI.hover.alive && !UI.selection.includes(UI.hover)) this.drawSelection(ctx, UI.hover, false);
+    if (!icons) for (const u of list) if (u.hp < u.maxHp && !UI.selection.includes(u) && (u.owner === G.human || G.frame - u.lastHit < 72)) this.drawBars(ctx, u);
+    if (UI.selection.length === 1 && UI.selection[0].rally && UI.selection[0].owner === G.human) {
+      const b = UI.selection[0], r = b.rally;
+      // A rally onto a resource is drawn as a ring around the patch, not as a flag planted in it.
+      // Brood War does it this way because the two mean different things: a flag is "walk here and
+      // wait", a ring is "go and work this". Showing the flag for both is what made it look as though
+      // the rally had been set to a bare point in the middle of the minerals.
+      if (r.res) { this.drawResourceRing(ctx, r.res, 0.75); }
+      else {
+        const rx = r.target ? r.target.x : r.x, ry = r.target ? r.target.y : r.y;
+        ctx.strokeStyle = 'rgba(80,255,80,0.6)'; ctx.setLineDash([6, 6]); ctx.lineWidth = 1.5 / z; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(rx, ry); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = '#5f5'; ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx, ry - 16); ctx.lineTo(rx + 10, ry - 12); ctx.lineTo(rx, ry - 8); ctx.closePath(); ctx.fill();
+      }
+    }
+    if (UI.placing) this.drawPlacement(ctx);
+    this.drawFog(ctx, vis, cx, cy);
+    for (const mk of UI.markers) {
+      const a = mk.t / 20;
+      // A marker carrying a resource is the acknowledgement for targeting a patch: it settles onto the
+      // patch's own footprint instead of shrinking to a point, so it reads as the same ring the rally
+      // indicator leaves behind rather than as a different thing that happens to be green.
+      if (mk.res) { this.drawResourceRing(ctx, mk.res, a); continue; }
+      ctx.strokeStyle = `rgba(${mk.color},${a})`; ctx.lineWidth = 2 / z; ctx.beginPath(); ctx.ellipse(mk.x, mk.y, 5 + (20 - mk.t) * 0.7, (5 + (20 - mk.t) * 0.7) * 0.6, 0, 0, 7); ctx.stroke();
+    }
+    ctx.restore();
+    if (UI.drag && UI.dragging) { const d = UI.drag; ctx.strokeStyle = '#4f4'; ctx.lineWidth = 1; ctx.strokeRect(Math.min(d.x0, d.x1) + .5, Math.min(d.y0, d.y1) + .5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0)); }
+  },
+  // The sprite half of the draw pass: the pooled shadow layer, both unit passes and the rims. Split out
+  // of frame() so the icon path can replace all four of them with one call rather than four guards.
+  drawSprites(ctx, list) {
     const sb = this.shadowLayer();
     for (const u of list) {
       // Buildings cast their own outline now, like units do, instead of being skipped entirely. They
@@ -220,44 +374,6 @@ const Render = {
     for (const u of list) if (!u.fly) this.drawUnit(ctx, u);
     for (const u of list) if (u.fly) this.drawUnit(ctx, u);
     this.drawRims(ctx, list);
-    // projectiles
-    for (const p of G.projectiles) { if (!inView(p.x, p.y, 10) || !visNow(p.x, p.y)) continue; ctx.save(); ctx.globalCompositeOperation = 'lighter'; const col = p.kind === 'interceptor' ? '#cfe6ff' : p.kind === 'yamato' ? '#ff6a4a' : '#ffd060'; const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.kind === 'yamato' ? 14 : 7); g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, p.kind === 'yamato' ? 14 : 7, 0, 7); ctx.fill(); if (p.kind === 'interceptor') { ctx.fillStyle = '#ffe9a0'; ctx.beginPath(); ctx.arc(p.x, p.y, 2.5, 0, 7); ctx.fill(); } ctx.restore(); }
-    for (const e of G.effects) { if (!inView(e.x, e.y, 220)) continue; if (!visNow(e.x, e.y) && !(e.tx !== undefined && visNow(e.tx, e.ty)) && e.kind !== 'nuke') continue; FX.drawEffect(ctx, e); }
-    FX.drawParticles(ctx);
-    // Weather goes over the world and under the interface. Everything below this line -- selection
-    // rings, health bars, rally lines, the placement ghost, order markers -- is how the player reads
-    // and gives orders, and a storm that buried those would be a storm that took the game away rather
-    // than one that made it harder. The units, the ground and the corpses are all behind it.
-    this.drawHazard(ctx);
-    for (const u of UI.selection) { if (!u.alive || u.inside) continue; this.drawSelection(ctx, u, true); }
-    this.drawRallies(ctx);
-    if (UI.hover && UI.hover.alive && !UI.selection.includes(UI.hover)) this.drawSelection(ctx, UI.hover, false);
-    for (const u of list) if (u.hp < u.maxHp && !UI.selection.includes(u) && (u.owner === G.human || G.frame - u.lastHit < 72)) this.drawBars(ctx, u);
-    if (UI.selection.length === 1 && UI.selection[0].rally && UI.selection[0].owner === G.human) {
-      const b = UI.selection[0], r = b.rally;
-      // A rally onto a resource is drawn as a ring around the patch, not as a flag planted in it.
-      // Brood War does it this way because the two mean different things: a flag is "walk here and
-      // wait", a ring is "go and work this". Showing the flag for both is what made it look as though
-      // the rally had been set to a bare point in the middle of the minerals.
-      if (r.res) { this.drawResourceRing(ctx, r.res, 0.75); }
-      else {
-        const rx = r.target ? r.target.x : r.x, ry = r.target ? r.target.y : r.y;
-        ctx.strokeStyle = 'rgba(80,255,80,0.6)'; ctx.setLineDash([6, 6]); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(rx, ry); ctx.stroke(); ctx.setLineDash([]);
-        ctx.fillStyle = '#5f5'; ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx, ry - 16); ctx.lineTo(rx + 10, ry - 12); ctx.lineTo(rx, ry - 8); ctx.closePath(); ctx.fill();
-      }
-    }
-    if (UI.placing) this.drawPlacement(ctx);
-    this.drawFog(ctx, vis, cx, cy);
-    for (const mk of UI.markers) {
-      const a = mk.t / 20;
-      // A marker carrying a resource is the acknowledgement for targeting a patch: it settles onto the
-      // patch's own footprint instead of shrinking to a point, so it reads as the same ring the rally
-      // indicator leaves behind rather than as a different thing that happens to be green.
-      if (mk.res) { this.drawResourceRing(ctx, mk.res, a); continue; }
-      ctx.strokeStyle = `rgba(${mk.color},${a})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(mk.x, mk.y, 5 + (20 - mk.t) * 0.7, (5 + (20 - mk.t) * 0.7) * 0.6, 0, 0, 7); ctx.stroke();
-    }
-    ctx.restore();
-    if (UI.drag && UI.dragging) { const d = UI.drag; ctx.strokeStyle = '#4f4'; ctx.lineWidth = 1; ctx.strokeRect(Math.min(d.x0, d.x1) + .5, Math.min(d.y0, d.y1) + .5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0)); }
   },
   drawFog(ctx, vis, cx, cy) {
     const m = G.map; const fc = this.fogCanvas.getContext('2d');
@@ -265,7 +381,8 @@ const Render = {
     const img = this.fogImg; const d = img.data;
     for (let i = 0; i < vis.length; i++) { const v = vis[i]; const o = i * 4; d[o] = 4; d[o + 1] = 6; d[o + 2] = 10; d[o + 3] = v === 2 ? 0 : v === 1 ? 140 : 255; }
     fc.putImageData(img, 0, 0);
-    ctx.save(); ctx.imageSmoothingEnabled = true; ctx.drawImage(this.fogCanvas, cx / TILE - 0.5, cy / TILE - 0.5, this.viewW / TILE, this.viewH / TILE, cx, cy, this.viewW, this.viewH); ctx.restore();
+    const wW = this.viewWorldW(), wH = this.viewWorldH();
+    ctx.save(); ctx.imageSmoothingEnabled = true; ctx.drawImage(this.fogCanvas, cx / TILE - 0.5, cy / TILE - 0.5, wW / TILE, wH / TILE, cx, cy, wW, wH); ctx.restore();
   },
   // ---------------- weather ----------------
   // The sandstorm. js/map.js has had a fully tested hazard for a milestone and nothing drew it, so the
@@ -289,8 +406,9 @@ const Render = {
     let cv = this.hazeBuf;
     if (!cv || cv.width !== w || cv.height !== h) { cv = this.hazeBuf = document.createElement('canvas'); cv.width = w; cv.height = h; this.hazeCtx = cv.getContext('2d'); this._pat = null; }
     const c = this.hazeCtx; if (!c) return null;
+    const s = this.HAZE_SS * this.zoom;   // screen-sized buffer, world-addressed; see shadowLayer
     c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, w, h);
-    c.setTransform(this.HAZE_SS, 0, 0, this.HAZE_SS, -this.camX * this.HAZE_SS, -this.camY * this.HAZE_SS);
+    c.setTransform(s, 0, 0, s, -this.camX * s, -this.camY * s);
     return c;
   },
   // The dust is made of the ground it came off, so it takes the tileset's own mote colour -- the same
@@ -343,15 +461,16 @@ const Render = {
   drawStormWarn(ctx, s) {
     const h = G.map.hazard, k = Math.min(1, s.phase / Math.max(1, h.warn)), col = this.dustCol();
     const vert = s.axis === 'y';
-    const camA = vert ? this.camY : this.camX, lenA = vert ? this.viewH : this.viewW;
+    const wW = this.viewWorldW(), wH = this.viewWorldH();
+    const camA = vert ? this.camY : this.camX, lenA = vert ? wH : wW;
     const edge = s.dir > 0 ? 0 : s.span * TILE, depth = h.band * TILE * (0.3 + k * 0.6);
     const a0 = Math.min(edge, edge + depth * s.dir), a1 = Math.max(edge, edge + depth * s.dir);
     if (a1 > camA && a0 < camA + lenA) {
       const g = vert ? ctx.createLinearGradient(0, edge, 0, edge + depth * s.dir) : ctx.createLinearGradient(edge, 0, edge + depth * s.dir, 0);
       g.addColorStop(0, this.dustRGB(col, 0.66 * k, 0.5)); g.addColorStop(0.4, this.dustRGB(col, 0.3 * k, 0.62)); g.addColorStop(1, this.dustRGB(col, 0, 0.7));
       ctx.save(); ctx.fillStyle = g;
-      if (vert) ctx.fillRect(this.camX - 8, a0, this.viewW + 16, a1 - a0);
-      else ctx.fillRect(a0, this.camY - 8, a1 - a0, this.viewH + 16);
+      if (vert) ctx.fillRect(this.camX - 8, a0, wW + 16, a1 - a0);
+      else ctx.fillRect(a0, this.camY - 8, a1 - a0, wH + 16);
       ctx.restore();
     }
     // Squared, so the first half of the window is almost nothing and the last two seconds are
@@ -369,8 +488,9 @@ const Render = {
   // the LEADING edge depends on `.dir`, because the pair is always returned in ascending order.
   drawStorm(ctx, s) {
     const vert = s.axis === 'y', WOB = this.HAZE_WOB, N = this.HAZE_STEPS;
+    const wW = this.viewWorldW(), wH = this.viewWorldH();
     const camA = vert ? this.camY : this.camX, camB = vert ? this.camX : this.camY;
-    const lenA = vert ? this.viewH : this.viewW, lenB = vert ? this.viewW : this.viewH;
+    const lenA = vert ? wH : wW, lenB = vert ? wW : wH;
     const n0 = s.t0 * TILE, n1 = s.t1 * TILE;
     if (n1 + WOB <= camA || n0 - WOB >= camA + lenA) return;   // off camera; the cheapest frame is the one not drawn
     const c = this.hazeLayer(); if (!c) return;
@@ -439,7 +559,7 @@ const Render = {
       for (const b of G.map.starts) {
         const a = vert ? b.cy : b.cx;
         if (a + r < ra || a - r > rb) continue;
-        if (b.cx + r < this.camX || b.cx - r > this.camX + this.viewW || b.cy + r < this.camY || b.cy - r > this.camY + this.viewH) continue;
+        if (b.cx + r < this.camX || b.cx - r > this.camX + wW || b.cy + r < this.camY || b.cy - r > this.camY + wH) continue;
         const g3 = c.createRadialGradient(b.cx, b.cy, r * 0.5, b.cx, b.cy, r);
         g3.addColorStop(0, 'rgba(0,0,0,0.94)'); g3.addColorStop(1, 'rgba(0,0,0,0)');
         c.fillStyle = g3; c.beginPath(); c.arc(b.cx, b.cy, r, 0, 7); c.fill();
@@ -448,6 +568,228 @@ const Render = {
     }
     ctx.save(); this.base(ctx); ctx.globalAlpha = this.HAZE_A;
     ctx.drawImage(this.hazeBuf, 0, 0, this.hazeBuf.width, this.hazeBuf.height, 0, 0, this.viewW, this.viewH);
+    ctx.restore();
+  },
+
+  // ---------------- strategic zoom: icons ----------------
+  // The half of the zoom that is actually the feature. Below ZOOM_ICON a sprite is smaller than the
+  // information it carries, so every unit becomes a role icon at a fixed SCREEN size: pulling further
+  // back stops shrinking the army and starts shrinking the ground under it, which is the whole reason
+  // Supreme Commander's zoom worked and a plain scale does not.
+  //
+  // THE CONSTRAINT IS DRAW CALLS, not pixels -- the same rule the rest of this file is budgeted under.
+  // Four hundred icon BLITS would cost what four hundred sprite blits cost, about 2 ms, and buy
+  // nothing. So an icon is geometry, and every icon of one owner goes into ONE path that is filled
+  // once: the whole screen is one dark outline stroke, one fill per owner per layer, one wounded ring
+  // and one detector dot pass. Eight players is about twenty draw calls for a thousand units, against
+  // the four hundred-odd blits and the pooled shadow layer it replaces. Zooming out is CHEAPER than
+  // zooming in, which is the property that makes the feature usable at all.
+  //
+  // Two channels of information and no more, because at nine pixels there is no room for a third:
+  // COLOUR is whose, SHAPE is what it does. Air is a triangle because it is the one distinction that
+  // decides whether you can shoot back at all; a worker is a circle because round reads as "not a
+  // threat" at a glance; artillery gets a turret on its box because standing in front of it is the
+  // other thing that kills you. Wounded units keep the red ring the rim pass gives them at zoom 1, so
+  // "which ones are about to die" survives the transition, and detectors get a white pip because a
+  // detector is the only reason a cloaked army stops working.
+  //
+  // Health bars, reload arcs, veteran chevrons and status marks are all skipped down here: at four
+  // screen pixels tall they are noise, and the ring says the only part of it that still matters.
+  roleOf(def) {
+    const R = this._roles || (this._roles = {});
+    let r = R[def.id]; if (r) return r;
+    // Derived from the def rather than declared in js/data.js, which is a SIMULATION file: the build
+    // stamp covers it, and a render-only taxonomy has no business moving the stamp.
+    if (def.isBuilding) r = (def.gw || def.aw) ? 'siege' : 'building';
+    else if (def.worker) r = 'worker';
+    else if (def.cargo) r = 'transport';
+    else if (def.fly) r = 'air';
+    else if (!def.gw && !def.aw) r = 'caster';
+    else { const w = def.gw || def.aw; r = (w.range >= 6) ? 'siege' : def.energy ? 'caster' : 'ground'; }
+    return R[def.id] = r;
+  },
+  // Half the icon's world size: its own footprint until that drops below the screen floor, and the
+  // floor from there out. That crossover is what makes an ultralisk still bigger than a marine at
+  // zoom 0.5 and the same size as one at zoom 0.15, which is right -- close in you are reading units,
+  // far out you are reading counts.
+  iconH(u) {
+    const d = u.def, z = this.zoom;
+    return u.isBuilding ? Math.max(ICON_HB / z, d.w * TILE * 0.42) : Math.max((ICON_HS[d.size] || ICON_HS.medium) / z, u.r * 0.75);
+  },
+  iconPath(ctx, x, y, h, role) {
+    switch (role) {
+      case 'worker': ctx.moveTo(x + h * 0.8, y); ctx.arc(x, y, h * 0.8, 0, 7); break;
+      case 'air': ctx.moveTo(x, y - h * 1.18); ctx.lineTo(x + h * 1.05, y + h * 0.78); ctx.lineTo(x - h * 1.05, y + h * 0.78); ctx.closePath(); break;
+      case 'caster': ctx.moveTo(x, y - h * 1.25); ctx.lineTo(x + h * 1.1, y); ctx.lineTo(x, y + h * 1.25); ctx.lineTo(x - h * 1.1, y); ctx.closePath(); break;
+      case 'transport': ctx.moveTo(x - h * 1.4, y - h * 0.6); ctx.lineTo(x + h * 1.4, y - h * 0.6); ctx.lineTo(x + h * 1.05, y + h * 0.66); ctx.lineTo(x - h * 1.05, y + h * 0.66); ctx.closePath(); break;
+      case 'siege': ctx.moveTo(x - h, y + h); ctx.lineTo(x - h, y - h * 0.2); ctx.lineTo(x, y - h * 1.2); ctx.lineTo(x + h, y - h * 0.2); ctx.lineTo(x + h, y + h); ctx.closePath(); break;
+      case 'building': ctx.moveTo(x - h, y - h); ctx.lineTo(x + h, y - h); ctx.lineTo(x + h, y + h); ctx.lineTo(x - h, y + h); ctx.closePath(); break;
+      default: ctx.moveTo(x - h, y - h * 0.86); ctx.lineTo(x + h, y - h * 0.86); ctx.lineTo(x + h, y + h * 0.86); ctx.lineTo(x - h, y + h * 0.86); ctx.closePath(); break;
+    }
+  },
+  // The owner's colour, lifted the same way the rim pass lifts it and for the same reason: a saturated
+  // team colour at nine pixels on top of ground of a similar value is a smudge, and what makes an icon
+  // read is that it is LIGHTER than everything around it, not that it is coloured.
+  iconCol(owner) {
+    const cache = this._icoRGB || (this._icoRGB = {});
+    let c = cache[owner];
+    if (!c) {
+      const h = String((G.players[owner] && G.players[owner].color) || '#ffffff').replace('#', '');
+      const r = parseInt(h.slice(0, 2), 16) || 0, g = parseInt(h.slice(2, 4), 16) || 0, b = parseInt(h.slice(4, 6), 16) || 0;
+      c = cache[owner] = 'rgb(' + Math.min(255, r + 46) + ',' + Math.min(255, g + 46) + ',' + Math.min(255, b + 46) + ')';
+    }
+    return c;
+  },
+  drawIcons(ctx, list) {
+    const z = this.zoom;
+    // Sparse by owner, two layers each: ground and buildings under, air over. Air over ground is the
+    // only z-ordering that carries meaning at this scale, and each extra layer is one more fill.
+    const bins = this._icBins || (this._icBins = []);
+    for (const b of bins) if (b) { b[0].length = 0; b[1].length = 0; }
+    const det = this._icDet || (this._icDet = []), hurt = this._icHurt || (this._icHurt = []);
+    det.length = 0; hurt.length = 0;
+    let n = 0;
+    for (const u of list) {
+      const d = u.def;
+      if (d.larva || d.egg || d.mine || d.notUnit || u.burrowed || u._alpha < 0.3) continue;
+      const h = this.iconH(u);
+      const x = u.isBuilding && !u.lifted ? u.tx * TILE + d.w * TILE / 2 : (u._x !== undefined ? u._x : u.x);
+      const y = u.isBuilding && !u.lifted ? u.ty * TILE + d.h * TILE / 2 : (u._y !== undefined ? u._y : u.y);
+      const e = { x, y, h, role: this.roleOf(d) };
+      let b = bins[u.owner]; if (!b) b = bins[u.owner] = [[], []];
+      b[(d.fly || u.lifted) ? 1 : 0].push(e); n++;
+      if (d.det) det.push(e);
+      if (!u.isBuilding && u.hp < u.maxHp * RIM_HURT) hurt.push(e);
+    }
+    if (!n) return;
+    ctx.save();
+    // One dark path under all of them. Stroked wide and then covered by the fills, so what survives is
+    // a one-pixel halo -- an outline, drawn once for the whole screen instead of once per icon.
+    ctx.beginPath();
+    for (const b of bins) if (b) for (const layer of b) for (const e of layer) this.iconPath(ctx, e.x, e.y, e.h, e.role);
+    ctx.strokeStyle = 'rgba(4,6,10,0.85)'; ctx.lineWidth = 2.6 / z; ctx.lineJoin = 'round'; ctx.stroke();
+    for (let layer = 0; layer < 2; layer++) for (let o = 0; o < bins.length; o++) {
+      const b = bins[o]; if (!b || !b[layer].length) continue;
+      ctx.beginPath();
+      for (const e of b[layer]) this.iconPath(ctx, e.x, e.y, e.h, e.role);
+      ctx.fillStyle = this.iconCol(o); ctx.fill();
+    }
+    if (hurt.length) {
+      ctx.beginPath();
+      for (const e of hurt) { ctx.moveTo(e.x + e.h * 1.75, e.y); ctx.arc(e.x, e.y, e.h * 1.75, 0, 7); }
+      ctx.strokeStyle = 'rgba(255,70,60,0.85)'; ctx.lineWidth = 1.8 / z; ctx.stroke();
+    }
+    if (det.length) {
+      ctx.beginPath();
+      for (const e of det) { ctx.moveTo(e.x + e.h * 0.34, e.y); ctx.arc(e.x, e.y, e.h * 0.34, 0, 7); }
+      ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fill();
+    }
+    ctx.restore();
+  },
+  // ---------------- day and night ----------------
+  // The other half of wave one's idea 19: the weather shipped, the light did not. G.daylight is the
+  // simulation's clock, 1 at noon and 0 at the bottom of the night.
+  //
+  // CODED FOR IT NOT BEING THERE. The sim half may not have landed, an older save may not carry it,
+  // and a mission may not run a clock at all -- so anything that is not a finite number in 0..1 reads
+  // as broad daylight and this whole pass costs one comparison and returns.
+  //
+  // The wash is a single source-over fill and that is not a shortcut, it is the effect: blending the
+  // scene toward a constant dark blue darkens it, tints it, AND compresses its range, which is the
+  // reduced contrast night actually has. A multiply would darken without lifting the blacks, and a
+  // night where the shadows are blacker than the day's is a night nobody has ever seen.
+  //
+  // The lights are holes punched in that wash with destination-out, which is why the pass composes
+  // into a layer rather than straight onto the scene -- the same reason and the same machinery the
+  // sandstorm's safe zones use. A pool of light is ground that is simply less washed, which is what a
+  // pool of light IS; there is no additive pass, because the muzzle flashes, explosions and plasma
+  // that already draw with `lighter` become the bright part for free once everything around them is
+  // darker. Their alpha is lifted with the night for exactly that reason.
+  NIGHT_A: 0.62, NIGHT_SS: 0.5, NIGHT_HOT: 56, NIGHT_DIM: 72,
+  daylight() {
+    const d = (typeof G !== 'undefined' && G) ? G.daylight : undefined;
+    return (typeof d === 'number' && isFinite(d)) ? (d < 0 ? 0 : d > 1 ? 1 : d) : 1;
+  },
+  // 0 in daylight, 1 at the bottom of the night, and the only thing anything outside this section
+  // needs to know. Squared: the first third of the fade is barely visible, which is what dusk is.
+  night() { const k = 1 - this.daylight(); return k <= 0 ? 0 : k * k; },
+  nightLayer() {
+    const w = Math.max(1, Math.ceil(this.viewW * this.NIGHT_SS)), h = Math.max(1, Math.ceil(this.viewH * this.NIGHT_SS));
+    let cv = this.nightBuf;
+    if (!cv || cv.width !== w || cv.height !== h) { cv = this.nightBuf = document.createElement('canvas'); cv.width = w; cv.height = h; this.nightCtx = cv.getContext('2d'); }
+    const c = this.nightCtx; if (!c) return null;
+    c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, w, h);
+    return c;
+  },
+  // One soft disc, baked once and blitted with destination-out. Baked for the same reason the muzzle
+  // flash is: createRadialGradient per light per frame was 0.8 ms there and would be worse here.
+  lightSprite() {
+    if (this._lightCv) return this._lightCv;
+    const S = 64, cv = document.createElement('canvas'); cv.width = cv.height = S; const c = cv.getContext('2d');
+    if (c) {
+      const g = c.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+      g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.4, 'rgba(255,255,255,0.66)');
+      g.addColorStop(0.75, 'rgba(255,255,255,0.2)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      c.fillStyle = g; c.fillRect(0, 0, S, S);
+    }
+    return this._lightCv = cv;
+  },
+  // What on screen puts light on the ground, in two classes with separate caps. HOT is anything that
+  // just went off -- a gun, an explosion -- and DIM is anything that merely glows: a finished building
+  // with its lights on, a Protoss hull, a structure that is on fire. The split is a cap and a
+  // priority, because a 200-supply battle has more muzzle flashes in a frame than the pass can afford
+  // and those are exactly the ones worth keeping.
+  //
+  // Every field read here is one the draw pass already reads for something else -- u.lastFire drives
+  // the muzzle flash, u.done and u.hp drive the building art -- so nothing new is stored anywhere and
+  // nothing can leak back into the simulation.
+  nightLights(list) {
+    const hot = this._nlHot || (this._nlHot = []), dim = this._nlDim || (this._nlDim = []);
+    hot.length = 0; dim.length = 0;
+    const F = G.frame;
+    for (const u of list) {
+      if (u._alpha < 0.3) continue;
+      const d = u.def;
+      if (u.lastFire !== undefined && F - u.lastFire < MUZZLE_F * 3 && !d.worker && (d.gw || d.aw)) {
+        if (hot.length < this.NIGHT_HOT * 3) hot.push(u._x, u._y, u.r * 4.6);
+        continue;
+      }
+      if (dim.length >= this.NIGHT_DIM * 3) continue;
+      if (u.isBuilding && !u.lifted) { if (u.done) dim.push(u.tx * TILE + d.w * TILE / 2, u.ty * TILE + d.h * TILE / 2, Math.max(d.w, d.h) * TILE * (u.hp < u.maxHp * 0.34 ? 1.15 : 0.85)); }
+      else if (d.race === 'P' && !d.worker) dim.push(u._x, u._y, u.r * 2.6);
+    }
+    for (const e of G.effects) {
+      if (hot.length >= this.NIGHT_HOT * 3) break;
+      const k = e.kind;
+      if (k !== 'boom' && k !== 'bigboom' && k !== 'nuke' && k !== 'fire' && k !== 'storm') continue;
+      hot.push(e.x, e.y, (e.r || 14) * (k === 'nuke' ? 6 : k === 'bigboom' ? 4 : 2.6));
+    }
+    return [hot, dim];
+  },
+  drawNight(ctx, list) {
+    const k = this.night(); if (k <= 0.002) return;
+    const c = this.nightLayer();
+    if (!c) {   // no second canvas to punch holes in: the wash alone still reads as night
+      ctx.save(); this.base(ctx); ctx.fillStyle = 'rgba(11,17,44,' + (this.NIGHT_A * k).toFixed(3) + ')';
+      ctx.fillRect(0, 0, this.viewW, this.viewH); ctx.restore(); return;
+    }
+    const w = this.nightBuf.width, h = this.nightBuf.height;
+    c.fillStyle = 'rgb(11,17,44)'; c.fillRect(0, 0, w, h);
+    const s = this.NIGHT_SS * this.zoom;
+    c.setTransform(s, 0, 0, s, -this.camX * s, -this.camY * s);
+    if (c.globalCompositeOperation !== undefined) {
+      const [hot, dim] = this.nightLights(list), sp = this.lightSprite();
+      c.globalCompositeOperation = 'destination-out';
+      // Dim first and hot on top, so a gun going off inside a base still brightens the ground under it
+      // rather than being swallowed by the pool the base already has.
+      c.globalAlpha = 0.62;
+      for (let i = 0; i < dim.length; i += 3) c.drawImage(sp, dim[i] - dim[i + 2], dim[i + 1] - dim[i + 2], dim[i + 2] * 2, dim[i + 2] * 2);
+      c.globalAlpha = 1;
+      for (let i = 0; i < hot.length; i += 3) c.drawImage(sp, hot[i] - hot[i + 2], hot[i + 1] - hot[i + 2], hot[i + 2] * 2, hot[i + 2] * 2);
+      c.globalCompositeOperation = 'source-over';
+    }
+    ctx.save(); this.base(ctx); ctx.globalAlpha = this.NIGHT_A * k;
+    ctx.drawImage(this.nightBuf, 0, 0, w, h, 0, 0, this.viewW, this.viewH);
     ctx.restore();
   },
 
@@ -499,10 +841,10 @@ const Render = {
   // patch's footprint, not a circle centred on the sprite, because the sprite overhangs the tiles.
   drawResourceRing(ctx, r, alpha) {
     const cx = (r.x + r.w / 2) * TILE, cy = (r.y + r.h / 2) * TILE;
-    const rx = r.w * TILE * 0.62, ry = r.h * TILE * 0.72;
-    ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = '#5f5'; ctx.lineWidth = 2;
+    const rx = r.w * TILE * 0.62, ry = r.h * TILE * 0.72, z = this.zoom;
+    ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = '#5f5'; ctx.lineWidth = 2 / z;
     ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, 7); ctx.stroke();
-    ctx.globalAlpha = alpha * 0.45; ctx.lineWidth = 1;
+    ctx.globalAlpha = alpha * 0.45; ctx.lineWidth = 1 / z;
     ctx.beginPath(); ctx.ellipse(cx, cy, rx + 3, ry + 3, 0, 0, 7); ctx.stroke();
     ctx.restore();
   },
@@ -521,8 +863,10 @@ const Render = {
     } else {
       const s = this.resourceSprite('gas', r.amount > 0 ? 1 : 0);
       ctx.drawImage(s.cv, r.cx - s.W / 2, r.cy - s.H / 2);
-      // the vapour is the only part that moves, so it is the only part not baked
-      if (r.amount > 0 && (!r.building || !r.building.alive)) {
+      // The vapour is the only part that moves, so it is the only part not baked -- and it is four
+      // arcs per geyser, which is nothing at zoom 1 and is every unmined geyser on the map at once
+      // in the strategic view, where the plume is two pixels tall. Off below the icon threshold.
+      if (r.amount > 0 && (!r.building || !r.building.alive) && this.zoom >= ZOOM_ICON) {
         ctx.save(); ctx.globalCompositeOperation = 'lighter';
         for (let k = 0; k < 4; k++) { const t = ((G.frame / 50) + k / 4) % 1; ctx.fillStyle = 'rgba(160,255,140,' + (0.3 * (1 - t)).toFixed(3) + ')'; ctx.beginPath(); ctx.arc(r.cx + Math.sin(k * 2 + t * 6) * 11, r.cy - 6 - t * 42, 5 + t * 12, 0, 7); ctx.fill(); }
         ctx.restore();
@@ -697,8 +1041,11 @@ const Render = {
       // One gradient, baked once, blitted scaled. Building the gradient per flash per frame was 0.8 ms
       // at 490 units -- most of a battle is units that fired this frame, so "only when firing" is not
       // the small set it sounds like.
-      const fl = this.muzzleSprite(), a0 = ctx.globalAlpha;
-      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a0 * 0.8 * k;
+      // Brighter at night, and this is the whole of the "light pooling" idea from the flash's side: the
+      // darkness pass punches a hole in the ground under a firing unit and this puts the light in it.
+      // Clamped, because globalAlpha over 1 is silently 1 on some engines and an error on others.
+      const fl = this.muzzleSprite(), a0 = ctx.globalAlpha, nb = 1 + this.night() * 0.5;
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(1, a0 * 0.8 * k * nb);
       ctx.drawImage(fl, mx - rad, my - rad, rad * 2, rad * 2);
       ctx.globalAlpha = a0; ctx.globalCompositeOperation = 'source-over';
     }
@@ -844,7 +1191,7 @@ const Render = {
   // and the worker rally yellow, matching the flash the right-click gives.
   RALLY_G: '120,255,120', RALLY_W: '255,220,80',
   drawRallies(ctx) {
-    const seen = new Set();
+    const seen = new Set(), z = this.zoom;
     for (const b of UI.selection) {
       if (!b.alive || b.inside || seen.has(b.id)) continue; seen.add(b.id);
       for (const [r, col] of [[b.rally, this.RALLY_G], [b.rallyW, this.RALLY_W]]) {
@@ -853,15 +1200,15 @@ const Render = {
         const live = (r.target && r.target.alive) ? r.target : (r.gas && r.gas.alive ? r.gas : null);
         const tx = live ? live.x : r.x, ty = live ? live.y : r.y;
         ctx.save();
-        ctx.strokeStyle = 'rgba(' + col + ',0.5)'; ctx.lineWidth = 1.5; ctx.setLineDash([7, 5]);
+        ctx.strokeStyle = 'rgba(' + col + ',0.5)'; ctx.lineWidth = 1.5 / z; ctx.setLineDash([7 / z, 5 / z]);
         ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(tx, ty); ctx.stroke();
         ctx.setLineDash([]);
         const res = r.res || (r.gas && r.gas.geyser);
         if (res) {   // a ring round the patch's own footprint, the shape the acknowledgement flash uses
-          ctx.strokeStyle = 'rgba(' + col + ',0.85)'; ctx.lineWidth = 2;
+          ctx.strokeStyle = 'rgba(' + col + ',0.85)'; ctx.lineWidth = 2 / z;
           ctx.beginPath(); ctx.ellipse(res.cx, res.cy, res.w * TILE * 0.62, res.h * TILE * 0.85, 0, 0, 7); ctx.stroke();
         } else {     // otherwise a small flag, so a rally onto open ground is still findable
-          ctx.strokeStyle = 'rgba(' + col + ',0.9)'; ctx.fillStyle = 'rgba(' + col + ',0.35)'; ctx.lineWidth = 2;
+          ctx.strokeStyle = 'rgba(' + col + ',0.9)'; ctx.fillStyle = 'rgba(' + col + ',0.35)'; ctx.lineWidth = 2 / z;
           ctx.beginPath(); ctx.arc(tx, ty, 7, 0, 7); ctx.fill(); ctx.stroke();
           ctx.beginPath(); ctx.moveTo(tx, ty - 7); ctx.lineTo(tx, ty - 17); ctx.stroke();
         }
@@ -871,11 +1218,18 @@ const Render = {
   },
   drawSelection(ctx, u, sel) {
     const col = u.owner === G.human ? '#3fe83f' : G.allied(G.human, u.owner) ? '#f0e040' : '#ff3c3c';
-    ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = sel ? 1.5 : 1; ctx.globalAlpha = sel ? 0.95 : 0.5;
+    const z = this.zoom, icons = z < ZOOM_ICON;
+    // The ring is an interface element, so its WIDTH is in screen pixels rather than world ones -- a
+    // 1.5 px ring scaled to 0.3 px is a ring nobody can see, and a selection you cannot see is the one
+    // thing about zooming out that would make the game unplayable.
+    ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = (sel ? 1.5 : 1) / z; ctx.globalAlpha = sel ? 0.95 : 0.5;
     if (u.isBuilding && !u.lifted) { ctx.beginPath(); ctx.ellipse(u.tx * TILE + u.def.w * TILE / 2, u.ty * TILE + u.def.h * TILE / 2 + 6, u.def.w * TILE / 2 + 4, u.def.h * TILE / 2 + 2, 0, 0, 7); ctx.stroke(); }
+    else if (icons) { const h = this.iconH(u) * 1.7; ctx.beginPath(); ctx.ellipse(u._x || u.x, u._y || u.y, h, h * 0.72, 0, 0, 7); ctx.stroke(); }
     else { ctx.beginPath(); ctx.ellipse(u._x || u.x, (u._y || u.y) + u.r * 0.4, u.r + 3, (u.r + 3) * 0.5, 0, 0, 7); ctx.stroke(); }
     ctx.restore();
-    if (sel) { this.drawReload(ctx, u); this.drawBars(ctx, u); }
+    // Reload arcs, chevrons and bars are all a few world pixels tall; below the icon threshold they are
+    // a smear rather than a reading, and drawIcons already says the part of it that still carries.
+    if (sel && !icons) { this.drawReload(ctx, u); this.drawBars(ctx, u); }
   },
   // The reload arc. A unit's rate of fire was legible only as an effect -- flashes and recoil tell you
   // it HAS fired, never that it is about to. This is the other half: a ring that sweeps round as the

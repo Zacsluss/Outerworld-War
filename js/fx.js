@@ -133,9 +133,32 @@ const FX = {
     for (const p of ps) { if (!p.add) continue; const k = p.life / p.max; ctx.globalAlpha = Math.min(1, k * 1.4); const s = p.shrink ? p.size * (0.3 + k * 0.7) : p.size; if (p.kind === 'spark') { ctx.strokeStyle = `rgb(${p.col[0]},${p.col[1]},${p.col[2]})`; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 0.03, p.y - p.vy * 0.03); ctx.stroke(); } else { const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, s); g.addColorStop(0, `rgba(${p.col[0]},${p.col[1]},${p.col[2]},0.9)`); g.addColorStop(1, `rgba(${p.col[0]},${p.col[1]},${p.col[2]},0)`); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, s, 0, 7); ctx.fill(); } }
     ctx.restore();
   },
+  // How far the camera is pulled back, for the decal level of detail below. Defensive about Render for
+  // the same reason everything else in this file is defensive about Terrain and Atlas: fx.js is loaded
+  // before render.js in more than one harness, and a bare reference would take the draw pass with it.
+  zoomNow() { const z = (typeof Render !== 'undefined' && Render) ? Render.zoom : 1; return (typeof z === 'number' && z > 0 && isFinite(z)) ? z : 1; },
+  // Below this the decals stop being pictures and start being stains. It matches the zoom at which
+  // js/render.js swaps sprites for icons, deliberately: the two are the same judgement about what is
+  // still worth drawing, and having them disagree would put a fully detailed corpse under a nine-pixel
+  // icon of the unit that killed it.
+  LOD_Z: 0.5,
   drawDecals(ctx, inView, visNow) {
+    // Strategic zoom multiplies the world in view by up to twenty, so every decal on the field clears
+    // the cull at once -- and a corpse is a full SPRITE BLIT while a scorch builds a fresh radial
+    // gradient, which is the exact cost the muzzle flash was moved out of the draw loop to avoid. At
+    // the zoom where a corpse is two pixels across, both are paid for nothing. So below LOD_Z they
+    // collapse to flat fills and the corpses are dropped: the ground still remembers where the fight
+    // was, which is the whole of what reads at that scale.
+    const lod = this.zoomNow() < this.LOD_Z;
     for (const d of this.decals) {
       if (!inView(d.x, d.y, d.r + 20)) continue; const a = 1 - d.t / d.max;
+      if (lod) {
+        if (d.kind === 'corpse' || d.kind === 'wreck') continue;
+        ctx.globalAlpha = a * (d.kind === 'blood' ? 0.6 : 0.5);
+        ctx.fillStyle = d.kind === 'blood' ? '#5a0f1c' : '#141008';
+        ctx.beginPath(); ctx.ellipse(d.x, d.y, d.r * 0.8, d.r * 0.5, 0, 0, 7); ctx.fill();
+        ctx.globalAlpha = 1; continue;
+      }
       if (d.kind === 'scorch') { ctx.globalAlpha = a * 0.6; const g = ctx.createRadialGradient(d.x, d.y, 1, d.x, d.y, d.r); g.addColorStop(0, 'rgba(10,8,6,0.9)'); g.addColorStop(0.7, 'rgba(20,16,12,0.5)'); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, 7); ctx.fill(); }
       else if (d.kind === 'blood') { ctx.globalAlpha = a * 0.75; ctx.fillStyle = '#5a0f1c'; for (let k = 0; k < 5; k++) { const ang = d.seed * 7 + k * 1.3, dd = (k ? d.r * 0.5 : 0) * ((d.seed * (k + 1)) % 1 + 0.5); ctx.beginPath(); ctx.ellipse(d.x + Math.cos(ang) * dd, d.y + Math.sin(ang) * dd * 0.6, d.r * (k ? 0.35 : 0.7), d.r * (k ? 0.25 : 0.45), ang, 0, 7); ctx.fill(); } }
       else if (d.kind === 'corpse' || d.kind === 'wreck') { const def = DATA.all[d.def]; if (!def) continue; const fake = { def, owner: d.owner, r: def.r || 10, sieged: false }; const age = G.frame - d.born; const k = Math.min(1, age / 12);
