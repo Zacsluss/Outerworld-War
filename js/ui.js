@@ -84,7 +84,7 @@ const UI = {
     const hp = G.players[G.human]; Render.camX = hp.startX - Render.viewWorldW() / 2; Render.camY = hp.startY - Render.viewWorldH() / 2 + 40; this.clampCam();
     const hall = G.units.find(u => u.owner === G.human && u.isBuilding); if (hall) this.select([hall]);
     document.getElementById('menu').style.display = 'none'; document.getElementById('game').style.display = 'block';
-    this.running = true; this.lastT = performance.now(); this.accum = 0; this.lastR = performance.now();
+    this.running = true; this.menuCodex = false; this.lastT = performance.now(); this.accum = 0; this.lastR = performance.now();
     if (!this._loop) { this._loop = t => this.loop(t); requestAnimationFrame(this._loop); }
     if (!this.simTimer) this.simTimer = setInterval(() => this.simStep(), 1000 / 60);
   },
@@ -120,6 +120,7 @@ const UI = {
   },
   loop(t) {
     requestAnimationFrame(this._loop);
+    if (this.menuCodex) { this.drawMenuCodex(); return; }   // the main-menu codex; see openCodexFromMenu
     if (!this.running) return;
     const dt = Math.min(0.1, (t - this.lastR) / 1000); this.lastR = t;
     const step = 1 / (TPS * this.SPEEDS[this.speedIdx]);
@@ -784,24 +785,37 @@ const UI = {
   menuClick(x, y) { for (const r of this.menuRects || []) if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) { r.fn(); return; } },
   // The codex, opened from the main menu where there is no game. Two things stand in the way and both
   // are invisible from the button's side. UI.loop returns early unless `running`, and `running` only
-  // becomes true when a match starts -- so before the first game there is no render loop at all and
-  // nothing would ever call Codex.draw. And #menu is `position:absolute; inset:0`, so leaving it
-  // displayed paints a full-screen gradient over the canvas the codex draws on. Hence a loop of its
-  // own that draws the codex and nothing else, and a swap of the two divs that undoes itself when the
-  // codex closes. Render.frame is deliberately NOT called: it reads G, and there is no G yet.
+  // becomes true when a match starts -- so before the first game nothing would ever call Codex.draw.
+  // And #menu is `position:absolute; inset:0`, so leaving it displayed paints a full-screen gradient
+  // over the canvas the codex draws on.
+  //
+  // Drawn from inside UI.loop rather than from a private requestAnimationFrame chain of its own. The
+  // first version did have its own loop and it works, but it means the app has two rAF chains that
+  // must agree about who owns the canvas, and the codex's one has to be started, stopped and not
+  // leaked. UI.loop already self-schedules forever -- it re-requests before it checks `running` -- so
+  // there is exactly one chain, and menuCodex is a branch in it taken ahead of the `running` gate.
   openCodexFromMenu() {
     if (typeof Codex === 'undefined') return;
-    const menu = document.getElementById('menu'), game = document.getElementById('game');
-    menu.style.display = 'none'; game.style.display = 'block'; Render.resize(); Codex.open();
-    const tick = () => {
-      if (!Codex.isOpen()) { game.style.display = 'none'; menu.style.display = 'flex'; return; }
-      const c = Render.ctx; c.setTransform(Render.dpr, 0, 0, Render.dpr, 0, 0);
-      c.fillStyle = '#05070a'; c.fillRect(0, 0, Render.W, Render.H);
-      Codex.draw(c); requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
+    document.getElementById('menu').style.display = 'none';
+    document.getElementById('game').style.display = 'block';
+    Render.resize(); Codex.open(); this.menuCodex = true;
+    if (!this._loop) { this._loop = t => this.loop(t); requestAnimationFrame(this._loop); }   // no game has run yet, so the chain does not exist
   },
-  toMenu() { this.running = false; this.menu = null; this.loading = null; if (this.refreshMapList) this.refreshMapList(); if (typeof Net !== 'undefined' && Net.active) Net.disconnect(); if (typeof Music !== 'undefined') Music.stop(); document.getElementById('menu').style.display = 'flex'; document.getElementById('game').style.display = 'none'; const ab = document.getElementById('autosaveBtn'); if (ab) ab.style.display = Replay.hasAutosave() ? 'block' : 'none'; },
+  // One frame of the menu codex. Render.frame is deliberately not called: it reads a G that does not
+  // exist yet. Closing the codex is what puts the menu back, so Escape, F3 and the panel's own close
+  // button all work without any of them knowing this mode exists.
+  drawMenuCodex() {
+    if (!Codex.isOpen()) {
+      this.menuCodex = false;
+      document.getElementById('game').style.display = 'none';
+      document.getElementById('menu').style.display = 'flex';
+      return;
+    }
+    const c = Render.ctx; c.setTransform(Render.dpr, 0, 0, Render.dpr, 0, 0);
+    c.fillStyle = '#05070a'; c.fillRect(0, 0, Render.W, Render.H);
+    Codex.draw(c);
+  },
+  toMenu() { this.running = false; this.menuCodex = false; this.menu = null; this.loading = null; if (this.refreshMapList) this.refreshMapList(); if (typeof Net !== 'undefined' && Net.active) Net.disconnect(); if (typeof Music !== 'undefined') Music.stop(); document.getElementById('menu').style.display = 'flex'; document.getElementById('game').style.display = 'none'; const ab = document.getElementById('autosaveBtn'); if (ab) ab.style.display = Replay.hasAutosave() ? 'block' : 'none'; },
 };
 
 // ---------------- boot ----------------
