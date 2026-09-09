@@ -545,7 +545,7 @@ class AI {
       // Repair. SCVs never repaired anything, so a damaged tank line, a bunker or a cracked building
       // simply stayed damaged -- the one Terran mechanic that is free and was going entirely unused.
       else if (u.def.worker && p.race === 'T' && u.order.type === 'idle' && this.turn(u.id, 4)) {
-        const hurt = this.mine(o => o !== u && o.hp < o.maxHp * 0.85 && (o.isBuilding || o.def.mech) && !o.def.larva && distPt(o.x, o.y, u.x, u.y) < 12 * TILE)[0];
+        const hurt = this.mine(o => o !== u && o.hp < o.maxHp * 0.85 && (o.isBuilding || o.def.mech) && !o.def.larva && !o.def.mine && o.def.time && o.def.min !== undefined && distPt(o.x, o.y, u.x, u.y) < 12 * TILE)[0];
         if (hurt) u.setOrder({ type: 'repair', target: hurt });
       }
       else if (d === 'queen' && u.energy >= 150 && this.turn(u.id, 4)) {

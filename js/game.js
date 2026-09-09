@@ -364,11 +364,17 @@ const G = {
     // it, and healing, repair and Zerg regeneration all cap at the lower number without knowing about
     // this at all -- they already clamp to maxHp. Floored at 40% of the original so a veteran is
     // weathered rather than made of paper. Buildings are exempt: repair is supposed to make them whole.
-    if (amt > 0 && t.hp > 0 && !t.isBuilding && !t.def.larva && !t.def.egg) {
-      const floor = t.def.hp * 0.4;
-      if (t.maxHp > floor) { t.maxHp = Math.max(floor, t.maxHp - amt * 0.1); if (t.hp > t.maxHp) t.hp = t.maxHp; }
-    }
+    this.scar(t, amt);
     if (t.hp <= 0) this.kill(t, src);
+  },
+  // Scarring, shared by both damage paths. It lived inside damageRaw and damage() does not call
+  // damageRaw -- it subtracts hp itself -- so scarring only ever fired from spells, and a thirty-thousand
+  // frame bug scan across six matchups found not one scarred unit in any of them. The test passed the
+  // whole time, because it called damageRaw directly.
+  scar(t, amt) {
+    if (!(amt > 0) || t.hp <= 0 || t.isBuilding || t.def.larva || t.def.egg) return;
+    const floor = t.def.hp * 0.4;
+    if (t.maxHp > floor) { t.maxHp = Math.max(floor, t.maxHp - amt * 0.1); if (t.hp > t.maxHp) t.hp = t.maxHp; }
   },
   damage(t, dmg, type, src, opts = {}) {
     if (!t.alive || t.fx.stasis > 0) return 0; if (this.cheats.god && this.players[t.owner].human) return 0;
@@ -384,7 +390,7 @@ const G = {
     // nothing that was going anywhere in the first place.
     if (src && src.suppresses && !t.isBuilding && !t.def.larva && !t.def.egg) t.fx.suppress = 24;
     if (d < 0.5) d = 0.5;
-    t.hp -= d; this.onHit(t, src);
+    t.hp -= d; this.scar(t, d); this.onHit(t, src);
     if (t.hp <= 0) this.kill(t, src);
     return d;
   },

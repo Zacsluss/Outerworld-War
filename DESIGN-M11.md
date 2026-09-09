@@ -117,3 +117,55 @@ opened once rather than three times.
   with tech, and that should be a property of the map, not a global rule.
 - **23** is difficulty AND style, not style instead of difficulty. Turtle, rusher, expander, harasser,
   each at easy/normal/hard.
+
+---
+
+# Wave three
+
+Chosen 2026-09-09 from a brainstorm framed against SC2, Beyond All Reason and Supreme Commander. Ten
+new items; the rest of that list either duplicated wave one and two or was declined.
+
+| # | Idea | Touches | Risk |
+|---|---|---|---|
+| W3-19 | Sound as information -- a distinct voice per weapon class, so off-screen fights are legible by ear | audio | low |
+| W3-21 | No refunds, **on buildings only** -- cancelling construction returns nothing | sim, ui | low |
+| W3-5 | Attack-move that prefers what threatens *you* over what is merely nearest | sim | medium |
+| W3-18 | Weight -- recoil, settling, tracks, mass in how things start and stop | render, sim | medium |
+| W3-9 | **Right-click-drag line formation**, as Beyond All Reason has it: drag a line, units space evenly along it | ui, sim | medium |
+| W3-2 | Formations that hold their shape over distance | sim | medium |
+| W3-6 | Fights you can read at scale -- silhouette and role legibility with hundreds of units | render | medium |
+| W3-4 | Transport ferry routes that run themselves | sim, ui | medium |
+| W3-24 | Branching replay: take control mid-replay and play the what-if | ui | medium |
+| W3-1 | **Strategic zoom** -- seamless zoom to whole-map, icons replacing sprites | render, ui | **high** |
+
+## Declined or already covered
+
+- **W3-7 legible economy** and **W3-8 tiers that do not obsolete** -- already true. Two resources, visible
+  income, no hidden ratios; the tech tree is Brood War-shaped so tier 1 stays relevant. The second is
+  worth *verifying* rather than assuming, so a duel check for tier-1 contribution at high supply is
+  queued with the balance work.
+- **W3-11 facing**, **W3-12 veterancy with scars**, **W3-13 suppression** -- built already this milestone.
+- **W3-3 orders that outlive the worker**, **W3-14 weather as tactical layer**, **W3-17 salvage** -- out.
+  Note that wave one's idea 19 (weather and day/night) is still IN: it was chosen with full context and
+  W3-14 was a restatement, so the earlier decision stands.
+- **W3-10 terrain memory**, **W3-15 destructible chokes**, **W3-16 neutral life**, **W3-20 diegetic UI**,
+  **W3-22 AI personalities**, **W3-23 skirmish setup** -- all already queued in waves one and two.
+- **W3-25 codex** -- deferred pending a look at the layout. The shape proposed: a CODEX button beside
+  SETTINGS on the main menu and F3 in game, opening one full-screen panel with race tabs, a unit list,
+  and a detail pane carrying the sprite, the stats, what builds it, what it needs, and a live damage
+  calculator that takes two units and shows real damage per hit including armour, size, upgrades and
+  facing. Its purpose is to make invisible depth visible -- suppression, veterancy and directional
+  armour currently have no surface at all.
+
+## Order for wave three
+
+Slotted into the existing plan rather than run after it: the cheap ones go first, the two that touch
+movement (W3-9, W3-2) go together, and strategic zoom goes last of the render work because every other
+render change has to land under it.
+
+1. **W3-21** no building refunds, then **W3-19** weapon-class audio. Both are contained.
+2. **W3-5** attack-move target preference.
+3. **W3-9** drag-line formation and **W3-2** shape-holding formations, together: one pass over ordering.
+4. **W3-18** weight, then **W3-6** legibility at scale.
+5. **W3-4** ferry routes, then **W3-24** branching replay.
+6. **W3-1** strategic zoom, last, after every other render change.
