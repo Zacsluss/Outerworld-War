@@ -210,21 +210,20 @@ scale (6).
 
 ## Still open
 
-| | |
-|---|---|
-| **24 cut the hard-counter matrix** | wave one, last mechanic by design -- it invalidates every balance number |
-| **5 fog that lies** | wave one |
-| **1 attrition economy**, **9 terrain destruction** (unit-facing half), **15 diegetic per-race UI** | wave one |
-| **19 day/night** | the weather half shipped; the light half did not |
-| **14 moral objectives**, then **13 campaign attrition** | wave one, last |
-| **22 skirmish setup screen** | wave two -- the surface for AI styles, map sizes and derelicts |
-| **19 vertical layers** | wave two, high risk |
-| **1 neutral hostile life**, **8 capturable derelicts** | wave two, last: both need a third owner |
-| **4 ferry routes**, **24 branching replay**, **1 strategic zoom** | wave three |
+**Nothing.** All 37 accepted items across the three waves are built, tested and on `m10-overnight`.
+The last of them, **24 cut the hard-counter matrix**, landed on 2026-09-09 after everything else, by
+design -- it invalidates every balance number and had to arrive on top of the rest of the work that
+also does.
+
+What that leaves is not features but measurement, below, plus the ordinary consequence of a milestone
+this size: forty test suites pass and the game has not yet been played by a person for long enough to
+find what forty test suites cannot.
 
 ## Owed measurements
 
-- **A full balance run.** Suspended by design until 24 lands. Every number in HANDOFF.md is stale: the
+- **A full balance run.** Item 24 has now landed, so the block on measuring is gone -- but the run
+  itself is still gated on an explicit instruction, and is to be double-checked when one is given.
+  Every number in HANDOFF.md is stale. Every number in HANDOFF.md is stale: the
   AI has changed twice over (abilities, fog of war), and supply, veterancy, armour facing and
   suppression all move it.
 - **Protoss sits on `citadel_of_adun` from minute four to minute eight** at supply 139 and still has no
