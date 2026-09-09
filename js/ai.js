@@ -38,10 +38,157 @@ const AI_RESEARCH = {
   Z: ['metabolic', 'flyW', 'lurker_aspect', 'carapace', 'meleeW', 'grooved', 'muscular', 'missW', 'flyA', 'burrow_tech', 'pneumatized', 'anabolic', 'chitinous', 'adrenal', 'consume_tech', 'plague_tech', 'suppress_hyd', 'suppress_air', 'spawn_broodling_tech', 'ensnare_tech', 'ventral_sacs', 'antennae', 'gamete', 'metasynaptic'],
   P: ['singularity', 'gW', 'leg_enhancements', 'gA', 'psi_storm_tech', 'shields', 'scarab_damage', 'gravitic_drive', 'airW', 'carrier_capacity', 'stasis_tech', 'khaydarin_amulet', 'airA', 'recall_tech', 'suppress_gate', 'suppress_bay', 'maelstrom_tech', 'mind_control_tech', 'hallucination_tech', 'disruption_web_tech', 'reaver_capacity', 'gravitic_boosters', 'sensor_array', 'apial_sensors', 'gravitic_thrusters', 'argus_talisman', 'argus_jewel', 'khaydarin_core'],
 };
+// Derived style tables, built once on first use from the deltas in AI.styleDeltas() and never edited
+// afterwards. It is a cache of a pure function of two constants, so a rejoining client, a replay in a
+// fresh process and the game that recorded it all build the same thing -- which is the only property
+// the simulation needs from it.
+const AI_STYLE_CACHE = {};
 class AI {
-  constructor(p, diff) {
-    this.p = p; this.diff = diff; this.step = 0; this.pending = {}; this.lastThink = 0; this.lastArmy = 0; this.state = 'gather'; this.target = null; this.attackN = 0; this.attackThreshold = (diff === 'easy' ? 40 : diff === 'hard' ? 24 : 30) + 4; this.waves = 0; this.scouted = false; this.dropOp = null; this.lastDrop = 0;
+  constructor(p, diff, style) {
+    // Style and difficulty are orthogonal. Difficulty sets the base numbers -- how much army before the
+    // first attack, how often the AI thinks at all -- and a style shifts them, so every style is
+    // playable at every difficulty and the ordering between styles is the same at all three.
+    //
+    // Callers that pass two arguments get 'standard', which is a zero delta in every field and plays
+    // exactly as this AI played before styles existed. That matters: every balance figure in HANDOFF.md
+    // was measured against it, and a default with anything in it would silently void all of them.
+    //
+    // Nothing constructs an AI with a third argument yet (wave two's skirmish setup screen is where the
+    // player will choose one), so a style may also be named on the player options, which is where it can
+    // arrive without editing js/game.js. G.setup is those options; Replay.data() saves them and G.init
+    // is handed them again on load, so a styled game replays as itself with no second place to keep the
+    // setting and no new field for the snapshot to carry.
+    const opt = (typeof G !== 'undefined' && G.setup && G.setup.players && G.setup.players[p.id]) || {};
+    const want = style || opt.style;
+    this.style = this.styleDeltas()[want] ? want : 'standard';
+    this.p = p; const st = this.sty();       // p first: sty() is per race as well as per style
+    this.diff = diff; this.step = 0; this.pending = {}; this.lastThink = 0; this.lastArmy = 0; this.state = 'gather'; this.target = null; this.attackN = 0; this.attackThreshold = Math.max(10, (diff === 'easy' ? 40 : diff === 'hard' ? 24 : 30) + 4 + (st.atk || 0)); this.waves = 0; this.scouted = false; this.dropOp = null; this.lastDrop = 0;
     this.thinkEvery = diff === 'easy' ? 72 : diff === 'hard' ? 20 : 32; this.scriptIdx = 0; this.lastExpand = 0; this.rally = null; this.startedAttack = 0; this.reserveMin = 0; this.reserveGas = 0;
+  }
+  // ---------------- play styles ----------------
+  // A style is a DELTA over the three tables at the top of this file, not a fourth copy of them. Six
+  // shapes of delta, and everything else is a plain number some rule below multiplies or adds:
+  //   add    extra build steps, merged into the race's script and re-sorted
+  //   early  pull a step the script already has forward to this supply
+  //   comp   multiply one unit's share of the army supply, in every matchup variant at once
+  //   front  research to move to the head of the list
+  //   res    keep only this many entries of the research list -- "minimal tech"
+  //   race   override any of the above for one race, because one style has to (see styleFor)
+  //   atk       how much army supply before the first attack (economy(), army())
+  //   waveGrow  how much more each wave after it wants
+  //   reinforce how much has to gather before it is sent after the wave
+  //   regroup   seconds spent rebuilding after a retreat
+  //   workers   multiplier on the worker cap
+  //   wkFloor   how many workers are free of the army gate
+  //   wkGate    how much army the gate then wants per worker
+  //   halls     bases wanted, relative to the clock
+  //   expandT   how fast that clock and the expansion cooldown run
+  //   def       static defence wanted at each base past the first
+  //   dropT     how soon and how often it drops
+  //   under     how many buildings the script may have going up at once, over the usual two
+  //
+  // This table lives inside a method rather than beside AI_SCRIPTS for one reason, and it is worth
+  // stating because the shape looks odd otherwise: js/build.js stamps simulation data tables BY NAME
+  // ('AI_SCRIPTS', 'AI_COMP', 'AI_RESEARCH') and separately hashes the source text of everything on
+  // AI.prototype. A new global would be simulation data the build stamp cannot see, so tuning a style
+  // would not move the stamp, and a save recorded before the tune would load and drift quietly -- the
+  // exact failure js/build.js exists to prevent. A table inside a method is covered for free.
+  styleDeltas() {
+    return {
+      standard: {},
+      // Defensive buildings early, a bigger army before it commits, and a base count that lags the clock.
+      turtle: {
+        atk: 20, waveGrow: 10, halls: -1, expandT: 1.2, def: 2.5, workers: 1.1, under: 1,
+        early: { T: { engineering_bay: 18 }, Z: { evolution_chamber: 20 }, P: { forge: 13 } }, // the thing each race's static defence needs before it can have any
+        add: {
+          T: [[13, 'bunker'], [21, 'bunker'], [26, 'missile_turret'], [30, 'missile_turret']],
+          Z: [[14, 'creep_colony'], [22, 'creep_colony'], [26, 'creep_colony'], [33, 'creep_colony']],
+          P: [[16, 'photon_cannon'], [21, 'photon_cannon'], [30, 'photon_cannon'], [33, 'shield_battery']],
+        },
+        comp: { siege_tank: 1.5, goliath: 1.3, vulture: 0.6, hydralisk: 1.3, zergling: 0.6, mutalisk: 0.7, dragoon: 1.3, high_templar: 1.5, zealot: 0.7 },
+      },
+      // Production before tech, and a first attack at about two thirds of the usual army. `res` is the
+      // whole of "minimal tech": the research list is a priority order, so truncating it buys the cheap
+      // early upgrades and nothing else, without removing a single building from the tech tree.
+      rusher: {
+        atk: -12, waveGrow: 5, workers: 0.85, wkFloor: -2, wkGate: 1.6, res: 6, expandT: 1.25, def: 0.5,
+        early: { T: { barracks: 9, academy: 16 }, Z: { spawning_pool: 9 }, P: { gateway: 9 } },
+        add: { T: [[12, 'barracks']], Z: [[16, 'hatchery']], P: [[12, 'gateway']] },
+        comp: {
+          marine: 1.5, firebat: 1.4, medic: 1.2, vulture: 1.5, siege_tank: 0.7, science_vessel: 0.5, valkyrie: 0.5, battlecruiser: 0.4,
+          zergling: 2, hydralisk: 1.2, ultralisk: 0.5, defiler: 0.5, queen: 0,
+          zealot: 2, dragoon: 1.2, high_templar: 0.6, reaver: 0.6, carrier: 0.4, arbiter: 0.4,
+        },
+      },
+      // More town halls, sooner, and the workers to fill them: the worker cap goes up, the floor below
+      // which the army gate does not apply goes up with it, and the attack waits.
+      expander: {
+        atk: 6, halls: 1, expandT: 0.6, workers: 1.15, wkFloor: 4, wkGate: 0.5, under: 1,
+        race: { Z: { expandT: 1, halls: 0 } },   // see styleFor(): Zerg expands hard for free
+        early: { T: { command_center: 18 }, Z: { hatchery: 10 }, P: { nexus: 16 } },
+        // Zerg gets the earlier first hatchery and nothing else. A hatchery is a Zerg's production as
+        // well as its expansion, so the shared expansion rules already push it hard: with a step here
+        // too it reached thirteen hatcheries and twenty army supply at ten minutes, which is not a play
+        // style but a caricature of one.
+        add: { T: [[28, 'command_center']], P: [[26, 'nexus']] },
+      },
+      // Smaller waves, more of them, and an army that can leave: mobile units up, siege units down,
+      // speed upgrades first, and twice as many drops. waveGrow is the important one -- the second wave
+      // normally wants eight more supply than the first, and this one barely waits at all.
+      harasser: {
+        atk: -6, waveGrow: 3, reinforce: 8, regroup: 14, dropT: 0.5, def: 0.75, workers: 1.05,
+        front: { T: ['ion_thrusters', 'u238'], Z: ['metabolic', 'pneumatized'], P: ['leg_enhancements', 'gravitic_drive'] },
+        early: { T: { starport: 30 }, Z: { spire: 22 }, P: { citadel_of_adun: 18 } },
+        comp: {
+          vulture: 3, wraith: 2, dropship: 2.5, goliath: 0.8, siege_tank: 0.5, valkyrie: 0.7, battlecruiser: 0.5,
+          zergling: 2, mutalisk: 2, scourge: 1.5, hydralisk: 0.8, ultralisk: 0.4,
+          dark_templar: 3, corsair: 2, scout: 2, shuttle: 2.5, dragoon: 0.8, reaver: 0.5, carrier: 0.4,   // not the zealot: it is the default thing a gas-starved Protoss builds anyway, and boosting it says nothing
+        },
+      },
+    };
+  }
+  // The delta for a style AND a race. `race` is a shallow override of everything above it, and it exists
+  // because one of these styles does mean something different for one race: a Zerg town hall is also its
+  // production building and its larva, so Zerg already expands hard for reasons that have nothing to do
+  // with expanding. Given the same expansion clock as Terran, the expander Zerg reached fourteen
+  // hatcheries at ten minutes with a spawning pool and nothing else -- no lair, no den, no evolution
+  // chamber. That is not a play style, it is an amputated tech tree, and it is the M10 failure with a
+  // different cause.
+  styleFor(style, race) {
+    const k = 'D' + style + race; if (AI_STYLE_CACHE[k]) return AI_STYLE_CACHE[k];
+    const d = this.styleDeltas()[style] || {};
+    return AI_STYLE_CACHE[k] = Object.assign({}, d, (d.race || {})[race] || {});
+  }
+  sty() { return this.styleFor(this.style, this.race); }
+  // The build order for a race under a style. THE invariant is that the result is in ascending supply
+  // order -- see the comment above AI_SCRIPTS for what one inverted pair costs -- so added and moved
+  // steps are merged and the whole thing is re-sorted rather than spliced in by hand. Array sort has
+  // been required to be stable since ES2019, so two steps at the same supply keep the order written:
+  // the script's own first, then the style's. test/aistyles.js asserts the ordering for every style and
+  // every race instead of trusting this paragraph.
+  styleScript(race, style) {
+    const k = 'S' + style + race; if (AI_STYLE_CACHE[k]) return AI_STYLE_CACHE[k];
+    const st = this.styleFor(style, race), s = AI_SCRIPTS[race].map(x => [x[0], x[1]]);
+    const early = st.early && st.early[race];
+    if (early) for (const id of Object.keys(early)) { const step = s.find(x => x[1] === id); if (step && early[id] < step[0]) step[0] = early[id]; } // only ever earlier, and only a step the script already has
+    for (const x of (st.add && st.add[race]) || []) s.push([x[0], x[1]]);
+    s.sort((a, b) => a[0] - b[0]);
+    return AI_STYLE_CACHE[k] = s;
+  }
+  // Weights are a share of army supply and only ever divide, so a fractional one is meaningful and there
+  // is nothing to round to. A multiplier of exactly 0 removes the unit: production() skips on `!wgt`.
+  styleComp(key, style) {
+    const k = 'C' + style + key; if (AI_STYLE_CACHE[k]) return AI_STYLE_CACHE[k];
+    const mul = this.styleFor(style, key[0]).comp;
+    return AI_STYLE_CACHE[k] = AI_COMP[key].map(([id, w]) => [id, mul && mul[id] !== undefined ? w * mul[id] : w]);
+  }
+  styleResearch(race, style) {
+    const k = 'R' + style + race; if (AI_STYLE_CACHE[k]) return AI_STYLE_CACHE[k];
+    const st = this.styleFor(style, race); let r = AI_RESEARCH[race].slice();
+    const front = st.front && st.front[race];
+    if (front) r = front.filter(id => r.includes(id)).concat(r.filter(id => !front.includes(id)));
+    if (st.res) r = r.slice(0, st.res);
+    return AI_STYLE_CACHE[k] = r;
   }
   // money set aside for the building the script/expansion logic is waiting to afford; workers, supply and gas ignore it
   afford(min, gas) { const m = this.p.minerals, g = this.p.gas; if (min && this.reserveMin && m >= this.reserveMin * 0.4 && m - this.reserveMin < min) return false; if (gas && this.reserveGas && g >= this.reserveGas * 0.4 && g - this.reserveGas < gas) return false; return m >= min && g >= gas; } // once 40% of the target is banked, stop spending until it is affordable. A quarter was too eager: it froze unit production for a fifth of the game while a hall was being saved for, which is the single largest cause of idle production buildings
@@ -75,7 +222,8 @@ class AI {
       else if (on.length > want) { const m = G.findNearestResource(on[0], 'mineral'); if (m) on[0].applyOrder({ type: 'gather', target: m, phase: 'goto' }); }
     });
     // worker production
-    const fields = G.map.resources.filter(r => r.type === 'mineral' && r.amount > 0 && halls.some(h => h.done && distPt(r.cx, r.cy, h.x, h.y) < 10 * TILE)).length; const want = Math.min(70, fields * 2 + gasB.length * 3 + 2);
+    const st = this.sty(); // an expander wants more workers per patch and keeps making them for longer before the army gate below applies; a rusher wants fewer
+    const fields = G.map.resources.filter(r => r.type === 'mineral' && r.amount > 0 && halls.some(h => h.done && distPt(r.cx, r.cy, h.x, h.y) < 10 * TILE)).length; const want = Math.min(70, Math.round((fields * 2 + gasB.length * 3 + 2) * (st.workers || 1)));
     const armySup = this.armyUnits().reduce((s, u) => s + u.def.sup, 0); this.armySup = armySup;
     // "Drones only once the army keeps up" -- which, until M8, only Zerg ever did. The non-Zerg branch
     // used to read `larvaN >= 2 || workers.length < 12 || armySup >= ...`, and larvaN was
@@ -88,7 +236,14 @@ class AI {
     // half of that change nobody had looked at. The other reading of the same slip, that `larvaN >= 2`
     // was meant for the *Zerg* branch, was tried too: it is much worse (all three proxy indicators
     // move to Terran), because a larva-gated Zerg drones to 60 and fields no army.
-    if (this.count(RACE_INFO[p.race].worker) < want && (p.race !== 'Z' ? (workers.length < 12 || armySup >= workers.length * 0.4) : (workers.length < 16 || armySup >= (workers.length - 16) * 1.5))) this.train(RACE_INFO[p.race].worker, 2);
+    // wkFloor is the count below which workers are free of the army gate (the Zerg ramp still starts at
+    // 16, so raising the floor only widens the free window); wkGate is how much army the gate then wants
+    // per worker. The second one exists because of a feedback loop the expander walked straight into on
+    // Protoss: saving 400 for a nexus stops zealot production, a small army fails the gate written here,
+    // failing it stops probe production, and fewer probes mean the nexus is saved for even longer. The
+    // "expander" ended a lab game with 46 workers and four bases where plain standard had 66 and five.
+    const wkFloor = (p.race !== 'Z' ? 12 : 16) + (st.wkFloor || 0), wkGate = st.wkGate || 1;
+    if (this.count(RACE_INFO[p.race].worker) < want && (p.race !== 'Z' ? (workers.length < wkFloor || armySup >= workers.length * 0.4 * wkGate) : (workers.length < wkFloor || armySup >= (workers.length - 16) * 1.5 * wkGate))) this.train(RACE_INFO[p.race].worker, 2);
     // transfer workers from saturated to new bases
     if (G.frame % (24 * 10) < this.thinkEvery && halls.length > 1) {
       for (const h of halls) { const near = workers.filter(w => dist(w, h) < 12 * TILE); const fields = G.map.resources.filter(r => r.type === 'mineral' && distPt(r.cx, r.cy, h.x, h.y) < 10 * TILE).length; if (near.length > fields * 2 + 3) { const other = halls.find(o => o !== h && o.done && workers.filter(w => dist(w, o) < 12 * TILE).length < 8); if (other) { const m = G.map.resources.find(r => r.type === 'mineral' && distPt(r.cx, r.cy, other.x, other.y) < 10 * TILE); if (m) for (let i = 0; i < 4; i++) { const w = near.find(w => w.order.type === 'gather' && !w.carrying); if (w) w.applyOrder({ type: 'gather', target: m, phase: 'goto' }); } } } }
@@ -119,7 +274,7 @@ class AI {
   // next building is unaffordable starts the one after it, so scan forward instead: `scriptIdx` still
   // means "the first thing we still owe", and the timer only runs when nothing in reach can be started.
   script() {
-    const s = AI_SCRIPTS[this.race], p = this.p;
+    const s = this.styleScript(this.race, this.style), p = this.p, st = this.sty();
     const cnt = {}; for (const u of G.units) if (u.alive && u.owner === p.id) cnt[u.def.id] = (cnt[u.def.id] || 0) + 1;
     const need = i => { let n = 0; for (let k = 0; k <= i; k++) if (s[k][1] === s[i][1]) n++; return n; };
     const met = i => this.scriptHave(cnt, s[i][1]) >= need(i);
@@ -179,7 +334,12 @@ class AI {
       if (this.count(id) > this.scriptHave(cnt, id)) continue;           // already pending / in construction
       // Static defence is cheap and time-critical, so it must not queue behind expansions: Zerg kept letting its
       // scripted creep colonies time out while hatcheries were going up, and met the first push with no sunkens.
-      if (!(def.gw || def.aw || def.id === 'creep_colony') && under >= (def.depot ? 3 : 2)) continue; // finish what is already going up first
+      // ...and a style that adds steps has to be allowed to start them. Measured, and it is the reason
+      // `under` exists as a knob at all: a turtle Terran with two extra bunkers in its order built ONE
+      // defensive building in ten minutes and no engineering bay, academy or machine shop either. The
+      // throttle is a shared budget, the Terran script already spends all of it, and two more steps
+      // starved the rest of the order rather than being starved themselves.
+      if (!(def.gw || def.aw || def.id === 'creep_colony') && under >= (def.depot ? 3 : 2) + (st.under || 0)) continue; // finish what is already going up first
       // gas-hungry tech waits until there is an army and enough production to use it
       if (def.gas >= 100 && !def.produces.length && (this.armySup || 0) < 16 && prodDone < 3) continue;
       if (p.minerals < def.min || p.gas < def.gas) { if (i === this.scriptIdx) this.reserve(def); continue; } // save up for the head step instead of spending on units
@@ -196,13 +356,16 @@ class AI {
     // Expanding only on floating minerals rewards whoever spends worst: Zerg banks between larvae and takes
     // a third base, while Protoss and Terran spend every mineral and sit on two forever. Keep a base-count
     // floor that grows with the clock so every race keeps taking ground.
-    const wantHalls = Math.min(G.map.bases.length, 2 + Math.floor(G.frame / (24 * 60 * 3)));
-    if (G.frame - this.lastExpand > 24 * 45 && (p.minerals > 500 || workers > halls.length * 16 || halls.length < wantHalls || ((this.armySup || 0) >= 30 && halls.length < 3)) && this.count(RACE_INFO[r].hall) <= halls.length) { const hd = DATA.buildings[RACE_INFO[r].hall]; if (p.minerals < hd.min) { if (this.pickExpansion()) this.reserve(hd); } else if (this.build(RACE_INFO[r].hall, true)) this.lastExpand = G.frame; } // start saving as soon as a free base exists, or the army eats the money forever
+    const st = this.sty(), exT = st.expandT || 1; // an expander runs the same clock faster and starts a base ahead of it; a turtle runs it slower and stays a base behind
+    const wantHalls = Math.min(G.map.bases.length, 2 + (st.halls || 0) + Math.floor(G.frame / (24 * 60 * 3 * exT)));
+    if (G.frame - this.lastExpand > 24 * 45 * exT && (p.minerals > 500 || workers > halls.length * 16 || halls.length < wantHalls || ((this.armySup || 0) >= 30 && halls.length < 3)) && this.count(RACE_INFO[r].hall) <= halls.length) { const hd = DATA.buildings[RACE_INFO[r].hall]; if (p.minerals < hd.min) { if (this.pickExpansion()) this.reserve(hd); } else if (this.build(RACE_INFO[r].hall, true)) this.lastExpand = G.frame; } // start saving as soon as a free base exists, or the army eats the money forever
     // more production when floating
     // production capacity should track income: roughly one production building per 4 workers
     const prodWant = Math.min(10, Math.max(2, Math.floor(workers / 4)));
     if ((p.minerals > 250 && this.scriptIdx >= 6 && this.mine(u => u.isBuilding && u.def.produces.length && !u.def.depot && u.done).length < prodWant) || p.minerals > 600) {
-      if (this.underway() >= 3) return; const prodId = r === 'T' ? (this.count('factory') >= 2 && p.gas > 200 ? 'factory' : 'barracks') : r === 'P' ? 'gateway' : 'hatchery';
+      // An expander always has a base going up, and without the style term here its own expansions stop
+      // it ever adding production: eight command centres, one barracks and no army at ten minutes.
+      if (this.underway() >= 3 + (st.under || 0)) return; const prodId = r === 'T' ? (this.count('factory') >= 2 && p.gas > 200 ? 'factory' : 'barracks') : r === 'P' ? 'gateway' : 'hatchery';
       if (r === 'Z' && this.count('hatchery') + this.count('lair') + this.count('hive') < 8 && workers >= 12 * this.mine(u => u.isBuilding && u.def.spawnsLarva).length) this.build('hatchery');
       else if (r !== 'Z' && this.count(prodId) < prodWant) this.build(prodId, true); // the army engine outranks whatever the script is saving for
     }
@@ -213,7 +376,7 @@ class AI {
     // Static defence at the natural, placed on the line the enemy actually comes down rather than
     // towards the middle of the map, so an attack meets it instead of walking round it.
     if (this.scriptIdx >= 4 && p.minerals > 200) {
-      for (const nat of halls.slice(1)) if (nat.done) { const defId = r === 'T' ? 'missile_turret' : r === 'P' ? 'photon_cannon' : 'creep_colony'; const en = this.enemies()[0]; const tox = en && en.startX != null ? en.startX : G.map.w * TILE / 2, toy = en && en.startY != null ? en.startY : G.map.h * TILE / 2; const px = nat.x + (tox - nat.x) * 0.15, py = nat.y + (toy - nat.y) * 0.15; const isDef = u => u.isBuilding && (u.def.id === defId || u.def.id === 'sunken_colony' || u.def.id === 'spore_colony'); const near = this.mine(u => isDef(u) && (dist(u, nat) < 16 * TILE || distPt(u.x, u.y, px, py) < 16 * TILE)).length; if (near < (r === 'Z' ? 4 : 2) && this.count(defId) <= this.mine(isDef).length && p.hasReq(DATA.buildings[defId])) { this.buildNear(defId, px, py); break; } }
+      for (const nat of halls.slice(1)) if (nat.done) { const defId = r === 'T' ? 'missile_turret' : r === 'P' ? 'photon_cannon' : 'creep_colony'; const en = this.enemies()[0]; const tox = en && en.startX != null ? en.startX : G.map.w * TILE / 2, toy = en && en.startY != null ? en.startY : G.map.h * TILE / 2; const px = nat.x + (tox - nat.x) * 0.15, py = nat.y + (toy - nat.y) * 0.15; const isDef = u => u.isBuilding && (u.def.id === defId || u.def.id === 'sunken_colony' || u.def.id === 'spore_colony'); const near = this.mine(u => isDef(u) && (dist(u, nat) < 16 * TILE || distPt(u.x, u.y, px, py) < 16 * TILE)).length; if (near < Math.max(1, Math.round((r === 'Z' ? 4 : 2) * (st.def || 1))) && this.count(defId) <= this.mine(isDef).length && p.hasReq(DATA.buildings[defId])) { this.buildNear(defId, px, py); break; } }
     }
     // Zerg: morph creep colonies into sunkens
     if (r === 'Z') { const enemyAir = this.enemies().some(q => G.units.some(u => u.alive && u.owner === q.id && u.fly && (u.hasWeapon() || u.def.cargo))); const spores = this.mine(u => u.def.id === 'spore_colony').length, sunkens = this.mine(u => u.def.id === 'sunken_colony').length; for (const c of this.mine(u => u.def.id === 'creep_colony' && u.done && !u.prod.length)) G.queueMorph(c, p.hasBuilding('evolution_chamber') && (enemyAir ? spores < sunkens : spores < Math.floor(sunkens / 3)) ? 'spore_colony' : 'sunken_colony'); }
@@ -224,7 +387,7 @@ class AI {
     // Zerg: lair/hive/greater spire upgrades are in script; hatchery tech at 2 hatch
   }
   production() {
-    const p = this.p; const foe = this.enemies()[0]; const comp = (foe && AI_COMP[this.race + 'v' + foe.race]) || AI_COMP[this.race]; const cands = [];
+    const p = this.p; const foe = this.enemies()[0]; const key = foe && AI_COMP[this.race + 'v' + foe.race] ? this.race + 'v' + foe.race : this.race; const comp = this.styleComp(key, this.style); const cands = []; // the style multiplies weights, so a per-matchup composition stays per-matchup
     const counts = {}; for (const u of G.units) if (u.alive && u.owner === p.id) { counts[u.def.id] = (counts[u.def.id] || 0) + 1; for (const it of u.prod) if (it.kind === 'unit') counts[it.id] = (counts[it.id] || 0) + 1; }
     const enemyAir = this.enemies().some(q => G.units.some(u => u.alive && u.owner === q.id && u.fly && u.hasWeapon())) ;
     for (const [id, wgt] of comp) {
@@ -294,7 +457,7 @@ class AI {
   // it was worth +5 points to Terran over 360 paired seeds. Zerg buys upgrades it does not live to use.
   research() {
     const p = this.p; if (p.minerals < 200 || p.gas < 150) return;
-    for (const id of AI_RESEARCH[this.race]) {
+    for (const id of this.styleResearch(this.race, this.style)) {
       if (DATA.techs[id]) { if (p.tech.has(id) || p.researching.has(id)) continue; const td = DATA.techs[id]; const b = this.mine(u => u.isBuilding && u.done && u.def.id === td.bld && !u.prod.length && !u.lifted)[0]; if (!b) continue; if (G.queueTech(b, id)) return; }
       else if (DATA.upgrades[id]) { const ud = DATA.upgrades[id]; const lvl = p.upgLevel(id); if (lvl >= 3 || p.researching.has(id)) continue; if (this.diff === 'easy' && lvl >= 1) continue; const b = this.mine(u => u.isBuilding && u.done && (u.def.id === ud.bld || (ud.bld === 'spire' && u.def.id === 'greater_spire')) && !u.prod.length)[0]; if (!b) continue; if (G.queueUpgrade(b, id)) return; }
     }
@@ -391,7 +554,7 @@ class AI {
     return this.seenSup;
   }
   army() {
-    const p = this.p, army = this.armyUnits(), sup = army.reduce((s, u) => s + u.def.sup, 0);
+    const p = this.p, army = this.armyUnits(), sup = army.reduce((s, u) => s + u.def.sup, 0), st = this.sty();
     const rally = this.rallyPoint(); this.rally = rally;
     for (const b of this.mine(u => u.isBuilding && (u.def.produces.length || u.def.spawnsLarva))) b.rally = { x: rally.x + (G.rand() - .5) * 64, y: rally.y + (G.rand() - .5) * 64 };
     // defense
@@ -408,7 +571,7 @@ class AI {
     if (this.state === 'gather') {
       for (const u of army) if (u.order.type === 'idle' && !u.burrowed && distPt(u.x, u.y, rally.x, rally.y) > 5 * TILE) u.setOrder({ type: 'attackmove', x: rally.x + (G.rand() - .5) * 96, y: rally.y + (G.rand() - .5) * 96 });
       for (const u of this.supportUnits()) if (u.order.type === 'idle' && distPt(u.x, u.y, rally.x, rally.y) > 6 * TILE) u.setOrder({ type: 'move', x: rally.x, y: rally.y });
-      const threshold = Math.max(this.attackThreshold + this.waves * 8 + (p.supUsed > 150 ? -20 : 0), this.seenEnemyArmy() * 1.25);
+      const threshold = Math.max(this.attackThreshold + this.waves * (st.waveGrow || 8) + (p.supUsed > 150 ? -20 : 0), this.seenEnemyArmy() * 1.25); // waveGrow is what makes a harasser come back with a small wave and a turtle come back with a bigger one
       // After a retreat, rebuild before walking back into the same fight. Without this the AI turned
       // straight round and fed the survivors in one at a time.
       if ((sup >= threshold || p.supUsed >= 190) && G.frame >= (this.regroupUntil || 0)) {
@@ -432,14 +595,14 @@ class AI {
       const gutted = this.waveSup0 && waveSup < this.waveSup0 * 0.8; // a fifth of the wave dead is already a losing fight; measured, 0.8 beats 0.7 and 0.55 outright
       const outgunned = local > 0 && waveSup < local * 0.7 && waveUnits.some(u => G.frame - u.lastHit < 48);
       if ((gutted || outgunned) && G.frame - this.startedAttack > 24 * 6) {
-        this.state = 'gather'; this.regroupUntil = G.frame + 24 * 25;
+        this.state = 'gather'; this.regroupUntil = G.frame + 24 * (st.regroup || 25);
         const home = this.halls()[0] || { x: p.startX, y: p.startY };
         for (const u of army) { u.wave = 0; if (!u.burrowed) u.setOrder({ type: 'move', x: home.x, y: home.y }); }
         return;
       }
       for (const u of rest) if (u.order.type === 'idle' && distPt(u.x, u.y, rally.x, rally.y) > 5 * TILE) u.setOrder({ type: 'attackmove', x: rally.x + (G.rand() - .5) * 96, y: rally.y + (G.rand() - .5) * 96 });
       // reinforce: send gathered units as a group when enough have collected
-      const gathered = rest.filter(u => distPt(u.x, u.y, rally.x, rally.y) < 8 * TILE); if (gathered.reduce((s, u) => s + u.def.sup, 0) >= 16) for (const u of gathered) u.wave = this.waves;
+      const gathered = rest.filter(u => distPt(u.x, u.y, rally.x, rally.y) < 8 * TILE); if (gathered.reduce((s, u) => s + u.def.sup, 0) >= (st.reinforce || 16)) for (const u of gathered) u.wave = this.waves;
       const t = this.target;
       // Keep the wave together. Every unit attack-moving straight at the target means the fast ones
       // arrive first and die first; anything trailing the pack regroups on it instead of running ahead.
@@ -623,7 +786,8 @@ class AI {
       else if (op.phase === 'unload') { if (!t.cargo.length || G.frame - op.t0 > 24 * 15) { for (const u of op.units) if (u.alive && !u.inside) u.setOrder({ type: 'attackmove', x: op.tx, y: op.ty }); t.setOrder({ type: 'move', x: this.rally ? this.rally.x : p.startX, y: this.rally ? this.rally.y : p.startY }); this.dropOp = null; this.lastDrop = G.frame; } }
       return;
     }
-    if (this.state !== 'gather' || G.frame < 24 * 60 * 6 || G.frame - this.lastDrop < 24 * 180 || !this.rally) return;
+    const dT = this.sty().dropT || 1; // a drop is harassment by definition, so the harasser starts them earlier and runs twice as many
+    if (this.state !== 'gather' || G.frame < 24 * 60 * 6 * dT || G.frame - this.lastDrop < 24 * 180 * dT || !this.rally) return;
     const t = this.mine(u => !u.isBuilding && (u.def.cargo || (u.def.cargoTech && p.hasTech(u.def.cargoTech))) && !u.cargo.length && u.order.type === 'idle' && u.def.id !== 'overlord')[0] || this.mine(u => u.def.id === 'overlord' && p.hasTech('ventral_sacs') && !u.cargo.length)[0]; if (!t) return;
     const cargo = this.armyUnits().filter(u => !u.fly && u.def.cargoSize && u.def.cargoSize <= 2 && distPt(u.x, u.y, this.rally.x, this.rally.y) < 8 * TILE && u.order.type !== 'attack'); let slots = 8; const chosen = []; for (const u of cargo) { if (u.def.cargoSize <= slots) { chosen.push(u); slots -= u.def.cargoSize; } if (slots <= 0) break; } if (chosen.length < 4) return;
     const en = this.enemies()[0]; if (!en) return; const eb = en.startBase; const cx = G.map.w * TILE / 2, cy = G.map.h * TILE / 2; const away = Math.atan2(eb.cy - cy, eb.cx - cx); const x = clamp(eb.cx + Math.cos(away) * 5 * TILE, 64, G.map.w * TILE - 64), y = clamp(eb.cy + Math.sin(away) * 5 * TILE, 64, G.map.h * TILE - 64);
