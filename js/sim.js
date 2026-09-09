@@ -328,6 +328,18 @@ class Unit {
       if (t.isBuilding) s += 400 + (t.hasWeapon() ? -300 : 0);
       else if (!t.hasWeapon() && !t.def.worker) s += 160; if (t.def.larva || t.def.egg) s += 800; if (t.def.worker) s += 60;
       if (t.halluc) s += 50;
+      // What is shooting at ME comes first. Scoring purely by distance means a unit will walk past the
+      // thing killing it to shoot whatever happens to be a few pixels nearer, which is the single most
+      // complained-about behaviour in this genre. Two signals, because they catch different cases: a
+      // target whose ORDER is aimed at me covers the moment before its first shot lands, and lastHitBy
+      // covers everything after -- including attackers whose order has since moved on.
+      if (t.order && t.order.target === this) s -= 260;
+      else if (this.lastHitBy === t && G.frame - this.lastHit < 48) s -= 200;
+      // Then: prefer something I am actually good against. A concussive weapon picking the large unit
+      // beside the small one is throwing three quarters of its damage away, and distance alone could
+      // never see that.
+      const mult = (DMG_MULT[w.type] || DMG_MULT.normal)[t.def.size || 'medium'];
+      s -= (mult - 0.75) * 200;
       if (s < bs) { bs = s; best = t; }
     }
     return best;
