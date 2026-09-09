@@ -59,6 +59,7 @@ const TESTS = [
   { name: 'auras', args: ['auras.js'], what: 'field hospitals mend and jamming towers blind, to the documented contract' },
   { name: 'formation', args: ['formation.js'], what: 'a right-drag spreads the selection evenly along the line' },
   { name: 'mapmodes', args: ['mapmodes.js'], what: 'the four map sizes are different rules, and the sandstorm is deterministic' },
+  { name: 'flavour', args: ['flavour.js'], what: 'voice lines per race and register, rank and scars in the delivery, and the throttle' },
 ];
 
 const argv = process.argv.slice(2);
