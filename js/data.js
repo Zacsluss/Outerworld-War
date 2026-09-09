@@ -132,6 +132,99 @@ const DATA = (() => {
   U('scarab', { name: 'Scarab', race: 'P', hp: 20, size: 'small', min: 15, time: 168, speed: 12, r: 4, hk: 'S', from: 'reaver', notUnit: true, sight: 3 });
   U('hallucination', { name: 'Hallucination', race: 'P', hp: 1, size: 'small', speed: 4, sight: 7, r: 8, notUnit: true });
 
+  // ============================ THE FOURTH RACE: race 'N' ============================
+  // Everything below this line belongs to NOBODY. Neutral life (wave two, item 1) and capturable
+  // derelicts (item 8) both need a third owner that is neither a player nor an ally, and they share
+  // one mechanism: `race: 'N'`.
+  //
+  // WHY THE RACE LETTER AND NOT A FLAG. Every reachability closure, every build page, every command
+  // card and every codex list in this repository is already keyed on the literal set ['T','Z','P'] --
+  // test/techtree.js walks it three times, test/newbuildings.js walks it three times, Codex.list
+  // filters `src[id].race === race`, and DATA.buildMenu has exactly three keys. A def whose race is
+  // 'N' is therefore invisible to all of them by construction rather than by an exception written
+  // into each. That is the difference between "excluded" and "excluded so far": adding a fourth
+  // neutral def later needs no test to be taught about it.
+  //
+  // RACE_INFO.N exists for the same reason (see below): js/codex.js reads RACE_INFO[d.race].name for
+  // whatever unit it is asked to draw, and test/codex.js asks it for every entry in DATA.units.
+  //
+  // THREE FLAGS, EACH SAYING ONE THING, and test/neutrals.js pins all three:
+  //   neutral: true       no player owns this. It is placed by the map generator, it belongs to the
+  //                       neutral player, and it must never appear in DATA.buildMenu, AI_COMP or an
+  //                       AI build script
+  //   unlocked: <id>      the opposite: a PLAYER owns this, but the only way to get it is to capture
+  //                       the named derelict. Not neutral, and still not in any tech tree
+  //   wake / nest /       the behaviour blocks, documented above the defs that carry them
+  //   derelict
+  //
+  // ---------------------------------------------------------------------------------------------
+  // NEUTRAL LIFE. Creatures living on the map that wake when you build or mine near them.
+  //
+  // THE POINT OF THE FEATURE IS THE TELL, NOT THE AMBUSH. A creature that surfaces out of nowhere is
+  // a dice roll; a creature that has been sitting under a patch of churned ground you walked past
+  // four times is a mistake you made. So the ground above a buried creature is marked, always, to
+  // everyone, from the first second of the game -- see DATA.buriedTells below.
+  //
+  //   wake = {
+  //     buried:  true              it is placed underground and stays there until something wakes it.
+  //                                NOTE this is deliberately NOT the def-level `burrowed: true` flag
+  //                                that the spider mine carries: the Unit constructor reads that one
+  //                                and would burrow every instance, including a grub the warren just
+  //                                spat out mid-fight. Buried is a SPAWN STATE the placer applies
+  //     tell:    <key>             which entry of DATA.buriedTells marks the ground above it
+  //     r:       <tiles>           WAKE RADIUS. Measured centre to centre, from the creature to the
+  //                                thing that disturbed it
+  //     by:      [<trigger>...]    what counts as a disturbance. 'build' a building finishing or
+  //                                starting inside r; 'mine' a worker gathering inside r; 'walk' any
+  //                                non-worker ground unit of a player passing inside r. A creature
+  //                                whose list omits 'walk' can be scouted past safely, which is what
+  //                                makes the tell worth reading rather than worth fleeing
+  //     delay:   <frames>          from the trip to actually surfacing. This is the last chance to
+  //                                pull the worker out, and it is why the number is not zero
+  //     aggro:   <tiles>           AGGRESSION RADIUS. Once awake it attacks anything of any player
+  //                                inside this. Always >= r, or a creature would wake and stand still
+  //     leash:   <tiles>           how far from where it was buried it will chase. Past this it
+  //                                breaks off and walks home. Keeps a woken nest out of a main base
+  //     rebury:  <frames>          with nothing inside `aggro` for this long it digs back in and its
+  //                                tell comes back. 0 means it never reburies
+  //     respawn: <frames>          after it dies, frames before the SITE produces another. 0 means
+  //                                gone for good, which is what every creature placed on the ground
+  //                                says -- only the nest respawns, and it does it through `nest`
+  //   }
+  //
+  // Rules that hold for all of them, and belong in the reader once rather than in each def:
+  //   * a neutral creature is hostile to EVERY player equally. It has no ally and takes no side, so
+  //     it must never be used as a weapon: nothing about waking one may depend on who woke it
+  //   * it does not gather, does not build, is never counted in anyone's supply or score, and is
+  //     never selectable by a player
+  //   * whatever walks the units walks G.units in order. Nothing here may depend on Set or Map
+  //     iteration order, or test/determinism.js will find it
+  //   * a buried creature is `u.burrowed`, therefore `u.isCloaked`, therefore invisible without a
+  //     detector. THAT IS THE WHOLE REASON THE TELL IS SEPARATE DATA WITH ITS OWN PAINTER: the
+  //     marker has to be drawn when the creature is not
+  U('carrion_grub', { name: 'Carrion Grub', race: 'N', hp: 60, armor: 1, size: 'small', speed: 5.2, sight: 6, r: 9, neutral: true,
+    gw: W(9, 'normal', 0.5, 12, { upgKey: null }),
+    wake: { buried: true, tell: 'churn', r: 7, by: ['build', 'mine', 'walk'], delay: 36, aggro: 10, leash: 14, rebury: 480, respawn: 0 } });
+  // The one worth walking around. Two marines need about fifty seconds to chew through 500 hit
+  // points behind 3 armour, and it kills both of them in four shots; `size: 'large'` means explosive
+  // weapons hurt it and concussive ones barely scratch it, so the answer is siege tanks and dragoons
+  // -- an army, which is to say later. It ignores 'walk' on purpose: you may look at it, and it only
+  // wakes if you try to LIVE there.
+  U('carrion_maw', { name: 'Carrion Maw', race: 'N', hp: 500, armor: 3, size: 'large', speed: 3.6, sight: 8, r: 20, neutral: true,
+    gw: W(28, 'normal', 1.2, 22, { upgKey: null, splash: [0.7, 1.1, 1.6] }),
+    wake: { buried: true, tell: 'mound', r: 6, by: ['build', 'mine'], delay: 48, aggro: 9, leash: 10, rebury: 720, respawn: 0 } });
+  // ---------------------------------------------------------------------------------------------
+  // The one unit in the game that no tech tree contains. `unlocked` names the derelict that grants
+  // it; see the derelict contract below the Protoss buildings.
+  //
+  // `upgKey: null` and no `upgA` is the balance safety valve and is deliberate: the Sentinel never
+  // benefits from a single upgrade either side researches, so a map objective captured at six
+  // minutes is a strong unit then and an ordinary one at twenty. A free unit that scaled would make
+  // the derelict the game.
+  U('sentinel', { name: 'Sentinel', race: 'N', hp: 220, armor: 2, size: 'large', min: 150, gas: 100, sup: 3, time: 900, speed: 4.2, sight: 9, r: 15,
+    hk: 'S', from: 'derelict_foundry', mech: true, cargoSize: 4, unlocked: 'derelict_foundry',
+    gw: W(16, 'normal', 6, 22, { upgKey: null, targets: 'both' }) });
+
   // ============================ AURA CONTRACT (M11 wave two, items 11 and 15) ============================
   // Three new structures per race: a field hospital, a jamming tower and a wall. The first two project
   // a passive field, and `aura` below is the DATA for it. Nothing reads `aura` yet -- the simulation
@@ -271,6 +364,120 @@ const DATA = (() => {
   B('null_obelisk', { name: 'Null Obelisk', race: 'P', hp: 350, sh: 200, w: 3, h: 2, min: 75, gas: 75, time: 450, hk: 'J', tier: 'morph', req: ['citadel_of_adun'], needsPsi: true, sight: 9,
     aura: { kind: 'blind', r: 6, affects: 'enemy', sight: 0.35, detect: true, stacks: false } });
   B('warded_bastion', { name: 'Warded Bastion', race: 'P', hp: 700, sh: 200, armor: 2, w: 3, h: 2, min: 25, time: 240, hk: 'W', tier: 'morph', req: ['forge'], needsPsi: true, sight: 3, wall: true });
+
+  // ============================ NEUTRAL STRUCTURES (race 'N') ============================
+  // Four of them: one nest that belongs to the wildlife, and three derelicts that belong to whoever
+  // repairs them. All four carry `tier: 'none'` as well as `race: 'N'` -- the race is what keeps them
+  // out of the three-race closures, and `tier: 'none'` is what keeps them out of the two build-page
+  // walks that filter on tier instead. Either alone is enough; both together mean a future refactor
+  // of one of them cannot quietly put a derelict on somebody's command card.
+  //
+  // NOTE THE ABSENCES, each of which a whole-table test would otherwise catch as a surprise:
+  //   * no `aura` -- test/auras.js and test/newbuildings.js both count aura buildings over the WHOLE
+  //     table and require exactly the six from item 11
+  //   * no `wall: true` -- same, counted over the whole table and required to be exactly three
+  //   * `min: 0` spelled out rather than left undefined. Abilities.repairTick computes
+  //     `t.def.min * 0.25 * frac`, and undefined * 0.25 is NaN. Nothing can reach that today (repair
+  //     requires `t.owner === u.owner`) but a derelict is a building a player will be repairing on
+  //     purpose, and M11 already lost an afternoon to a spider mine with no cost producing NaN hit
+  //     points that spread through every comparison they touched
+  //
+  // ---------------------------------------------------------------------------------------------
+  // The nest. Same `wake` block as a creature -- it is buried, it has a tell, it wakes -- plus a
+  // `nest` block, which is the only thing in the wildlife that puts anything new on the map:
+  //
+  //   nest = {
+  //     spawns: <unit id>     what it produces. One kind, so nothing has to score a choice
+  //     pack:   <n>           how many of them it keeps alive at once. It does not produce while it
+  //                           already has `pack` living children
+  //     every:  <frames>      minimum frames between one replacement and the next
+  //     cap:    <n>           lifetime total it will ever produce, INCLUDING the pack it was placed
+  //                           with. 0 means no cap. This exists because a nest nobody kills is a
+  //                           free army for whoever walks a marine past it every ninety seconds,
+  //                           and because an uncapped spawner in a 60-minute game is a memory leak
+  //     dormant: true         it produces nothing until it is woken. A nest you never disturb is
+  //                           scenery, and stays scenery
+  //   }
+  //
+  // Killing the nest does not kill its children; they finish what they are doing and rebury.
+  B('carrion_warren', { name: 'Carrion Warren', race: 'N', hp: 700, armor: 2, w: 3, h: 2, min: 0, gas: 0, time: 1, tier: 'none', sight: 5, neutral: true,
+    wake: { buried: true, tell: 'vent', r: 8, by: ['build', 'mine', 'walk'], delay: 24, aggro: 12, leash: 18, rebury: 600, respawn: 0 },
+    nest: { spawns: 'carrion_grub', pack: 4, every: 900, cap: 12, dormant: true } });
+
+  // ---------------------------------------------------------------------------------------------
+  // CAPTURABLE DERELICTS (wave two, item 8). Structures already standing when the match begins, at a
+  // fraction of their hit points, owned by nobody. Repair one to full and it is yours, with whatever
+  // it grants.
+  //
+  // WHY THEY ARE PER-MAP AND NOT GLOBAL. A map with derelicts is a different match: map control buys
+  // tech, so the centre is worth holding for a reason that has nothing to do with expansions. That is
+  // a property of the MAP, exactly as a hazard is -- and for the same practical reason as the
+  // sandstorm, which this follows deliberately: every layout, every mission and every balance log in
+  // this repository predates derelicts, and a feature that turned itself on everywhere would silently
+  // change all of them. A layout without a `derelicts` key has none. See DATA.derelictPresets.
+  //
+  //   derelict = {
+  //     ruin:   <0..1>        the fraction of maxHp it stands at while nobody owns it. It is a WRECK:
+  //                           it produces nothing, researches nothing, projects no vision for anyone
+  //                           and is not a valid target for anything but repair and damage
+  //     rate:   <hp/second>   hit points of repair a single repairing unit restores per second. PER
+  //                           SECOND, not per frame, matching the aura contract above. Several
+  //                           repairers add; the sim scales by its own tick share
+  //     min:    <minerals>    total minerals the FULL repair costs, from `ruin` to full. Charged
+  //                           pro rata as the repair proceeds, the way Abilities.repairTick already
+  //                           charges: cost per hit point is min / (hp * (1 - ruin))
+  //     gas:    <gas>         the same for gas
+  //     by:     'worker'      who may repair it. 'worker' means ANY race's worker -- SCV, Drone and
+  //                           Probe alike. This is the one place the game lets a Drone or a Probe
+  //                           repair, and it has to be: a derelict only a Terran can take is not a
+  //                           map feature, it is a Terran bonus
+  //     grants: { ... }       what capture is FOR. Exactly one key per derelict; see each below
+  //     hold:   true          ownership follows the building. Lose the building and you lose what it
+  //                           granted, except an upgrade already applied -- see `grants.upg`
+  //   }
+  //
+  // Rules the reader owns once:
+  //   * capture completes at full hit points, and the building changes owner at that instant. The
+  //     player whose repairer landed the tick that filled it gets it, which is what makes a contested
+  //     derelict a fight rather than a race of two independent progress bars: repair is one shared
+  //     pool of hit points and damage takes it back down
+  //   * damage during a repair is not a special case. A derelict at 3 hp is still a derelict
+  //   * a captured derelict cannot be re-captured while its owner is alive; it can be killed, and
+  //     what is left is rubble, not a fresh derelict. Capture happens once
+  //   * `u.captured` is the field the sim sets on capture and the field js/sprites_buildings.js's
+  //     animated overlays read to decide whether to light the thing up. Absent or false means ruin
+  //   * a derelict never blocks a mineral line: placement is the map generator's problem, and
+  //     DATA.derelictPresets carries the clearances it must honour
+  //
+  // Each grants something no tech tree does. That is the whole design: not a shortcut to what you
+  // could already have, but a thing you could not.
+  //
+  // 1. THE FOUNDRY grants a UNIT. `produces` is already the field every command card reads, and
+  //    UI.buildCard builds from UI.ownSel(), so the captured building offers the Sentinel with no new
+  //    UI code at all and a derelict nobody owns shows nobody a button. The Sentinel's `race: 'N'` is
+  //    what keeps it out of test/techtree.js's closure; `unlocked: 'derelict_foundry'` is what says
+  //    that was on purpose.
+  B('derelict_foundry', { name: 'Derelict Foundry', race: 'N', hp: 900, armor: 2, w: 4, h: 3, min: 0, gas: 0, time: 1200, tier: 'none', sight: 4, neutral: true,
+    produces: ['sentinel'],
+    derelict: { ruin: 0.15, rate: 12, min: 150, gas: 100, by: 'worker', hold: true, grants: { unit: 'sentinel' } } });
+  // 2. THE ARCHIVE grants an UPGRADE, free and instant, and -- this is the part no tech tree does --
+  //    without the building that normally researches it. A Zerg that never built an evolution chamber
+  //    still gets the carapace level. `levels` is added on top of whatever is already researched and
+  //    the total is capped at 3, so taking the archive at minute five is worth a level and taking it
+  //    at minute thirty is worth nothing, which is the correct shape for a map objective.
+  //    It is the one grant that survives losing the building: an upgrade already applied to an army
+  //    cannot be un-applied without giving armour a history, and a granted level is not tracked
+  //    separately from a researched one.
+  B('derelict_archive', { name: 'Derelict Archive', race: 'N', hp: 650, armor: 1, w: 3, h: 2, min: 0, gas: 0, time: 900, tier: 'none', sight: 4, neutral: true,
+    derelict: { ruin: 0.2, rate: 12, min: 100, gas: 75, by: 'worker', hold: true, grants: { upg: { T: 'infA', Z: 'carapace', P: 'gA' }, levels: 1, cap: 3, permanent: true } } });
+  // 3. THE WATCHTOWER grants VISION, and it is the one grant that needs no code at all: `sight: 18`
+  //    is on the def, G.updateVision already marks from every unit allied with the player looking,
+  //    and the neutral player is allied with nobody -- so while it stands derelict it shows nothing
+  //    to anyone, and the instant it changes owner it shows eighteen tiles to them. It is NOT a
+  //    detector, deliberately: a tower that revealed every buried creature within eighteen tiles
+  //    would answer item 1 with item 8 and cost both of them their point.
+  B('derelict_watchtower', { name: 'Derelict Watchtower', race: 'N', hp: 500, armor: 1, w: 2, h: 2, min: 0, gas: 0, time: 600, tier: 'none', sight: 18, neutral: true,
+    derelict: { ruin: 0.25, rate: 12, min: 75, gas: 0, by: 'worker', hold: true, grants: { vision: 18 } } });
 
   // ============================ UPGRADES (3 levels) ============================
   const L3 = (id, name, race, bld, hk, extraReq) => UP(id, { name, race, bld, hk, levels: 3, min: [100, 175, 250], gas: [100, 175, 250], time: [4000, 4480, 4960], req: [null, extraReq, extraReq] });
@@ -440,13 +647,145 @@ const DATA = (() => {
     P: { basic: ['nexus', 'pylon', 'assimilator', 'gateway', 'forge', 'photon_cannon', 'cybernetics_core', 'shield_battery'], adv: ['robotics_facility', 'stargate', 'citadel_of_adun', 'robotics_support_bay', 'fleet_beacon', 'templar_archives', 'observatory', 'arbiter_tribunal'] },
   };
   const larvaMorphs = ['drone', 'overlord', 'zergling', 'hydralisk', 'mutalisk', 'scourge', 'queen', 'ultralisk', 'defiler'];
+
+  // ============================ THE BURIED TELL ============================
+  // What marks the ground above a buried creature. This is the feature, not a garnish on it: the
+  // horror of something coming out of the floor only works if the player could have known, and the
+  // whole difference between "unfair" and "your fault" is one patch of disturbed earth.
+  //
+  // It has to be its own data with its own painter rather than a state of the creature's sprite, for
+  // a reason that is structural and not stylistic. A buried creature is `u.burrowed`, which makes it
+  // `u.isCloaked`, which makes it invisible without a detector -- so the marker must be drawn when
+  // the unit is not, and cannot be a frame of the unit's own sheet. Sprites.unit also caches per
+  // (facing, animation frame) and nothing in that key could carry "buried".
+  //
+  //   sprite:  <key>      the UNIT_PAINTERS entry that draws it. Called as a unit painter would be:
+  //                       painter(PaintHelpers(c), r * TILE, tint, tintDark, { walk: null, atk: null })
+  //   r:       <tiles>    how wide the disturbed patch is. Bigger creature, bigger patch, which is
+  //                       what lets a player read WHICH thing is down there before waking it
+  //   period:  <frames>   the loop length of whatever the painter's animated cousin does. Purely
+  //                       cosmetic and safe to ignore; it is here so two tells do not pulse in step
+  //
+  // RULES THE RENDERER OWNS, written here because they are the contract and not the drawing:
+  //   * NO DETECTOR REQUIRED. A tell is not a detection. It shows to any player whose vision covers
+  //     that ground, with or without a detector, from the first frame of the game. This is the one
+  //     clause that must not be "improved"
+  //   * it shows on CURRENTLY VISIBLE ground only, under the fog rules everything else obeys. Ground
+  //     you have never seen shows nothing; ground you saw an hour ago shows nothing today
+  //   * it is decoration, not a unit: never selectable, never targetable, never in the spatial hash,
+  //     never in a snapshot. It is derived every frame from the buried creature that is already there
+  //   * it is drawn UNDER units and over terrain, and it disappears the moment the creature surfaces
+  //   * a tell does not say how MANY. A warren's vent field looks the same with one grub left as with
+  //     four, which is the difference between a warning and a readout
+  const buriedTells = {
+    churn: { sprite: 'tell_churn', r: 1.2, period: 96 },    // carrion grub -- a scuffed patch and a few claw ridges
+    mound: { sprite: 'tell_mound', r: 2.2, period: 150 },   // carrion maw -- a long low swell with a crack down it
+    vent: { sprite: 'tell_vent', r: 2.6, period: 120 },     // carrion warren -- breathing holes ringed with pale dust
+  };
+
+  // ============================ THE PER-MAP TOGGLES ============================
+  // Both wave-two features are OFF unless a layout asks for them, and both are asked for the same
+  // way the sandstorm is (js/map.js, MAP_LAYOUTS.dustbowl): a key on the layout naming a preset.
+  //
+  //   L.derelicts = <preset name> | true | false | { ...an inline preset }
+  //   L.wildlife  = <preset name> | true | false | { ...an inline preset }
+  //
+  // Absent or false means the feature does not exist on that map, and that is the default for every
+  // layout that already exists. `true` means 'standard'. Resolution, which the map generator does:
+  //
+  //   const cfg = L.derelicts && (DATA.derelictPresets[L.derelicts === true ? 'standard' : L.derelicts]
+  //                               || (typeof L.derelicts === 'object' ? L.derelicts : null));
+  //
+  // These tables live inside DATA on purpose. js/build.js hashes DATA, so two clients that disagree
+  // about how many derelicts a map has cannot agree about the build -- which is the whole job of the
+  // stamp. A top-level const beside HAZARDS would not be hashed at all.
+  //
+  //   count    how many to place, in TOTAL across the map
+  //   kinds    which building ids to draw from, cycled in order so a count of 4 over 3 kinds is
+  //            2/1/1 and never random. Placement position may be seeded; the CAST may not, because
+  //            "which derelicts does this map have" is something both players should be able to read
+  //            off the map name
+  //   minBase  minimum tiles from any start location's hall. A derelict inside somebody's main is
+  //            not a map objective, it is a coin flip on spawn
+  //   minRes   minimum tiles from any mineral patch or geyser, so nothing ever blocks a mineral line
+  //   minEach  minimum tiles between two of them
+  //   mirror   place them symmetrically about the map's own symmetry, so no start is closer to the
+  //            foundry than another. On a layout with no symmetry this degrades to "as far apart as
+  //            the spacing rules allow" and the generator says so
+  const derelictPresets = {
+    sparse: { count: 2, kinds: ['derelict_watchtower', 'derelict_archive'], minBase: 14, minRes: 6, minEach: 20, mirror: true },
+    standard: { count: 3, kinds: ['derelict_watchtower', 'derelict_archive', 'derelict_foundry'], minBase: 14, minRes: 6, minEach: 18, mirror: true },
+    rich: { count: 6, kinds: ['derelict_watchtower', 'derelict_archive', 'derelict_foundry'], minBase: 10, minRes: 6, minEach: 12, mirror: true },
+  };
+  // The wildlife toggle is the same shape and exists for the same reason. Item 1 is not per-map in
+  // the design document, but it has to be per-map in the data or it retro-changes every mission and
+  // every balance log in the repository the moment it lands -- the argument HAZARDS already makes in
+  // js/map.js, and the reason `dustbowl` is one layout rather than a global rule.
+  //
+  //   sites    how many separate creature sites to place
+  //   kinds    weighted draw, [id, weight]. Cycled deterministically, not sampled
+  //   pack     how many creatures per site, [min, max] inclusive, seeded per site
+  //   minBase  minimum tiles from any start hall -- a creature in your main at frame 0 is not an
+  //            ambush, it is a loss
+  //   nearRes  place sites NEAR resources rather than anywhere: the whole point is that they sit on
+  //            the ground you want to expand onto. Tiles from a patch to prefer
+  const wildlifePresets = {
+    sparse: { sites: 3, kinds: [['carrion_grub', 3], ['carrion_warren', 1]], pack: [2, 3], minBase: 22, nearRes: 8, mirror: true },
+    standard: { sites: 5, kinds: [['carrion_grub', 3], ['carrion_warren', 1], ['carrion_maw', 1]], pack: [2, 4], minBase: 20, nearRes: 8, mirror: true },
+    infested: { sites: 9, kinds: [['carrion_grub', 3], ['carrion_warren', 2], ['carrion_maw', 2]], pack: [3, 5], minBase: 16, nearRes: 6, mirror: true },
+  };
+
   const all = Object.assign({}, units, buildings);
-  return { units, buildings, upgrades, techs, abilities, buildMenu, larvaMorphs, all };
+  return { units, buildings, upgrades, techs, abilities, buildMenu, larvaMorphs, buriedTells, derelictPresets, wildlifePresets, all };
 })();
 
 const RACE_INFO = {
   T: { name: 'Terran', worker: 'scv', hall: 'command_center', supply: 'supply_depot', gasB: 'refinery', color: '#3a6ea5', supplyMsg: 'Additional supply depots required.' },
   Z: { name: 'Zerg', worker: 'drone', hall: 'hatchery', supply: 'overlord', gasB: 'extractor', color: '#7b3fa0', supplyMsg: 'Spawn more overlords.' },
   P: { name: 'Protoss', worker: 'probe', hall: 'nexus', supply: 'pylon', gasB: 'assimilator', color: '#c9a227', supplyMsg: 'You must construct additional pylons.' },
+  // The fourth entry, and it is not a race anybody plays. Neutral life and unclaimed derelicts need
+  // an owner, and an owner needs a Player: Unit.speed, Unit.sight and Unit.armor all dereference
+  // `this.player` unconditionally, so a unit whose owner is not a real index in G.players throws on
+  // the first frame it moves.
+  //
+  // WHAT THE NEUTRAL PLAYER IS:
+  //   * APPENDED to G.players after every real player, so its id is G.players.length at the end of
+  //     G.init and no real player's id moves. Nothing else is ever appended
+  //   * `team: -1`. G.allied compares `pa.team === pb.team`, and a real team id is either the value
+  //     from the setup or the player's own index, both non-negative -- so -1 is allied with exactly
+  //     itself. Neutral life is hostile to everybody and is nobody's weapon
+  //   * `human: false`, `ai: null`, no supply, no score
+  //   * `vis` IS REQUIRED and is not optional: G.updateVision does `const v = p.vis; for (let i = 0;
+  //     i < v.length; ...)` with no guard, so a Player without one throws on the first vision pass.
+  //     Give it a Uint8Array like everyone else, or skip it beside the existing
+  //     `if (p.defeated && !p.human) continue;` -- either is correct, one costs a full-map pass and
+  //     the other costs a line. Nothing ever looks through neutral eyes
+  //
+  // FOUR PLACES IN THE EXISTING SIM MUST LEARN ABOUT IT, and three of them are quiet failures:
+  //   1. G.checkVictory, the surviving-teams line. `players.filter(p => !p.defeated)` mapped to a Set
+  //      of teams, and the game ends when that set has one entry. A neutral player holding one
+  //      derelict is never defeated, contributes team -1, and THE GAME NEVER ENDS. This is the one
+  //      that must not be missed: on a derelict map it fires every single game
+  //   2. G.checkVictory, the elimination pass. Left alone it would defeat the neutral player the
+  //      moment its last creature died, kill anything else it owned, and tell every human that
+  //      "Neutral has been eliminated." Skip the neutral player in the loop entirely
+  //   3. AI.enemies(), which is `G.players.filter(q => !G.allied(q.id, this.p.id) && !q.defeated)`.
+  //      The neutral player passes both tests, so every AI would treat a warren as an enemy base and
+  //      may send a wave at it. Whether an AI should ever attack the wildlife is a design question;
+  //      that it should not mistake it for its OPPONENT is not
+  //   4. Abilities.repairTick refuses `t.owner !== u.owner`, which is exactly what capturing a
+  //      derelict has to do. That refusal is right for everything else and has to gain one exception
+  //
+  // Two things it does NOT need: G.recomputeSupply and G.tickAlerts already no-op for it (no supply
+  // defs, not human), and js/snapshot.js walks G.players reflectively, so the neutral player and its
+  // units are captured and restored with no change at all.
+  //
+  // Its colour is deliberately dead: neutral things are the colour of the ground, and nothing on the
+  // map should read as a fourth army.
+  //
+  // This entry sits in RACE_INFO rather than in a const of its own because js/build.js hashes
+  // RACE_INFO and does not hash arbitrary globals, and because js/codex.js reads
+  // RACE_INFO[d.race].name for any def it is handed -- test/codex.js hands it every unit in the table.
+  N: { name: 'Neutral', worker: null, hall: null, supply: null, gasB: null, color: '#8d8570', supplyMsg: '', neutral: true, team: -1 },
 };
 const PLAYER_COLORS = ['#f40404', '#0c48cc', '#2cb494', '#88409c', '#f88c14', '#703014', '#cce0d0', '#fcfc38'];
