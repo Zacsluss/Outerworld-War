@@ -400,7 +400,7 @@ class AI {
       }
     }
     if (this.state === 'attack') {
-      if (!this.target || !this.target.alive) this.target = this.pickTarget(rally);
+      if (!this.target || !this.target.alive || (this.target.probe && this.hasSeen(this.target.x, this.target.y))) this.target = this.pickTarget(rally);
       if (!this.target) { this.state = 'gather'; return; }
       const waveUnits = army.filter(u => u.wave === this.waves), rest = army.filter(u => u.wave !== this.waves);
       const waveSup = waveUnits.reduce((a, u) => a + (u.def.sup || 0), 0);
@@ -438,11 +438,39 @@ class AI {
     // overlords: one per base for detection, rest near rally
     if (this.race === 'Z') { const ovs = this.mine(u => u.def.id === 'overlord'); const halls = this.halls(); ovs.forEach((o, i) => { if (o.order.type !== 'idle') return; const h = halls[i % Math.max(1, halls.length)]; const tgt = i < halls.length && h ? { x: h.x, y: h.y - 40 } : { x: rally.x, y: rally.y }; if (distPt(o.x, o.y, tgt.x, tgt.y) > 3 * TILE) o.setOrder({ type: 'move', x: tgt.x, y: tgt.y }); }); }
   }
+  // What this player has actually seen. p.vis is 2 for visible, 1 for explored and 0 for never seen, so
+  // `> 0` is memory rather than sight: a base scouted once stays a target after the scout dies, which is
+  // what a person does.
+  hasSeen(x, y) { const m = G.map, tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); return m.inb(tx, ty) && this.p.vis[ty * m.w + tx] > 0; }
+  // Somewhere worth looking when nothing of the enemy is known. Where the bases ARE is fair knowledge --
+  // the map layout is public in both StarCraft games -- but what is standing on them is not, so the army
+  // walks to the nearest start it has not explored and finds out. Without this the AI simply stops
+  // attacking once it has scouted nothing, which is a worse game than one that cheats.
+  probeTarget(from) {
+    let best = null, bd = 1e9;
+    for (const list of [G.map.starts || [], G.map.bases || []]) {
+      for (const b of list) { if (this.hasSeen(b.cx, b.cy)) continue; const d = distPt(b.cx, b.cy, from.x, from.y); if (d < bd) { bd = d; best = b; } }
+      if (best) break;
+    }
+    return best ? { alive: true, x: best.cx, y: best.cy, probe: true } : null;
+  }
+  // Targets are chosen from what this player has seen, not from the map. This used to walk G.units
+  // directly and pick the least defended enemy building anywhere, counting defenders it had never laid
+  // eyes on -- perfect map knowledge, and the largest way in which the AI was not playing the same game
+  // as the player. It scouted at supply 9 purely for show, because it already knew everything.
   pickTarget(from) {
     let best = null, bd = 1e9;
-    const defenders = G.units.filter(u => u.alive && u.isBuilding && (u.def.gw || u.def.aw) && !G.allied(u.owner, this.p.id));
-    for (const u of G.units) { if (!u.alive || G.allied(u.owner, this.p.id) || !u.isBuilding || u.def.tier === 'addon') continue; if (G.players[u.owner].defeated) continue; const guarded = defenders.filter(d => distPt(d.x, d.y, u.x, u.y) < 8 * TILE).length; const d = distPt(u.x, u.y, from.x, from.y) - (u.def.depot ? 8 * TILE : 0) + guarded * 10 * TILE; if (d < bd) { bd = d; best = u; } } // prefer targets without static defence around them
-    if (!best) { for (const u of G.units) { if (u.alive && !G.allied(u.owner, this.p.id) && !G.players[u.owner].defeated && !u.def.larva) { const d = distPt(u.x, u.y, from.x, from.y); if (d < bd) { bd = d; best = u; } } } }
+    const defenders = G.units.filter(u => u.alive && u.isBuilding && (u.def.gw || u.def.aw) && !G.allied(u.owner, this.p.id) && this.hasSeen(u.x, u.y));
+    for (const u of G.units) { if (!u.alive || G.allied(u.owner, this.p.id) || !u.isBuilding || u.def.tier === 'addon') continue; if (G.players[u.owner].defeated) continue; if (!this.hasSeen(u.x, u.y)) continue; const guarded = defenders.filter(d => distPt(d.x, d.y, u.x, u.y) < 8 * TILE).length; const d = distPt(u.x, u.y, from.x, from.y) - (u.def.depot ? 8 * TILE : 0) + guarded * 10 * TILE; if (d < bd) { bd = d; best = u; } } // prefer targets without static defence around them
+    if (!best) { for (const u of G.units) { if (u.alive && !G.allied(u.owner, this.p.id) && !G.players[u.owner].defeated && !u.def.larva && this.hasSeen(u.x, u.y)) { const d = distPt(u.x, u.y, from.x, from.y); if (d < bd) { bd = d; best = u; } } } }
+    // Go looking whenever no enemy TOWN HALL has been seen, even if some forward building has been.
+    // Without this clause the fog version won zero games of eight where the omniscient one won seven:
+    // it could always see something to hit, so it ground away at outlying buildings while the enemy
+    // main -- never scouted, therefore never targetable -- rebuilt behind the fog. Razing bases is how
+    // the game is won, so not knowing where any of them are is the condition that should send the army
+    // out to look, not merely having nothing at all to shoot.
+    const seenHall = best && best.def && best.def.depot;
+    if (!seenHall) { const probe = this.probeTarget(from); if (probe) return probe; }
     return best;
   }
   // micro() does not run every frame. think() runs it on multiples of 12 and on each full think, so
@@ -488,7 +516,15 @@ class AI {
     }
   }
   scout() {
-    const p = this.p; if (this.scouted || p.supUsed < 9) return; this.scouted = true;
+    const p = this.p; if (p.supUsed < 9) return;
+    // Scouting used to happen exactly once, at supply 9, and never again. That was harmless while the AI
+    // had perfect map knowledge and became fatal the moment it lost it: pickTarget can only aim at what
+    // has been seen, so an AI whose first scout died never found a town hall and never closed a game --
+    // four wins in eight against seven for the omniscient version. Keep looking while no enemy hall is
+    // known, which is what a person does, and stop the moment one is.
+    const knowsHall = G.units.some(u => u.alive && u.isBuilding && u.def.depot && !G.allied(u.owner, p.id) && !G.players[u.owner].defeated && this.hasSeen(u.x, u.y));
+    if (this.scouted && (knowsHall || G.frame - (this.lastScout || 0) < 24 * 40)) return;
+    this.scouted = true; this.lastScout = G.frame;
     const w = this.pickWorker(p.startX, p.startY); if (!w) return; const targets = G.map.starts.filter(b => distPt(b.cx, b.cy, p.startX, p.startY) > 10 * TILE);
     targets.forEach((b, i) => w.setOrder({ type: 'move', x: b.cx, y: b.cy + 80 }, i > 0)); const home = G.map.resources.find(r => r.type === 'mineral' && distPt(r.cx, r.cy, p.startX, p.startY) < 10 * TILE); if (home) w.setOrder({ type: 'gather', target: home, phase: 'goto' }, true);
   }
