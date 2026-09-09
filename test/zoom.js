@@ -476,6 +476,80 @@ ok('a game that was drawn zoomed and at night re-simulates to the same state as 
   purity.drawnRun === control.hash && purity.frame === control.frame, purity.drawnRun + ' vs ' + control.hash);
 
 // ============================================================================
+// 10. Zoomed out past the map fit, the void stays void
+// ============================================================================
+// Two bugs, one symptom, reported from playtest as "when I zoom out all the way, the left side of the
+// screen is replicated infinitely -- there are several left edges".
+//
+// Neither was reachable before the strategic zoom, because both depend on the viewport being LARGER
+// THAN THE WORLD, which could not happen when the camera was clamped inside the map at zoom 1.
+//
+//  a) NOTHING CLEARED THE CANVAS. Render.base only resets the transform. At zoom 1 the terrain covers
+//     every pixel of the viewport every frame, so a clear was pure waste and its absence was invisible
+//     for the entire life of the renderer. Zoomed out past the map fit the terrain no longer reaches
+//     the edges, and those pixels are simply never written again -- they keep whatever the last frame
+//     that DID reach them left there. Panning smears copies of the map edge across the void and they
+//     accumulate, because nothing ever erases them.
+//
+//  b) drawFog BUILT A SOURCE RECTANGLE FROM THE CAMERA WITHOUT CLAMPING IT. The fog bitmap is one
+//     pixel per tile, 128 wide on a standard map; at minimum zoom the rect asked for was x -90.2,
+//     width 307. What a browser does with a source rect mostly outside its image is not something to
+//     rely on -- with smoothing on, edge texels clamp and column 0 smears across the whole void.
+//     Terrain.drawOverview already clips both rectangles together and says why in a comment; drawFog
+//     was written before there was any way to see it and never learned.
+//
+// Both are asserted structurally rather than by reading pixels, because this harness has no real
+// canvas: (a) as "the first drawing op of a frame covers the whole viewport", and (b) by capturing the
+// arguments drawFog actually passes.
+{
+  const clear = R(ctx, `
+    G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'Z', human: false, name: 'B' }], seed: 4, layout: 'temple' });
+    for (const p of G.players) p.ai = null;
+    G.human = 0; Render.reset(); Render.resize();
+    for (let i = 0; i < 4; i++) G.tick();
+    const out = {};
+    Render.setZoom(Render.zoomLimits().lo); Render.clampCam();
+    out.zoom = Render.zoom;
+    out.viewWiderThanMap = Render.viewWorldW() > G.map.w * TILE;
+    out.camNegative = Render.camX < 0;
+    _rec.reset(); _rec.on = true; Render.frame(0); _rec.on = false;
+    // (a) the first thing drawn must cover the whole viewport
+    const first = _rec.ops.find(o => o.op === 'fillRect' || o.op === 'clearRect' || o.op === 'drawImage');
+    out.firstOp = first ? first.op : null;
+    out.firstArgs = first ? first.a.slice(0, 4).map(v => (v && typeof v === 'object') ? 'IMG' : (typeof v === 'number' ? Math.round(v) : String(v))) : null;
+    out.coversViewport = !!(first && (first.op === 'fillRect' || first.op === 'clearRect')
+      && first.a[0] <= 0 && first.a[1] <= 0 && first.a[2] >= Render.W && first.a[3] >= Render.H);
+    return out;
+  `);
+
+  ok('zoomed fully out the viewport really is wider than the world', clear.viewWiderThanMap && clear.camNegative,
+    JSON.stringify({ zoom: num(clear.zoom), wider: clear.viewWiderThanMap, camNeg: clear.camNegative }));
+  ok('a frame begins by clearing the whole viewport -- without it the void keeps the last frame that reached it',
+    clear.coversViewport, clear.firstOp + ' ' + JSON.stringify(clear.firstArgs));
+
+  // (b) every source rectangle drawFog asks for has to lie inside the fog bitmap
+  const fog = R(ctx, `
+    const out = { rects: [], bitmap: [G.map.w, G.map.h] };
+    const real = Render.ctx.drawImage;
+    const seen = [];
+    Render.ctx.drawImage = function (img, ...a) { if (img === Render.fogCanvas && a.length >= 8) seen.push(a.slice(0, 4)); return real.call(this, img, ...a); };
+    for (const z of [1, 0.6, 0.45, 0.3, Render.zoomLimits().lo]) {
+      Render.setZoom(z); Render.clampCam();
+      Render.drawFog(Render.ctx, G.players[0].vis, Render.camX, Render.camY);
+    }
+    Render.ctx.drawImage = real;
+    out.rects = seen;
+    return out;
+  `);
+  const [bw, bh] = fog.bitmap;
+  const bad = fog.rects.filter(([sx, sy, sw, sh]) =>
+    sx < 0 || sy < 0 || sw <= 0 || sh <= 0 || sx + sw > bw + 0.001 || sy + sh > bh + 0.001);
+  ok('drawFog samples inside its own bitmap at every zoom -- a source rect off the edge is where the smear came from',
+    fog.rects.length > 0 && bad.length === 0,
+    'bitmap ' + bw + 'x' + bh + ', bad ' + JSON.stringify(bad.slice(0, 3)) + ' of ' + fog.rects.length);
+}
+
+// ============================================================================
 // 9. The build stamp does not move
 // ============================================================================
 // Invariant 6, asserted as the invariant rather than against a hardcoded hash: three agents are

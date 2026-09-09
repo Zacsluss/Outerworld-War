@@ -245,6 +245,19 @@ const Render = {
   },
   frame(alpha) {
     const ctx = this.ctx, m = G.map; if (!ctx) return; this.base(ctx);
+    // CLEAR FIRST. Nothing here cleared the canvas until the strategic zoom shipped, and nothing had
+    // to: at zoom 1 the terrain always covers the whole viewport, so every pixel was overwritten every
+    // frame by definition. Once you can zoom out past the map fit that stops being true -- the view is
+    // wider than the world, and the pixels outside the map are simply never written again. They keep
+    // whatever the last frame that DID reach them left there, so panning at minimum zoom smears copies
+    // of the map's edge across the void and they accumulate: reported, exactly, as "the left side of
+    // the screen is replicated infinitely".
+    //
+    // Unconditional rather than "only when the view is bigger than the map". One viewport fill is a
+    // single GPU-composited op -- this repo has already measured that four times the pixels costs
+    // almost nothing, because the budget is draw CALLS -- and a clear that is only sometimes correct
+    // is the kind of thing that comes back.
+    ctx.fillStyle = '#04060a'; ctx.fillRect(0, 0, this.W, this.H);
     if (this.viewW < 1 || this.viewH < 1) return; if (!this.built) this.buildStatic();
     const now = performance.now(); const dt = Math.min(0.1, (now - (this.lastFrameTime || now)) / 1000); this.lastFrameTime = now;
     // The zoom, and the two numbers everything downstream is written against. wW/wH is how much WORLD
@@ -381,8 +394,24 @@ const Render = {
     const img = this.fogImg; const d = img.data;
     for (let i = 0; i < vis.length; i++) { const v = vis[i]; const o = i * 4; d[o] = 4; d[o + 1] = 6; d[o + 2] = 10; d[o + 3] = v === 2 ? 0 : v === 1 ? 140 : 255; }
     fc.putImageData(img, 0, 0);
+    // Source AND destination clipped to the bitmap, the same deal Terrain.drawOverview makes and for
+    // the same reason -- this one just took until the strategic zoom shipped to bite.
+    //
+    // The source rectangle is derived from the camera, and once you can zoom out past the map fit the
+    // camera goes NEGATIVE and the view is wider than the world: at minimum zoom on a 128-tile map the
+    // rect asked for was x -90.2, width 307, out of a bitmap 128 wide. What a browser does with a
+    // source rect mostly outside its image is not something to rely on -- with smoothing on, the edge
+    // texels get clamped and column 0 is smeared across the whole void, which is what "the left side
+    // of the map is replicated infinitely" was. Clipping both rectangles together means the fog covers
+    // exactly the map and the void outside it is left as the background it should be.
     const wW = this.viewWorldW(), wH = this.viewWorldH();
-    ctx.save(); ctx.imageSmoothingEnabled = true; ctx.drawImage(this.fogCanvas, cx / TILE - 0.5, cy / TILE - 0.5, wW / TILE, wH / TILE, cx, cy, wW, wH); ctx.restore();
+    const sx0 = Math.max(0, cx / TILE - 0.5), sy0 = Math.max(0, cy / TILE - 0.5);
+    const sx1 = Math.min(m.w, (cx + wW) / TILE - 0.5), sy1 = Math.min(m.h, (cy + wH) / TILE - 0.5);
+    if (!(sx1 > sx0 && sy1 > sy0)) return;
+    ctx.save(); ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(this.fogCanvas, sx0, sy0, sx1 - sx0, sy1 - sy0,
+      (sx0 + 0.5) * TILE, (sy0 + 0.5) * TILE, (sx1 - sx0) * TILE, (sy1 - sy0) * TILE);
+    ctx.restore();
   },
   // ---------------- weather ----------------
   // The sandstorm. js/map.js has had a fully tested hazard for a milestone and nothing drew it, so the
