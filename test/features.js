@@ -58,7 +58,12 @@ T('nuke issue', Abilities.issue(ghost, 'nuke', null, enemyHatch.x, enemyHatch.y)
 // assertion is about the damage formula, so it takes the front arc, where the multiplier is 1.
 const vult = sp('vulture', 0, hx, hy); const ultra = sp('ultralisk', 1, hx, hy); ultra.hp = 400;
 ultra.facing = Math.atan2(vult.y - ultra.y, vult.x - ultra.x);
-const d = G.damage(ultra, 20, 'concussive', vult); T('concussive vs large = (20-1)*0.25', Math.abs(d - 4.75) < 0.01); G.kill(ultra, null, true);
+// The exact formula, and the multiplier is read from the table rather than written out here -- it is
+// the assertion that caught directional armour trying to discount the front arc, so it has to stay an
+// exact equality, but hard-coding 0.25 meant softening the counter matrix (M11 idea 24) showed up as
+// a mysterious failure in a check about something else.
+const d = G.damage(ultra, 20, 'concussive', vult); const exp = (20 - 1) * DMG_MULT.concussive[ultra.def.size || 'medium'];   // the ultralisk is the TARGET; the vulture is firing
+T('concussive vs large = (20-1)*' + DMG_MULT.concussive.large, Math.abs(d - exp) < 0.01); G.kill(ultra, null, true);
 // fog: low ground unit cannot see high ground
 // The pair must be clear of every unit player 0 already has, or this measures the base's vision rather
 // than the marine's. It did not matter until high ground granted +15% sight (M11 vertical layers) and
@@ -83,9 +88,18 @@ const hyd = sp('hydralisk', 0, hx, hy + 300); T('lurker morph', Abilities.issue(
 const tgt = sp('marine', 1, lurkU.x + 100, lurkU.y); Abilities.instant(lurkU, 'burrow'); run(120); T('lurker line attack', !tgt.alive);
 const qn = place('queens_nest', 0, hx + 250, hy - 100); G.queueMorph(hatch, 'hive'); run(1810); T('hive', hatch.def.id === 'hive');
 const mound = place('defiler_mound', 0, hx - 250, hy - 100); G.queueTech(mound, 'plague_tech'); G.queueTech(mound, 'consume_tech'); run(3100); T('plague+consume', p.hasTech('plague_tech') && p.hasTech('consume_tech'));
-const def = sp('defiler', 0, hx, hy + 120); def.energy = 200; const mar2 = sp('marine', 1, def.x + 150, def.y); mar2.hp = 40;
+// Cast well away from the base. This check asserts the victim is DAMAGED BUT ALIVE -- plague
+// floors at 1 and never kills, which is the property worth checking -- and a 40 hp enemy marine
+// standing in the middle of the player's army does not survive thirty frames for reasons that have
+// nothing to do with plague. It did until M11 softened the counter matrix and explosive-vs-small went
+// from 0.5 to 0.65; the check then failed while the thing it is about still worked.
+const quiet = G.map.findFreeTile(Math.floor(G.map.w / 2), Math.floor(G.map.h / 2), 24) || [Math.floor(G.map.w / 2), Math.floor(G.map.h / 2)];
+const def = sp('defiler', 0, (quiet[0] + .5) * TILE, (quiet[1] + .5) * TILE); def.energy = 200;
+const mar2 = sp('marine', 1, def.x + 90, def.y); mar2.hp = 40;
 Abilities.issue(def, 'plague', null, mar2.x, mar2.y); run(30); T('plague ticks', mar2.hp < 40 && mar2.hp >= 1); G.kill(mar2, null, true);
-const ling4 = G.units.find(u => u.def.id === 'zergling' && u.alive); def.energy = 10; Abilities.issue(def, 'consume', ling4); run(300); T('consume', !ling4.alive && def.energy >= 50);
+// A zergling of its own, beside it, rather than whichever one happens to be alive back at the base:
+// consume has to walk to its target and 300 frames does not cross half a map.
+const ling4 = sp('zergling', 0, def.x + 40, def.y); def.energy = 10; Abilities.issue(def, 'consume', ling4); run(300); T('consume', !ling4.alive && def.energy >= 50);
 def.energy = 200; Abilities.issue(def, 'dark_swarm', null, def.x + 100, def.y); run(30); T('swarm field', !!Abilities.inField(def.x + 100, def.y, 'swarm'));
 const q = sp('queen', 0, hx, hy + 100); q.energy = 200; G.queueTech(qn, 'spawn_broodling_tech'); run(1210); const gol = sp('goliath', 1, q.x + 100, q.y); Abilities.issue(q, 'spawn_broodling', gol); run(30); T('broodlings', !gol.alive && G.units.filter(u => u.def.id === 'broodling' && u.alive).length === 2);
 const gs = place('spire', 0, hx - 300, hy + 100); G.queueMorph(gs, 'greater_spire'); run(1810); const muta = sp('mutalisk', 0, hx, hy); T('guardian morph', Abilities.issue(muta, 'guardian_aspect')); run(610); T('guardian', G.units.some(u => u.def.id === 'guardian' && u.alive));

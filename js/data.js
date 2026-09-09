@@ -18,11 +18,30 @@ function repairableDef(d) {
   if (d.id === 'scarab' || d.id === 'interceptor' || d.id === 'nuke' || d.id === 'spider_mine') return false;
   return !!(d.isBuilding || d.mech);
 }
+// Weapon type against unit size. M11 wave one, idea 24 -- the LAST mechanic of the milestone, landed
+// last on purpose, because it invalidates every balance number in the repository and should therefore
+// arrive on top of everything else that also does.
+//
+// SOFTENED, NOT REMOVED. The spread was 0.25 to 1.0, and against the wrong size a shot did a quarter
+// of its damage: rock-paper-scissors so sharp that composition was the whole game and everything else
+// -- range, speed, splash, where a unit was standing, which way it was facing -- was rounding error
+// next to it. That is a matchup quiz, not a battle.
+//
+// It is now 0.65 to 1.0, chosen deliberately. Counters stay LEGIBLE: concussive is still visibly bad
+// into large, explosive still visibly bad into small, and you can still read a fight by what is in it.
+// But a wrong-target shot is a poor trade rather than a wasted one, so the difference between a good
+// army and a bad one now runs through the mechanics this milestone spent its time on -- directional
+// armour, suppression, veterancy, high ground, and terrain that remembers. Role matters, and counters
+// still matter; neither one decides it alone.
+//
+// The ladder is 0.65 / 0.75 / 0.90 / 1.00 rather than the arithmetic remap of the old numbers, because
+// a data table a human has to reason about should be round. Ordering and monotonicity are unchanged,
+// so nothing counters anything it did not counter before.
 const DMG_MULT = {
-  normal:     { small: 1,   medium: 1,    large: 1 },
-  concussive: { small: 1,   medium: 0.5,  large: 0.25 },
-  explosive:  { small: 0.5, medium: 0.75, large: 1 },
-  ignore:     { small: 1,   medium: 1,    large: 1 },
+  normal:     { small: 1,    medium: 1,    large: 1 },
+  concussive: { small: 1,    medium: 0.75, large: 0.65 },
+  explosive:  { small: 0.65, medium: 0.90, large: 1 },
+  ignore:     { small: 1,    medium: 1,    large: 1 },
 };
 
 const DATA = (() => {
