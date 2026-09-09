@@ -61,6 +61,7 @@ const TESTS = [
   { name: 'mapmodes', args: ['mapmodes.js'], what: 'the four map sizes are different rules, and the sandstorm is deterministic' },
   { name: 'flavour', args: ['flavour.js'], what: 'voice lines per race and register, rank and scars in the delivery, and the throttle' },
   { name: 'codex', args: ['codex.js'], what: 'the manual draws for every unit, and its damage numbers match real shots' },
+  { name: 'mapfeatures', args: ['mapfeatures.js'], what: 'destructibles move pathing and vision, and the archetypes are seeded and legal' },
 ];
 
 const argv = process.argv.slice(2);
