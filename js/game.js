@@ -234,7 +234,20 @@ const G = {
   canSee(pid, u) { if (u.owner === pid || this.allied(pid, u.owner)) return true; if (u.fx.parasite === pid) return true; if (!this.visibleAt(pid, u.x, u.y)) return false; if (u.isCloaked && !this.detected(u, pid) && !(u.fx.ensnare > 0 || u.fx.plague > 0)) return false; return true; },
   targetable(att, t) { if (!t.alive || t.inside) return false; if (t.fx.stasis > 0) return false; if (t.owner === att.owner || this.allied(att.owner, t.owner)) return true; return this.canSee(att.owner, t); },
   circles: {},
-  circle(r) { if (this.circles[r]) return this.circles[r]; const o = []; for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (dx * dx + dy * dy <= r * r + r) o.push([dx, dy]); return this.circles[r] = o; },
+  // Tile offsets within a radius, cached per radius.
+  //
+  // THE RADIUS IS ROUNDED, and that one call is a bug fix, not a tidy-up. The loop starts at -r and
+  // steps by 1, so a FRACTIONAL radius makes every offset fractional too; `tx + dx` is then a
+  // non-integer tile coordinate, `y * w + x` a non-integer index, and reading a typed array at a
+  // non-integer index gives undefined rather than throwing. The height test `m.height[i] <= uh`
+  // compares undefined and is false, so not one tile gets marked: a unit whose sight was not a whole
+  // number contributed NO VISION AT ALL, silently.
+  //
+  // Nothing had fractional sight when this was written. Three things do now -- the night penalty, the
+  // jammer aura, and the high-ground bonus -- and the first of them is what made it visible: on a night
+  // map every ground unit went blind while detectors, whose sight stayed a round number, could still
+  // see. It looked like a renderer bug and was reported as one.
+  circle(r) { r = Math.max(0, Math.round(r)); if (this.circles[r]) return this.circles[r]; const o = []; for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (dx * dx + dy * dy <= r * r + r) o.push([dx, dy]); return this.circles[r] = o; },
   updateVision() {
     const m = this.map;
     for (const p of this.players) {
@@ -446,6 +459,13 @@ const G = {
     d = (d - t.armor) * (DMG_MULT[type] || DMG_MULT.normal)[t.def.size || 'medium'];
     // ...then where it landed. opts.splash covers explosions and spells, which have no direction.
     if (!opts.splash && !opts.noFacing) d *= FACE_MULT[hitFacing(t, src)];
+    // ...and from what height. Shooting UP costs you 30%; shooting down costs nothing, because the
+    // reward for taking the high ground is already the range and the sight. Of the two levers the
+    // table offers -- `damage` and `hit` -- this takes damage and never both, so an uphill shot is
+    // not punished twice, and so combat gains no new random roll. Splash is exempt for the same
+    // reason it is exempt from facing: a blast does not come from a direction. Flyers on either end
+    // are exempt because the map answers about the ground under them.
+    if (!opts.splash && src && !src.fly && !t.fly) d *= this.map.heightBonus(src.x, src.y, t.x, t.y).damage;
     // Suppressing fire pins what it hits, and only while the fire keeps landing: a second of slow,
     // refreshed by every hit. Ranged attackers only, and never against buildings, larvae or eggs --
     // nothing that was going anywhere in the first place.

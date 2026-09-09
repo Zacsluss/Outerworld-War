@@ -60,7 +60,13 @@ const vult = sp('vulture', 0, hx, hy); const ultra = sp('ultralisk', 1, hx, hy);
 ultra.facing = Math.atan2(vult.y - ultra.y, vult.x - ultra.x);
 const d = G.damage(ultra, 20, 'concussive', vult); T('concussive vs large = (20-1)*0.25', Math.abs(d - 4.75) < 0.01); G.kill(ultra, null, true);
 // fog: low ground unit cannot see high ground
-const m = G.map; let lowT = null, highT = null; for (let y = 2; y < m.h; y++) for (let x = 2; x < m.w; x++) { const i = m.idx(x, y); if (m.height[i] === 0 && m.walk[i] && !lowT) { for (let dx = 0; dx < 6; dx++) { const j = m.idx(x + dx, y); if (m.height[j] === 2 && !highT) { lowT = [x, y]; highT = [x + dx, y]; } } } }
+// The pair must be clear of every unit player 0 already has, or this measures the base's vision rather
+// than the marine's. It did not matter until high ground granted +15% sight (M11 vertical layers) and
+// a structure on a plateau started reaching the chosen tile on its own -- the assertion then failed
+// while the thing it is about was still true.
+const m = G.map; let lowT = null, highT = null;
+const clearOfOurs = (x, y) => !G.units.some(u => u.alive && u.owner === 0 && Math.hypot(u.x / TILE - x, u.y / TILE - y) < 20);
+for (let y = 2; y < m.h; y++) for (let x = 2; x < m.w; x++) { const i = m.idx(x, y); if (m.height[i] === 0 && m.walk[i] && !lowT) { for (let dx = 0; dx < 6; dx++) { const j = m.idx(x + dx, y); if (m.height[j] === 2 && !highT && clearOfOurs(x, y) && clearOfOurs(x + dx, y)) { lowT = [x, y]; highT = [x + dx, y]; } } } }
 if (lowT) { const spot = sp('marine', 0, (lowT[0] + .5) * TILE, (lowT[1] + .5) * TILE); run(4); T('high ground hidden from low ground', !G.visible(0, highT[0], highT[1])); const fly = sp('wraith', 0, spot.x, spot.y); run(4); T('flyer sees high ground', G.visible(0, highT[0], highT[1])); }
 
 // ---------- Zerg ----------

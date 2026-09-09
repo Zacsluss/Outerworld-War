@@ -87,6 +87,10 @@ class Unit {
     // is a sensor more than an eye, but exempting it outright made it the only thing that could see.
     const d = G.daylight;
     if (d < 1) { const k = NIGHT_SIGHT + (1 - NIGHT_SIGHT) * d; s = Math.max(2, s * (this.def.det ? 1 - (1 - k) * NIGHT_DET : k)); }
+    // High ground sees further. Unlike range and damage this needs no target -- it is a property of
+    // where you are standing, so it reads the downhill row directly. Flyers are exempt: they are
+    // already at height 2 for vision and the map would answer about the ground beneath them.
+    if (!this.fly && G.map.tierAt && G.map.heightAt(this.x, this.y) === 1) s *= G.map.heightBonusTable()[2].sight;
     return s; }
   get armor() { let a = this.def.armor || 0; const p = this.player; if (this.def.upgA) a += p.upgLevel(this.def.upgA); if (this.def.armorTech && p.hasTech(this.def.armorTech[0])) a += this.def.armorTech[1]; a -= this.acidSpores; if (this.vet >= 2) a += 1; return Math.max(0, a); }
   get isCloaked() { return this.cloaked || this.burrowed || (G.frame - this.arbCloak < 12); }
@@ -129,6 +133,16 @@ class Unit {
   get scarred() { return this.def.hp - this.maxHp; }
   wDmg(w) { let d = w.dmg + this.player.upgLevel(w.upgKey) * (w.upgDmg || 1); if (w.dmgTech && this.player.hasTech(w.dmgTech[0])) d += w.dmgTech[1]; return Math.round(d * (1 + 0.08 * this.vet)); }
   wCd(w) { let c = w.cd; if (w.cdTech && this.player.hasTech(w.cdTech[0])) c = w.cdTech[1]; if (this.stim > 0) c = Math.ceil(c / 2); c += this.acidSpores * 3; return c; }
+  // wRange against a SPECIFIC target, which is the only way the height bonus can be applied: it is a
+  // property of the pair, not of the weapon. wRange itself stays target-free because js/hud.js and
+  // js/ui.js both print it, and a tooltip whose range changed with whatever you were hovering over
+  // would be worse than no number at all. Flyers are skipped on both ends -- the map will cheerfully
+  // report the ground under a wraith. See the vertical-layers block in js/map.js.
+  wRangeAt(w, t) {
+    let r = this.wRange(w);
+    if (!this.fly && t && !t.fly) r *= G.map.heightBonus(this.x, this.y, t.x, t.y).range;
+    return r;
+  }
   maxRange() { let m = 0; for (const w of [this.def.gw, this.def.aw]) if (w) m = Math.max(m, this.wRange(w)); if (this.def.id === 'siege_tank' && this.sieged) m = 12; return m; }
 
   // ---------------- orders ----------------
@@ -357,12 +371,12 @@ class Unit {
     }
     return best;
   }
-  inRange(t) { const w = this.weaponFor(t); if (!w) return false; const dd = dist(this, t) - t.r - this.r; if (w.minRange && dd < w.minRange * TILE) return false; return dd <= this.wRange(w) * TILE + 2; }
+  inRange(t) { const w = this.weaponFor(t); if (!w) return false; const dd = dist(this, t) - t.r - this.r; if (w.minRange && dd < w.minRange * TILE) return false; return dd <= this.wRangeAt(w, t) * TILE + 2; }
   engage(t) {
     const w = this.weaponFor(t);
     if (!w) { this.moveTo(t.x, t.y, t); return; }
     const dd = dist(this, t) - t.r - this.r;
-    if (dd <= this.wRange(w) * TILE) {
+    if (dd <= this.wRangeAt(w, t) * TILE) {
       if (w.minRange && dd < w.minRange * TILE) { if (this.canMove && !this.sieged) this.moveTo(this.x + (this.x - t.x), this.y + (this.y - t.y)); return; }
       this.facing = Math.atan2(t.y - this.y, t.x - this.x);
       if (this.cooldown <= 0) this.fireAt(t);
