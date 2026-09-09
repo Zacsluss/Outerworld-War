@@ -799,17 +799,32 @@ class GameMap {
     const wk = { tiles, baseH: Array.from(tiles, i => this.height[i]), born: frame, life, big: !!big };
     this.wrecks.push(wk); this.paintWreck(wk, true); return wk;
   }
+  // A hulk only ever touches tiles it OWNS, in both directions, and that is not defensive tidiness --
+  // it is a bug that a snapshot found. A building can win the race for a tile a hulk is standing on:
+  // the AI checks canPlace when it PICKS a spot and calls placeBuilding some frames later, so a hulk
+  // that appeared in between is not seen. The first version overwrote blocked[] regardless, which meant
+  // the hulk believed it owned a live building's footprint -- and when it decayed it set those tiles
+  // walkable and unblocked, handing a standing factory back to the pathfinder as open ground. It also
+  // broke the snapshot round trip, which is how it surfaced: syncWrecks clobbered the building id the
+  // checkpoint had faithfully restored, and a fresh process diverged 144 frames later.
   paintWreck(wk, on) {
     for (let k = 0; k < wk.tiles.length; k++) {
       const i = wk.tiles[k];
-      // Height 2, not baseH+1. Two reasons. A hulk dropped on ground that was ALREADY height 1 -- a ramp
-      // -- lifted nothing at all and occluded nothing, which is where a wreck matters most. And height 1
-      // is not a free value: it means "ramp" to the terrain painter, to canPlace and to recomputeCreep.
-      // 2 means high ground, which is what a hulk is, and G.updateVision's `height[i] <= uh` then hides
-      // it from anything on the ground while leaving it visible from the air. That asymmetry is right:
-      // you cannot see into a burning hulk from beside it, and you can from above it.
-      if (on) { this.walk[i] = 0; this.blocked[i] = WRECK_BLOCKED; this.height[i] = 2; }
-      else { this.walk[i] = 1; this.height[i] = wk.baseH[k]; if (this.blocked[i] === WRECK_BLOCKED) this.blocked[i] = -1; }
+      if (on) {
+        if (this.blocked[i] !== -1 && this.blocked[i] !== WRECK_BLOCKED) continue;   // someone else owns it
+        this.walk[i] = 0; this.blocked[i] = WRECK_BLOCKED;
+        // Height 2, not baseH + 1. Two reasons. A hulk dropped on ground that was ALREADY height 1 -- a
+        // ramp -- lifted nothing at all and occluded nothing, which is where a wreck matters most. And
+        // height 1 is not a free value: it means "ramp" to the terrain painter, to canPlace and to
+        // recomputeCreep. 2 means high ground, which is what a hulk is, and G.updateVision's
+        // `height[i] <= uh` then hides it from anything on the ground while leaving it visible from the
+        // air. That asymmetry is right: you cannot see into a burning hulk from beside it, and you can
+        // from above it.
+        this.height[i] = 2;
+      } else {
+        if (this.blocked[i] !== WRECK_BLOCKED) continue;   // not ours any more: touch no grid at all
+        this.walk[i] = 1; this.height[i] = wk.baseH[k]; this.blocked[i] = -1;
+      }
     }
   }
   // Idempotent and clock-free, exactly like syncFeature and called for the same reason: a snapshot

@@ -59,7 +59,11 @@ const r = vm.runInContext(`(() => {
   out.blindClears = vic.sight === baseSight;
   // a friendly unit is never blinded by its own tower
   const mine = G.spawnUnit('marine', 0, j.x + 40, j.y + 20); run(16);
-  out.ownSideNotBlinded = mine.sight === DATA.units.marine.sight;
+  // NOT shortened, rather than exactly the def value. Written as an equality it also failed the day
+  // high ground began granting +15% sight (M11 vertical layers) and this marine happened to stand on
+  // a plateau -- a legitimate bonus reported as a jammer blinding its own side.
+  out.ownSideNotBlinded = mine.sight >= DATA.units.marine.sight;
+  out.ownSide = { sight: mine.sight, def: DATA.units.marine.sight, aura: mine.auraSight || 0 };
 
   // an unfinished, lifted or unpowered building projects nothing
   p = setup();
@@ -81,7 +85,7 @@ ok(r.blind.inside < r.blind.base && r.blind.inside >= 1, 'a jammer shortens enem
 ok(r.blind.outside === r.blind.base, '...and leaves anyone outside alone');
 ok(r.blind.detWas === true && r.blind.detNow === false && r.blind.farDet === true, 'a detector inside a jammer stops detecting', JSON.stringify(r.blind));
 ok(r.blindClears, 'walking out of the field restores sight -- the pass clears rather than accumulates');
-ok(r.ownSideNotBlinded, 'a jammer never blinds its own side');
+ok(r.ownSideNotBlinded && !(r.ownSide.aura > 0 && r.ownSide.aura < 1), 'a jammer never blinds its own side', JSON.stringify(r.ownSide));
 ok(r.unfinishedProjectsNothing, 'an unfinished building projects nothing');
 ok(r.walls.length === 3 && r.wallsHaveNoAura, 'the three walls carry no aura and are flagged wall: true', r.walls.join(' '));
 console.log(fail ? `FAIL  ${pass} passed, ${fail} failed` : `ALL PASS  ${pass} passed, 0 failed`);
