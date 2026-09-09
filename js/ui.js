@@ -271,7 +271,11 @@ const UI = {
   ringMarker(res) { this.markers.push({ res, t: 20, color: '80,255,80' }); },
   smartCommand(t, wx, wy, shift) {
     const sel = this.ownSel(); if (!sel.length) return;
-    if (this.inMinimap(this.mouse.x, this.mouse.y)) return;
+    // No minimap guard here. There used to be one, and it killed the minimap right-click entirely:
+    // consoleClick routes a right-click on the minimap straight to this function, and the cursor is by
+    // definition over the minimap when it does. onDown already splits console clicks from world clicks
+    // by y before either can reach here, so the guard protected nothing and only blocked the one caller
+    // that needed to get through.
     // rally for single building
     // Larvae and eggs take a rally of their own, which overrides the hall's when they hatch. They
     // cannot move, so a right-click had nothing else to mean; this is every selected one at once, so
@@ -356,6 +360,32 @@ const UI = {
     // skipped by the `l.def.larva` test below, so the next press still morphs the next larva.
     if (u.def.larva) { B(6, 'Set Rally', 'R', setPending('rally')); DATA.larvaMorphs.forEach((id, i) => { const d = DATA.units[id]; const ok = p.hasReq(d); B(i, d.name, d.hk, () => { for (const l of sel) if (l.def.larva) { if (G.larvaMorph(l, id)) { this.selection = this.selection.filter(x => x.alive); break; } } }, { cost: d, enabled: ok, dim: !ok, why: why(d) }); }); return btns; }
     if (u.def.egg) { B(6, 'Set Rally', 'R', setPending('rally')); B(8, 'Cancel', 'Escape', () => { for (const e of sel) G.cancelProd(e, 0); }); return btns; }
+    // Several buildings at once. Brood War shows the first one's card and applies what you press to all
+    // of them that can do it, which is what makes "select every hatchery, press S" work. The card is
+    // built from `u` as before; only the actions below fan out. Buildings that cannot do the thing are
+    // simply skipped, so a hatchery, a lair and a hive together behave as one larva pool.
+    if (u.isBuilding && sel.length > 1) {
+      const halls = sel.filter(b => b.isBuilding && b.done && !b.lifted);
+      const lv = []; for (const b of halls) if (b.def.spawnsLarva) for (const l of b.larvae) if (l.alive && l.def.larva) lv.push(l);
+      if (lv.length) B(7, 'Select Larvae', 'S', () => { this.selection = lv.slice(0, 24); this.cardMenu = null; this.pending = null; },
+        { count: lv.length, enabled: true });
+      if (halls.some(b => b.def.produces.length || b.def.spawnsLarva)) B(6, 'Set Rally', 'R', setPending('rally'));
+      // The union of what the selection can train, in the first building's order so the card is stable.
+      const seen = new Set(); let j = 0;
+      for (const b of halls) for (const id of b.def.produces) {
+        if (seen.has(id)) continue; seen.add(id);
+        const ud = DATA.units[id]; const ok = p.hasReq(ud);
+        // Queue on the least busy building that can make it, which is what a player clicking through
+        // them one at a time would achieve, and keeps a group of gateways filling evenly.
+        B(j++, ud.name, ud.hk, () => {
+          const able = halls.filter(b2 => b2.def.produces.includes(id));
+          let best = null; for (const b2 of able) if (!best || b2.prod.length < best.prod.length) best = b2;
+          if (best) G.queueUnit(best, id);
+        }, { cost: ud, enabled: ok, dim: !ok, why: why(ud) });
+        if (j > 5) break;
+      }
+      return btns;
+    }
     if (u.isBuilding && sel.length === 1) {
       const d = u.def; let i = 0;
       if (!u.done) { B(8, 'Cancel', 'Escape', () => G.cancelBuilding(u)); return btns; }

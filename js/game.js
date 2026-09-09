@@ -104,7 +104,24 @@ const G = {
             const h = ((a.id * 73856093) ^ (b.id * 19349663)) >>> 0;
             const v = SEP_DIRS[h & 7]; ux = v[0]; uy = v[1]; d = 0.01;
           } else { ux = dx / d; uy = dy / d; }
-          const push = (min - d) * 0.5 * 0.6;
+          // 0.9, up from 0.6. The old damping never caught up with a crowd walking into itself: twelve
+          // marines ordered onto one point settled 2.7 px inside contact distance and stayed there, two
+          // pairs still overlapping after they had stopped. At 0.9 the same crowd lands on 13.1 of a
+          // 13.6 contact distance with nothing overlapping, and pairs overlapping in transit drop from
+          // three to one.
+          //
+          // Not 1.0, which resolves an overlap exactly and is measurably the best on both counts -- it
+          // breaks test/wrongthing.js. A unit rallied somewhere nothing can reach is jostled hard enough
+          // by its neighbours that its stuck detector reads the jostling as progress and it never gives
+          // up, which is a worse bug than the one being fixed. The real repair is for that detector to
+          // watch distance to the goal instead of distance moved; until then, damping.
+          //
+          // Running the damped pass twice also fixes the stacking, and is worse in every way: a second
+          // traversal of every unit, and it breaks test/snapshot.js's cross-process check, which is the
+          // multiplayer rejoin path. That break is unexplained and is a real lead -- JSON round-trips a
+          // snapshot exactly and there are no negative zeros, so extra position churn is exposing
+          // something the snapshot does not capture. Chase it before adding a second pass for any reason.
+          const push = (min - d) * 0.5 * 0.9;
           const am = a.sieged ? 0 : 1, bm = b.sieged ? 0 : 1;
           const ax = a.x - ux * push * am, ay = a.y - uy * push * am, bx = b.x + ux * push * bm, by = b.y + uy * push * bm;
           // passable() reads the walk grid, which says nothing useful about a flyer -- gating on it
