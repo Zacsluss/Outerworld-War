@@ -66,7 +66,21 @@ const BUILD = {
     if (!o) return;
     out.push('#' + name);
     for (const k of Object.getOwnPropertyNames(o).sort()) {
-      let v; try { v = o[k]; } catch (e) { continue; } // getters on a prototype can throw off an instance
+      // ACCESSORS ARE HASHED BY SOURCE, NEVER BY READING THEM. The old code did `v = o[k]` inside a
+      // try/catch and skipped anything that threw, on the grounds that "getters on a prototype can
+      // throw off an instance" -- which is true, and meant every accessor was silently skipped rather
+      // than hashed. Unit.prototype has `speed`, `sight`, `armor`, `vet`, `isCloaked` and a dozen more
+      // as getters, so NONE of the combat and movement maths in js/sim.js had ever been stamped:
+      // retuning night sight, the high-ground bonus or the churn penalty changed how the simulation
+      // behaves and left the build hash untouched, so a save from before the change loaded happily and
+      // desynced. That is precisely the failure this stamp exists to prevent, and it was invisible.
+      const desc = Object.getOwnPropertyDescriptor(o, k);
+      if (desc && (desc.get || desc.set)) {
+        if (desc.get) out.push(k + '#get', this.src(desc.get));
+        if (desc.set) out.push(k + '#set', this.src(desc.set));
+        continue;
+      }
+      let v; try { v = o[k]; } catch (e) { continue; }
       if (typeof v === 'function') { out.push(k, this.src(this.unwrap(k, v))); }
     }
   },

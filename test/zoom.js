@@ -95,6 +95,12 @@ function mkCtx2(withRender) {
 }
 const R = (c, src) => vm.runInContext('(() => {' + src + '})();', c);
 const ctx = mkCtx2(true);
+// G.daylight is a GETTER on G, and the night section below deletes it to test what the renderer does
+// when the simulation half is absent. That deletion is permanent in this context, which matters now
+// that BUILD hashes accessors by source: the stamp check at the end would otherwise compare a context
+// whose G still has the getter against one where the test removed it, and report a difference that the
+// render files had nothing to do with. Stash it here, put it back before the stamp is taken.
+R(ctx, "G.__dayDesc = Object.getOwnPropertyDescriptor(G, 'daylight');");
 
 const START = (layout, extra = '') => R(ctx, `
   G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'Z', human: false, name: 'B' }], seed: 4, layout: '${layout}' });
@@ -556,6 +562,7 @@ ok('a game that was drawn zoomed and at night re-simulates to the same state as 
 // editing simulation files this milestone and a literal would go stale the first time one of them
 // landed. What this proves is the thing that matters -- that render.js, terrain.js and fx.js are not
 // in the digest, so a zoom cannot refuse a save.
+R(ctx, "if (G.__dayDesc) { delete G.daylight; Object.defineProperty(G, 'daylight', G.__dayDesc); delete G.__dayDesc; }");
 const bare = mkCtx2(false);
 const hBare = R(bare, 'return BUILD.hash();');
 const hFull = R(ctx, 'return BUILD.hash();');

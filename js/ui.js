@@ -760,8 +760,12 @@ const UI = {
   },
   drawDayDial(ctx, x, y) {
     const p = this.dayPhase(); if (!p) return 0;
-    const w = 116, h = 22, r = 8, cx = x + 14, cy = y + h / 2;
-    ctx.fillStyle = '#000a'; ctx.fillRect(x, y, w, h);
+    const w = 116, h = 22, r = 8, cx = x + 14, cy = y + h / 2, BG = '#0b1016';
+    // The panel is OPAQUE, unlike the clock chip beside it, and that is not a style choice: the moon
+    // is drawn by biting a crescent out of a disc, and the only way to bite without knowing what is
+    // underneath is destination-out -- which does not bite the disc, it erases the canvas, leaving a
+    // transparent hole straight through the HUD to whatever is behind the element.
+    ctx.fillStyle = BG; ctx.fillRect(x, y, w, h);
     // The disc is lit by the daylight value itself, so it reads at a glance without the label: a full
     // pale disc at noon, a thin cold crescent at the bottom of the night.
     const lit = p.d;
@@ -772,9 +776,8 @@ const UI = {
       ctx.strokeStyle = '#ffd98a'; ctx.lineWidth = 1;
       for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * (r + 1.5), cy + Math.sin(a) * (r + 1.5)); ctx.lineTo(cx + Math.cos(a) * (r + 3.5), cy + Math.sin(a) * (r + 3.5)); ctx.stroke(); }
     } else {                                            // moon: bite the disc with the background colour
-      ctx.save(); ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle = BG;                             // the panel colour, not destination-out; see above
       ctx.beginPath(); ctx.arc(cx + 3 + (1 - lit) * 2, cy - 1, r * 0.92, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
     }
     ctx.textAlign = 'left'; ctx.font = 'bold 11px sans-serif';
     ctx.fillStyle = p.name === 'Night' ? '#9fb4d6' : p.name === 'Day' ? '#ffd98a' : '#e0c07a';
