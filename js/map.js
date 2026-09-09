@@ -75,7 +75,8 @@ const TILESET_NAMES = { badlands: 'Badlands', jungle: 'Jungle', ice: 'Ice', dese
 //   * MEDIUM is the historical feel. 128x128, four players, main + natural + one expansion, 1500 a
 //     patch -- the numbers every balance run in this repository was measured against.
 //   * LARGE gives each player five bases and a central plateau worth taking, so there is more than one
-//     front and holding all of your ground costs army.
+//     front and holding all of your ground costs army. The fifth base is ON that plateau, which is what
+//     makes "worth taking" a claim about the economy rather than about the view -- see the base list.
 //   * HUGE gives seven, but each patch holds 1100 rather than 1500. A player's whole territory is worth
 //     about what large's is (49,500 minerals either way) -- it is just spread over seven bases that run
 //     dry 27% faster, so standing still is losing even when nobody is shooting at you. That, plus a
@@ -104,8 +105,13 @@ const MAP_SIZES = {
   large: {
     name: 'Broken Expanse', w: 192, h: 192, players: 4, tileset: 'badlands', startOrder: [0, 3, 1, 2],
     patch: 1500, gas: 5000, patches: { main: 8, natural: 7, expo: 6 },
+    // The fifth base is ON the central plateau, not beside it. It used to sit at 66,66 on the low
+    // ground below -- so the plateau was 1,168 tiles of high ground that held nothing, cost nothing to
+    // give up, and was worth taking only for the view. A player's fifth base being up there means
+    // taking high ground is an economic decision and holding it is an army commitment, which is the
+    // difference between terrain that is a tactical asset and terrain that is scenery.
     bases: [{ x: 12, y: 12, role: 'main' }, { x: 34, y: 40, role: 'natural' },
-      { x: 12, y: 58, role: 'expo' }, { x: 58, y: 12, role: 'expo' }, { x: 66, y: 66, role: 'expo' }],
+      { x: 12, y: 58, role: 'expo' }, { x: 58, y: 12, role: 'expo' }, { x: 85, y: 88, role: 'expo' }],
     high: [['rect', 4, 4, 34, 28], ['ellipse', 21, 18, 19, 16], ['ellipse', 95.5, 95.5, 22, 20]],
     ramps: [[33, 30, 5, 6], [92, 70, 4, 10]],
     rocks: [['rect', 4, 40, 20, 3], ['ellipse', 50, 50, 6, 5]],
@@ -113,8 +119,9 @@ const MAP_SIZES = {
   huge: {
     name: 'The Long March', w: 256, h: 256, players: 4, tileset: 'ice', startOrder: [0, 3, 1, 2],
     patch: 1100, gas: 4000, patches: { main: 8, natural: 7, expo: 6 },
+    // ...and the same on huge: the fifth of seven is on the central plateau rather than at 70,70 below it.
     bases: [{ x: 12, y: 12, role: 'main' }, { x: 36, y: 44, role: 'natural' },
-      { x: 12, y: 58, role: 'expo' }, { x: 58, y: 12, role: 'expo' }, { x: 70, y: 70, role: 'expo' },
+      { x: 12, y: 58, role: 'expo' }, { x: 58, y: 12, role: 'expo' }, { x: 112, y: 112, role: 'expo' },
       { x: 12, y: 102, role: 'expo' }, { x: 102, y: 12, role: 'expo' }],
     high: [['rect', 4, 4, 36, 30], ['ellipse', 22, 19, 20, 17], ['rect', 100, 100, 28, 28], ['ellipse', 127.5, 127.5, 34, 34]],
     ramps: [[35, 32, 6, 8], [122, 88, 4, 12], [88, 122, 12, 4]],
@@ -397,6 +404,29 @@ const Archetypes = {
   },
   feat(L, kind, x, y, w, h, quadrants) { const f = { kind, x, y, w, h }; if (quadrants) f.quadrants = quadrants.slice(); L.features.push(f); },
 
+  // An expansion ON the central plateau, with the plateau guaranteed to be underneath it.
+  //
+  // A generator can put a base anywhere; what it cannot do is promise that the ground there is flat,
+  // high, and three tiles clear of the cliff ring on every one of the four map sizes. A base whose
+  // mineral line is half on the rim is a base whose patches sit on a sealed ramp lip, and a base one
+  // tile too far out is a base on low ground pretending to be on a plateau. So the shelf is drawn to
+  // fit the base rather than the base fitted to the shelf: a rectangle from three tiles outside the
+  // footprint to the map's own centre line, so that its four mirrored copies MEET there and become one
+  // block. Where the archetype's own plateau is already bigger -- basin at 192 tiles and up -- the
+  // rectangle disappears inside it and costs nothing; where it is smaller, this is the plateau.
+  //
+  // The base sits ten tiles in from the centre line and eight up, which is as close as the mirror
+  // allows: a base's true footprint runs x-5..x+8 and y-5..y+5 (the geyser is the wide part, and it is
+  // north-east of the hall), so any closer and the quadrant-1 copy's geyser would be touching this
+  // one's. `Archetypes.base`'s own 16x10 box under-describes that footprint by two rows, which is why
+  // this does its own placement rather than going through it.
+  centreBase(L, S) {
+    const bx = Math.floor(S.w / 2) - 10, by = Math.floor(S.h / 2) - 8;
+    L.high.push(['rect', bx - 8, by - 8, Math.floor(S.w / 2) - (bx - 8), Math.floor(S.h / 2) - (by - 8)]);
+    L.bases.push(MapModes.base(bx, by, S.patches.expo, S.patch, S.gas, 'expo'));
+    return [bx, by];
+  },
+
   // ---- chokepoint valley -------------------------------------------------
   // A river across the middle of the map with two fords near the edges and a tidal crossing in the
   // centre, and, at home, a rock wall in front of the natural with one gap that a rock formation is
@@ -425,8 +455,10 @@ const Archetypes = {
 
   // ---- open basin --------------------------------------------------------
   // No defender's terrain at home at all -- the only high ground on the map is one big plateau in the
-  // middle, and it is worth taking. Four bases a player, spread, and a spire on each approach so that
-  // there is somewhere an army can be that you cannot see.
+  // middle, and it is worth taking. FIVE bases a player, and the fifth is on top of that plateau, so
+  // "whoever wants to be safe has to take ground" is a sentence about the economy and not only about
+  // sight lines: on this map the only high ground there is, is also a base, and it is equidistant from
+  // everybody. A spire on each approach means there is somewhere an army can be that you cannot see.
   basin(L, S, R) {
     const W = S.w, H = S.h, fx = f => Math.round(f * W), fy = f => Math.round(f * H);
     L.high.push(['ellipse', W / 2 - 0.5, H / 2 - 0.5, fx(this.rf(R, 0.13, 0.17)), fy(this.rf(R, 0.13, 0.17))]);
@@ -435,6 +467,7 @@ const Archetypes = {
     this.base(L, S, fx(this.rf(R, 0.20, 0.24)), fy(this.rf(R, 0.20, 0.24)), 'natural');
     this.base(L, S, Math.max(8, fx(0.07)), fy(this.rf(R, 0.33, 0.39)), 'expo');
     this.base(L, S, fx(this.rf(R, 0.33, 0.39)), Math.max(8, fy(0.07)), 'expo');
+    this.centreBase(L, S);
     for (let i = 0; i < 3; i++) L.rocks.push(['ellipse', fx(this.rf(R, 0.26, 0.44)), fy(this.rf(R, 0.26, 0.44)), this.ri(R, 3, 5), this.ri(R, 3, 5)]);
     this.feat(L, 'spire', fx(this.rf(R, 0.29, 0.33)), fy(this.rf(R, 0.16, 0.20)), 4, 4);
     this.feat(L, 'spire', fx(this.rf(R, 0.16, 0.20)), fy(this.rf(R, 0.29, 0.33)), 4, 4);
@@ -518,6 +551,10 @@ const Archetypes = {
     MAP_LAYOUTS['arch_' + k] = L;
   }
 }
+
+// Built on first use by GameMap.heightBonusTable(), which is where the numbers are written and where
+// the build stamp can see them. Nothing else may assign it.
+let HEIGHT_BONUS = null;
 
 class GameMap {
   constructor(seed = 1, layout = 'temple') {
@@ -628,6 +665,11 @@ class GameMap {
     // the connectivity repair so that the repair sees them.
     this.placeFeatures(L);
     if (this.archetype) { this.flattenBases(); this.repairConnectivity(); }
+    // Last, because it is the only pass that has to see what all the others did. See the block above
+    // `_elevOpenH`: five earlier passes each open a tile for a good reason and any of them can leave a
+    // hole in a cliff, so this cannot run until they have all had their turn. The seal comes first of
+    // the two: "a plateau no ramp touches is an island" is only true once the holes are shut.
+    this.sealElevations(); this.flattenStrandedHeight();
     this.resById = new Map(this.resources.map(r => [r.id, r]));
     for (const f of this.features) this.resById.set(f.id, f);   // see the MAP_FEATURES comment: this is what snapshots them
   }
@@ -684,7 +726,12 @@ class GameMap {
       if (!this.inb(x, y) || x < 2 || y < 2 || x >= this.w - 2 || y >= this.h - 2) return false;
       const i = this.idx(x, y);
       if (this.blocked[i] !== -1) return false;                                      // resources, buildings
-      if (K.shutHeight !== null && this.height[i] === 1) return false;               // a spire may not eat a ramp
+      // A feature that decides its own height may only stand on ground already at that height. For the
+      // spire -- the only one -- that reads "a pillar stands on the floor": not in a ramp, which was
+      // the original rule here, and now not on a plateau either. A spire on high ground would collapse
+      // into a walkable height-0 pit inside a plateau, which is a hole in the cliff that arrives in the
+      // middle of a game and cannot be sealed at generation. See the elevation block below.
+      if (K.openHeight !== null && this.height[i] !== K.openHeight) return false;
       if (this.featTile && this.featTile[i] >= 0) return false;
       for (const r of baseRects) if (x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3]) return false;
       return true;
@@ -917,6 +964,168 @@ class GameMap {
     return carved;
   }
 
+  // ---------------- elevations: a ramp is the only way up ----------------
+  //
+  // The engine's one rule about elevation is `G.updateVision`'s `m.height[i] <= uh`: a unit sees a
+  // tile only if the tile is not above it. Everything high ground is worth -- the vision it denies,
+  // and now the range and damage `heightAdvantage` prices -- rests on that one comparison, and the one
+  // comparison rests on a promise nothing in this file used to keep: **that the only walkable join
+  // between low ground and high ground is a ramp.**
+  //
+  // Generation never set out to break it. A plateau is painted at height 2 and every height-2 tile
+  // with a low 8-neighbour is turned into an unwalkable cliff, so the cliff ring seals the plateau and
+  // the ramp rectangles are the doors punched through it. What breaks it is the five passes that run
+  // AFTERWARDS and each have a good reason to make a tile walkable:
+  //
+  //   * a mineral patch or a geyser is forced walkable and un-cliffed wherever it lands, so a resource
+  //     that straddles a cliff edge is a staircase;
+  //   * a base's clearing pass opens its own footprint;
+  //   * `flattenBases` levels a 6x5 to the hall's own height, which RAISES ground when the hall centre
+  //     is up and the rest of the clearing is down;
+  //   * a causeway lowers plateau tiles to 0 and opens them;
+  //   * `repairConnectivity` carves.
+  //
+  // **And one of them had already done it, in a layout that has shipped since M1.** Twilight Valley's
+  // rich expansion has its geyser at 98,34, four tiles wide, sitting on the southern lip of the map's
+  // biggest plateau -- so tiles 98..101,35 are height 2, walkable, and directly north of open low
+  // ground at y 36. That is a four-tile-wide undrawn ramp onto the high ground of the map's most
+  // valuable base, in two quadrants, and it is invisible: the terrain painter draws a cliff face there
+  // because `cliff[]` says cliff, while `walk[]` says walk. Nothing had ever looked, because nothing
+  // had ever had a reason to: while height only gated vision, a hole in a cliff cost a few tiles of
+  // fog. The moment it also gates range and damage it is a free flank.
+  //
+  // `sealElevations` runs at the end of every generation, including the editor's, and closes them. The
+  // repair is deliberately the WEAKEST one that works: a tile you can step onto from below is not high
+  // ground, it is a slope, so it is demoted to height 1 and left walkable. That can never disconnect
+  // anything -- `walk[]` is not touched, so every flood fill in the repository sees exactly the map it
+  // saw before -- and it cannot make a plateau unreachable, because it only ever turns a way up into
+  // an honest way up. What it does change is that standing in that spot no longer hides you and no
+  // longer pays you, which is the point.
+  //
+  // Two tiles it will not demote, and what it does instead:
+  //   * anything inside a base's 6x5 hall clearing. `canPlace` refuses a ramp outright and refuses
+  //     uneven ground, so one demoted tile in a footprint takes the base away. The low side of the
+  //     pair is demoted instead, which reads as a slope up to a shelf and leaves the hall level.
+  //   * a feature tile whose kind decides its own height -- the spire, which is 2 while it stands and
+  //     0 once it falls. Those are skipped and the other side of the pair is taken.
+  // A feature whose height is `null` (rocks, bridge, floodgate: "whatever the ground was") is demoted
+  // through its `baseH` as well as its `height`, so clearing a rock formation that was sitting on a
+  // sealed lip leaves the lip sealed rather than reopening the hole.
+  //
+  // The scan asks about the ground in its MOST WALKABLE state, the mirror image of `worstWalk`'s most
+  // blocking one: a feature tile counts as walkable at the height it presents when it is open, whether
+  // or not it is open now. So a rock formation standing on a cliff lip is sealed at generation, and
+  // the seal is still there in the 2^n combination where someone has cleared it.
+  _elevOpenH(i) {
+    const fi = this.featTile ? this.featTile[i] : -1;
+    if (fi < 0) return this.walk[i] === 1 ? this.height[i] : -1;
+    const f = this.features[fi], K = MAP_FEATURES[f.kind], k = f.tiles.indexOf(i);
+    return K.openHeight === null ? (k >= 0 ? f.baseH[k] : this.height[i]) : K.openHeight;
+  }
+  // Every 4-adjacent (high, low) pair of ever-walkable tiles, in row-major order. cb(iHigh, iLow).
+  _elevEdges(cb) {
+    const W = this.w, H = this.h;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x; if (this._elevOpenH(i) !== 2) continue;
+      if (x < W - 1 && this._elevOpenH(i + 1) === 0 && cb(i, i + 1) === false) continue;
+      if (x > 0 && this._elevOpenH(i - 1) === 0 && cb(i, i - 1) === false) continue;
+      if (y < H - 1 && this._elevOpenH(i + W) === 0 && cb(i, i + W) === false) continue;
+      if (y > 0 && this._elevOpenH(i - W) === 0 && cb(i, i - W) === false) continue;
+    }
+  }
+  // Demote one tile to a ramp, taking a feature's remembered ground with it. Refuses the tiles whose
+  // height belongs to a feature kind rather than to the map. Returns 1 if it changed anything.
+  _demoteToRamp(i) {
+    const fi = this.featTile ? this.featTile[i] : -1;
+    if (fi >= 0) {
+      const f = this.features[fi], K = MAP_FEATURES[f.kind], k = f.tiles.indexOf(i);
+      if (K.openHeight !== null || k < 0 || f.baseH[k] === 1) return 0;
+      // Through `syncFeature`, never by hand: a shut rock formation's tiles have to keep `walk` 0 and
+      // `cliff` 2 or they draw as open ground you cannot walk on. paintFeature is the only thing that
+      // knows that, and it now reads the demoted `baseH`.
+      f.baseH[k] = 1; this.syncFeature(f);
+      return 1;
+    }
+    if (this.height[i] === 1) return 0;
+    this.height[i] = 1; this.cliff[i] = 0;
+    return 1;
+  }
+  sealElevations() {
+    const keep = new Uint8Array(this.w * this.h);
+    for (const b of this.bases) this.rect(b.x - 1, b.y - 1, 6, 5, (x, y) => { keep[this.idx(x, y)] = 1; });
+    let n = 0;
+    this._elevEdges((hi, lo) => {
+      if (!keep[hi] && this._demoteToRamp(hi)) { n++; return false; }   // false: this tile is settled
+      if (!keep[lo]) n += this._demoteToRamp(lo);
+      return true;
+    });
+    return n;
+  }
+  // Every connected region of walkable high ground, with the ramp tiles that touch it and the bases
+  // that stand on it. 4-way, like `floodWalk` and for the same reason: a diagonal join is not a route.
+  plateaus() {
+    const W = this.w, H = this.h, comp = new Int32Array(W * H).fill(-1), out = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i0 = y * W + x;
+      if (comp[i0] >= 0 || this.walk[i0] !== 1 || this.height[i0] !== 2) continue;
+      const id = out.length, q = [i0], ramps = new Set(); comp[i0] = id;
+      for (let h = 0; h < q.length; h++) {
+        const i = q[h], cx = i % W, cy = (i / W) | 0;
+        if (cx > 0) this._platStep(i - 1, id, comp, q, ramps);
+        if (cx < W - 1) this._platStep(i + 1, id, comp, q, ramps);
+        if (cy > 0) this._platStep(i - W, id, comp, q, ramps);
+        if (cy < H - 1) this._platStep(i + W, id, comp, q, ramps);
+      }
+      out.push({ id, x, y, tiles: q.length, at: q, ramps: [...ramps].sort((a, b) => a - b),
+        bases: this.bases.filter(b => comp[this.idx(b.x + 2, b.y + 1)] === id).length });
+    }
+    return out;
+  }
+  _platStep(j, id, comp, q, ramps) {
+    if (this.walk[j] !== 1) return;
+    if (this.height[j] === 2) { if (comp[j] < 0) { comp[j] = id; q.push(j); } }
+    else if (this.height[j] === 1) ramps.add(j);
+  }
+  // High ground nobody can walk onto is not high ground, and this puts it back on the floor.
+  //
+  // Once `sealElevations` has run, a plateau's only walkable neighbours are its own tiles, unwalkable
+  // rock and cliff, and ramps -- so a plateau that no ramp touches is a walkable ISLAND that a ground
+  // unit can never enter or leave. That is not a hypothetical. The generators drop rock formations by
+  // seed, and a rock blob landing across a terrace cuts it in two: `arch:cliffs:11` leaves fifteen
+  // tiles of terrace stranded behind the rocks, and 23 of 384 archetype maps at the four sizes had at
+  // least one. Nobody had noticed because it costs nothing to walk past -- but it is a permanent hole
+  // in every ground army's vision on a map where neither player can ever stand in it, which is the
+  // worst of both halves of what high ground is for.
+  //
+  // The repair is a demotion again, and for the same reason the seal is one: `walk[]` is not touched,
+  // so no flood fill anywhere in this repository sees a different map, and nothing can be stranded by
+  // a pass that only ever makes ground lower. Carving a ramp out to it was the other candidate and is
+  // worse -- on `cliffs` the stranded piece is behind the rock wall in front of the natural, so the
+  // "repair" would be a second entrance to somebody's expansion, which is a map design decision and
+  // not a bug fix. A plateau that holds a base is left alone whatever its ramps: a drop-only island
+  // expansion is a legitimate map, and `elevationProblems` reports it rather than quietly levelling it.
+  flattenStrandedHeight() {
+    let n = 0;
+    for (const p of this.plateaus()) {
+      if (p.ramps.length || p.bases) continue;
+      for (const i of p.at) { this.height[i] = 0; n++; }
+    }
+    return n;
+  }
+  // What is wrong with this map's elevations, in the words the editor and the generators would want.
+  // Empty is good, and it is empty on every layout this build ships. `connectivityProblems` above is
+  // the same idea for walkability; between them they are what "a legal map" means here.
+  elevationProblems() {
+    const out = [];
+    this._elevEdges((hi, lo) => {
+      out.push('high ground at ' + (hi % this.w) + ',' + ((hi / this.w) | 0) + ' is walkable from low ground at '
+        + (lo % this.w) + ',' + ((lo / this.w) | 0) + ' without a ramp');
+      return false;
+    });
+    for (const p of this.plateaus()) if (!p.ramps.length) out.push('plateau of ' + p.tiles + ' tiles at ' + p.x + ',' + p.y + ' has no ramp onto it');
+    return out.slice(0, 24);
+  }
+
   // ---------------- custom (editor-made) maps ----------------
   // A custom layout stores the painted height grid and rock grid run-length encoded, plus explicit
   // bases. Cliff edges are derived here exactly as for the built-in layouts, so the editor only has
@@ -955,6 +1164,10 @@ class GameMap {
       this.bases.push(base); if (bd.main) this.starts.push(base);
     }
     for (const r of this.resources) this.rect(r.x, r.y, r.w, r.h, (x, y) => { this.cliff[this.idx(x, y)] = 0; });
+    // An editor map gets the same seal as a generated one, and needs it more: the brush paints heights
+    // freely and the base clearing above opens a 6x5 wherever the author put a hall, so a town hall
+    // painted on the lip of a plateau is exactly the Twilight Valley hole with a person behind it.
+    this.sealElevations(); this.flattenStrandedHeight();
     this.resById = new Map(this.resources.map(r => [r.id, r]));
   }
 
@@ -962,6 +1175,76 @@ class GameMap {
   walkable(tx, ty) { if (!this.inb(tx, ty)) return false; const i = this.idx(tx, ty); return this.walk[i] === 1 && this.blocked[i] === -1; }
   walkableTerrain(tx, ty) { return this.inb(tx, ty) && this.walk[this.idx(tx, ty)] === 1; }
   heightAtPx(px, py) { return this.H(Math.floor(px / TILE), Math.floor(py / TILE)); }
+
+  // ============================================================================
+  // Verticality. What the simulation is allowed to ask the map about elevation.
+  // ============================================================================
+  // READ-ONLY QUERY CONTRACT, in the shape of `featureView` and `hazardState` above: nothing here
+  // mutates anything, nothing here reads a clock or the RNG, and NOTHING HERE APPLIES A BONUS. The
+  // multipliers are a recommendation with a reason attached; whether a shot is longer or weaker for
+  // standing uphill is js/sim.js's decision and js/sim.js's code.
+  //
+  //   map.heightAt(px, py)      TIER at a world pixel. 0 low, 1 high. Off the map is 0.
+  //   map.tierAt(tx, ty)        the same, by tile.
+  //   map.onRamp(px, py)        is this pixel standing on a ramp.
+  //   map.heightAdvantage(fromPx, fromPy, toPx, toPy)
+  //                             tierAt(from) - tierAt(to): -1 shooting up, 0 level, +1 shooting down.
+  //   map.heightBonus(fromPx, fromPy, toPx, toPy)
+  //                             the recommended multipliers for that advantage, as a SHARED FROZEN
+  //                             object -- read it, never keep it, never write to it.
+  //
+  // **A TIER IS NOT A `height[]` VALUE, and the difference is the whole point.** `height[]` has three
+  // values because it is three kinds of *drawing*: 0 flat, 1 the sloped face of a ramp, 2 the top of a
+  // plateau. A tier has two because there are two places a unit can be standing: down here, or up
+  // there. A ramp is a slope, not a landing, so `tierAt` reports 0 for it -- which is Brood War's rule
+  // as well, and it is what makes a ramp a fight rather than a free upgrade. Walk halfway up and you
+  // have given up nothing and gained nothing; the tier changes on the tile where the climb ends.
+  //
+  // **So `heightAt` is NOT `heightAtPx`, three lines above, which stays exactly as it was.**
+  // `heightAtPx` hands back the raw grid value 0/1/2 and is what `Unit.heightLevel()` feeds to vision,
+  // where a ramp genuinely does sit between the two -- you can see up a ramp from the bottom of it.
+  // Vision wants three values, combat wants two, they disagree about the ramp on purpose, and neither
+  // should be reimplemented in terms of the other. Do not swap one for the other to save a call.
+  //
+  // **It is antisymmetric, and that is asserted rather than assumed.** `heightAdvantage(a, b)` is
+  // exactly `-heightAdvantage(b, a)` for every pair of points on or off the map, and it is 0 whenever
+  // the two are on the same tier. So one call answers both halves of a duel and a caller cannot get a
+  // different answer by asking in the other order. It is also pure: same map, same arguments, same
+  // number, for ever -- there is no state behind it, so it is safe to call inside a tick, inside a
+  // replay seek, or from a headless test with no G at all.
+  //
+  // **Air units are not this function's business.** `Unit.heightLevel()` in js/sim.js already answers
+  // `fly ? 2` for vision, and a flyer has no ground under it in any meaningful sense. Skip the query
+  // for a flying attacker or a flying target rather than asking it about the ground they happen to be
+  // over; the map cannot tell the difference and will cheerfully report the terrain.
+  //
+  // **Why multipliers rather than Brood War's dice.** Brood War gives a shot fired from low ground at a
+  // target on high ground a 53% chance to hit. A roll is perfectly implementable here -- it just has to
+  // go through `G.rand()` like every other roll in the simulation -- but a multiplier is easier to
+  // measure, cannot desync, and does not add variance to a balance harness that is already fighting
+  // for significance. Both are offered below; take one, not both, or a shot uphill is punished twice.
+  HEIGHT_TIERS() { return 2; }
+  // The table. Written as literals INSIDE a method on purpose: js/build.js hashes the source text of
+  // GameMap's methods and does not walk this file's module-level constants, so numbers that live out
+  // there can be retuned without moving the build stamp -- and a save made before the retune would
+  // then be accepted and quietly re-simulate into a different game. In here, changing a 1.15 refuses
+  // the old save, which is the entire job of the stamp. Built once and frozen, so the per-shot path
+  // allocates nothing.
+  heightBonusTable() {
+    return HEIGHT_BONUS || (HEIGHT_BONUS = Object.freeze([
+      // index 0: advantage -1, the attacker is shooting UP at a target on high ground
+      Object.freeze({ adv: -1, range: 1.00, sight: 1.00, damage: 0.70, hit: 0.53 }),
+      // index 1: advantage 0, level ground, and nothing changes
+      Object.freeze({ adv: 0, range: 1.00, sight: 1.00, damage: 1.00, hit: 1.00 }),
+      // index 2: advantage +1, the attacker is on high ground shooting DOWN
+      Object.freeze({ adv: 1, range: 1.15, sight: 1.15, damage: 1.00, hit: 1.00 }),
+    ]));
+  }
+  tierAt(tx, ty) { return this.H(tx, ty) === 2 ? 1 : 0; }
+  heightAt(px, py) { return this.tierAt(Math.floor(px / TILE), Math.floor(py / TILE)); }
+  onRamp(px, py) { return this.H(Math.floor(px / TILE), Math.floor(py / TILE)) === 1; }
+  heightAdvantage(fromPx, fromPy, toPx, toPy) { return this.heightAt(fromPx, fromPy) - this.heightAt(toPx, toPy); }
+  heightBonus(fromPx, fromPy, toPx, toPy) { return this.heightBonusTable()[this.heightAdvantage(fromPx, fromPy, toPx, toPy) + 1]; }
   hasCreep(tx, ty) { return this.inb(tx, ty) && this.creep[this.idx(tx, ty)] > 0; }
   hasPsi(pid, tx, ty) { const p = this.psi[pid]; return !!p && this.inb(tx, ty) && p[this.idx(tx, ty)] > 0; }
   resourceAt(tx, ty) { if (!this.inb(tx, ty)) return null; const b = this.blocked[this.idx(tx, ty)]; if (b !== -2 && b !== -3) return null; return this.resources.find(r => tx >= r.x && tx < r.x + r.w && ty >= r.y && ty < r.y + r.h) || null; }
