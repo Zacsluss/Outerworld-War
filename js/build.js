@@ -80,6 +80,12 @@ const BUILD = {
     for (const n of ['DATA', 'RACE_INFO', 'TURN', 'ACCEL', 'MAP_LAYOUTS', 'NO_BROODLING', 'AI_SCRIPTS', 'AI_COMP', 'AI_RESEARCH']) {
       const v = look(n); if (v !== undefined) { out.push('$' + n); this.ser(v, out, seen, 0); }
     }
+    // Missions.list, explicitly. `fns` below hashes an object's own FUNCTIONS, and a scenario's setup
+    // and check hang off entries of this array rather than off Missions itself -- so no mission script
+    // had ever been stamped, and rewriting one would not have refused a save written before the change.
+    // The list only, not the whole object: fns already covers the methods, and ser walks a function by
+    // its source, so hashing both would count every method twice for nothing.
+    { const M = look('Missions'); if (M && M.list) { out.push('$Missions.list'); this.ser(M.list, out, seen, 0); } }
     for (const [n, o] of [['G', look('G')], ['CMD', look('CMD')], ['Abilities', look('Abilities')], ['Missions', look('Missions')], ['RNG', look('RNG')],
     ['Unit', look('Unit') && look('Unit').prototype], ['Player', look('Player') && look('Player').prototype],
     ['AI', look('AI') && look('AI').prototype], ['GameMap', look('GameMap') && look('GameMap').prototype],

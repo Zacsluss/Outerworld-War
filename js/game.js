@@ -88,6 +88,11 @@ const G = {
       const p = new Player(i, pick(po.race), po.human, po.name || (po.human ? 'Player' : 'Computer ' + i)); p.team = po.team == null ? i : po.team;
       p.vis = new Uint8Array(this.map.w * this.map.h); p.ai = po.human ? null : new AI(p, po.difficulty || 'normal');
       this.players.push(p);
+      // Starting bank, if the setup screen asked for one. Here rather than applied by the caller
+      // afterwards, because opts.players is what a replay and a network join reproduce verbatim --
+      // anything applied outside G.init is invisible to a headless harness and to a rejoining client.
+      if (po.minerals != null) p.minerals = po.minerals;
+      if (po.gas != null) p.gas = po.gas;
       const base = this.map.starts[i % this.map.starts.length];
       p.startBase = base; p.startX = base.cx; p.startY = base.cy;
       this.setupStart(p, base);

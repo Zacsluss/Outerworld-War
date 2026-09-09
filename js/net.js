@@ -65,7 +65,7 @@ const Net = {
   startGame(m) {
     this.reset(m);
     this.speed = m.speed == null ? 6 : m.speed; // agreed in the lobby; every client must pace the same or lockstep just makes the fast ones wait
-    UI.start({ players: m.players.map(p => ({ race: p.race, human: p.human, name: p.name, difficulty: p.difficulty, team: p.team })), seed: m.seed, layout: m.layout, human: m.you, mode: 'play', net: true });
+    UI.start({ players: m.players.map(p => ({ race: p.race, human: p.human, name: p.name, difficulty: p.difficulty, team: p.team, style: p.style, minerals: p.minerals, gas: p.gas })), seed: m.seed, layout: m.layout, human: m.you, mode: 'play', net: true });
   },
   // Rejoin after a drop: the relay sends every command batch since the start; re-simulate from frame 0, then continue live.
   rejoinGame(m) {
@@ -73,7 +73,7 @@ const Net = {
     this.speed = m.speed == null ? 6 : m.speed;
     for (const h of (m.history || [])) { if (!this.inbox[h.f]) this.inbox[h.f] = {}; this.inbox[h.f][h.p] = h.c; if (h.p === this.me) this.sent[h.f] = true; }
     this.catchingUp = true; this.catchTarget = m.frame || 0;
-    UI.start({ players: m.players.map(p => ({ race: p.race, human: p.human, name: p.name, difficulty: p.difficulty, team: p.team })), seed: m.seed, layout: m.layout, human: m.you, mode: 'play', net: true });
+    UI.start({ players: m.players.map(p => ({ race: p.race, human: p.human, name: p.name, difficulty: p.difficulty, team: p.team, style: p.style, minerals: p.minerals, gas: p.gas })), seed: m.seed, layout: m.layout, human: m.you, mode: 'play', net: true });
     // A snapshot from a live player skips straight to their state; only the commands after it get replayed.
     // Without one this re-simulates the whole game, which gets slower the longer the game has run.
     let from = 0;

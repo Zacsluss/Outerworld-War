@@ -6,7 +6,7 @@
 const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
 const args = process.argv.slice(2).filter(a => !a.startsWith('--')); const quiet = process.argv.includes('--quiet');
 const which = args[0] || 'all', FRAMES = parseInt(args[1] || '28800'), SEED = parseInt(args[2] || '3'); const DIFF = (process.argv.find(a => a.startsWith('--diff=')) || '--diff=easy').slice(7); const CHEAT_MIN = parseFloat((process.argv.find(a => a.startsWith('--cheat=')) || '--cheat=6').slice(8));
-const MISSION_IDS = ['t1', 't2', 'z1', 'z2', 'p1', 'p2', 'z3', 'p3'];
+const MISSION_IDS = ['t1', 't2', 'z1', 'z2', 'p1', 'p2', 'z3', 'p3', 't3', 'z4', 'p4', 't4'];
 const missionMode = which === 'missions' || MISSION_IDS.includes(which);
 const matchups = missionMode ? (which === 'missions' ? MISSION_IDS : [which]) : which === 'all' ? ['TZ', 'PT', 'ZP'] : [which];
 function makeCtx(errors) {
