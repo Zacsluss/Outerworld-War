@@ -295,6 +295,88 @@ const UNITS = {
   interceptor: () => RIG.ship({ bodySize: [1.2, 0.3, 0.6], color: C.gold, cockpit: false, engines: [[-0.6, 0, 0]] }),
   scarab: () => { const r = N([0, 0.3, 0]); r.children.push(P('sphere', [1.2, 0.6, 1.0], [0, 0, 0], m(C.gold)), P('sphere', [0.4, 0.4, 0.4], [0.4, 0.1, 0], GLOW(C.psi))); return r; },
   hallucination: () => { const r = N([0, 0.5, 0]); r.children.push(P('sphere', [1.2, 1.2, 1.2], [0, 0, 0], GLOW([0.5, 0.8, 1]))); return r; },
+  // ---- M11 additions: the map's own units --------------------------------------------------------
+  // Three units shipped with no model and so had no baked sheet at all. See the M11 block in BUILDINGS
+  // for why that matters. None of these may look like it belongs to a race: the creatures are dirt and
+  // chitin rather than Zerg purple, and the Sentinel is old machinery someone else built and left.
+  //
+  // The Sentinel is the only one that is ever team-coloured, because it is the only one that can be
+  // owned -- capturing the foundry is what builds it.
+  sentinel: () => {
+    const root = N([0, 0, 0]);
+    // A squat four-legged automaton. Legs splayed and short, so it reads as a walking gun emplacement
+    // rather than as a Goliath: it is a thing that was left guarding something, not an army unit.
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const leg = N([sx * 0.42, 0.62, sz * 0.5], { anim: swing(0.30, sx * sz > 0 ? 0 : Math.PI, sz) });
+      leg.children.push(P('cyl', [0.17, 0.42, 0.17], [sx * 0.1, -0.21, sz * 0.08], m([0.32, 0.30, 0.27]), { rot: [-sz * 0.35, 0, -sx * 0.35] }));
+      const shin = N([sx * 0.2, -0.42, sz * 0.16], { rot: [sz * 0.2, 0, sx * 0.2] });
+      shin.children.push(P('cyl', [0.13, 0.44, 0.13], [0, -0.22, 0], m([0.26, 0.24, 0.22])),
+        P('box', [0.30, 0.10, 0.26], [0, -0.44, 0], m([0.20, 0.19, 0.17])));
+      leg.children.push(shin); root.children.push(leg);
+    }
+    const body = N([0, 0.92, 0], { anim: recoil(0.10) });
+    root.children.push(body);
+    // hull: old plate, a warmer grey than Terran steel, with oxide streaks implied by the darker skirt
+    body.children.push(P('box', [1.05, 0.46, 0.95], [0, 0, 0], m([0.42, 0.40, 0.36], { spec: 0.35 })));
+    body.children.push(P('box', [1.15, 0.12, 1.02], [0, -0.24, 0], m([0.28, 0.24, 0.20])));
+    body.children.push(P('box', [0.45, 0.10, 0.55], [-0.2, 0.26, 0], TEAM));
+    // sensor drum and a single amber eye -- the tell that it is awake and yours
+    body.children.push(P('cyl', [0.34, 0.26, 0.34], [0.05, 0.36, 0], m([0.34, 0.32, 0.29])));
+    body.children.push(P('sphere', [0.17, 0.17, 0.17], [0.30, 0.38, 0], GLOW([1.0, 0.72, 0.25])));
+    // one heavy barrel, recoiling. Range 6, so it wants to look like it reaches.
+    const gun = N([0.35, 0.02, 0], { anim: recoil(0.22) });
+    gun.children.push(cylX(1.25, 0.15, [0.62, 0, 0], m(C.gun)),
+      P('box', [0.30, 0.26, 0.32], [0.05, 0, 0], m([0.30, 0.28, 0.25])),
+      P('cyl', [0.20, 0.14, 0.20], [1.28, 0, 0], m([0.22, 0.21, 0.19]), { rot: [0, 0, -Math.PI / 2] }));
+    body.children.push(gun);
+    return root;
+  },
+  // Small, low and many. It has to read at r9 -- which is tiny -- so it is one body, a wide head and
+  // mandibles, and nothing else competing for those pixels.
+  carrion_grub: () => {
+    const r = RIG.bug({
+      segs: [[-0.15, 0, 1.35, 0.62, 0.85], [0.55, 0.02, 0.7, 0.5, 0.62]],
+      legs: 2, legLen: 0.5, legX0: 0.25, legGap: 0.5, head: false, bodyY: 0.34, lunge: 0.22,
+      color: [0.40, 0.33, 0.24], color2: [0.31, 0.26, 0.19],
+    });
+    const b = r.children[0];
+    b.children.push(P('sphere', [0.10, 0.10, 0.10], [0.85, 0.12, -0.13], GLOW([0.95, 0.55, 0.20])),
+      P('sphere', [0.10, 0.10, 0.10], [0.85, 0.12, 0.13], GLOW([0.95, 0.55, 0.20])));
+    // mandibles, opening on the strike
+    for (const s of [-1, 1]) {
+      const jaw = N([0.85, -0.05, s * 0.16], { anim: st => ({ rot: [0, s * (0.25 + AK(st) * 0.8), 0] }) });
+      jaw.children.push(P('cone', [0.11, 0.42, 0.11], [0.18, 0, 0], m(C.bone), { rot: [0, 0, -Math.PI / 2 + 0.25] }));
+      b.children.push(jaw);
+    }
+    for (let k = 0; k < 3; k++) b.children.push(P('cone', [0.10, 0.26, 0.10], [-0.55 + k * 0.28, 0.28, 0], m([0.52, 0.46, 0.34]), { rot: [0, 0, 0.35] }));
+    return r;
+  },
+  // Large, armoured and slow, with splash. The silhouette is the MAW: a head nearly as wide as the body,
+  // because at r20 next to a grub the difference has to be obvious before either of them moves.
+  carrion_maw: () => {
+    const r = RIG.bug({
+      segs: [[-0.5, 0, 2.0, 1.05, 1.5], [0.7, 0.1, 1.3, 1.0, 1.35]],
+      legs: 3, legLen: 0.85, legX0: 0.5, legGap: 0.62, head: false, bodyY: 0.55, lunge: 0.16,
+      color: [0.36, 0.30, 0.23], color2: [0.27, 0.23, 0.18],
+    });
+    const b = r.children[0];
+    // the maw: a ring of teeth around a dark throat, hinged open on the strike
+    const maw = N([1.25, 0.05, 0], { anim: st => ({ size: [1 + AK(st) * 0.25, 1 + AK(st) * 0.3, 1 + AK(st) * 0.3] }) });
+    maw.children.push(P('cyl', [0.95, 0.35, 1.05], [0, 0, 0], m([0.30, 0.25, 0.19]), { rot: [0, 0, -Math.PI / 2] }));
+    maw.children.push(P('cyl', [0.62, 0.30, 0.72], [0.10, 0, 0], m([0.05, 0.04, 0.03]), { rot: [0, 0, -Math.PI / 2] }));
+    for (let k = 0; k < 8; k++) {
+      const a = k * 0.785 + 0.15;
+      maw.children.push(P('cone', [0.13, 0.38, 0.13], [0.16, Math.cos(a) * 0.42, Math.sin(a) * 0.48], m(C.bone),
+        { rot: [0, 0, -Math.PI / 2 + Math.cos(a) * 0.5] }));
+    }
+    b.children.push(maw);
+    b.children.push(P('sphere', [0.13, 0.13, 0.13], [0.95, 0.45, -0.30], GLOW([1.0, 0.5, 0.15])),
+      P('sphere', [0.13, 0.13, 0.13], [0.95, 0.45, 0.30], GLOW([1.0, 0.5, 0.15])));
+    // dorsal plates, biggest at the shoulders and tapering back
+    for (let k = 0; k < 5; k++)
+      b.children.push(P('cone', [0.20 - k * 0.02, 0.62 - k * 0.07, 0.20], [0.25 - k * 0.42, 0.52, 0], m([0.55, 0.49, 0.36]), { rot: [0, 0, 0.30 + k * 0.06] }));
+    return r;
+  },
 };
 
 // ---------------- buildings (tile units; footprint centred at origin) ----------------
@@ -526,5 +608,201 @@ const BUILDINGS = {
   templar_archives: (w, h) => { const r = B.protossSlab(w, h, { height: 0.5 }); r.children.push(P('box', [1.6, 1.0, 1.2], [0, 1.25, 0], m(C.goldD)), B.crystal(0, 0, 0.45, 1.75, C.violet), B.crystal(-1.2, -0.3, 0.22, 0.75, C.violet), B.crystal(1.2, -0.3, 0.22, 0.75, C.violet)); return r; },
   observatory: (w, h) => { const r = B.protossSlab(w, h, { height: 0.4 }); r.children.push(P('cyl', [1.1, 0.5, 1.1], [0, 0.9, 0], m(C.goldD)), P('sphere', [0.6, 0.6, 0.6], [0, 1.3, 0], m(C.navy)), P('cyl', [0.1, 1.2, 0.1], [0.4, 1.7, -0.3], m(C.goldL), { rot: [0.5, 0, -0.6] })); return r; },
   arbiter_tribunal: (w, h) => { const r = B.protossSlab(w, h, { height: 0.5 }); r.children.push(P('oct', [2.0, 1.2, 1.6], [0, 1.2, 0], m(C.goldD, { spec: 0.6 })), B.crystal(0, 0, 0.35, 1.7)); return r; },
+  // ============================ M11 ADDITIONS ============================
+  // Thirteen buildings and three units shipped this milestone with no MODEL, which meant no baked
+  // sheet, which meant js/sprites.js fell through to the flat vector painter for every one of them.
+  // Next to fifty baked neighbours they read as cut-outs, and that is exactly how it was reported:
+  // "why do all the new buildings look 2d". Nothing was wrong with the painters -- the painters are
+  // the fallback, and the fallback was all these ever had.
+  //
+  // Each of these keeps the silhouette contract its 2D painter already states, because that is the
+  // thing that has to survive fog, a team tint and forty pixels: the hospital is the one with a light
+  // on it, the jammer is the one with something pointed at the sky, and a wall has NO silhouette above
+  // the roofline at all -- a wall that looked like a building would be clicked like one.
+
+  // ---- Terran ------------------------------------------------------------------------------------
+  aid_station: (w, h) => {
+    const r = B.terranBase(w, h, { height: 0.5 });
+    // the lit cross, raised on its own housing so it clears the roof line and reads from any facing
+    r.children.push(P('box', [1.0, 0.5, 0.9], [0, 0.75, 0], m(C.white, { spec: 0.35 })));
+    r.children.push(P('box', [0.62, 0.10, 0.16], [0, 1.02, -0.46], GLOW(C.red)));
+    r.children.push(P('box', [0.18, 0.10, 0.52], [0, 1.02, -0.46], GLOW(C.red)));
+    // two bays with lit interiors, and a green ready lamp on a short post
+    for (const s of [-1, 1]) {
+      r.children.push(P('box', [0.7, 0.42, 0.5], [s * (w / 2 - 0.55), 0.71, h / 2 - 0.4], m(C.metalD)));
+      r.children.push(P('box', [0.5, 0.22, 0.06], [s * (w / 2 - 0.55), 0.71, h / 2 - 0.15], GLOW(C.visor)));
+    }
+    r.children.push(B.post(-w / 2 + 0.45, -h / 2 + 0.45, 0.6, 0.5),
+      P('sphere', [0.16, 0.16, 0.16], [-w / 2 + 0.45, 1.16, -h / 2 + 0.45], GLOW([0.29, 0.82, 0.42])));
+    return r;
+  },
+  scrambler_mast: (w, h) => {
+    const r = B.terranBase(w, h, { height: 0.45 });
+    // A lattice mast: four legs and cross-bracing, because a solid pole bakes as a grey stick and the
+    // gaps are what make it read as an aerial rather than as a chimney.
+    const y0 = 0.5;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1])
+      r.children.push(P('cyl', [0.07, 1.5, 0.07], [sx * 0.22, y0 + 0.75, sz * 0.22], m(C.metalD), { rot: [sz * 0.06, 0, -sx * 0.06] }));
+    for (let k = 0; k < 4; k++) {
+      const y = y0 + 0.25 + k * 0.36;
+      r.children.push(P('box', [0.5, 0.05, 0.05], [0, y, -0.2], m(C.metal), { rot: [0, 0, 0.5] }));
+      r.children.push(P('box', [0.5, 0.05, 0.05], [0, y, 0.2], m(C.metal), { rot: [0, 0, -0.5] }));
+    }
+    // the dish, tilted at the sky, and a hazard beacon above it
+    r.children.push(P('dome', [0.85, 0.34, 0.85], [0, y0 + 1.55, 0], m(C.metalL, { spec: 0.55 }), { rot: [0, 0, 0.35] }));
+    r.children.push(P('cyl', [0.09, 0.3, 0.09], [0, y0 + 1.5, 0], m(C.gun)));
+    r.children.push(P('sphere', [0.15, 0.15, 0.15], [0, y0 + 1.85, 0], GLOW(C.red)));
+    r.children.push(P('box', [0.5, 0.3, 0.4], [-w / 2 + 0.45, 0.65, h / 2 - 0.4], m(C.metalD)));
+    return r;
+  },
+  // A WALL. Deliberately the flattest thing in the game: an armoured berm barely taller than the
+  // ground clutter, so it never competes with a real building for the eye or for a click.
+  blast_barricade: (w, h) => {
+    const r = N([0, 0, 0]);
+    r.children.push(P('box', [w - 0.12, 0.34, h - 0.12], [0, 0.17, 0], m([0.30, 0.33, 0.37], { spec: 0.3 })));
+    r.children.push(P('box', [w - 0.34, 0.14, h - 0.34], [0, 0.40, 0], m([0.44, 0.48, 0.54], { spec: 0.45 })));
+    // hazard chevrons along the face, alternating so the stripe reads at a distance
+    for (let k = 0; k < 4; k++)
+      r.children.push(P('box', [0.28, 0.07, 0.1], [-w / 2 + 0.45 + k * 0.42, 0.44, -h / 2 + 0.14], m(k % 2 ? [0.88, 0.70, 0.16] : C.dark), { rot: [0, 0, 0] }));
+    // squat corner bollards: the only thing above the berm, and only just
+    for (const sx of [-1, 1]) for (const sz of [-1, 1])
+      r.children.push(P('cyl', [0.16, 0.30, 0.16], [sx * (w / 2 - 0.28), 0.45, sz * (h / 2 - 0.28)], m(C.metalD)));
+    r.children.push(P('box', [w - 0.6, 0.05, 0.14], [0, 0.49, h / 2 - 0.24], TEAM));
+    return r;
+  },
+  mending_pool: (w, h) => {    const r = B.zergMound(w, h, { height: 0.45, color: [0.42, 0.32, 0.38] });    r.children.push(P('cyl', [w * 0.52, 0.14, h * 0.52], [0, 0.42, 0], m([0.34, 0.24, 0.30])));    r.children.push(P('cyl', [w * 0.42, 0.10, h * 0.42], [0, 0.50, 0], GLOW([0.42, 0.86, 0.68])));    for (let k = 0; k < 5; k++) {      const a = k * 1.256 + 0.3, cx = Math.cos(a) * w * 0.34, cz = Math.sin(a) * h * 0.34;      r.children.push(P('cyl', [0.11, 0.55, 0.11], [cx, 0.55, cz], m(C.fleshD), { rot: [cz * 0.5, 0, -cx * 0.5] }));      r.children.push(P('sphere', [0.17, 0.17, 0.17], [cx * 0.55, 0.82, cz * 0.55], m(C.flesh)));    }    r.children.push(P('sphere', [0.22, 0.22, 0.22], [0, 0.88, 0], GLOW([0.62, 0.95, 0.80])));    return r;  },  miasma_gland: (w, h) => {    const r = B.zergMound(w, h, { height: 0.5, color: [0.38, 0.28, 0.42] });    r.children.push(P('sphere', [w * 0.62, 0.95, h * 0.62], [0, 0.70, 0], m([0.44, 0.34, 0.52], { spec: 0.3 })));    r.children.push(P('sphere', [w * 0.30, 0.42, h * 0.30], [-0.12, 0.95, -0.10], m([0.60, 0.48, 0.68])));    for (let k = 0; k < 4; k++) {      const a = k * 1.571 + 0.6, cx = Math.cos(a) * 0.42, cz = Math.sin(a) * 0.36;      r.children.push(P('cone', [0.20, 0.55, 0.20], [cx, 1.05, cz], m(C.carapaceD), { rot: [cz * 0.8, 0, -cx * 0.8] }));    }    r.children.push(P('sphere', [0.20, 0.20, 0.20], [0, 1.30, 0], GLOW([0.78, 0.62, 0.90])));    return r;  },  // The Zerg wall: a chitin RIDGE, so it is long and low rather than round. A dome at 2x2 is a ball,
+  // and a ball is what a creep colony is -- this has to read as something you walk along, not up to.
+  carapace_ridge: (w, h) => {
+    const r = N([0, 0, 0]);
+    r.children.push(P('box', [w - 0.15, 0.30, h * 0.62], [0, 0.15, 0], m([0.30, 0.21, 0.27], { spec: 0.2 })));
+    // three overlapping plates along the length, each a squashed dome, so the top is a scalloped
+    // armour line instead of one smooth curve
+    for (let k = 0; k < 3; k++) {
+      const x = -w / 2 + 0.42 + k * (w - 0.84) / 2;
+      r.children.push(P('dome', [0.86, 0.34, h * 0.72], [x, 0.26, 0], m(k % 2 ? [0.46, 0.33, 0.38] : [0.38, 0.26, 0.32], { spec: 0.28 })));
+    }
+    r.children.push(P('box', [w - 0.4, 0.08, h * 0.30], [0, 0.44, -0.05], m([0.52, 0.40, 0.44])));
+    // bone spurs leaning out over the front edge: short, and the only thing that breaks the top line
+    for (let k = 0; k < 5; k++) {
+      const x = -w / 2 + 0.32 + k * (w - 0.64) / 4;
+      r.children.push(P('cone', [0.13, 0.40, 0.13], [x, 0.40, -h * 0.28], m(C.bone), { rot: [-0.75, 0, (k % 2 ? 0.18 : -0.18)] }));
+    }
+    r.children.push(P('sphere', [0.34, 0.10, 0.22], [0, 0.36, h * 0.26], TEAM));
+    return r;
+  },
+  rejuvenation_shrine: (w, h) => {    const r = B.protossSlab(w, h, { height: 0.42, tiers: 2, coreColor: [0.49, 1.0, 0.82] });    for (let k = 0; k < 6; k++) {      const a = k * 1.047 + 0.5;      r.children.push(B.crystal(Math.cos(a) * (w * 0.28), Math.sin(a) * (h * 0.26), 0.20, 0.62, [0.49, 1.0, 0.82]));    }    r.children.push(P('cyl', [w * 0.44, 0.06, h * 0.44], [0, 0.60, 0], m(C.goldL, { spec: 0.7 })));    return r;  },  null_obelisk: (w, h) => {    const r = B.protossSlab(w, h, { height: 0.38, tiers: 2, coreColor: C.violet });    r.children.push(P('oct', [0.42, 2.0, 0.42], [0, 1.35, 0], m([0.16, 0.12, 0.22], { spec: 0.55 })));    r.children.push(P('oct', [0.16, 1.5, 0.16], [0, 1.40, 0], GLOW(C.violet)));    r.children.push(P('oct', [0.24, 0.34, 0.24], [0, 2.45, 0], GLOW([0.78, 0.62, 1.0]),      { anim: st => ({ pos: [0, 0.05 * IDLE(st), 0], rot: [0, (st.idle || 0) * 6.283, 0] }) }));    for (const s of [-1, 1]) r.children.push(B.crystal(s * (w / 2 - 0.5), 0, 0.16, 0.52, [0.35, 0.24, 0.50]));    return r;  },  // The Protoss wall. Darker gold than a shrine and with a dark skirt under it, because the first
+  // version was pale cream on pale cream and washed out to a flat card at any distance -- gold needs
+  // something dark beneath it to read as metal rather than as paper.
+  warded_bastion: (w, h) => {
+    const r = N([0, 0, 0]);
+    r.children.push(P('box', [w - 0.08, 0.16, h - 0.08], [0, 0.08, 0], m([0.20, 0.16, 0.09])));
+    r.children.push(P('box', [w - 0.24, 0.24, h - 0.24], [0, 0.26, 0], m(C.goldD, { spec: 0.55 })));
+    r.children.push(P('box', [w - 0.5, 0.08, h - 0.5], [0, 0.42, 0], m(C.gold, { spec: 0.7 })));
+    // the ward: an upright pane, bright, and the only thing above the plinth
+    r.children.push(P('box', [w - 0.85, 0.42, 0.06], [0, 0.67, 0], GLOW([0.38, 0.83, 1.0])));
+    r.children.push(P('box', [w - 0.85, 0.05, 0.14], [0, 0.90, 0], m(C.goldL, { spec: 0.75 })));
+    for (const s of [-1, 1]) {
+      r.children.push(P('cyl', [0.17, 0.62, 0.17], [s * (w / 2 - 0.3), 0.61, 0], m(C.goldD, { spec: 0.6 })));
+      r.children.push(P('oct', [0.19, 0.28, 0.19], [s * (w / 2 - 0.3), 1.02, 0], GLOW(C.psi)));
+    }
+    r.children.push(P('box', [w - 1.0, 0.05, 0.13], [0, 0.47, h / 2 - 0.2], TEAM));
+    return r;
+  },
+  // Dirt and chitin, and deliberately NOT Zerg purple: this belongs to the map, not to a player. It is
+  // modelled already open, because by the time anything draws it, it is -- while it is buried the map
+  // shows the `vent` tell instead, and the structure only appears once the thing has surfaced.
+  carrion_warren: (w, h) => {
+    const r = N([0, 0, 0]);
+    r.children.push(P('dome', [w - 0.1, 0.85, h - 0.1], [0, 0, 0], m([0.32, 0.27, 0.20], { spec: 0.15 })));
+    r.children.push(P('dome', [w * 0.62, 0.62, h * 0.62], [-0.15, 0.10, -0.10], m([0.40, 0.34, 0.25])));
+    // the mouth: a dark shaft ringed with chitin plates
+    r.children.push(P('cyl', [0.86, 0.30, 0.76], [0.15, 0.62, 0.10], m([0.20, 0.16, 0.13])));
+    r.children.push(P('cyl', [0.60, 0.34, 0.54], [0.15, 0.70, 0.10], m([0.06, 0.05, 0.04])));
+    for (let k = 0; k < 7; k++) {
+      const a = k * 0.897 + 0.2;
+      r.children.push(P('cone', [0.17, 0.40, 0.17], [0.15 + Math.cos(a) * 0.50, 0.72, 0.10 + Math.sin(a) * 0.45],
+        m(C.bone), { rot: [Math.sin(a) * 0.7, 0, -Math.cos(a) * 0.7] }));
+    }
+    // spent husks around the rim, and a couple of breathing vents
+    for (let k = 0; k < 3; k++) {
+      r.children.push(P('sphere', [0.34, 0.20, 0.28], [-w / 2 + 0.55 + k * 0.5, 0.48, h / 2 - 0.42], m([0.46, 0.40, 0.30])));
+    }
+    for (const s of [-1, 1]) {
+      r.children.push(P('cyl', [0.20, 0.26, 0.20], [s * (w / 2 - 0.5), 0.52, -h / 2 + 0.45], m([0.24, 0.20, 0.16])));
+    }
+    return r;
+  },
+  // The foundry is 4x3 -- the biggest thing in the neutral set -- and the first version was one tall
+  // box, which from a 50-degree camera is a wall and nothing else. It is TWO masses now, at different
+  // heights with the roof gone between them, so the ruin is in the outline rather than in the texture,
+  // and a dark skirt keeps the base off the ground the way B.terranBase does for every Terran building.
+  derelict_foundry: (w, h) => {
+    const r = N([0, 0, 0]);
+    r.children.push(P('box', [w - 0.1, 0.14, h - 0.1], [0, 0.07, 0], m([0.17, 0.16, 0.14])));
+    const iw = w * 0.52;
+    // the standing half
+    r.children.push(P('box', [iw, 0.62, h - 0.3], [-w / 2 + iw / 2 + 0.08, 0.45, 0], m([0.33, 0.31, 0.27], { spec: 0.25 })));
+    r.children.push(P('box', [iw - 0.18, 0.10, h - 0.5], [-w / 2 + iw / 2 + 0.08, 0.81, 0], m([0.41, 0.39, 0.34])));
+    for (let k = 0; k < 3; k++) {
+      r.children.push(P('box', [0.09, 0.09, h - 0.55], [-w / 2 + 0.45 + k * (iw - 0.5) / 2, 0.90, 0], m([0.26, 0.25, 0.22])));
+    }
+    // the collapsed half: lower, tipped, and open to the sky
+    const cw = w * 0.36;
+    r.children.push(P('box', [cw, 0.34, h - 0.4], [w / 2 - cw / 2 - 0.12, 0.31, 0.05], m([0.29, 0.27, 0.24]), { rot: [0, 0, -0.06] }));
+    r.children.push(P('box', [cw * 0.7, 0.08, h - 0.7], [w / 2 - cw / 2 - 0.2, 0.52, 0.1], m([0.34, 0.32, 0.28]), { rot: [0.16, 0, -0.30] }));
+    // girders standing where the roof used to span, leaning at different angles
+    for (let k = 0; k < 4; k++) {
+      r.children.push(P('box', [0.07, 0.70 - k * 0.09, 0.07], [w * 0.04 + k * 0.17, 0.62, -h / 2 + 0.4 + k * 0.34], m([0.36, 0.22, 0.13]), { rot: [0.10 + k * 0.05, 0, 0.14 - k * 0.07] }));
+    }
+    // the snapped chimney, and a cold casting bay in the standing half
+    r.children.push(P('cyl', [0.36, 1.05, 0.36], [-w / 2 + 0.72, 1.35, -h / 2 + 0.75], m([0.27, 0.25, 0.22]), { rot: [0, 0, 0.09] }));
+    r.children.push(P('cyl', [0.40, 0.11, 0.40], [-w / 2 + 0.67, 1.90, -h / 2 + 0.75], m([0.13, 0.12, 0.11])));
+    r.children.push(P('box', [1.05, 0.44, 0.12], [-w * 0.22, 0.40, h / 2 - 0.17], m([0.05, 0.05, 0.05])));
+    // rubble spilling past the footprint on the collapsed side
+    for (let k = 0; k < 6; k++) {
+      r.children.push(P('oct', [0.22 + (k % 3) * 0.09, 0.18 + (k % 2) * 0.06, 0.20], [w / 2 - 0.1 - k * 0.26, 0.12, -h / 2 + 0.12 + k * 0.24], m([0.31, 0.29, 0.26])));
+    }
+    r.children.push(P('box', [0.85, 0.05, 0.13], [-w * 0.24, 0.80, h / 2 - 0.32], TEAM));
+    return r;
+  },
+  derelict_archive: (w, h) => {
+    const r = N([0, 0, 0]);
+    r.children.push(P('box', [w - 0.1, 0.12, h - 0.1], [0, 0.06, 0], m([0.16, 0.16, 0.15])));
+    r.children.push(P('box', [w - 0.3, 0.46, h - 0.28], [0, 0.35, 0], m([0.28, 0.28, 0.27], { spec: 0.25 })));
+    // roof gone over the near third, tipped in
+    r.children.push(P('box', [w * 0.60, 0.09, h - 0.45], [-w * 0.16, 0.62, 0], m([0.36, 0.36, 0.33]), { rot: [0.05, 0, -0.04] }));
+    r.children.push(P('box', [w * 0.24, 0.07, h - 0.6], [w * 0.30, 0.50, 0.08], m([0.31, 0.31, 0.28]), { rot: [0.22, 0, 0.34] }));
+    // the broken dish, big and leaning hard: this is the whole silhouette
+    r.children.push(P('cyl', [0.11, 0.95, 0.11], [w / 2 - 0.75, 1.02, 0.05], m([0.30, 0.28, 0.25]), { rot: [0, 0, 0.40] }));
+    r.children.push(P('dome', [1.25, 0.42, 1.25], [w / 2 - 1.15, 1.50, 0.05], m([0.34, 0.33, 0.30]), { rot: [0, 0.3, 1.25] }));
+    r.children.push(P('cyl', [0.10, 0.34, 0.10], [w / 2 - 0.95, 1.42, 0.05], m([0.20, 0.19, 0.18]), { rot: [0, 0, 0.9] }));
+    // dead rack stacks, visible through the missing roof
+    for (let k = 0; k < 3; k++)
+      r.children.push(P('box', [0.20, 0.40, 0.62], [-w / 2 + 0.55 + k * 0.44, 0.70, -0.05], m([0.19, 0.19, 0.20])));
+    for (let k = 0; k < 4; k++)
+      r.children.push(P('oct', [0.19, 0.15, 0.17], [-w / 2 + 0.35 + k * 0.52, 0.09, h / 2 - 0.16], m([0.29, 0.28, 0.26])));
+    r.children.push(P('box', [0.78, 0.05, 0.12], [-w * 0.16, 0.68, h / 2 - 0.28], TEAM));
+    return r;
+  },
+  derelict_watchtower: (w, h) => {
+    const r = N([0, 0, 0]);
+    // The tall one, and the only derelict with real height -- it is the vision grant, so it should look
+    // like the thing on the map you can see furthest from.
+    r.children.push(P('box', [w - 0.35, 0.40, h - 0.35], [0, 0.20, 0], m([0.28, 0.27, 0.24], { spec: 0.2 })));
+    for (const sx of [-1, 1]) for (const sz of [-1, 1])
+      r.children.push(P('cyl', [0.10, 1.65, 0.10], [sx * 0.35, 1.20, sz * 0.35], m([0.30, 0.22, 0.16]), { rot: [-sz * 0.05, 0, sx * 0.05] }));
+    for (let k = 0; k < 3; k++) {
+      const y = 0.55 + k * 0.5;
+      r.children.push(P('box', [0.78, 0.05, 0.05], [0, y, -0.33], m([0.32, 0.24, 0.18]), { rot: [0, 0, 0.4] }));
+      r.children.push(P('box', [0.78, 0.05, 0.05], [0, y, 0.33], m([0.32, 0.24, 0.18]), { rot: [0, 0, -0.4] }));
+    }
+    // the cabin, with one corner collapsed, and a dead sensor drum on top
+    r.children.push(P('box', [1.05, 0.42, 0.95], [0, 2.15, 0], m([0.31, 0.30, 0.27]), { rot: [0, 0, 0.07] }));
+    r.children.push(P('box', [0.55, 0.06, 0.9], [0.28, 2.36, 0], m([0.24, 0.23, 0.21]), { rot: [0, 0, -0.22] }));
+    r.children.push(P('cyl', [0.42, 0.30, 0.42], [-0.05, 2.55, 0], m([0.22, 0.21, 0.19])));
+    r.children.push(P('sphere', [0.14, 0.14, 0.14], [-0.05, 2.74, 0], m([0.10, 0.10, 0.10])));
+    r.children.push(P('box', [0.7, 0.05, 0.12], [0, 2.38, 0.42], TEAM));
+    return r;
+  },
 };
 module.exports = { UNITS, BUILDINGS, C, deathWrap };
