@@ -271,6 +271,12 @@ MAP_LAYOUTS.nightfall = MapModes.layout('large', { name: 'Nightfall', tileset: '
 // does before it restores anything.
 const FEATURE_ID0 = 100000;   // feature ids sit above every resource id, in the same id space as them
 const FEAT_BLOCKED = -4;      // blocked[]: -1 free, -2 mineral, -3 geyser, -4 a map feature is standing here
+const WRECK_BLOCKED = -5;     // ...and -5 a wreck. See the CRATERS block for why it is not a feature.
+// How much fully churned ground costs a ground unit, and how much one worker trip strips the ground
+// around a patch. MINE_STRIP saturates a tile at 255 after about 128 trips out of the ~187 a 1500
+// patch holds, so a patch that has been worked hard is bare rock well before it runs dry -- you can
+// read how long a base has been running off the ground, which is the point of the attrition economy.
+const CHURN_SLOW = 0.25, MINE_STRIP = 2;
 const MAP_FEATURES = {
   // hp is what it takes to remove one; they are deliberately in the range of a few units for a few
   // seconds rather than a siege operation, because the decision is WHETHER to open the lane and when,
@@ -571,6 +577,8 @@ class GameMap {
     this.cliff = new Uint8Array(n);     // 1 = drawn as cliff edge
     this.blocked = new Int32Array(n).fill(-1); // building/resource occupancy (unit id, -2 mineral, -3 geyser)
     this.creep = new Uint8Array(n);
+    this.scar = new Uint8Array(n);   // churned ground: craters and stripped mineral lines. See CRATERS.
+    this.wrecks = [];                // standing hulks. See CRATERS.
     this.psi = {};                       // playerId -> Uint8Array
     this.noise = new Uint8Array(n);
     this.resources = [];
@@ -644,7 +652,8 @@ class GameMap {
       base.x = hx; base.y = hy; base.cx = (hx + 2) * TILE; base.cy = (hy + 1.5) * TILE;
       for (const m of bd.minerals) {
         const [mx, my] = tr(m[0], m[1], 2, 1);
-        const res = { type: 'mineral', x: mx, y: my, w: 2, h: 1, amount: bd.amount || (bd.rich ? 5000 : 1500), cx: (mx + 1) * TILE, cy: (my + 0.5) * TILE, miner: null, id: this.resources.length };
+        const amt0 = bd.amount || (bd.rich ? 5000 : 1500);
+        const res = { type: 'mineral', x: mx, y: my, w: 2, h: 1, amount: amt0, start: amt0, cx: (mx + 1) * TILE, cy: (my + 0.5) * TILE, miner: null, id: this.resources.length };
         this.resources.push(res); base.minerals.push(res);
         this.rect(mx, my, 2, 1, (x, y) => { this.blocked[this.idx(x, y)] = -2; this.walk[this.idx(x, y)] = 1; this.cliff[this.idx(x, y)] = 0; });
       }
@@ -719,6 +728,107 @@ class GameMap {
   // Quadrant-0 definitions, mirrored exactly as the bases are. A feature that would land on a
   // resource, inside a base's cleared footprint, on the map border or on top of another feature is
   // dropped whole rather than half-placed, which keeps every quadrant's copy identical or absent.
+  // ==========================================================================
+  // CRATERS, WRECKAGE AND STRIPPED GROUND -- M11 wave one, ideas 9 and 1.
+  // ==========================================================================
+  // "The map remembers what happened on it." Two mechanisms, one grid and one list, because the two
+  // halves of that sentence want opposite lifetimes.
+  //
+  //   this.scar   Uint8Array, one byte a tile, 0..255 of churn. PERMANENT. Written by explosions, by
+  //               anything large dying, and -- this is the attrition economy -- by mining, so a base
+  //               that has been worked for twenty minutes is visibly stripped down to bare rock and
+  //               stays that way. It is the map's memory and it never heals. It costs movement (see
+  //               Unit.speed) and it is what the renderer darkens.
+  //
+  //   this.wrecks A list of hulks, each blocking its own footprint. TEMPORARY. A wreck raises height,
+  //               which is the only lever this engine has that moves vision -- see the MAP_FEATURES
+  //               comment -- so a hulk occludes its own tiles from anything standing lower, exactly
+  //               the way a cliff does. It does NOT cast a shadow behind itself, because G.updateVision
+  //               stamps a height-tested radius rather than casting rays, and turning that into a
+  //               raycast is a much larger change with a real per-frame cost. Blocking pathing is the
+  //               whole effect; occluding the hulk itself is a bonus the height grid gave for free.
+  //
+  // Why wreckage decays and craters do not. Permanent wreckage was the first version and it is a trap:
+  // at a 500 supply cap a long game razes hundreds of buildings, every one of them becomes terrain, and
+  // the map slowly bricks itself shut -- you can never rebuild on a base you lost, and by minute forty
+  // the pathfinder is threading an army through a scrapyard. So a hulk is a tactical obstacle that
+  // changes one fight and then clears, and the crater it leaves behind is the part that lasts.
+  //
+  // Determinism. Nothing here reads a clock except through the frame passed in, and nothing calls
+  // Math.random. `scar` is captured by js/snapshot.js as a SPARSE pair list rather than a dense 16k
+  // array like creep/walk/blocked: craters are sparse by nature and a fourth dense grid in every
+  // checkpoint is real bytes for no reason. `wrecks` is captured whole; `syncWrecks` puts height, cliff
+  // and blocked back afterwards, because -- as with features -- the snapshot does not carry height.
+  crater(px, py, rTiles, amount) {
+    const cx = Math.floor(px / TILE), cy = Math.floor(py / TILE), r = Math.max(0, rTiles);
+    const r2 = r * r, ri = Math.ceil(r);
+    for (let dy = -ri; dy <= ri; dy++) for (let dx = -ri; dx <= ri; dx++) {
+      const d2 = dx * dx + dy * dy; if (d2 > r2) continue;
+      const x = cx + dx, y = cy + dy; if (!this.inb(x, y)) continue;
+      const i = this.idx(x, y);
+      // Falls off from the centre, so a blast leaves a bowl rather than a disc, and clamps rather than
+      // wrapping -- a Uint8Array wraps silently at 256 and a heavily shelled tile would come back clean.
+      const fall = 1 - Math.sqrt(d2) / (r || 1);
+      const v = this.scar[i] + amount * fall;
+      this.scar[i] = v > 255 ? 255 : v < 0 ? 0 : v | 0;
+    }
+  }
+  scarAt(px, py) { const tx = Math.floor(px / TILE), ty = Math.floor(py / TILE); return this.inb(tx, ty) ? this.scar[this.idx(tx, ty)] / 255 : 0; }
+  // Sparse (index, value) pairs for the snapshot, and the inverse. Order is index order, so two clients
+  // that scarred the same tiles in a different order still produce byte-identical checkpoints.
+  scarPairs() { const out = []; for (let i = 0; i < this.scar.length; i++) if (this.scar[i]) out.push(i, this.scar[i]); return out; }
+  loadScar(pairs) { this.scar.fill(0); for (let k = 0; k < (pairs || []).length; k += 2) this.scar[pairs[k]] = pairs[k + 1]; }
+
+  // A hulk. `life` is in frames; `born` is the frame it died on, so the decay is a pure function of the
+  // current frame and a restored wreck is exactly as rotten as the live one.
+  addWreck(px, py, w, h, life, frame, big) {
+    // px,py is the CENTRE, which is where a building's x,y already is, so the top-left is the centre
+    // less half the footprint. Doing this with floor() and a shift instead was off by one on even
+    // widths -- a 4x3 factory left its hulk a tile north-west of where it stood.
+    const tx = Math.round(px / TILE - w / 2), ty = Math.round(py / TILE - h / 2);
+    const tiles = [];
+    for (let y = ty; y < ty + h; y++) for (let x = tx; x < tx + w; x++) {
+      if (!this.inb(x, y)) continue; const i = this.idx(x, y);
+      // Only free walkable ground becomes a hulk. Dropping one on a mineral line, a cliff or another
+      // building's footprint would unblock those tiles again when it decayed -- the wreck would hand
+      // back terrain it never owned. Same reason placeFeatures refuses an occupied tile.
+      if (this.blocked[i] !== -1 || this.walk[i] !== 1 || this.cliff[i] !== 0) continue;
+      tiles.push(i);
+    }
+    if (!tiles.length) return null;
+    const wk = { tiles, baseH: Array.from(tiles, i => this.height[i]), born: frame, life, big: !!big };
+    this.wrecks.push(wk); this.paintWreck(wk, true); return wk;
+  }
+  paintWreck(wk, on) {
+    for (let k = 0; k < wk.tiles.length; k++) {
+      const i = wk.tiles[k];
+      // Height 2, not baseH+1. Two reasons. A hulk dropped on ground that was ALREADY height 1 -- a ramp
+      // -- lifted nothing at all and occluded nothing, which is where a wreck matters most. And height 1
+      // is not a free value: it means "ramp" to the terrain painter, to canPlace and to recomputeCreep.
+      // 2 means high ground, which is what a hulk is, and G.updateVision's `height[i] <= uh` then hides
+      // it from anything on the ground while leaving it visible from the air. That asymmetry is right:
+      // you cannot see into a burning hulk from beside it, and you can from above it.
+      if (on) { this.walk[i] = 0; this.blocked[i] = WRECK_BLOCKED; this.height[i] = 2; }
+      else { this.walk[i] = 1; this.height[i] = wk.baseH[k]; if (this.blocked[i] === WRECK_BLOCKED) this.blocked[i] = -1; }
+    }
+  }
+  // Idempotent and clock-free, exactly like syncFeature and called for the same reason: a snapshot
+  // restores `wrecks`, `walk` and `blocked` but not `height`, so something has to put height back, and
+  // this is safe to run halfway through a restore.
+  syncWrecks() { for (const wk of this.wrecks) this.paintWreck(wk, true); return this.wrecks.length; }
+  // Decay. Called once a frame by G.tick; returns how many cleared, which is what tells the renderer
+  // its chunk cache is stale.
+  tickWrecks(frame) {
+    let n = 0;
+    for (let k = this.wrecks.length - 1; k >= 0; k--) {
+      const wk = this.wrecks[k];
+      if (frame - wk.born < wk.life) continue;
+      this.paintWreck(wk, false); this.wrecks.splice(k, 1); n++;
+    }
+    return n;
+  }
+  wreckAt(tx, ty) { if (!this.inb(tx, ty)) return null; const i = this.idx(tx, ty); if (this.blocked[i] !== WRECK_BLOCKED) return null; for (const wk of this.wrecks) if (wk.tiles.includes(i)) return wk; return null; }
+
   placeFeatures(L) {
     const defs = L.features || []; if (!defs.length) return;
     const baseRects = this.bases.map(b => [b.x - 2, b.y - 2, 8, 7]);

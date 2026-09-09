@@ -73,6 +73,10 @@ class Unit {
     if (this.stim > 0) s *= 1.5; if (this.fx.ensnare > 0) s *= 0.5;
     if (this.fx.suppress > 0) s *= 0.45;   // pinned by sustained fire; see DATA.techs suppress_*
     if (this.lifted) s = 1;
+    // Churned ground is slower to cross -- craters, rubble and a stripped mineral line all read as the
+    // same broken footing. Ground only: a wraith does not care what the floor looks like. See the
+    // CRATERS block in js/map.js.
+    if (!this.fly && !this.isBuilding && G.map.scar) { const c = G.map.scarAt(this.x, this.y); if (c > 0) s *= 1 - CHURN_SLOW * c; }
     return s;
   }
   get sight() { let s = this.def.sight || 7; const p = this.player; if (this.def.sightTech && p.hasTech(this.def.sightTech[0])) s = this.def.sightTech[1]; if (this.def.id === 'ghost' && p.hasTech('ocular')) s = 11; if (this.fx.blind > 0) s = 2; if (this.isBuilding && !this.done) s = 4;
@@ -460,7 +464,9 @@ class Unit {
     if (this.carrying) { this.applyOrder({ type: 'return', then: res }); return; }
     this.lastRes = res;
     if (res.type === 'mineral') {
-      if (o.phase === 'mine') { if (--o.t <= 0) { res.miner = null; res.amount -= 8; this.carrying = { type: 'mineral', amt: res.amount >= 0 ? 8 : 8 + res.amount }; if (res.amount <= 0) G.removeResource(res); this.applyOrder({ type: 'return', then: res }); } return; }
+      if (o.phase === 'mine') { if (--o.t <= 0) { res.miner = null; res.amount -= 8;
+        G.map.crater(res.cx, res.cy, 1.8, MINE_STRIP);   // the attrition economy: working a patch strips the ground around it, for good
+ this.carrying = { type: 'mineral', amt: res.amount >= 0 ? 8 : 8 + res.amount }; if (res.amount <= 0) G.removeResource(res); this.applyOrder({ type: 'return', then: res }); } return; }
       if (this.moveToRect(res, 6)) {
         // Brood War puts TWO workers on a patch, not one. This used to hand the patch to a single
         // claimant and send everyone else looking elsewhere, so a second worker right-clicked onto a

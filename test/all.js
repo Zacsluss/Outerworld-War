@@ -67,6 +67,7 @@ const TESTS = [
   { name: 'verticality', args: ['verticality.js'], what: 'the height query the sim reads, and a ramp as the only way up' },
   { name: 'renderfeel', args: ['renderfeel.js'], what: 'the storm draws, weight settles, and 400 units stay legible' },
   { name: 'neutrals', args: ['neutrals.js'], what: "race 'N': buried life with a tell, and derelicts nobody can build" },
+  { name: 'craters', args: ['craters.js'], what: 'the map remembers: permanent scarring, hulks that clear' },
 ];
 
 const argv = process.argv.slice(2);

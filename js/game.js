@@ -33,6 +33,10 @@ const SUPPLY_CAP = 500;
 // detection RANGE -- so they now pay half the penalty instead of none, which keeps them the best eye
 // on a dark map without making them the only one.
 const DAY_CYCLE = 24 * 60 * 12, NIGHT_SIGHT = 0.75, NIGHT_DET = 0.5;
+// How long a hulk stands, in frames. A razed building is an obstacle for a minute and a half -- long
+// enough to matter to the fight that razed it and to the counter-attack, not long enough to wall the
+// map off -- and a dead tank or ultralisk for twenty-five seconds. See the CRATERS block in js/map.js.
+const WRECK_LIFE_BUILDING = 24 * 90, WRECK_LIFE_UNIT = 24 * 25;
 function daylightAt(frame) {
   const t = ((frame % DAY_CYCLE) + DAY_CYCLE) % DAY_CYCLE / DAY_CYCLE;   // 0..1 through the cycle
   // A raised cosine: flat-ish day, flat-ish night, and a real dusk between them rather than a ramp.
@@ -448,6 +452,10 @@ const G = {
     if (src && src.suppresses && !t.isBuilding && !t.def.larva && !t.def.egg) t.fx.suppress = 24;
     if (d < 0.5) d = 0.5;
     t.hp -= d; this.scar(t, d); this.onHit(t, src);
+    // The ground remembers the shot as well as the unit does. Blasts and explosive rounds only -- a
+    // rifle does not crater -- and never under something flying. Gated on a real hit so the hot path
+    // stays hot: chip damage from massed light fire would otherwise churn a whole battlefield for free.
+    if (d >= 8 && !t.fly && (opts.splash || type === 'explosive')) this.map.crater(t.x, t.y, 1.2, Math.min(40, d * 0.4));
     if (t.hp <= 0) this.kill(t, src);
     return d;
   },
@@ -478,6 +486,19 @@ const G = {
     if (!silent) { if (u.isBuilding) p.stats.buildingsLost++; else p.stats.unitsLost++; }
     if (!silent && !u.halluc) { this.effects.push({ kind: u.isBuilding ? 'bigboom' : (u.def.race === 'Z' ? 'blood' : 'boom'), x: u.x, y: u.y, t: u.isBuilding ? 40 : 18, r: u.r, def: u.isBuilding ? null : u.def.id, owner: u.owner, facing: u.facing, fly: u.fly }); if (typeof Sound !== 'undefined' && this.visibleAt(this.human, u.x, u.y)) Sound.death(u); }
     if (u.def.id === 'nuke_ghost') { }
+    // What it leaves behind. See the CRATERS block in js/map.js for why the crater is permanent and the
+    // hulk is not. Hallucinations leave nothing -- there was never anything there -- and neither does
+    // anything that was flying, inside a transport, or too small to be worth a scorch mark.
+    if (!silent && !u.halluc && !u.fly && !u.inside) {
+      if (u.isBuilding) {
+        const w = u.def.w, h = u.def.h;
+        this.map.crater(u.x, u.y, Math.max(w, h) * 0.8 + 0.5, 130);
+        this.map.addWreck(u.x, u.y, w, h, WRECK_LIFE_BUILDING, this.frame, true);
+      } else if ((u.def.size || 'medium') === 'large') {
+        this.map.crater(u.x, u.y, 1.6, 70);
+        this.map.addWreck(u.x, u.y, 1, 1, WRECK_LIFE_UNIT, this.frame, false);
+      }
+    }
     if (typeof UI !== 'undefined') UI.onUnitDied(u);
     this.recomputeSupply();
   },
@@ -644,6 +665,7 @@ const G = {
     if (typeof Replay !== 'undefined') Replay.applyPending();
     this.inTick = true;
     this.frame++; this.pathBudget = 40;
+    if (this.map.wrecks.length) this.map.tickWrecks(this.frame);   // before rebuildGrid, so a cleared hulk is walkable this frame
     this.rebuildGrid();
     if (this.frame % 3 === 0) this.updateVision();
     for (const u of this.units) { if (u.alive) { u.px = u.x; u.py = u.y; } }

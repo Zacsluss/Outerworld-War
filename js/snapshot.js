@@ -96,6 +96,11 @@ const Snapshot = {
         return out;
       })(),
       creep: Array.from(G.map.creep), blocked: Array.from(G.map.blocked), walk: Array.from(G.map.walk),
+      // Craters and hulks. `scar` goes as SPARSE (index, value) pairs, not as a fourth dense 16k array
+      // beside the three above: craters are sparse by nature and a checkpoint is taken often. `wrecks`
+      // goes whole -- it is a short list -- and `syncWrecks` on the other side puts `height` back,
+      // which is the one grid no snapshot carries. Exactly the deal `broken` strikes for map features.
+      scar: G.map.scarPairs(), wrecks: G.map.wrecks.map(w => ({ tiles: Array.from(w.tiles), baseH: Array.from(w.baseH), born: w.born, life: w.life, big: w.big })),
       psi: Object.fromEntries(Object.entries(G.map.psi).map(([k, v]) => [k, Array.from(v)])), // the Protoss power grid is cached, not recomputed every tick
 
       fields: this.enc(G.fields, 1), projectiles: this.enc(G.projectiles, 1),
@@ -135,6 +140,13 @@ const Snapshot = {
     for (const su of (s.gone || [])) { const u = Object.create(Unit.prototype); u.id = su.id; G.byId.set(u.id, u); }
     // 2. map arrays and resources, because unit references point at resources
     G.map.creep.set(s.creep); G.map.blocked.set(s.blocked); G.map.walk.set(s.walk);
+    G.map.loadScar(s.scar);
+    // Wrecks are rebuilt from the snapshot and then repainted, because `height` is not in the snapshot
+    // and a hulk is the one thing besides a feature that moves it. syncWrecks is idempotent and reads
+    // no clock, so it is safe here, halfway through a restore. Repainting AFTER walk/blocked have been
+    // set is deliberate: paintWreck writes both, and doing it first would have them overwritten.
+    G.map.wrecks = (s.wrecks || []).map(w => ({ tiles: w.tiles.slice(), baseH: w.baseH.slice(), born: w.born, life: w.life, big: w.big }));
+    G.map.syncWrecks();
     G.map.psi = {}; for (const k of Object.keys(s.psi || {})) G.map.psi[k] = new Uint8Array(s.psi[k]);
     // Rebuild the resource list by id rather than walking it positionally. G.removeResource SPLICES a
     // mined-out patch out of G.map.resources, so the live array and a snapshot's are different lengths
