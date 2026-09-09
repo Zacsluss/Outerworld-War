@@ -342,7 +342,7 @@ const DATA = (() => {
     aura: { kind: 'mend', r: 8, affects: 'ally', hp: 1.4, stacks: false } });
   B('miasma_gland', { name: 'Miasma Gland', race: 'Z', hp: 500, w: 2, h: 2, min: 100, gas: 75, time: 750, hk: 'J', tier: 'adv', req: ['lair'], needsCreep: true, sight: 9,
     aura: { kind: 'blind', r: 10, affects: 'enemy', sight: 0.6, stacks: false } });
-  B('carapace_ridge', { name: 'Carapace Ridge', race: 'Z', hp: 700, armor: 2, w: 2, h: 2, min: 50, time: 300, hk: 'W', tier: 'basic', req: ['spawning_pool'], needsCreep: true, sight: 3, wall: true });
+  B('carapace_ridge', { name: 'Carapace Ridge', race: 'Z', hp: 700, armor: 2, w: 2, h: 2, min: 25, time: 300, hk: 'W', tier: 'basic', req: ['spawning_pool'], needsCreep: true, sight: 3, wall: true });
 
   // ============================ PROTOSS BUILDINGS ============================
   B('nexus', { name: 'Nexus', race: 'P', hp: 750, sh: 750, w: 4, h: 3, min: 400, time: 1800, hk: 'N', tier: 'basic', produces: ['probe'], sup: 10, depot: true, sight: 11 });
@@ -380,9 +380,9 @@ const DATA = (() => {
   // is the only way `def.sh` and the shield bar can agree, so Protoss durability here is in hit points.
   B('rejuvenation_shrine', { name: 'Rejuvenation Shrine', race: 'P', hp: 400, sh: 200, w: 3, h: 2, min: 75, gas: 50, time: 450, hk: 'D', tier: 'morph', req: ['cybernetics_core'], needsPsi: true,
     aura: { kind: 'mend', r: 6, affects: 'ally', hp: 1.0, sh: 3.0, stacks: false } });
-  B('null_obelisk', { name: 'Null Obelisk', race: 'P', hp: 350, sh: 200, w: 3, h: 2, min: 75, gas: 75, time: 450, hk: 'J', tier: 'morph', req: ['citadel_of_adun'], needsPsi: true, sight: 9,
+  B('null_obelisk', { name: 'Null Obelisk', race: 'P', hp: 350, sh: 200, w: 3, h: 2, min: 75, gas: 100, time: 450, hk: 'J', tier: 'morph', req: ['citadel_of_adun'], needsPsi: true, sight: 9,
     aura: { kind: 'blind', r: 6, affects: 'enemy', sight: 0.35, detect: true, stacks: false } });
-  B('warded_bastion', { name: 'Warded Bastion', race: 'P', hp: 700, sh: 200, armor: 2, w: 3, h: 2, min: 25, time: 240, hk: 'W', tier: 'morph', req: ['forge'], needsPsi: true, sight: 3, wall: true });
+  B('warded_bastion', { name: 'Warded Bastion', race: 'P', hp: 700, sh: 200, armor: 2, w: 3, h: 2, min: 100, time: 240, hk: 'W', tier: 'morph', req: ['forge'], needsPsi: true, sight: 3, wall: true });
 
   // ============================ NEUTRAL STRUCTURES (race 'N') ============================
   // Four of them: one nest that belongs to the wildlife, and three derelicts that belong to whoever

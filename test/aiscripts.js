@@ -31,5 +31,32 @@ for (const race of Object.keys(RES)) {
   const dupes = RES[race].filter((id, i) => RES[race].indexOf(id) !== i);
   ok(!dupes.length, 'AI_RESEARCH.' + race + ' has no duplicates', dupes.join(' '));
 }
+// M11 wave two added nine buildings -- a field hospital, a jammer and a wall for each race -- and not
+// one of them was in any build script, so no computer opponent could ever have one. Three of the nine
+// are Protoss morphs off a Shield Battery, and AI.morph derived its source from a three-way ternary
+// listing every morph that existed when it was written, so those three were unreachable even once they
+// were in the script. Both are fixed; this is the guard.
+{
+  const NEW = ['aid_station', 'scrambler_mast', 'blast_barricade', 'mending_pool', 'miasma_gland',
+    'carapace_ridge', 'rejuvenation_shrine', 'null_obelisk', 'warded_bastion'];
+  const inScript = id => Object.values(SCR).some(list => list.some(e => e[1] === id));
+  const missing = NEW.filter(id => !inScript(id));
+  ok(missing.length === 0, 'every M11 structure appears in a build script', missing.join(', '));
+
+  // A morph must have a source the AI can find, or being in the script changes nothing. Resolved
+  // inside the context, because morphSource walks DATA.
+  const src = vm.runInContext('(ids => ids.map(id => AI.prototype.morphSource.call({}, id)))', ctx);
+  const morphs = NEW.filter(id => D.buildings[id] && D.buildings[id].tier === 'morph');
+  ok(morphs.length === 3, 'three of them are morphs off a Shield Battery', morphs.join(', '));
+  const sources = src(morphs);
+  ok(sources.every(x => x), '...and AI.morphSource resolves every one from the data', JSON.stringify(sources));
+
+  // the ternary this replaced: the three original morphs must still resolve to the same sources
+  const orig = [['lair', 'hatchery'], ['hive', 'lair'], ['greater_spire', 'spire']];
+  const got = src(orig.map(o => o[0]));
+  const wrong = orig.filter((o, i) => got[i] !== o[1]);
+  ok(wrong.length === 0, 'and the three original morphs still resolve as they did', JSON.stringify([orig.map(o => o[1]), got]));
+}
+
 console.log(fail ? `FAIL  ${pass} passed, ${fail} failed` : `ALL PASS  ${pass} passed, 0 failed`);
 process.exit(fail ? 1 : 0);
