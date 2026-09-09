@@ -6,7 +6,7 @@
 const FX = {
   particles: [], decals: [], seen: new WeakSet(), rnd: Math.random,
   MAX_PARTICLES: 700, MAX_DECALS: 260, // render-side only; a 200-supply brawl otherwise spawns thousands and the frame cost doubles
-  reset() { this.particles = []; this.decals = []; this.seen = new WeakSet(); },
+  reset() { this.particles = []; this.decals = []; this.seen = new WeakSet(); this.tracks.length = 0; this.trackI = 0; this._ambF = -1; },
   p(o) { const ps = this.particles; if (ps.length >= this.MAX_PARTICLES) { let worst = 0; for (let i = 1; i < 8; i++) if (ps[i] && ps[i].life < ps[worst].life) worst = i; ps[worst] = ps[ps.length - 1]; ps.pop(); } ps.push(Object.assign({ vx: 0, vy: 0, life: 0.5, max: 0.5, size: 3, col: [255, 200, 80], add: true, grav: 0, kind: 'dot', shrink: true }, o)); },
   burst(x, y, n, spd, o) { for (let i = 0; i < n; i++) { const a = this.rnd() * Math.PI * 2, s = spd * (0.3 + this.rnd() * 0.7); this.p(Object.assign({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s }, o, { life: o.life * (0.6 + this.rnd() * 0.6), max: o.life })); } },
   fire(x, y, n, spd, r = 1) { this.burst(x, y, n, spd, { life: 0.35 * r, size: 5 * r, col: [255, 170, 60], add: true }); this.burst(x, y, Math.ceil(n / 2), spd * 0.6, { life: 0.45 * r, size: 7 * r, col: [255, 80, 20], add: true }); },
@@ -14,19 +14,96 @@ const FX = {
   sparks(x, y, n, spd) { this.burst(x, y, n, spd, { life: 0.3, size: 2, col: [255, 240, 160], add: true, kind: 'spark', grav: 300 }); },
   debris(x, y, n, spd, col = [90, 95, 100]) { this.burst(x, y, n, spd, { life: 0.8, size: 3, col, add: false, kind: 'debris', grav: 500, shrink: false }); },
   blood(x, y, n, spd) { this.burst(x, y, n, spd, { life: 0.5, size: 3, col: [150, 20, 40], add: false, kind: 'debris', grav: 400, shrink: false }); },
+  // Dust thrown up off the ground: what a heavy thing disturbs by moving over dry ground, and what it
+  // throws forward when it stops. Tinted to the tileset, because the dust a machine kicks up is made of
+  // the ground it is standing on -- the same palette entry the ambient motes use, for the same reason.
+  dust(x, y, n, r = 1) {
+    const col = this.AMBIENT[typeof Terrain !== 'undefined' ? Terrain.setId : 'badlands'] || this.AMBIENT.badlands;
+    for (let i = 0; i < n; i++) this.p({
+      x: x + (this.rnd() - .5) * 10 * r, y: y + (this.rnd() - .5) * 5 * r,
+      vx: (this.rnd() - .5) * 26 * r, vy: -5 - this.rnd() * 12,
+      life: 0.35 + this.rnd() * 0.3, max: 0.7, size: 3 * r + 1, col, add: false, kind: 'smoke', shrink: false,
+    });
+  },
   decal(o) { this.decals.push(Object.assign({ t: 0, born: G.frame }, o)); if (this.decals.length > 400) this.decals.shift(); },
+
+  // ---------------------------------------------------------------------------
+  // Ground tracks. Not decals, and deliberately a separate list with its own cap.
+  // ---------------------------------------------------------------------------
+  // A decal is one event that leaves one mark; a track is a continuous stream, so twenty moving tanks
+  // would evict every corpse and scorch on the field within seconds if these shared the decal array --
+  // and MAX_DECALS is the thing keeping drawDecals affordable. So tracks get a fixed ring buffer they
+  // can never overflow, and cost a bounded number of draw calls whatever is happening: every live track
+  // goes into one of THREE batched paths (by age, which is what sets the alpha) and each path is
+  // stroked once. That is 3 draw calls a frame for the whole battlefield, not one per mark -- the same
+  // budgeting rule the shadow pool follows.
+  TRACK_MAX: 128, TRACK_LIFE: 210,   // frames at 24/s, so a little under nine seconds
+  tracks: [], trackI: 0,
+  track(x, y, facing, w, len) {
+    const t = { x, y, c: Math.cos(facing), s: Math.sin(facing), w, len, born: G.frame };
+    if (this.tracks.length < this.TRACK_MAX) this.tracks.push(t);
+    else { this.tracks[this.trackI] = t; this.trackI = (this.trackI + 1) % this.TRACK_MAX; }
+  },
+  drawTracks(ctx, inView) {
+    const ts = this.tracks; if (!ts.length) return;
+    ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = '#000';
+    for (let b = 0; b < 3; b++) {
+      let any = false; ctx.beginPath();
+      for (const t of ts) {
+        // Clamped, not just floored: a replay seeking backwards puts G.frame behind a mark's birth,
+        // and an unclamped bucket index of 3 matches no pass and the mark silently stops being drawn.
+        const k = 1 - (G.frame - t.born) / this.TRACK_LIFE;
+        if (k <= 0 || Math.min(2, k * 3 | 0) !== b) continue;
+        if (inView && !inView(t.x, t.y, t.w + t.len + 8)) continue;
+        // Two parallel marks, perpendicular to travel and squashed on the vertical the same 0.55 the
+        // ground ellipses everywhere else in the renderer are, so they lie ON the ground plane.
+        const px = -t.s * t.w, py = t.c * t.w * 0.55, lx = t.c * t.len, ly = t.s * t.len * 0.55;
+        ctx.moveTo(t.x + px - lx, t.y + py - ly); ctx.lineTo(t.x + px + lx, t.y + py + ly);
+        ctx.moveTo(t.x - px - lx, t.y - py - ly); ctx.lineTo(t.x - px + lx, t.y - py + ly);
+        any = true;
+      }
+      if (any) { ctx.globalAlpha = 0.07 + b * 0.05; ctx.lineWidth = 2; ctx.stroke(); }
+    }
+    ctx.restore();
+  },
   // Ambient drift: a handful of motes crossing the viewport, tinted to the tileset. The maps here are
   // completely still between fights, and stillness is what makes a scene read as a screenshot rather
   // than a place. Capped hard and spawned only every 20th frame, because this is scenery and must
   // never compete with combat for the particle budget (MAX_PARTICLES is shared).
   AMBIENT: { badlands: [196, 170, 120], jungle: [150, 200, 110], ice: [220, 236, 248], desert: [226, 196, 140], space: [150, 190, 230] },
+  // How hard the air is moving, 0..1, and which way. This is the whole reason the sandstorm's warning
+  // works when the front itself is off camera: the wall is a thing at a place, but wind is everywhere,
+  // so the drift the map already has picks up and leans over ten seconds before anything is visible.
+  // Read-only on the map -- hazardState is a pure function of the frame and nothing here writes to it.
+  wind() {
+    const m = (typeof G !== 'undefined' && G.map) || null;
+    if (!m || !m.hazard || !m.hazardState) return null;
+    const s = m.hazardState(G.frame); if (!s || (!s.active && !s.warning)) return null;
+    const k = s.active ? 1 : Math.min(1, s.phase / Math.max(1, m.hazard.warn));
+    return { k: k * k, dir: s.dir, axis: s.axis };   // squared: the last seconds of the warning are where it reads
+  },
   ambient(camX, camY, vw, vh) {
-    if (G.frame % 20 || this.particles.length > this.MAX_PARTICLES * 0.5) return;
+    const w = this.wind(), gust = w ? w.k : 0;
+    // Spawn rate goes from one pair every 20 frames to one every four as the storm arrives.
+    //
+    // Once per SIM frame, not once per drawn frame. `G.frame % 20` is a gate on simulation time and
+    // this is called from the draw pass, so at 60 Hz against a 24 Hz simulation the same sim frame is
+    // drawn two or three times and the gate came true on each of them -- the drift ran at about two
+    // and a half times its intended density, and at a rate that depended on the frame rate. It did not
+    // matter much while this was scenery; it matters now that the same number says how hard the wind
+    // is blowing, and a storm that looks stronger on a faster machine is a bug.
+    if (this._ambF === G.frame) return;
+    if (G.frame % Math.max(4, Math.round(20 - gust * 16)) || this.particles.length > this.MAX_PARTICLES * (0.5 + gust * 0.2)) return;
+    this._ambF = G.frame;
     const col = this.AMBIENT[Terrain.setId] || this.AMBIENT.badlands;
-    for (let i = 0; i < 2; i++) this.p({
-      x: camX - 20 + this.rnd() * (vw + 40), y: camY + this.rnd() * vh,
-      vx: 12 + this.rnd() * 20, vy: -3 + this.rnd() * 6,
-      life: 2.4 + this.rnd() * 2.2, max: 4.6, size: 1 + this.rnd() * 1.6,
+    const spd = 1 + gust * 9, along = w ? w.dir : 1, vert = w && w.axis === 'y';
+    for (let i = 0; i < (gust > 0.5 ? 3 : 2); i++) this.p({
+      // Entering from the edge the wind comes from, so the motes stream across rather than appearing.
+      x: vert ? camX + this.rnd() * vw : (along > 0 ? camX - 20 + this.rnd() * (vw * (1 - gust) + 40) : camX + vw + 20 - this.rnd() * (vw * (1 - gust) + 40)),
+      y: vert ? (along > 0 ? camY - 20 + this.rnd() * (vh * (1 - gust) + 40) : camY + vh + 20 - this.rnd() * (vh * (1 - gust) + 40)) : camY + this.rnd() * vh,
+      vx: vert ? (this.rnd() - .5) * 20 * spd : (12 + this.rnd() * 20) * spd * along,
+      vy: vert ? (12 + this.rnd() * 20) * spd * along : (-3 + this.rnd() * 6) * spd,
+      life: (2.4 + this.rnd() * 2.2) / (1 + gust * 2), max: 4.6 / (1 + gust * 2), size: 1 + this.rnd() * (1.6 + gust * 1.8),
       col, add: false, kind: 'dot', grav: 0, shrink: false, ambient: true,
     });
   },
