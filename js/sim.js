@@ -79,6 +79,9 @@ class Unit {
     // A jamming field shortens sight while the unit stands in it. Clamped at one tile, per the aura
     // contract in js/data.js: short-sighted, never blind.
     if (this.auraSight > 0 && this.auraSight < 1) s = Math.max(1, s * this.auraSight);
+    // ...and so does the dark. Detectors are exempt: a detector is a sensor, not an eye, and blinding
+    // those at night would make cloak unanswerable for a third of every game.
+    if (!this.def.det) { const d = G.daylight; if (d < 1) s = Math.max(2, s * (NIGHT_SIGHT + (1 - NIGHT_SIGHT) * d)); }
     return s; }
   get armor() { let a = this.def.armor || 0; const p = this.player; if (this.def.upgA) a += p.upgLevel(this.def.upgA); if (this.def.armorTech && p.hasTech(this.def.armorTech[0])) a += this.def.armorTech[1]; a -= this.acidSpores; if (this.vet >= 2) a += 1; return Math.max(0, a); }
   get isCloaked() { return this.cloaked || this.burrowed || (G.frame - this.arbCloak < 12); }

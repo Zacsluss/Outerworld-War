@@ -58,6 +58,7 @@ const TESTS = [
   { name: 'newbuildings', args: ['newbuildings.js'], what: 'field hospitals, jammers and walls: data, art and the nine-slot card' },
   { name: 'auras', args: ['auras.js'], what: 'field hospitals mend and jamming towers blind, to the documented contract' },
   { name: 'card', args: ['card.js'], what: 'the command card is 4x3, pages, and never draws outside its grid' },
+  { name: 'fognight', args: ['fognight.js'], what: 'explored ground remembers, and night shortens sight on maps that have one' },
   { name: 'formation', args: ['formation.js'], what: 'a right-drag spreads the selection evenly along the line' },
   { name: 'mapmodes', args: ['mapmodes.js'], what: 'the four map sizes are different rules, and the sandstorm is deterministic' },
   { name: 'flavour', args: ['flavour.js'], what: 'voice lines per race and register, rank and scars in the delivery, and the throttle' },

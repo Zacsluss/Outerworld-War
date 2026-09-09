@@ -195,6 +195,10 @@ const MapModes = {
       }),
     };
     if (opts.hazard) L.hazard = HAZARDS[opts.hazard === true ? 'sandstorm' : opts.hazard](S.w);
+    // Weather of the other kind. Carried through explicitly, like `hazard`, because this composer
+    // builds a layout from named fields rather than spreading opts -- an unknown key is silently
+    // dropped, which is exactly what happened to the first night map: it read as permanent daylight.
+    if (opts.dayNight) L.dayNight = true;
     return L;
   },
 };
@@ -202,6 +206,10 @@ for (const k of MapModes.keys) MAP_LAYOUTS[k] = MapModes.layout(k);
 // The one shipping hazard map, so the feature is reachable without composing anything: large's ground,
 // desert paint, and a sandstorm across it every 160 seconds.
 MAP_LAYOUTS.dustbowl = MapModes.layout('large', { name: 'Dust Bowl', tileset: 'desert', hazard: 'sandstorm' });
+// A night map. `dayNight` is read by G.daylight and is opt-in for the same reason `hazard` is: the
+// cycle shortens sight for a third of every game, which is a change to how every fight on that map
+// goes, and that belongs to the map rather than to the game.
+MAP_LAYOUTS.nightfall = MapModes.layout('large', { name: 'Nightfall', tileset: 'ice', dayNight: true });
 
 // ============================================================================
 // Destructible and dynamic map features. Ground that changes during the match.

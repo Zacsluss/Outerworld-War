@@ -17,6 +17,20 @@ const SEP_DIRS = [[1, 0], [D, D], [0, 1], [-D, D], [-1, 0], [-D, -D], [0, -1], [
 // Referenced rather than inlined because the supply-block alert and the refusal message both have to
 // agree with it, and they did not used to.
 const SUPPLY_CAP = 500;
+// Day and night. Derived from the frame and stored nowhere, exactly like the sandstorm in js/map.js and
+// for the same reason: anything remembered would be dropped by a replay seek or a rejoin and the two
+// sides would then have different weather. 1 is full day, 0 is deep night.
+//
+// Twelve minutes a cycle, of which roughly a third is properly dark, with long dusks either side --
+// night is a window you plan a raid inside, not a light switch. The render half reads G.daylight; the
+// simulation half is the sight penalty in Unit.sight.
+const DAY_CYCLE = 24 * 60 * 12, NIGHT_SIGHT = 0.6;
+function daylightAt(frame) {
+  const t = ((frame % DAY_CYCLE) + DAY_CYCLE) % DAY_CYCLE / DAY_CYCLE;   // 0..1 through the cycle
+  // A raised cosine: flat-ish day, flat-ish night, and a real dusk between them rather than a ramp.
+  const c = (Math.cos(t * Math.PI * 2) + 1) / 2;
+  return c * c * (3 - 2 * c);                                            // smoothstep, so dusk eases
+}
 // Directional armour. A hit that lands behind or beside a unit hurts more than one it is facing, so
 // where a unit is pointing becomes part of what it is worth -- flanking is a mechanic rather than a
 // figure of speech, and a tank line has a front that can be turned.
@@ -170,6 +184,40 @@ const G = {
   visible(pid, tx, ty) { const p = this.players[pid]; return p && p.vis[ty * this.map.w + tx] === 2; },
   visibleAt(pid, x, y) { const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); return this.map.inb(tx, ty) && this.visible(pid, tx, ty); },
   explored(pid, tx, ty) { return this.players[pid].vis[ty * this.map.w + tx] > 0; },
+  // 1 in full day, 0 at the bottom of the night. A getter rather than a field so it cannot be captured,
+  // restored stale, or drift between two clients.
+  //
+  // OPT-IN PER LAYOUT, like hazards and for the same reason. The first version ran the cycle on every
+  // map, and eight combat checks in test/features.js began failing -- not because the code was wrong but
+  // because long fights now happened after dark and units could no longer see far enough to have them.
+  // That is the feature working, and it is also a global change to every existing map and every balance
+  // number in the repository, arriving silently. A map declares `dayNight: true` to have weather of this
+  // kind, exactly as it declares a hazard.
+  get daylight() {
+    const L = MAP_LAYOUTS[this.layout];
+    return (L && L.dayNight) ? daylightAt(this.frame) : 1;
+  },
+  // What a player REMEMBERS of the enemy, as opposed to what they can currently see. Explored ground
+  // shows its last known state: an enemy building you scouted an hour ago is still drawn there, whether
+  // or not it still exists. Intelligence decays, and the map lies to you until you go and look again.
+  //
+  // The memory is only corrected by SIGHT. Seeing the tile and finding nothing there forgets it; a
+  // building destroyed while you were not watching stays on your map. That asymmetry is the feature.
+  rememberSeen(p) {
+    if (!p.seen) p.seen = new Map();
+    for (const u of this.units) {
+      if (!u.alive || !u.isBuilding || u.inside) continue;
+      if (this.allied(u.owner, p.id)) continue;
+      if (this.visibleAt(p.id, u.x, u.y)) p.seen.set(u.id, { d: u.def.id, x: u.x, y: u.y, tx: u.tx, ty: u.ty, o: u.owner, f: this.frame });
+    }
+    // ...and the correction. Walks the Map in insertion order, which is stable across a snapshot because
+    // restore rebuilds it from an ordered array.
+    for (const [id, mem] of p.seen) {
+      if (!this.visibleAt(p.id, mem.x, mem.y)) continue;
+      const u = this.byId.get(id);
+      if (!u || !u.alive || u.inside) p.seen.delete(id);
+    }
+  },
   detected(u, pid) { return (u.detBy[pid] || -99) >= this.frame - 8; },
   canSee(pid, u) { if (u.owner === pid || this.allied(pid, u.owner)) return true; if (u.fx.parasite === pid) return true; if (!this.visibleAt(pid, u.x, u.y)) return false; if (u.isCloaked && !this.detected(u, pid) && !(u.fx.ensnare > 0 || u.fx.plague > 0)) return false; return true; },
   targetable(att, t) { if (!t.alive || t.inside) return false; if (t.fx.stasis > 0) return false; if (t.owner === att.owner || this.allied(att.owner, t.owner)) return true; return this.canSee(att.owner, t); },
@@ -184,6 +232,7 @@ const G = {
       for (const u of this.units) { if (!u.alive || u.inside) continue; if (this.allied(u.owner, p.id) || u.fx.parasite === p.id) mark(u.x, u.y, u.sight, u.heightLevel()); }
       for (const f of this.fields) if (f.kind === 'scan' && this.allied(f.owner, p.id)) mark(f.x, f.y, 10, 2);
       if (p.human && (this.cheats.reveal || this.cheats.nofog)) v.fill(2);
+      this.rememberSeen(p);
     }
     // detection
     for (const u of this.units) { if (!u.alive || !u.isDetector) continue; const r = u.sight * TILE; for (const t of this.near(u.x, u.y, r)) if (t.owner !== u.owner && t.isCloaked) for (const q of this.players) if (this.allied(q.id, u.owner)) t.detBy[q.id] = this.frame; }
