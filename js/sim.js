@@ -53,7 +53,7 @@ class Unit {
     this.maxEnergy = def.energy || 0; this.energy = def.energy ? 50 : 0;
     this.facing = G.rand() * Math.PI * 2; this.fly = !!def.fly; this.done = !this.isBuilding;
     this.order = { type: 'idle' }; this.queue = []; this.path = null; this.pathI = 0; this.stuck = 0; this.repathT = 0;
-    this.cooldown = 0; this.cargo = []; this.inside = null; this.carrying = null; this.lastRes = null;
+    this.cooldown = 0; this.cargo = []; this.inside = null; this.carrying = null; this.lastRes = null; this.heldOrder = false;
     this.prod = []; this.rally = null; this.addon = null; this.parent = null; this.sieged = false; this.transT = 0;
     this.cloaked = !!def.cloaked; this.burrowed = !!def.burrowed; this.stim = 0; this.fx = {}; this.kills = 0; this.detBy = {};
     this.lifetime = def.lifetime || 0; this.mines = def.mines || 0; this.scarabs = def.scarabs || 0; this.interceptors = def.interceptors || 0;
@@ -102,10 +102,19 @@ class Unit {
   // ---------------- orders ----------------
   setOrder(o, shift) {
     if (this.isBuilding && !this.lifted && o.type !== 'idle' && o.type !== 'rally' && o.type !== 'land') return;
+    // A worker that was TOLD to do something other than gather stays told. Without this it walks back to
+    // the hall the instant it arrives, because tickIdle returns any idle worker that happens to be
+    // carrying -- so "move this drone off the minerals" became "move this drone off the minerals and
+    // then put it back". Brood War does not do that. setOrder is the player-and-AI path; applyOrder,
+    // which the gather cycle itself uses, clears the flag again below.
+    if (this.def.worker) this.heldOrder = true;
     if (shift && this.order.type !== 'idle') { if (this.queue.length < 8) this.queue.push(o); return; }
     this.queue = []; this.applyOrder(o);
   }
   applyOrder(o) {
+    // Back on the gather cycle -- by the player's hand or by the cycle's own bookkeeping -- so the hold
+    // above is spent and an interrupted worker may carry its load home again.
+    if (this.def.worker && (o.type === 'gather' || o.type === 'return')) this.heldOrder = false;
     if (this.order.type === 'gather' && this.order.target && this.order.target.miner === this) this.order.target.miner = null;
     if (this.order.type === 'construct' && this.order.target && this.order.target.builder === this) this.order.target.builder = null;
     this.order = o; this.path = null; this.pathI = 0; this.stuck = 0; this.waitT = 0;
@@ -276,7 +285,7 @@ class Unit {
   }
   tickIdle() {
     const d = this.def;
-    if (this.def.worker) { if (this.carrying && (G.frame + this.id) % 24 === 0) { this.applyOrder({ type: 'return' }); } return; }
+    if (this.def.worker) { if (this.carrying && !this.heldOrder && (G.frame + this.id) % 24 === 0) { this.applyOrder({ type: 'return' }); } return; }
     if (this.hasWeapon() && !this.def.notUnit && (G.frame + this.id) % 6 === 0) { const t = this.autoTarget(false); if (t) { this.applyOrder({ type: 'attack', target: t, auto: true, ox: this.x, oy: this.y }); } }
     if (d.suicide) { }
   }
