@@ -169,3 +169,65 @@ render change has to land under it.
 4. **W3-18** weight, then **W3-6** legibility at scale.
 5. **W3-4** ferry routes, then **W3-24** branching replay.
 6. **W3-1** strategic zoom, last, after every other render change.
+
+
+---
+
+# Status, end of the overnight run (2026-09-09)
+
+`node test/all.js` -- **26 checks, 0 failed**, 134 s wall clock. Thirteen suites existed when this
+milestone started; there are twenty-six now, and every feature below shipped with one.
+
+## Shipped
+
+**Wave one** -- supply cap 500 (25), combat-aware music (16), reload cadence arcs (11), veterancy and
+scars (2), directional armour (6), suppressing fire (7), voice flavour (17), sandstorm weather (19,
+the day/night half is still open).
+
+**Wave two** -- AI play styles (23), field hospitals, jamming towers and walls with working auras (11,
+15), the four map sizes as different rules (16), hazards (20), destructibles and procedural archetypes
+(18, 17), the unit codex (25).
+
+**Wave three** -- no refunds on buildings (21), a voice per weapon class (19), threat-aware targeting
+(5), the drag-line formation (9), formations that hold their shape (2), weight (18), legibility at
+scale (6).
+
+**Bugs found and fixed on the way**, none of which any existing test could see:
+- a spider mine is `mech` but has no build cost, so repairing one produced NaN hit points that spread
+  through every comparison they touched. Unreachable until the AI was taught to repair.
+- scarring never fired in a real fight: `G.damage` subtracts hit points itself and never calls
+  `damageRaw`, where the code lived. Thirty thousand frames across six matchups, zero scarred units.
+- mined-out patches were dropped from the snapshot entirely, so a rejoining client sent workers to mine
+  something the donor knew was gone. Second bug in that family; the first was M10's positional index.
+- a build page holds exactly eight entries and nothing enforced it -- a ninth draws under Cancel and
+  stays clickable.
+- `HUD.panel` cached one texture, so with the pause menu open both it and the console were rebuilt from
+  scratch every frame.
+- `Voice.pick` was a modulo on unit id alone: every marine had one select line for its whole life. The
+  attack-bark pool was never called at all, and the Zerg line arrays were empty.
+- `FX.ambient`'s rate gate is simulation time evaluated once per drawn frame, so drift ran ~2.5x its
+  intended density and was frame-rate dependent.
+
+## Still open
+
+| | |
+|---|---|
+| **24 cut the hard-counter matrix** | wave one, last mechanic by design -- it invalidates every balance number |
+| **5 fog that lies** | wave one |
+| **1 attrition economy**, **9 terrain destruction** (unit-facing half), **15 diegetic per-race UI** | wave one |
+| **19 day/night** | the weather half shipped; the light half did not |
+| **14 moral objectives**, then **13 campaign attrition** | wave one, last |
+| **22 skirmish setup screen** | wave two -- the surface for AI styles, map sizes and derelicts |
+| **19 vertical layers** | wave two, high risk |
+| **1 neutral hostile life**, **8 capturable derelicts** | wave two, last: both need a third owner |
+| **4 ferry routes**, **24 branching replay**, **1 strategic zoom** | wave three |
+
+## Owed measurements
+
+- **A full balance run.** Suspended by design until 24 lands. Every number in HANDOFF.md is stale: the
+  AI has changed twice over (abilities, fog of war), and supply, veterancy, armour facing and
+  suppression all move it.
+- **Protoss sits on `citadel_of_adun` from minute four to minute eight** at supply 139 and still has no
+  templar archives at seventeen. Most likely why PvT reads 66%.
+- **Tier-1 relevance at high supply** -- promised as a check rather than an assumption.
+- **Terrain-at-2x frame cost**, still never measured on a quiet machine.
