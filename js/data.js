@@ -62,8 +62,8 @@ const DATA = (() => {
     gw: W(5, 'normal', 0.4, 22, { upgKey: null }), abil: ['gather', 'build_basic', 'build_adv', 'burrow'], upgA: 'carapace' });
   U('overlord', { name: 'Overlord', race: 'Z', hp: 200, size: 'large', min: 100, sup: 0, supGive: 8, time: 600, speed: 0.83, sight: 9, r: 18, hk: 'O', from: 'larva', bio: true, fly: true, det: true,
     abil: ['unload'], upgA: 'flyA', speedTech: ['pneumatized', 2.5], cargoTech: 'ventral_sacs', sightTech: ['antennae', 11] });
-  U('zergling', { name: 'Zergling', race: 'Z', hp: 35, size: 'small', min: 50, sup: 0.5, time: 420, speed: 2.61, sight: 5, r: 7, hk: 'Z', from: 'larva', req: ['spawning_pool'], bio: true, cargoSize: 1, pair: true,
-    gw: W(5, 'normal', 0.5, 8, { upgKey: 'meleeW', cdTech: ['adrenal', 6] }), abil: ['burrow'], upgA: 'carapace', speedTech: ['metabolic', 5.49] });
+  U('zergling', { name: 'Zergling', race: 'Z', hp: 35, size: 'small', min: 50, sup: 0.5, time: 420, speed: 5.49, sight: 5, r: 7, hk: 'Z', from: 'larva', req: ['spawning_pool'], bio: true, cargoSize: 1, pair: true,
+    gw: W(5, 'normal', 0.5, 8, { upgKey: 'meleeW', cdTech: ['adrenal', 6] }), abil: ['burrow'], upgA: 'carapace', speedTech: ['metabolic', 6.58] });   // Brood War's own pair: 5.49 base, 6.58 boosted. The table had 2.61/5.49 -- the boosted value was BW's base, and the base was invented under it, leaving a zergling slower than a high templar.
   U('hydralisk', { name: 'Hydralisk', race: 'Z', hp: 80, size: 'medium', min: 75, gas: 25, sup: 1, time: 420, speed: 3.66, sight: 6, r: 10, hk: 'H', from: 'larva', req: ['hydralisk_den'], bio: true, cargoSize: 2,
     gw: W(10, 'explosive', 4, 15, { upgKey: 'missW', targets: 'both', rangeTech: ['grooved', 5] }), abil: ['burrow', 'lurker_aspect'], upgA: 'carapace', speedTech: ['muscular', 5.0] });
   U('lurker', { name: 'Lurker', race: 'Z', hp: 125, armor: 1, size: 'medium', min: 50, gas: 100, sup: 2, time: 600, speed: 5.82, sight: 8, r: 12, from: 'hydralisk', req: ['lurker_aspect'], bio: true, cargoSize: 2, morphFrom: 'hydralisk', hk: 'L',

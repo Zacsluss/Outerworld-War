@@ -9,23 +9,23 @@
 // Where these sit in the order is a balance question and is deliberately not being guessed at here --
 // they are appended at the supply the rest of the late game already sits at.
 const AI_SCRIPTS = {
-  T: [[9, 'supply_depot'], [11, 'barracks'], [12, 'refinery'], [15, 'supply_depot'], [16, 'factory'], [19, 'supply_depot'], [20, 'machine_shop'], [22, 'academy'], [23, 'command_center'], [24, 'engineering_bay'], [26, 'supply_depot'], [28, 'factory'], [30, 'comsat_station'], [32, 'armory'], [34, 'supply_depot'], [36, 'starport'], [38, 'science_facility'], [40, 'machine_shop'], [42, 'control_tower'], [44, 'barracks'], [46, 'command_center'], [50, 'factory'], [56, 'missile_turret'], [60, 'physics_lab'], [62, 'science_facility'], [64, 'starport'], [66, 'covert_ops'], [70, 'barracks'], [80, 'factory']],
-  Z: [[11, 'spawning_pool'], [12, 'hatchery'], [13, 'extractor'], [16, 'hydralisk_den'], [18, 'creep_colony'], [20, 'lair'], [22, 'extractor'], [24, 'hatchery'], [26, 'spire'], [28, 'evolution_chamber'], [30, 'creep_colony'], [32, 'defiler_mound'], [34, 'hatchery'], [38, 'creep_colony'], [44, 'queens_nest'], [48, 'extractor'], [52, 'hive'], [56, 'creep_colony'], [60, 'ultralisk_cavern'], [64, 'hatchery'], [70, 'greater_spire'], [80, 'hatchery']],
-  P: [[8, 'pylon'], [10, 'gateway'], [12, 'assimilator'], [14, 'cybernetics_core'], [15, 'pylon'], [18, 'gateway'], [20, 'nexus'], [22, 'pylon'], [24, 'citadel_of_adun'], [26, 'forge'], [27, 'pylon'], [28, 'robotics_facility'], [30, 'observatory'], [32, 'templar_archives'], [34, 'gateway'], [36, 'pylon'], [38, 'photon_cannon'], [40, 'gateway'], [42, 'stargate'], [44, 'nexus'], [46, 'arbiter_tribunal'], [48, 'pylon'], [50, 'robotics_support_bay'], [52, 'fleet_beacon'], [56, 'gateway'], [66, 'gateway'], [72, 'stargate'], [80, 'nexus']],
+  T: [[9, 'supply_depot'], [11, 'barracks'], [12, 'refinery'], [15, 'supply_depot'], [16, 'factory'], [19, 'supply_depot'], [20, 'machine_shop'], [22, 'academy'], [23, 'bunker'], [24, 'command_center'], [25, 'engineering_bay'], [26, 'supply_depot'], [28, 'factory'], [30, 'comsat_station'], [32, 'armory'], [34, 'supply_depot'], [36, 'starport'], [38, 'science_facility'], [40, 'machine_shop'], [42, 'control_tower'], [44, 'barracks'], [46, 'command_center'], [50, 'factory'], [56, 'missile_turret'], [60, 'physics_lab'], [62, 'science_facility'], [64, 'starport'], [66, 'covert_ops'], [68, 'nuclear_silo'], [70, 'barracks'], [80, 'factory']],
+  Z: [[11, 'spawning_pool'], [12, 'hatchery'], [13, 'extractor'], [16, 'hydralisk_den'], [18, 'creep_colony'], [19, 'sunken_colony'], [20, 'lair'], [22, 'extractor'], [24, 'hatchery'], [26, 'spire'], [28, 'evolution_chamber'], [30, 'creep_colony'], [31, 'spore_colony'], [32, 'defiler_mound'], [34, 'hatchery'], [38, 'creep_colony'], [44, 'queens_nest'], [48, 'extractor'], [52, 'hive'], [56, 'creep_colony'], [60, 'ultralisk_cavern'], [64, 'hatchery'], [68, 'nydus_canal'], [70, 'greater_spire'], [80, 'hatchery']],
+  P: [[8, 'pylon'], [10, 'gateway'], [12, 'assimilator'], [14, 'cybernetics_core'], [15, 'pylon'], [18, 'gateway'], [20, 'nexus'], [22, 'pylon'], [24, 'citadel_of_adun'], [26, 'forge'], [27, 'pylon'], [29, 'shield_battery'], [28, 'robotics_facility'], [30, 'observatory'], [32, 'templar_archives'], [34, 'gateway'], [36, 'pylon'], [38, 'photon_cannon'], [40, 'gateway'], [42, 'stargate'], [44, 'nexus'], [46, 'arbiter_tribunal'], [48, 'pylon'], [50, 'robotics_support_bay'], [52, 'fleet_beacon'], [56, 'gateway'], [66, 'gateway'], [72, 'stargate'], [80, 'nexus']],
 };
 const gasBuildings = ai => ai.mine(u => u.def.onGeyser).length + 1;
 const AI_COMP = {
-  T: [['marine', 6], ['medic', 2], ['firebat', 1], ['vulture', 2], ['siege_tank', 4], ['goliath', 2], ['science_vessel', 1], ['wraith', 1], ['battlecruiser', 2]],
-  Z: [['zergling', 4], ['hydralisk', 6], ['mutalisk', 4], ['scourge', 1], ['ultralisk', 3], ['defiler', 1], ['queen', 0]],
-  ZvT: [['zergling', 3], ['hydralisk', 5], ['mutalisk', 5], ['scourge', 1], ['ultralisk', 4], ['defiler', 2], ['queen', 0]],
-  PvZ: [['zealot', 2], ['dragoon', 8], ['high_templar', 3], ['dark_templar', 1], ['reaver', 1], ['observer', 3], ['corsair', 2], ['carrier', 1], ['arbiter', 1]],
-  ZvP: [['zergling', 3], ['hydralisk', 6], ['mutalisk', 3], ['scourge', 1], ['ultralisk', 3], ['defiler', 1], ['queen', 0]],
-  P: [['zealot', 4], ['dragoon', 5], ['high_templar', 2], ['dark_templar', 1], ['reaver', 1], ['observer', 1], ['corsair', 1], ['carrier', 2], ['arbiter', 1]],
+  T: [['marine', 6], ['medic', 2], ['firebat', 1], ['ghost', 1], ['vulture', 2], ['siege_tank', 4], ['goliath', 2], ['science_vessel', 1], ['wraith', 1], ['valkyrie', 1], ['dropship', 1], ['battlecruiser', 2]],
+  Z: [['zergling', 4], ['hydralisk', 6], ['mutalisk', 4], ['scourge', 1], ['ultralisk', 3], ['defiler', 1], ['queen', 1]],
+  ZvT: [['zergling', 3], ['hydralisk', 5], ['mutalisk', 5], ['scourge', 1], ['ultralisk', 4], ['defiler', 2], ['queen', 1]],
+  PvZ: [['zealot', 2], ['dragoon', 8], ['high_templar', 3], ['dark_templar', 1], ['reaver', 1], ['shuttle', 1], ['observer', 3], ['corsair', 2], ['scout', 1], ['carrier', 1], ['arbiter', 1]],
+  ZvP: [['zergling', 3], ['hydralisk', 6], ['mutalisk', 3], ['scourge', 1], ['ultralisk', 3], ['defiler', 1], ['queen', 1]],
+  P: [['zealot', 4], ['dragoon', 5], ['high_templar', 2], ['dark_templar', 1], ['reaver', 1], ['shuttle', 1], ['observer', 1], ['corsair', 1], ['scout', 1], ['carrier', 2], ['arbiter', 1]],
 };
 const AI_RESEARCH = {
-  T: ['stim', 'siege_tech', 'u238', 'infW', 'infA', 'ion_thrusters', 'spider_mines_tech', 'vehW', 'charon', 'vehA', 'irradiate_tech', 'emp_tech', 'yamato_tech', 'shipW', 'cloaking_field'],
-  Z: ['metabolic', 'flyW', 'lurker_aspect', 'carapace', 'meleeW', 'grooved', 'muscular', 'missW', 'flyA', 'burrow_tech', 'pneumatized', 'anabolic', 'chitinous', 'adrenal', 'consume_tech', 'plague_tech'],
-  P: ['singularity', 'gW', 'leg_enhancements', 'gA', 'psi_storm_tech', 'shields', 'scarab_damage', 'gravitic_drive', 'airW', 'carrier_capacity', 'stasis_tech', 'khaydarin_amulet', 'airA', 'recall_tech'],
+  T: ['stim', 'siege_tech', 'u238', 'infW', 'infA', 'ion_thrusters', 'spider_mines_tech', 'vehW', 'charon', 'vehA', 'irradiate_tech', 'emp_tech', 'personnel_cloaking', 'lockdown_tech', 'yamato_tech', 'shipW', 'cloaking_field', 'restoration_tech', 'optical_flare_tech', 'caduceus', 'moebius', 'ocular', 'apollo', 'titan', 'colossus'],
+  Z: ['metabolic', 'flyW', 'lurker_aspect', 'carapace', 'meleeW', 'grooved', 'muscular', 'missW', 'flyA', 'burrow_tech', 'pneumatized', 'anabolic', 'chitinous', 'adrenal', 'consume_tech', 'plague_tech', 'spawn_broodling_tech', 'ensnare_tech', 'ventral_sacs', 'antennae', 'gamete', 'metasynaptic'],
+  P: ['singularity', 'gW', 'leg_enhancements', 'gA', 'psi_storm_tech', 'shields', 'scarab_damage', 'gravitic_drive', 'airW', 'carrier_capacity', 'stasis_tech', 'khaydarin_amulet', 'airA', 'recall_tech', 'maelstrom_tech', 'mind_control_tech', 'hallucination_tech', 'disruption_web_tech', 'reaver_capacity', 'gravitic_boosters', 'sensor_array', 'apial_sensors', 'gravitic_thrusters', 'argus_talisman', 'argus_jewel', 'khaydarin_core'],
 };
 class AI {
   constructor(p, diff) {
@@ -229,6 +229,9 @@ class AI {
     // Zerg morphs: hydras -> lurkers, mutas -> guardians
     if (this.race === 'Z' && p.hasTech('lurker_aspect') && (counts.lurker || 0) < (counts.hydralisk || 0) / 1.5 && p.minerals >= 50 && p.gas >= 100) { const h = this.mine(u => u.def.id === 'hydralisk' && u.order.type !== 'attack' && u.done); if (h.length) { Abilities.morph(h[0], 'lurker'); return; } }
     if (this.race === 'Z' && p.hasBuilding('greater_spire') && (counts.guardian || 0) < 4 && p.minerals >= 50 && p.gas >= 100) { const m = this.mine(u => u.def.id === 'mutalisk'); if (m.length > 4) { Abilities.morph(m[0], 'guardian'); return; } }
+    // Devourers, which nothing ever built: guardians hit ground, devourers hit air, and the greater spire
+    // buys both. Gated on the enemy actually flying, the way scourge and corsairs already are.
+    if (this.race === 'Z' && p.hasBuilding('greater_spire') && (counts.devourer || 0) < 3 && enemyAir && p.minerals >= 150 && p.gas >= 50) { const m = this.mine(u => u.def.id === 'mutalisk'); if (m.length > 4) { Abilities.morph(m[0], 'devourer'); return; } }
     // A high templar is built to cast storm; an archon is what a spent one becomes. Merging any pair
     // under 60 energy while storm was unresearched merged every templar on sight -- a fresh one starts
     // at 50 -- so no templar ever lived to see the tech land. Merge only what cannot storm: the spent
@@ -237,6 +240,12 @@ class AI {
       const stormable = p.hasTech('psi_storm_tech') || p.researching.has('psi_storm_tech');
       const hts = this.mine(u => u.def.id === 'high_templar' && u.order.type !== 'merge' && (!stormable || u.energy < DATA.abilities.psi_storm.energy));
       if (hts.length >= 2 && (!stormable || (counts.high_templar || 0) > 3)) Abilities.merge(hts, 'summon_archon');
+      // A dark archon is two dark templar, and nothing ever made one. Only worth it once the archives
+      // have paid for something to cast: feedback is free at 50 energy, so one is enough to be useful.
+      if ((counts.dark_archon || 0) < 1 && p.hasBuilding('templar_archives')) {
+        const dts = this.mine(u => u.def.id === 'dark_templar' && u.order.type !== 'merge');
+        if (dts.length >= 2 && (counts.dark_templar || 0) > 2) Abilities.merge(dts, 'summon_dark_archon');
+      }
     }
     // Reaver scarabs / carrier interceptors
     for (const u of this.mine(u => (u.def.id === 'reaver' || u.def.id === 'carrier') && !u.prod.length)) { if (u.def.id === 'reaver' && u.scarabs < 5) G.queueUnit(u, 'scarab'); if (u.def.id === 'carrier' && u.interceptors < (p.hasTech('carrier_capacity') ? 8 : 4)) G.queueUnit(u, 'interceptor'); }
@@ -512,6 +521,66 @@ class AI {
       else if (d === 'medic' && u.order.type === 'idle' && this.rally && distPt(u.x, u.y, this.rally.x, this.rally.y) > 8 * TILE) { const a = this.armyUnits()[0]; if (a) u.setOrder({ type: 'follow', target: a }); }
       else if (d === 'vulture' && u.mines > 0 && p.hasTech('spider_mines_tech') && u.order.type === 'idle' && this.turn(u.id, 4)) { Abilities.issue(u, 'spider_mine', null, u.x + (G.rand() - .5) * 64, u.y + (G.rand() - .5) * 64); }
       else if (d === 'arbiter' && u.energy >= 100 && p.hasTech('stasis_tech') && this.turn(u.id, 2)) { const c = this.cluster(u, 9, 4, o => o.owner !== p.id && !o.isBuilding); if (c) Abilities.issue(u, 'stasis_field', null, c.x, c.y); }
+      // The rest of the spell book. Every one of these had working code in js/abilities.js, a place on
+      // the command card and an entry in the tech tree, and no line anywhere that made the AI press it,
+      // so a player never saw them. Each sits AFTER the existing clause for the same unit, and an
+      // else-if chain takes the first match -- so a defiler still prefers dark swarm and only consumes
+      // below the energy for it, a templar still prefers storm, a vessel still prefers irradiate.
+      // Lockdown, which was researched and never pressed. Sits before the nuke clause so a ghost with
+      // no nuke still has a job; a nuke-carrying ghost matches the clause below instead.
+      else if (d === 'ghost' && p.nukes === 0 && u.energy >= 100 && p.hasTech('lockdown_tech') && this.turn(u.id, 2)) {
+        const t = G.near(u.x, u.y, 8 * TILE).find(o => o.owner !== p.id && !o.isBuilding && o.def.mech && !o.fx.lockdown && o.def.sup >= 2); if (t) Abilities.issue(u, 'lockdown', t);
+      }
+      // Repair. SCVs never repaired anything, so a damaged tank line, a bunker or a cracked building
+      // simply stayed damaged -- the one Terran mechanic that is free and was going entirely unused.
+      else if (u.def.worker && p.race === 'T' && u.order.type === 'idle' && this.turn(u.id, 4)) {
+        const hurt = this.mine(o => o !== u && o.hp < o.maxHp * 0.85 && (o.isBuilding || o.def.mech) && !o.def.larva && distPt(o.x, o.y, u.x, u.y) < 12 * TILE)[0];
+        if (hurt) u.setOrder({ type: 'repair', target: hurt });
+      }
+      else if (d === 'queen' && u.energy >= 150 && this.turn(u.id, 4)) {
+        // Infest: a Terran command centre under 50% is a free infested terran factory. Niche, and the
+        // only reason it is here is that "every ability the game has" should mean every one.
+        const cc = G.near(u.x, u.y, 8 * TILE).find(o => o.owner !== p.id && o.isBuilding && o.def.id === 'command_center' && o.hp < o.maxHp * 0.5);
+        if (cc) Abilities.issue(u, 'infest', cc);
+      }
+      else if (d === 'medic' && this.turn(u.id, 2) && u.energy >= 50) {
+        const hurt = this.mine(o => o !== u && !o.isBuilding && o.fx && (o.fx.plague > 0 || o.fx.irradiate) && distPt(o.x, o.y, u.x, u.y) < 9 * TILE)[0];
+        if (hurt && p.hasTech('restoration_tech')) Abilities.issue(u, 'restoration', hurt);
+        else if (u.energy >= 75 && p.hasTech('optical_flare_tech')) { const e = G.near(u.x, u.y, 9 * TILE).find(o => o.owner !== p.id && !o.isBuilding && !o.fly && o.def.sight >= 7 && !o.fx.blind); if (e) Abilities.issue(u, 'optical_flare', e); }
+      }
+      else if (d === 'science_vessel' && this.turn(u.id, 2) && u.energy >= 100) {
+        const emp = p.hasTech('emp_tech') ? this.cluster(u, 8, 3, o => o.owner !== p.id && (o.maxSh > 0 || o.maxEnergy > 0)) : null;
+        if (emp) Abilities.issue(u, 'emp', null, emp.x, emp.y);
+        else { const hurt = this.mine(o => !o.isBuilding && o.hp < o.maxHp * 0.5 && o.def.sup >= 2 && !o.fx.matrix && distPt(o.x, o.y, u.x, u.y) < 10 * TILE)[0]; if (hurt) Abilities.issue(u, 'defensive_matrix', hurt); }
+      }
+      else if (d === 'battlecruiser' && u.energy >= 150 && p.hasTech('yamato_tech') && this.turn(u.id, 2)) {
+        const t = G.near(u.x, u.y, 10 * TILE).find(o => o.owner !== p.id && (o.maxHp >= 200 || o.isBuilding)); if (t) Abilities.issue(u, 'yamato', t);
+      }
+      else if (d === 'wraith' && !u.cloaked && u.energy >= 50 && p.hasTech('cloaking_field') && this.turn(u.id, 4) && G.near(u.x, u.y, 8 * TILE).some(o => o.owner !== p.id && o.hasWeapon())) Abilities.instant(u, 'cloak_wraith');
+      else if (d === 'queen' && this.turn(u.id, 2) && u.energy >= 75) {
+        const c = p.hasTech('ensnare_tech') ? this.cluster(u, 9, 3, o => o.owner !== p.id && !o.isBuilding && !o.fx.ensnare) : null;
+        if (c) Abilities.issue(u, 'ensnare', null, c.x, c.y);
+        else { const big = G.near(u.x, u.y, 12 * TILE).find(o => o.owner !== p.id && !o.isBuilding && o.def.sup >= 2 && !o.fx.parasite); if (big) Abilities.issue(u, 'parasite', big); }
+      }
+      else if (d === 'defiler' && u.energy < 100 && p.hasTech('consume_tech') && this.turn(u.id, 2)) {
+        const food = this.mine(o => o.def.id === 'zergling' && distPt(o.x, o.y, u.x, u.y) < 2 * TILE)[0]; if (food) Abilities.issue(u, 'consume', food);
+      }
+      else if (d === 'dark_archon' && this.turn(u.id, 2) && u.energy >= 50) {
+        const caster = G.near(u.x, u.y, 10 * TILE).find(o => o.owner !== p.id && o.maxEnergy > 0 && o.energy >= 50);
+        if (caster) Abilities.issue(u, 'feedback', caster);
+        else if (u.energy >= 100 && p.hasTech('maelstrom_tech')) { const c = this.cluster(u, 10, 3, o => o.owner !== p.id && !o.isBuilding && o.def.bio); if (c) Abilities.issue(u, 'maelstrom', null, c.x, c.y); }
+        else if (u.energy >= 150 && p.hasTech('mind_control_tech')) { const t = G.near(u.x, u.y, 8 * TILE).find(o => o.owner !== p.id && !o.isBuilding && o.def.sup >= 2); if (t) Abilities.issue(u, 'mind_control', t); }
+      }
+      else if (d === 'corsair' && u.energy >= 125 && p.hasTech('disruption_web_tech') && this.turn(u.id, 2)) {
+        const c = this.cluster(u, 9, 3, o => o.owner !== p.id && !o.fly && o.hasWeapon()); if (c) Abilities.issue(u, 'disruption_web', null, c.x, c.y);
+      }
+      else if (d === 'high_templar' && u.energy >= 100 && p.hasTech('hallucination_tech') && this.turn(u.id, 4) && this.state === 'attack') {
+        const friend = this.mine(o => !o.isBuilding && o.def.sup >= 2 && distPt(o.x, o.y, u.x, u.y) < 9 * TILE)[0]; if (friend) Abilities.issue(u, 'hallucination', friend);
+      }
+      else if (d === 'arbiter' && u.energy >= 150 && p.hasTech('recall_tech') && this.turn(u.id, 4) && this.state === 'attack' && this.target && this.target.alive) {
+        const stranded = this.mine(o => !o.isBuilding && o.hasWeapon() && distPt(o.x, o.y, this.target.x, this.target.y) > 30 * TILE).length;
+        if (stranded >= 6) Abilities.issue(u, 'recall', null, u.x, u.y);
+      }
       else if (d === 'ghost' && p.nukes > 0 && u.energy > 50 && this.turn(u.id, 4) && u.order.type !== 'ability') { const t = this.target; if (t && t.alive) { if (p.hasTech('personnel_cloaking') && !u.cloaked) Abilities.instant(u, 'cloak_ghost'); Abilities.issue(u, 'nuke', null, t.x, t.y); } }
     }
   }
