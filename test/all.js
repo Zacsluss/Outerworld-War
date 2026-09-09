@@ -55,6 +55,7 @@ const TESTS = [
   { name: 'commit', args: ['commit.js'], what: 'buildings refund nothing, units still do, and every weapon has a voice' },
   { name: 'targeting', args: ['targeting.js'], what: 'a unit shoots what threatens it, not merely what is nearest' },
   { name: 'newbuildings', args: ['newbuildings.js'], what: 'field hospitals, jammers and walls: data, art and the nine-slot card' },
+  { name: 'formation', args: ['formation.js'], what: 'a right-drag spreads the selection evenly along the line' },
 ];
 
 const argv = process.argv.slice(2);

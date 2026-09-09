@@ -226,6 +226,7 @@ const UI = {
   onMove(e) {
     const m = this.mouse; m.x = e.clientX; m.y = e.clientY; [m.wx, m.wy] = this.screenToWorld(m.x, m.y);
     if (this.drag && m.down && distPt(m.x, m.y, this.drag.x0, this.drag.y0) > 4) { this.dragging = true; this.drag.x1 = m.x; this.drag.y1 = m.y; }
+    if (this.lineDrag) { this.lineDrag.x1 = m.x; this.lineDrag.y1 = m.y; }
     if (this.miniDrag) { const [wx, wy] = this.miniToWorld(m.x, m.y); this.centerOn(wx, wy); }
     if (this.placing) { const d = this.placing.def; this.placing.tx = Math.floor(m.wx / TILE - d.w / 2 + 0.5); this.placing.ty = Math.floor(m.wy / TILE - d.h / 2 + 0.5); if (d.onGeyser) { const g = G.map.resources.find(r => r.type === 'geyser' && m.wx >= r.x * TILE - 16 && m.wx < (r.x + r.w) * TILE + 16 && m.wy >= r.y * TILE - 16 && m.wy < (r.y + r.h) * TILE + 16); if (g) { this.placing.tx = g.x; this.placing.ty = g.y; } } }
     this.hover = (m.y < Render.H - this.consoleH) ? this.unitAt(m.wx, m.wy) : null;
@@ -242,11 +243,24 @@ const UI = {
       m.down = true; this.drag = { x0: m.x, y0: m.y, x1: m.x, y1: m.y }; this.dragging = false;
     } else if (e.button === 2) {
       if (this.placing || this.pending) { this.placing = null; this.pending = null; return; }
+      // Beyond All Reason's line formation: hold the right button and drag, and the selection spreads
+      // evenly along the line you drew. The command is issued on RELEASE now rather than on press, so a
+      // plain right-click is simply a drag of zero length and behaves exactly as it always did.
+      this.lineDrag = { x0: m.x, y0: m.y, x1: m.x, y1: m.y, shift: e.shiftKey };
+      return;
       const t = this.unitAt(m.wx, m.wy); this.smartCommand(t, m.wx, m.wy, e.shiftKey);
     }
   },
   onUp(e) {
     const m = this.mouse; if (this.miniDrag) { this.miniDrag = false; return; }
+    if (e.button === 2 && this.lineDrag) {
+      const d = this.lineDrag; this.lineDrag = null;
+      const len = distPt(d.x0, d.y0, d.x1, d.y1);
+      const [wx0, wy0] = this.screenToWorld(d.x0, d.y0), [wx1, wy1] = this.screenToWorld(d.x1, d.y1);
+      if (len < this.LINE_MIN) { const t = this.unitAt(wx1, wy1); this.smartCommand(t, wx1, wy1, d.shift || this.keys.Shift); }
+      else this.lineCommand(wx0, wy0, wx1, wy1, d.shift || this.keys.Shift);
+      return;
+    }
     if (e.button !== 0 || !m.down) return; m.down = false;
     if (this.dragging && this.drag) { const d = this.drag; const x0 = Math.min(d.x0, d.x1) + Render.camX, x1 = Math.max(d.x0, d.x1) + Render.camX, y0 = Math.min(d.y0, d.y1) + Render.camY, y1 = Math.max(d.y0, d.y1) + Render.camY; const inBox = G.units.filter(u => u.alive && !u.inside && !u.isBuilding && u.x >= x0 && u.x <= x1 && u.y >= y0 && u.y <= y1 && (u.owner === G.human || G.canSee(G.human, u)) && !u.def.notUnit); let own = inBox.filter(u => u.owner === G.human); if (!own.length && inBox.length) own = [inBox[0]]; if (own.length) this.select(own, e.shiftKey); else if (!e.shiftKey) { const b = G.units.filter(u => u.alive && u.isBuilding && u.owner === G.human && u.x >= x0 && u.x <= x1 && u.y >= y0 && u.y <= y1)[0]; if (b) this.select([b]); } }
     else if (this.drag) { const t = this.unitAt(m.wx, m.wy); const now = performance.now(); if (t) { if (now - this.lastClick < 350 && this.lastClickUnit === t && t.owner === G.human && !t.isBuilding) { const same = G.units.filter(u => u.alive && u.owner === G.human && u.def.id === t.def.id && !u.inside && u.x > Render.camX && u.x < Render.camX + Render.viewW && u.y > Render.camY && u.y < Render.camY + Render.viewH); this.select(same, e.shiftKey); } else if (e.shiftKey && this.selection.includes(t)) { this.selection = this.selection.filter(u => u !== t); } else if (e.ctrlKey) { const same = G.units.filter(u => u.alive && u.owner === t.owner && u.def.id === t.def.id && !u.inside && u.x > Render.camX && u.x < Render.camX + Render.viewW && u.y > Render.camY && u.y < Render.camY + Render.viewH); this.select(same, e.shiftKey); } else this.select([t], e.shiftKey && t.owner === G.human); this.lastClick = now; this.lastClickUnit = t; } else if (!e.shiftKey) { this.selection = []; this.cardMenu = null; } }
@@ -328,6 +342,29 @@ const UI = {
   marker(x, y, color) { this.markers.push({ x, y, t: 20, color }); },
   // Same lifetime as marker(), but drawn as a ring around a resource's footprint by Render.
   ringMarker(res, color = '80,255,80') { this.markers.push({ res, t: 20, color }); },
+  // Below this many pixels a right-drag is just a right-click. Small enough that a deliberate line is
+  // never mistaken for a click, large enough that a shaky hand on a normal command never draws a line.
+  LINE_MIN: 24,
+  // Spread the selection evenly along the drawn line, in the order they are standing in ALONG that line
+  // rather than selection order -- so units walk to the nearest slot instead of crossing through each
+  // other to reach an arbitrary one. Buildings, larvae and eggs are left out; they cannot go anywhere.
+  lineCommand(x0, y0, x1, y1, shift) {
+    const sel = this.ownSel().filter(u => !u.isBuilding && !u.def.larva && !u.def.egg && !u.inside);
+    if (!sel.length) return;
+    if (sel.length === 1) { this.smartCommand(null, x1, y1, shift); return; }
+    const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    // project each unit onto the line and sort by that, so the left of the group takes the left of the line
+    const order = sel.map(u => ({ u, k: (u.x - x0) * ux + (u.y - y0) * uy })).sort((a, b) => a.k - b.k || a.u.id - b.u.id);
+    const n = order.length;
+    for (let i = 0; i < n; i++) {
+      const f = n === 1 ? 0.5 : i / (n - 1);
+      const gx = x0 + dx * f, gy = y0 + dy * f;
+      order[i].u.setOrder({ type: 'move', x: gx, y: gy }, shift);
+    }
+    this.marker(x0, y0, '120,220,255'); this.marker(x1, y1, '120,220,255');
+    if (typeof Sound !== 'undefined') Sound.ack(order[0].u);
+  },
   smartCommand(t, wx, wy, shift) {
     const sel = this.ownSel(); if (!sel.length) return;
     // No minimap guard here. There used to be one, and it killed the minimap right-click entirely:
