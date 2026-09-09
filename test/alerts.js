@@ -177,12 +177,12 @@ run(`(() => {
     // the ground truth for each alert, recomputed here independently of the code under test
     const truth = () => {
       let stalled = false;
-      if (p.supMax < 200 && p.supUsed < p.supMax) for (const u of G.units) {
+      if (p.supMax < SUPPLY_CAP && p.supUsed < p.supMax) for (const u of G.units) {
         if (!u.alive || u.owner !== p.id || !u.prod.length) continue;
         const it = u.prod[0]; if (it.kind !== 'unit' || it.started || it.reserved) continue;
         const ud = DATA.units[it.id]; if (ud && ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) { stalled = true; break; }
       }
-      const blocked = p.supMax < 200 && (p.supUsed >= p.supMax || stalled);
+      const blocked = p.supMax < SUPPLY_CAP && (p.supUsed >= p.supMax || stalled);
       let idleB = false;
       if (!blocked) for (const u of G.units) {
         if (!u.alive || u.owner !== p.id || !u.isBuilding || !u.done || u.lifted) continue;

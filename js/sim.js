@@ -73,7 +73,7 @@ class Unit {
     return s;
   }
   get sight() { let s = this.def.sight || 7; const p = this.player; if (this.def.sightTech && p.hasTech(this.def.sightTech[0])) s = this.def.sightTech[1]; if (this.def.id === 'ghost' && p.hasTech('ocular')) s = 11; if (this.fx.blind > 0) s = 2; if (this.isBuilding && !this.done) s = 4; return s; }
-  get armor() { let a = this.def.armor || 0; const p = this.player; if (this.def.upgA) a += p.upgLevel(this.def.upgA); if (this.def.armorTech && p.hasTech(this.def.armorTech[0])) a += this.def.armorTech[1]; a -= this.acidSpores; return Math.max(0, a); }
+  get armor() { let a = this.def.armor || 0; const p = this.player; if (this.def.upgA) a += p.upgLevel(this.def.upgA); if (this.def.armorTech && p.hasTech(this.def.armorTech[0])) a += this.def.armorTech[1]; a -= this.acidSpores; if (this.vet >= 2) a += 1; return Math.max(0, a); }
   get isCloaked() { return this.cloaked || this.burrowed || (G.frame - this.arbCloak < 12); }
   get isDetector() { return this.def.det && this.done && !this.lifted && !(this.fx.blind > 0); }
   get canMove() { return !this.isBuilding || this.lifted; }
@@ -95,7 +95,16 @@ class Unit {
   }
   hasWeapon() { return !!(this.def.gw || this.def.aw) && !this.def.worker; }
   wRange(w) { let r = w.range; const p = this.player; if (w.rangeTech && p.hasTech(w.rangeTech[0])) r = w.rangeTech[1]; if (this.def.id === 'marine' && p.hasTech('u238')) r = 5; if (this.inside && this.inside.def.bunker) r += 1; return r; }
-  wDmg(w) { let d = w.dmg + this.player.upgLevel(w.upgKey) * (w.upgDmg || 1); if (w.dmgTech && this.player.hasTech(w.dmgTech[0])) d += w.dmgTech[1]; return d; }
+  // Veterancy. Derived from kills rather than stored, which is the whole reason it costs nothing: kills
+  // is already a field, already snapshotted and already deterministic, so ranks survive a save, a rejoin
+  // and a replay seek without another line of code anywhere.
+  //   rank 1 at 2 kills, 2 at 5, 3 at 10.
+  get vet() { const k = this.kills || 0; return k >= 10 ? 3 : k >= 5 ? 2 : k >= 2 ? 1 : 0; }
+  // ...and scarring is the other half. A unit that has been hurt never gets its full health back, so
+  // maxHp drifts down over a unit's life and def.hp stays the original. No new field for that either:
+  // the gap between them IS the scar. Floored at 40% so a veteran does not become paper.
+  get scarred() { return this.def.hp - this.maxHp; }
+  wDmg(w) { let d = w.dmg + this.player.upgLevel(w.upgKey) * (w.upgDmg || 1); if (w.dmgTech && this.player.hasTech(w.dmgTech[0])) d += w.dmgTech[1]; return Math.round(d * (1 + 0.08 * this.vet)); }
   wCd(w) { let c = w.cd; if (w.cdTech && this.player.hasTech(w.cdTech[0])) c = w.cdTech[1]; if (this.stim > 0) c = Math.ceil(c / 2); c += this.acidSpores * 3; return c; }
   maxRange() { let m = 0; for (const w of [this.def.gw, this.def.aw]) if (w) m = Math.max(m, this.wRange(w)); if (this.def.id === 'siege_tank' && this.sieged) m = 12; return m; }
 

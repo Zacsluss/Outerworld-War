@@ -84,6 +84,17 @@ const Snapshot = {
       // orders get issued next, so a snapshot without it diverges within seconds of being restored.
       players: G.players.map(p => { const o = {}; for (const k of Object.keys(p)) { if (k === 'ai' || typeof p[k] === 'function') continue; o[k] = this.enc(p[k], 1); } o.__ai = p.ai ? this.encOwn(p.ai) : null; return o; }),
       resources: G.map.resources.map(r => this.encOwn(r)),
+      // Patches that have run dry. G.removeResource splices them out of G.map.resources, but resById
+      // keeps them and units go on pointing at them -- a worker's order target, its lastRes, a hall's
+      // worker rally. Sending only the live list meant a fresh process decoded those references against
+      // its OWN pristine copy of that patch and believed it still had 1500 minerals in it, so the
+      // rejoining client sent a worker to mine something the donor knew was gone. Exactly the shape of
+      // s.gone below, one layer down, and it took a worker diverging nine ticks after a restore to see.
+      resGone: (() => {
+        const live = new Set(G.map.resources.map(r => r.id)); const out = [];
+        if (G.map.resById) for (const r of G.map.resById.values()) if (!live.has(r.id)) out.push(this.encOwn(r));
+        return out;
+      })(),
       creep: Array.from(G.map.creep), blocked: Array.from(G.map.blocked), walk: Array.from(G.map.walk),
       psi: Object.fromEntries(Object.entries(G.map.psi).map(([k, v]) => [k, Array.from(v)])), // the Protoss power grid is cached, not recomputed every tick
 
@@ -151,6 +162,12 @@ const Snapshot = {
     // of G.map.resources but is still the thing a reference to it must resolve to.
     if (!G.map.resById) G.map.resById = new Map();
     for (const r of G.map.resources) G.map.resById.set(r.id, r);
+    // ...and the dry ones, into resById only. They must not go back into G.map.resources: the live list
+    // is what the game mines from, and putting a spent patch back in it would resurrect it.
+    for (const sr of (s.resGone || [])) {
+      const d = {}; for (const k of Object.keys(sr)) d[k] = this.dec(sr[k]);
+      const r = byId.get(d.id) || {}; this._apply(r, d); G.map.resById.set(r.id, r);
+    }
     // 3. fill the units and players in
     s.units.forEach((su, i) => { const u = G.units[i]; for (const k of Object.keys(su)) u[k] = this.dec(su[k]); });
     for (const su of (s.gone || [])) { const u = G.byId.get(su.id); for (const k of Object.keys(su)) u[k] = this.dec(su[k]); }

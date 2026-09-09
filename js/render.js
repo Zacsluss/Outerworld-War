@@ -569,12 +569,29 @@ const Render = {
     }
     ctx.restore();
   },
+  // Veteran chevrons, above the bars. Three ranks, so three marks at most, and only on units that have
+  // earned one -- a fresh army draws nothing extra.
+  drawVet(ctx, u) {
+    const v = u.vet; if (!v || u.isBuilding) return;
+    const x = (u._x || u.x), y = (u._y || u.y) - u.r * 0.95 - 3;
+    ctx.save(); ctx.strokeStyle = 'rgba(255,225,120,0.95)'; ctx.lineWidth = 1.6; ctx.lineJoin = 'round';
+    for (let i = 0; i < v; i++) { const yy = y - i * 3.2; ctx.beginPath(); ctx.moveTo(x - 4, yy + 2); ctx.lineTo(x, yy - 1); ctx.lineTo(x + 4, yy + 2); ctx.stroke(); }
+    ctx.restore();
+  },
   drawBars(ctx, u) {
+    this.drawVet(ctx, u);
     const w = Math.max(24, Math.min(64, u.r * 2.4)), x = (u._x || u.x) - w / 2; let y = (u._y || u.y) + u.r * 0.9 + 6; if (u.isBuilding && !u.lifted) { y = u.ty * TILE + u.def.h * TILE + 8; }
     const seg = Math.max(4, Math.round(w / 6));
     const bar = (frac, color) => { ctx.fillStyle = '#000'; ctx.fillRect(x - 1, y - 1, w + 2, 6); for (let i = 0; i < seg; i++) { const sx = x + i * w / seg; const filled = (i + 1) / seg <= frac + 0.001 || (i / seg < frac && frac < (i + 1) / seg); ctx.fillStyle = filled ? color : '#2a2f36'; ctx.fillRect(sx + 0.5, y, w / seg - 1, 4); } y += 6; };
     if (u.maxSh) bar(u.sh / u.maxSh, '#5aa8ff');
     const hr = u.hp / u.maxHp; bar(hr, hr > 0.66 ? '#3fe83f' : hr > 0.33 ? '#f0e040' : '#ff3c3c');
+    // The scar: capacity this unit has permanently lost. The bar is drawn against the CURRENT maxHp, so
+    // a scarred unit at full health shows a full bar and the loss is invisible -- which defeats the
+    // point of it. A dark cap over the missing fraction of the original puts the history back on screen.
+    if (!u.isBuilding && u.scarred > 0.5) {
+      const lost = u.scarred / u.def.hp, lw = Math.max(1, Math.round(w * Math.min(1, lost)));
+      ctx.fillStyle = 'rgba(120,20,20,0.9)'; ctx.fillRect(x + w - lw, y - 1, lw, 2);
+    }
     if (u.maxEnergy && u.owner === G.human) bar(u.energy / u.maxEnergy, '#c86aff');
   },
   drawPlacement(ctx) {

@@ -335,7 +335,21 @@ const G = {
   },
 
   // ---------------- damage & death ----------------
-  damageRaw(t, amt, src) { if (!t.alive || t.fx.stasis > 0) return; if (this.cheats.god && this.players[t.owner].human) return; if (t.sh > 0) { const s = Math.min(t.sh, amt); t.sh -= s; amt -= s; } t.hp -= amt; if (src) { t.lastHit = this.frame; t.lastHitBy = src; } if (t.hp <= 0) this.kill(t, src); },
+  damageRaw(t, amt, src) {
+    if (!t.alive || t.fx.stasis > 0) return; if (this.cheats.god && this.players[t.owner].human) return;
+    if (t.sh > 0) { const s = Math.min(t.sh, amt); t.sh -= s; amt -= s; }
+    t.hp -= amt; if (src) { t.lastHit = this.frame; t.lastHitBy = src; }
+    // Scarring. A tenth of every wound is permanent: maxHp comes down and never goes back up, so a unit
+    // that has been through something is worth less than the one that rolled out of the factory beside
+    // it, and healing, repair and Zerg regeneration all cap at the lower number without knowing about
+    // this at all -- they already clamp to maxHp. Floored at 40% of the original so a veteran is
+    // weathered rather than made of paper. Buildings are exempt: repair is supposed to make them whole.
+    if (amt > 0 && t.hp > 0 && !t.isBuilding && !t.def.larva && !t.def.egg) {
+      const floor = t.def.hp * 0.4;
+      if (t.maxHp > floor) { t.maxHp = Math.max(floor, t.maxHp - amt * 0.1); if (t.hp > t.maxHp) t.hp = t.maxHp; }
+    }
+    if (t.hp <= 0) this.kill(t, src);
+  },
   damage(t, dmg, type, src, opts = {}) {
     if (!t.alive || t.fx.stasis > 0) return 0; if (this.cheats.god && this.players[t.owner].human) return 0;
     if (t.halluc) dmg *= 2;
