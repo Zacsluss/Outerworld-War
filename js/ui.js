@@ -365,6 +365,29 @@ const UI = {
     this.marker(x0, y0, '120,220,255'); this.marker(x1, y1, '120,220,255');
     if (typeof Sound !== 'undefined') Sound.ack(order[0].u);
   },
+  // Hold the group's shape over the walk. A plain move sent every unit to the SAME point, so a spread
+  // formation collapsed into a scrum on arrival and a column that set off in order arrived as a blob --
+  // the thing Supreme Commander and Beyond All Reason both get right and StarCraft II does not.
+  //
+  // Each unit keeps its offset from the group's centre, so the shape that left is the shape that
+  // arrives. Offsets are capped: a selection strung across the whole map should converge, not preserve
+  // a formation nobody meant. And the goal has to be somewhere the unit can stand, or the far edge of a
+  // formation ends up aimed into a cliff and grinds -- that is what SHAPE_CAP and the passable check do.
+  SHAPE_CAP: 7 * 32,
+  shapeOffsets(sel, wx, wy) {
+    if (sel.length < 2) return null;
+    let cx = 0, cy = 0; for (const u of sel) { cx += u.x; cy += u.y; }
+    cx /= sel.length; cy /= sel.length;
+    const out = new Map();
+    for (const u of sel) {
+      let ox = u.x - cx, oy = u.y - cy;
+      const d = Math.hypot(ox, oy);
+      if (d > this.SHAPE_CAP) { const k = this.SHAPE_CAP / d; ox *= k; oy *= k; }
+      const gx = wx + ox, gy = wy + oy;
+      out.set(u, G.passable(gx, gy, u) ? [gx, gy] : [wx, wy]);
+    }
+    return out;
+  },
   smartCommand(t, wx, wy, shift) {
     const sel = this.ownSel(); if (!sel.length) return;
     // No minimap guard here. There used to be one, and it killed the minimap right-click entirely:
@@ -397,6 +420,8 @@ const UI = {
     const res = G.map.resourceAt(Math.floor(wx / TILE), Math.floor(wy / TILE));
     if (res) this.ringMarker(res);   // targeting a patch reads as a ring round it, not a dot in it
     let acked = false;
+    const shape = this.shapeOffsets(sel.filter(u => !u.isBuilding && !u.def.larva && !u.def.egg), wx, wy);
+    const goal = u => (shape && shape.get(u)) || [wx, wy];
     for (const u of sel) {
       if (u.isBuilding && !u.lifted) continue; if (u.def.larva || u.def.egg) continue;
       if (u.lifted) { const d = u.def; u.setOrder({ type: 'land', tx: Math.floor(wx / TILE - d.w / 2 + .5), ty: Math.floor(wy / TILE - d.h / 2 + .5) }, shift); continue; }
@@ -409,10 +434,10 @@ const UI = {
         else if ((t.def.cargo || t.def.bunker || (t.def.cargoTech && t.player.hasTech(t.def.cargoTech))) && !u.fly && !u.isBuilding && t !== u) u.setOrder({ type: 'load', target: t }, shift);
         else if ((u.def.cargo || (u.def.cargoTech && u.player.hasTech(u.def.cargoTech))) && !t.fly && !t.isBuilding) u.setOrder({ type: 'pickup', target: t }, shift);
         else if (t.def.nydus && t.nydusLink && t.nydusLink.alive && !u.fly) u.setOrder({ type: 'nydus', target: t }, shift);
-        else if (t.isBuilding && !t.lifted) u.setOrder({ type: 'move', x: wx, y: wy }, shift);
+        else if (t.isBuilding && !t.lifted) { const [gx, gy] = goal(u); u.setOrder({ type: 'move', x: gx, y: gy }, shift); }
         else u.setOrder({ type: 'follow', target: t }, shift);
       } else if (res && u.def.worker) { if (res.type === 'geyser') { const b = res.building; if (b && b.alive && b.done && b.owner === G.human) u.setOrder({ type: 'gather', target: b, phase: 'goto' }, shift); else u.setOrder({ type: 'move', x: wx, y: wy }, shift); } else u.setOrder({ type: 'gather', target: res, phase: 'goto' }, shift); }
-      else u.setOrder({ type: 'move', x: wx, y: wy }, shift);
+      else { const [gx, gy] = goal(u); u.setOrder({ type: 'move', x: gx, y: gy }, shift); }
       if (!acked) { Sound.ack(u); acked = true; }
     }
     this.marker(wx, wy, t && t.owner !== G.human ? '255,60,60' : '80,255,80');
