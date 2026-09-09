@@ -97,9 +97,22 @@ const Voice = {
   set(v) { this.on = v; try { localStorage.setItem('bw_voice', v ? '1' : '0'); } catch (e) { } },
   cl(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; },
   // Music.fight is the combat-state flag the ambient bed already keeps, and it is exactly the question
-  // this file wants to ask, so it is borrowed rather than recomputed. Guarded because audio.js is
-  // loaded in headless tests where nothing has ever called Music.poll.
-  fighting() { return typeof Music !== 'undefined' && !!Music.fight; },
+  // this file wants to ask, so it is borrowed rather than recomputed.
+  //
+  // With one hole worth closing: Music.poll() gives up before setting the flag unless the bed is
+  // actually running, and "music off, voice on" is two adjacent checkboxes in the settings panel. For
+  // that player Music.fight would be false for the whole game and none of this would ever fire. So when
+  // the bed is not running, ask Music.inFight() directly -- the same read-only walk over G.units that
+  // poll() would have done, minus the six-second hysteresis, and it can only happen on a line that is
+  // about to be spoken, which the throttle already caps at about one a second.
+  //
+  // Never reached on an adviser line: speak() short-circuits on `kind !== 'adv'` before it asks. That
+  // matters, because the adviser is the one path called from inside G.tick.
+  fighting() {
+    if (typeof Music === 'undefined') return false;
+    if (Music.fight) return true;
+    return (!Music.timer || !Music.ctx) && typeof Music.inFight === 'function' ? !!Music.inFight() : false;
+  },
   speak(text, race, kind, mod) {
     if (!text || !this.on || (typeof Sound !== 'undefined' && Sound.muted) || typeof speechSynthesis === 'undefined') return false;
     const now = performance.now();

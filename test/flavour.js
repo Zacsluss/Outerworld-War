@@ -182,6 +182,17 @@ ok(loud.said && lines.T.atk.includes(loud.said.text), 'in a fight, the same orde
 ok(loud.said.rate > calm.said.rate, 'and delivered faster', calm.said.rate + ' -> ' + loud.said.rate);
 run(v, 'Music.fight = false;');
 
+// ...and with the music bed switched off entirely, which is a checkbox away from voice in the settings
+// panel and would otherwise leave Music.fight false for the whole game.
+{
+  const bedOff = run(v, '(() => { Music.on = false; Music.timer = null; Music.ctx = null; Music.fight = false; return { flag: Music.fight, asked: Voice.fighting() }; })()');
+  ok(bedOff.flag === false && bedOff.asked === false, 'with no music bed and no fight, the fallback says no', JSON.stringify(bedOff));
+  const shot = say(v, '(() => { this.fresh.lastHit = G.frame; this.fresh.setOrder({ type: "move", x: 640, y: 640 }); return Voice.ack(this.fresh); })()');
+  ok(run(v, 'Voice.fighting()') === true, 'and yes once our units are trading damage, without the bed running');
+  ok(shot.said && lines.T.atk.includes(shot.said.text), 'so a music-off player still gets the fight register', shot.said && shot.said.text);
+  run(v, 'this.fresh.lastHit = -9999;');
+}
+
 // the same unit does not have one catchphrase for life
 {
   const texts = new Set();
