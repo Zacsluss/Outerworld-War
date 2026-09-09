@@ -35,6 +35,10 @@ const Combat = {
       const m = d <= r1 ? 1 : d <= r2 ? 0.5 : d <= r3 ? 0.25 : 0; if (!m) continue;
       G.damage(o, dmg * m, w.type, a, { splash: true });   // a blast has no direction; see FACE_MULT
     }
+    // ...and the ground itself. This is what lets a siege line open a lane through a rock formation or
+    // drop a bridge -- destructible terrain that only splash can reach, which is the whole point of it
+    // being terrain rather than a building. Contract is documented above GameMap.placeFeatures.
+    G.map.damageFeatureAt(x, y, dmg);
     G.effects.push({ kind: 'boom', x, y, t: 12, r: r2 * TILE * 0.6 });
   },
   explode(a, t, w) { const dmg = a.wDmg(w); if (t) this.splash(a, t.x, t.y, dmg, Object.assign({ splash: w.splash || [0.3, 0.3, 0.3] }, w), t); G.effects.push({ kind: 'boom', x: a.x, y: a.y, t: 14, r: 24 }); G.kill(a, null, true); },

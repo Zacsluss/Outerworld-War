@@ -104,6 +104,15 @@ const Render = {
   // The two rate limits are the same two the old version had, for the same reasons: the map is only
   // re-examined twice a second, because `m.creep` only changes when a creep source finishes or dies,
   // and a view with no creep in it does no work at all.
+  // Terrain chunks are cached by content, and a destructible feature changes the ground underneath one
+  // without changing anything the cache key knows about -- so a dropped bridge would go on being drawn
+  // until the chunk happened to be evicted. map.featureRev() is derived from the grids rather than
+  // counted, so it is still correct after a replay seek restores an older state.
+  syncFeatures() {
+    const m = G.map; if (!m.featureRev) return;
+    const rev = m.featureRev();
+    if (rev !== this._featRev) { this._featRev = rev; Terrain.chunks.clear(); this.mini = Terrain.buildMini(); }
+  },
   drawCreep(ctx) {
     if (this.creepFrame !== G.frame && (G.frame % 12 === 0 || this.creepOn === undefined)) { this.creepOn = Terrain.syncCreep(); this.creepFrame = G.frame; }
     if (!this.creepOn) return;
@@ -123,6 +132,7 @@ const Render = {
     if (!G.paused && !UI.menu) { FX.update(dt); FX.ambient(this.camX, this.camY, this.viewW, this.viewH); }
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, this.viewW, this.viewH); ctx.clip();
     const cx = this.camX, cy = this.camY;
+    this.syncFeatures();
     Terrain.draw(ctx, cx, cy, this.viewW, this.viewH);
     this.drawCreep(ctx);
     ctx.translate(-cx, -cy);
