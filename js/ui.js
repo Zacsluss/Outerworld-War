@@ -21,7 +21,33 @@ const Sound = {
   click() { this.tone(900, 0.04, 'square', 0.03); },
   select(u) { if (typeof Voice !== 'undefined') Voice.select(u); if (!this.limited('sel', 120)) return; const r = u.def.race; this.tone(r === 'Z' ? 220 : r === 'P' ? 520 : 380, 0.08, r === 'Z' ? 'sawtooth' : 'triangle', 0.04, r === 'Z' ? -60 : 40); },
   ack(u) { if (typeof Voice !== 'undefined') Voice.ack(u); if (!this.limited('ack', 120)) return; const r = u.def.race; this.tone(r === 'Z' ? 260 : r === 'P' ? 600 : 440, 0.07, 'triangle', 0.04, 60); },
-  attack(u) { if (!this.limited('atk' + u.def.id, 90)) return; const w = u.def.gw || u.def.aw; const big = w && w.dmg >= 30; this.tone(big ? 90 : 260 + (u.id % 5) * 20, big ? 0.15 : 0.05, big ? 'sawtooth' : 'square', big ? 0.06 : 0.02, -80); },
+  // A weapon should be identifiable by ear. This used to be two sounds -- big and small -- so a siege
+  // line and a battlecruiser were the same noise, and nothing off-screen told you what was shooting at
+  // you. Five voices now, chosen by what the weapon IS rather than by how hard it hits: the damage type
+  // and whether it is a beam, a missile or a blade. Being able to hear "that is a tank, not a goliath"
+  // without looking is the whole point.
+  WVOICE: {
+    // freq, duration, wave, gain, slide
+    bullet:   [300, 0.045, 'square',   0.022, -70],    // rifles and autocannon: dry and fast
+    cannon:   [ 95, 0.170, 'sawtooth', 0.065, -55],    // siege, yamato, anything explosive and heavy
+    beam:     [640, 0.110, 'sine',     0.030, 340],    // lasers and psionic weapons: rising and clean
+    missile:  [180, 0.130, 'triangle', 0.045, 120],    // anything that flies to its target
+    blade:    [520, 0.060, 'triangle', 0.028, -240],   // melee: a short downward swipe
+  },
+  voiceOf(u, w) {
+    if (!w) return 'bullet';
+    if (w.melee || u.wRange(w) <= 1.5) return 'blade';
+    if (w.type === 'explosive' && w.dmg >= 25) return 'cannon';
+    if (u.def.race === 'P' && w.type !== 'explosive') return 'beam';
+    if (w.splash || w.dmg >= 20) return 'missile';
+    return 'bullet';
+  },
+  attack(u) {
+    if (!this.limited('atk' + u.def.id, 90)) return;
+    const w = u.sieged ? SIEGE_W : (u.def.gw || u.def.aw);
+    const [f, d, t, g, sl] = this.WVOICE[this.voiceOf(u, w)];
+    this.tone(f + (u.id % 5) * 6, d, t, g, sl);   // a few Hz of spread so a volley is a texture, not one note
+  },
   death(u) { if (!this.limited('death', 60)) return; this.tone(u.isBuilding ? 60 : 160, u.isBuilding ? 0.6 : 0.2, 'sawtooth', 0.06, -50); },
   alert(kind) { if (kind === 'error') { this.tone(200, 0.12, 'square', 0.04); } else if (kind === 'attack') { this.tone(660, 0.1, 'square', 0.05); setTimeout(() => this.tone(440, 0.15, 'square', 0.05), 120); } else if (kind === 'nuke') { for (let i = 0; i < 4; i++) setTimeout(() => this.tone(300, 0.3, 'sawtooth', 0.06, 200), i * 400); } else this.tone(700, 0.06, 'triangle', 0.03); },
   nuke() { this.alert('nuke'); }, boom() { this.tone(40, 1.2, 'sawtooth', 0.15, -20); },

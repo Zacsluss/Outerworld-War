@@ -496,7 +496,17 @@ const G = {
     this.recomputeSupply();
   },
   cancelBuilding(b) {
-    if (b.done) return; const p = this.players[b.owner]; p.minerals += Math.floor(b.def.min * 0.75); p.gas += Math.floor(b.def.gas * 0.75);
+    // No refund. Committing four hundred minerals to a tech path should be a decision, not a menu
+    // click you can take back -- every one of SC2, Beyond All Reason and Supreme Commander lets you
+    // cancel almost anything and get most of it back, and it makes the build order weightless.
+    //
+    // Buildings only, deliberately. A cancelled UNIT still refunds (see cancelProd): a production queue
+    // is a scheduling tool and punishing a misclick there is just tax. A building is a commitment of
+    // ground as well as money, and that is the thing worth making irreversible.
+    //
+    // The Zerg drone still comes back, because the drone IS the building -- taking that would delete a
+    // unit rather than decline a refund.
+    if (b.done) return; const p = this.players[b.owner];
     if (b.def.race === 'Z' && !b.def.onGeyser && b.def.tier !== 'addon') { const d = this.spawnUnit('drone', b.owner, b.x, b.y + b.r); }
     this.kill(b, null, true);
   },
