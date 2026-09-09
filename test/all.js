@@ -60,6 +60,7 @@ const TESTS = [
   { name: 'formation', args: ['formation.js'], what: 'a right-drag spreads the selection evenly along the line' },
   { name: 'mapmodes', args: ['mapmodes.js'], what: 'the four map sizes are different rules, and the sandstorm is deterministic' },
   { name: 'flavour', args: ['flavour.js'], what: 'voice lines per race and register, rank and scars in the delivery, and the throttle' },
+  { name: 'codex', args: ['codex.js'], what: 'the manual draws for every unit, and its damage numbers match real shots' },
 ];
 
 const argv = process.argv.slice(2);
