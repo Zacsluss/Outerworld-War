@@ -679,8 +679,96 @@ class GameMap {
     // hole in a cliff, so this cannot run until they have all had their turn. The seal comes first of
     // the two: "a plateau no ramp touches is an island" is only true once the holes are shut.
     this.sealElevations(); this.flattenStrandedHeight();
+    this.placeNeutrals(L);   // after the seal: a site must sit on ground whose height is final
     this.resById = new Map(this.resources.map(r => [r.id, r]));
     for (const f of this.features) this.resById.set(f.id, f);   // see the MAP_FEATURES comment: this is what snapshots them
+  }
+
+  // ==========================================================================
+  // NEUTRALS: where the wildlife is buried and where the derelicts stand.
+  // ==========================================================================
+  // A PLAN, not units. This runs inside the constructor, which every client re-runs identically from
+  // the seed, so the plan is regenerated rather than transmitted -- exactly like `features`, and for
+  // the same reason. G.spawnNeutrals turns it into units once, at G.init.
+  //
+  // Both toggles are opt-in per layout, resolved through DATA.derelictPresets / DATA.wildlifePresets
+  // the way `hazard` resolves through HAZARDS. A layout with neither key gets the map it got before
+  // any of this existed, which is what keeps every mission and every balance log in the repository
+  // valid. No shipped layout sets either; the skirmish screen is what sets them.
+  //
+  // Determinism: one seeded stream, drawn in a fixed order, never Math.random. It is salted off the
+  // map seed so two maps of one archetype do not bury their grubs in the same places.
+  placeNeutrals(L) {
+    this.neutrals = { wildlife: [], derelicts: [] };
+    if (typeof DATA === 'undefined') return;
+    const resolve = (key, table) => {
+      const v = L && L[key]; if (!v || !table) return null;
+      if (typeof v === 'object') return v;                                  // an inline preset
+      return table[v === true ? 'standard' : v] || null;                    // ...or one by name
+    };
+    const dcfg = resolve('derelicts', DATA.derelictPresets), wcfg = resolve('wildlife', DATA.wildlifePresets);
+    if (!dcfg && !wcfg) return;
+    const R = Archetypes.rng((Math.imul(((L && L.seed) || this.seed || 1) >>> 0, 40503) ^ 0x9e37) >>> 0);
+    for (let i = 0; i < 8; i++) R();
+
+    const halls = this.bases.map(b => (b.hall ? b.hall : [b.x, b.y]));
+    const resPts = this.resources.map(r => [r.x, r.y]);
+    const D = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+    const taken = [];
+    // A site must be somewhere a unit could stand, clear of everything that already owns ground, and
+    // clear of what the preset says to keep away from. Those clearances are the whole difference
+    // between "wildlife on the ground you want to expand onto" and "a grub inside your main".
+    const ok = (tx, ty, w, h, cfg, minEach) => {
+      for (let y = ty; y < ty + h; y++) for (let x = tx; x < tx + w; x++) {
+        if (!this.inb(x, y) || x < 3 || y < 3 || x >= this.w - 3 || y >= this.h - 3) return false;
+        const i = this.idx(x, y);
+        if (this.walk[i] !== 1 || this.blocked[i] !== -1 || this.cliff[i] !== 0) return false;
+        if (this.height[i] === 1) return false;                             // never on a ramp
+        if (this.featTile && this.featTile[i] >= 0) return false;
+      }
+      for (const hh of halls) if (D(tx, ty, hh[0], hh[1]) < (cfg.minBase || 12)) return false;
+      for (const rp of resPts) if (D(tx, ty, rp[0], rp[1]) < (cfg.minRes || 0)) return false;
+      for (const t of taken) if (D(tx, ty, t[0], t[1]) < minEach) return false;
+      return true;
+    };
+    // Candidates in a fixed scan order, then shuffled by the seeded stream. Scanning rather than
+    // sampling means a cramped map degrades to "as many as fit" instead of looping forever.
+    const cands = [];
+    for (let y = 4; y < this.h - 4; y += 2) for (let x = 4; x < this.w - 4; x += 2) if (this.walk[this.idx(x, y)] === 1) cands.push([x, y]);
+    for (let i = cands.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); const t = cands[i]; cands[i] = cands[j]; cands[j] = t; }
+
+    if (dcfg) {
+      const kinds = dcfg.kinds || [];
+      for (let n = 0; n < (dcfg.count || 0) && kinds.length; n++) {
+        const id = kinds[n % kinds.length], def = DATA.buildings[id]; if (!def) continue;
+        const spot = cands.find(c => ok(c[0], c[1], def.w, def.h, dcfg, dcfg.minEach || 12));
+        if (!spot) break;
+        taken.push(spot); this.neutrals.derelicts.push({ id, tx: spot[0], ty: spot[1] });
+      }
+    }
+    if (wcfg) {
+      // `nearRes` is the point of the feature: sites sit on the ground you want to expand onto, so
+      // candidates near a patch come first and everything else is the fallback, not the rule.
+      const near = cands.filter(c => resPts.some(rp => D(c[0], c[1], rp[0], rp[1]) <= (wcfg.nearRes || 8) + 6));
+      const order = near.concat(cands);
+      const kinds = wcfg.kinds || [];
+      const total = kinds.reduce((a, k) => a + k[1], 0) || 1;
+      for (let n = 0; n < (wcfg.sites || 0) && kinds.length; n++) {
+        // Weighted, but CYCLED rather than sampled. A weighted draw of five sites can legitimately
+        // roll five grubs and no warren, and a wildlife setting that did nothing visible is a setting
+        // the player will report as broken.
+        let acc = (n * total / (wcfg.sites || 1)) % total + 0.0001, pickId = kinds[0][0];
+        for (const kw of kinds) { acc -= kw[1]; if (acc <= 0) { pickId = kw[0]; break; } }
+        const def = DATA.all[pickId]; if (!def) continue;
+        const w = def.w || 1, h = def.h || 1;
+        const spot = order.find(c => ok(c[0], c[1], w, h, wcfg, 10));
+        if (!spot) break;
+        taken.push(spot);
+        const lo = (wcfg.pack && wcfg.pack[0]) || 1, hi = (wcfg.pack && wcfg.pack[1]) || lo;
+        const isB = !!DATA.buildings[pickId];
+        this.neutrals.wildlife.push({ id: pickId, tx: spot[0], ty: spot[1], pack: isB ? 1 : lo + Math.floor(R() * (hi - lo + 1)) });
+      }
+    }
   }
 
   // ---------------- features ----------------
@@ -1293,6 +1381,7 @@ class GameMap {
     // freely and the base clearing above opens a 6x5 wherever the author put a hall, so a town hall
     // painted on the lip of a plateau is exactly the Twilight Valley hole with a person behind it.
     this.sealElevations(); this.flattenStrandedHeight();
+    this.placeNeutrals(L);   // after the seal: a site must sit on ground whose height is final
     this.resById = new Map(this.resources.map(r => [r.id, r]));
   }
 

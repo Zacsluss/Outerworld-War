@@ -97,7 +97,30 @@ const G = {
       p.startBase = base; p.startX = base.cx; p.startY = base.cy;
       this.setupStart(p, base);
     });
-    this.human = opts.human != null ? opts.human : this.players.findIndex(p => p.human);
+    // ------------------------------------------------------------------------
+    // The third owner. See the RACE_INFO.N block in js/data.js for the contract.
+    // ------------------------------------------------------------------------
+    // Wildlife and derelicts need an owner that is nobody: a creature must be shootable and must
+    // shoot back, and a derelict must be repairable, and both need a Player for that. It is appended
+    // AFTER every real player so that `players[i]` still means what it meant -- opts.players.length
+    // is unchanged, start bases are unchanged, and anything that walked `players` by index before
+    // still lands on the same player.
+    //
+    // team -1 is allied with exactly itself. `neutral` is what the four places below test, rather
+    // than the race letter, because a test should say what it means.
+    //
+    // Only created when the map actually has something for it to own. A layout with neither key gets
+    // exactly the game it got before this landed, which is the same argument HAZARDS makes.
+    this.neutral = null;
+    if (this.map.neutrals && (this.map.neutrals.wildlife.length || this.map.neutrals.derelicts.length)) {
+      const np = new Player(this.players.length, 'N', false, 'Neutral');
+      np.team = -1; np.neutral = true; np.ai = null;
+      np.vis = new Uint8Array(this.map.w * this.map.h);   // G.updateVision walks p.vis unguarded
+      np.startBase = this.map.starts[0]; np.startX = np.startBase.cx; np.startY = np.startBase.cy;
+      this.players.push(np); this.neutral = np;
+      this.spawnNeutrals(np);
+    }
+    this.human = opts.human != null ? opts.human : this.players.findIndex(p => p.human && !p.neutral);
     // the hall you are given at frame 0 already sits on its full creep, as it does in Brood War;
     // only creep built during the game has to spread
     for (const u of this.units) if (u.def.creep && u.done) u.creepR = u.def.creep;
@@ -237,7 +260,7 @@ const G = {
   },
   detected(u, pid) { return (u.detBy[pid] || -99) >= this.frame - 8; },
   canSee(pid, u) { if (u.owner === pid || this.allied(pid, u.owner)) return true; if (u.fx.parasite === pid) return true; if (!this.visibleAt(pid, u.x, u.y)) return false; if (u.isCloaked && !this.detected(u, pid) && !(u.fx.ensnare > 0 || u.fx.plague > 0)) return false; return true; },
-  targetable(att, t) { if (!t.alive || t.inside) return false; if (t.fx.stasis > 0) return false; if (t.owner === att.owner || this.allied(att.owner, t.owner)) return true; return this.canSee(att.owner, t); },
+  targetable(att, t) { if (!t.alive || t.inside) return false; if (t.buried && t.owner !== att.owner) return false; if (t.fx.stasis > 0) return false; if (t.owner === att.owner || this.allied(att.owner, t.owner)) return true; return this.canSee(att.owner, t); },
   circles: {},
   // Tile offsets within a radius, cached per radius.
   //
@@ -528,6 +551,128 @@ const G = {
     this.recomputeSupply();
   },
 
+  // ==========================================================================
+  // NEUTRALS: buried life, and derelicts nobody built. M11 wave two, items 1 and 8.
+  // ==========================================================================
+  // The map's own owner. GameMap.placeNeutrals decided WHERE from the seed; this turns that plan into
+  // units, and tickNeutrals is the whole of their behaviour -- they have no AI object, because an AI
+  // in this codebase is a thing that builds an economy and sends waves, and a grub does neither.
+  //
+  // BURIED IS A SPAWN STATE, NOT A DEF FLAG. `def.burrowed` is read by the Unit constructor, so putting
+  // it on the def would burrow every instance -- including a grub a warren has just spat out in the
+  // middle of a fight, which would arrive unable to shoot. So the defs say `wake.buried` and the flag
+  // is set here, once, on the creatures that start in the ground.
+  //
+  // A buried creature cannot be shot and NO DETECTOR REVEALS IT (see G.targetable). That is the
+  // feature rather than an oversight: what warns you is the tell on the ground, which everyone can see
+  // from frame 0 and which the renderer draws from DATA.buriedTells.
+  spawnNeutrals(np) {
+    const plan = this.map.neutrals; if (!plan) return;
+    for (const d of plan.derelicts) {
+      const def = DATA.buildings[d.id]; if (!def) continue;
+      const b = this.placeBuilding(def, d.tx, d.ty, np.id);
+      this.completeBuilding(b);
+      // Ruined. `derelict.ruin` is the fraction of maxHp it stands at, and repairing it the rest of the
+      // way is the capture -- see Abilities.repairTick.
+      b.hp = Math.max(1, Math.round(b.maxHp * ((def.derelict && def.derelict.ruin) || 0.2)));
+    }
+    for (const w of plan.wildlife) {
+      const def = DATA.all[w.id]; if (!def) continue;
+      if (DATA.buildings[w.id]) {
+        const b = this.placeBuilding(def, w.tx, w.ty, np.id); this.completeBuilding(b);
+        b.buried = !!(def.wake && def.wake.buried); b.lair = { x: b.x, y: b.y };
+      } else {
+        for (let k = 0; k < (w.pack || 1); k++) {
+          // Fanned out around the site by index rather than at random: a pack has to look like a pack,
+          // and two grubs on one pixel is what SEP_DIRS spends every frame afterwards unpicking.
+          const a = (k / Math.max(1, w.pack)) * Math.PI * 2;
+          const u = this.spawnUnit(w.id, np.id, (w.tx + 0.5) * TILE + Math.cos(a) * 18, (w.ty + 0.5) * TILE + Math.sin(a) * 18);
+          u.buried = !!(def.wake && def.wake.buried); u.lair = { x: (w.tx + 0.5) * TILE, y: (w.ty + 0.5) * TILE };
+        }
+      }
+    }
+  },
+  // Everything buried life does. Staggered like every other per-unit scan in this file -- see AI.turn --
+  // because a hundred creatures asking "is anyone near me" every frame is a hundred radius queries a
+  // frame for something that only has to feel immediate.
+  tickNeutrals() {
+    const np = this.neutral; if (!np) return;
+    for (const u of this.units) {
+      if (!u.alive || u.owner !== np.id) continue;
+      const wk = u.def.wake;
+      if (u.buried) {
+        if (!wk) { u.buried = false; continue; }
+        if (u.waking) { if (this.frame >= u.waking) { u.buried = false; u.waking = 0; u.woke = this.frame; } continue; }
+        if (((this.frame + u.id) & 7) !== 0) continue;
+        if (this.wakeTrigger(u, wk)) u.waking = this.frame + (wk.delay || 24);
+        continue;
+      }
+      if (!wk) continue;
+      if (((this.frame + u.id) & 7) !== 0) continue;
+      const lair = u.lair || { x: u.x, y: u.y };
+      // Aggro, then leash. A creature defends a piece of ground; it does not pursue an army across the
+      // map, because then it is a third faction rather than a hazard.
+      let tgt = null, td = 1e9;
+      for (const t of this.near(u.x, u.y, (wk.aggro || 8) * TILE)) {
+        if (!t.alive || t.owner === np.id || t.inside || t.def.notUnit) continue;
+        if (Math.hypot(t.x - lair.x, t.y - lair.y) > (wk.leash || 12) * TILE) continue;
+        const d = distPt(u.x, u.y, t.x, t.y); if (d < td) { td = d; tgt = t; }
+      }
+      if (tgt) {
+        u.lastSaw = this.frame;
+        if (u.hasWeapon() && (u.order.type !== 'attack' || u.order.target !== tgt)) u.applyOrder({ type: 'attack', target: tgt, auto: true });
+      } else {
+        // Nothing in reach: walk home, and once home and quiet for `rebury` frames, go back under.
+        const home = Math.hypot(u.x - lair.x, u.y - lair.y);
+        if (home > 2 * TILE && u.canMove && u.order.type === 'idle') u.moveTo(lair.x, lair.y);
+        if (wk.rebury && this.frame - (u.lastSaw || u.woke || 0) > wk.rebury && home <= 2 * TILE) { u.buried = true; u.waking = 0; }
+      }
+      // A warren that is awake starts producing. `dormant` means it does nothing until something wakes
+      // it, which is what makes clearing a site early cheaper than clearing it late.
+      const nest = u.def.nest;
+      if (nest && u.isBuilding && u.done && !u.buried) {
+        if (u.nestAt == null) u.nestAt = this.frame + nest.every;
+        if (this.frame >= u.nestAt) {
+          u.nestAt = this.frame + nest.every;
+          const have = this.units.filter(q => q.alive && q.owner === np.id && q.def.id === nest.spawns && q.lair && q.lair.x === lair.x && q.lair.y === lair.y).length;
+          for (let k = 0; k < nest.pack && have + k < nest.cap; k++) {
+            const sp = this.freeSpotAround(u, false);
+            const g = this.spawnUnit(nest.spawns, np.id, sp[0], sp[1]);
+            g.buried = false; g.lair = { x: lair.x, y: lair.y };   // spat out mid-fight: awake, not buried
+          }
+        }
+      }
+    }
+  },
+  wakeTrigger(u, wk) {
+    const by = wk.by || ['walk'], r = (wk.r || 6) * TILE;
+    for (const t of this.near(u.x, u.y, r)) {
+      if (!t.alive || t.owner === this.neutral.id || t.inside || t.def.notUnit) continue;
+      if (by.includes('walk')) return true;
+      if (by.includes('build') && (t.isBuilding || (t.order && t.order.type === 'construct'))) return true;
+      if (by.includes('mine') && t.def.worker && t.order && t.order.type === 'gather') return true;
+    }
+    return false;
+  },
+  // Taking a derelict. Called by Abilities.repairTick the moment a repair of something you do not own
+  // tops it out.
+  captureDerelict(b, owner) {
+    const g = b.def.derelict && b.def.derelict.grants; const p = this.players[owner];
+    b.owner = owner; b.captured = true;             // `captured` is the only thing the draw pass can read
+    b.hp = b.maxHp;
+    if (b.def.psi) this.map.recomputePsi(owner, this.units);
+    if (b.def.creep) this.map.recomputeCreep(this.units);
+    if (g && g.upg) {
+      // A free level of the race's own armour line, capped, and it stays if the archive is later lost:
+      // `permanent` is the difference between this and the watchtower's vision, which is yours only
+      // while you hold it.
+      const key = g.upg[p.race];
+      if (key) p.upg[key] = Math.min(g.cap || 3, p.upgLevel(key) + (g.levels || 1));   // p.upg, not p.upgrades: the latter is not a field and assigning it fails silently
+    }
+    this.recomputeSupply();
+    if (p.human) p.msg(b.def.name + ' captured.', 'info');
+  },
+
   // ---------------- commands (validated) ----------------
   queueUnit(b, uid) {
     const p = this.players[b.owner], ud = DATA.units[uid];
@@ -693,6 +838,7 @@ const G = {
     if (this.map.wrecks.length) this.map.tickWrecks(this.frame);   // before rebuildGrid, so a cleared hulk is walkable this frame
     this.rebuildGrid();
     if (this.frame % 3 === 0) this.updateVision();
+    if (this.neutral) this.tickNeutrals();
     for (const u of this.units) { if (u.alive) { u.px = u.x; u.py = u.y; } }
     for (const u of this.units) { if (u.alive) { try { u.tick(); } catch (e) { console.error(e, u.def.id); } } }
     this.separate();
@@ -809,13 +955,16 @@ const G = {
   },
   checkVictory() {
     for (const p of this.players) {
-      if (p.defeated) continue;
+      if (p.defeated || p.neutral) continue;   // nobody wins by killing the wildlife, and nobody is told it died
       const hasB = this.units.some(u => u.alive && u.owner === p.id && u.isBuilding && !u.def.notUnit && u.def.tier !== 'addon');
       const hasU = this.units.some(u => u.alive && u.owner === p.id && !u.isBuilding && !u.def.notUnit && !u.def.larva);
       if (!hasB && (!hasU || this.frame > 24 * 60 * 3) && !(this.cheats.alive && p.human)) { p.defeated = true; p.alive = false; for (const u of this.units) if (u.alive && u.owner === p.id) this.kill(u, null, true); for (const q of this.players) if (q.human) q.msg(p.name + ' has been eliminated.'); }
     }
     if (this.freePlay) return; // player chose "continue playing" after the result screen
-    const alive = this.players.filter(p => !p.defeated); const teams = new Set(alive.map(p => p.team));
+    // The neutral owner is excluded rather than merely never defeated. Left in, it is never defeated
+    // -- it holds a derelict or a warren -- so it contributes team -1 forever and `teams.size <= 1` is
+    // never reached: on a map with derelicts the game would simply never end, every single time.
+    const alive = this.players.filter(p => !p.defeated && !p.neutral); const teams = new Set(alive.map(p => p.team));
     if (teams.size <= 1 && !(this.mission && !this.mission.done)) { this.over = true; this.winner = alive.length ? alive[0].id : -1; this.winTeam = alive.length ? alive[0].team : -1; }
   },
 };

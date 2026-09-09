@@ -111,14 +111,27 @@ const Abilities = {
     // divided by undefined and the target's hp became NaN -- which then spread through every comparison
     // it touched. Nothing reached that until the AI was taught to repair in M10, and then a tank
     // shooting a mine left NaN units on the map.
-    if (!t || !t.alive || !repairableDef(t.def) || t.owner !== u.owner || t.hp >= t.maxHp || (t.isBuilding && !t.done)) { u.nextOrder(); return; }
+    // ONE exception, and it is the whole of M11 wave two item 8: repairing something you do NOT own is
+    // how you take it. Everywhere else that refusal is exactly right, which is why this is a narrow
+    // clause rather than a relaxed rule -- it applies only to a def that carries `derelict`, only while
+    // the neutral owner still holds it, and only to a worker.
+    const der = t && t.def.derelict;
+    const cap = !!(der && G.neutral && t.owner === G.neutral.id && u.def.worker);
+    if (!t || !t.alive || (!cap && (!repairableDef(t.def) || t.owner !== u.owner)) || t.hp >= t.maxHp || (t.isBuilding && !t.done)) { u.nextOrder(); return; }
     if (!(t.isBuilding ? u.moveToRect(t, 6) : dist(u, t) <= u.r + t.r + 8)) { if (!t.isBuilding) u.moveTo(t.x, t.y, t); return; }
-    const rate = t.maxHp / Math.max(200, t.def.time * 0.6); const frac = rate / t.maxHp;
-    const cm = t.def.min * 0.25 * frac, cg = t.def.gas * 0.25 * frac;
+    // A derelict has its own rate (hp per second per repairer) and its own price, and the price is the
+    // TOTAL for the whole job charged pro rata -- so it is spread over the hp actually being restored,
+    // (1 - ruin) of the building, not over its full bar.
+    const span = cap ? Math.max(1, t.maxHp * (1 - (der.ruin || 0))) : 0;
+    const rate = cap ? (der.rate || 12) / TPS : t.maxHp / Math.max(200, t.def.time * 0.6);
+    const frac = rate / t.maxHp;
+    const cm = cap ? (der.min || 0) * rate / span : t.def.min * 0.25 * frac;
+    const cg = cap ? (der.gas || 0) * rate / span : t.def.gas * 0.25 * frac;
     u.repairAcc = (u.repairAcc || 0) + cm; u.repairAccG = (u.repairAccG || 0) + cg;
     if (u.repairAcc >= 1) { if (p.minerals < 1) { p.msg('Not enough minerals.', 'error'); u.nextOrder(); return; } p.minerals -= 1; u.repairAcc -= 1; }
     if (u.repairAccG >= 1) { if (p.gas < 1) { p.msg('Not enough vespene gas.', 'error'); u.nextOrder(); return; } p.gas -= 1; u.repairAccG -= 1; }
     t.hp = Math.min(t.maxHp, t.hp + rate); if ((G.frame & 3) === 0) G.effects.push({ kind: 'spark', x: t.x + (G.rand() - .5) * t.r, y: t.y + (G.rand() - .5) * t.r, t: 4 });
+    if (cap && t.hp >= t.maxHp) { G.captureDerelict(t, u.owner); u.nextOrder(); }
   },
   mineTick(u) {
     if (!u.armT) u.armT = 0;

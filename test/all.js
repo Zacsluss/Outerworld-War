@@ -68,6 +68,7 @@ const TESTS = [
   { name: 'renderfeel', args: ['renderfeel.js'], what: 'the storm draws, weight settles, and 400 units stay legible' },
   { name: 'diegetic', args: ['diegetic.js'], what: 'the console is per-race, takes damage, and glitches reproducibly' },
   { name: 'neutrals', args: ['neutrals.js'], what: "race 'N': buried life with a tell, and derelicts nobody can build" },
+  { name: 'neutralsim', args: ['neutralsim.js'], what: 'the third owner wired in: victory, the AI, buried life, and capture by repair' },
   { name: 'craters', args: ['craters.js'], what: 'the map remembers: permanent scarring, hulks that clear' },
   { name: 'menucodex', args: ['menucodex.js'], what: 'the CODEX button works with no game running, and puts the menu back' },
   { name: 'highground', args: ['highground.js'], what: 'height applied to range, sight and damage -- and a fractional sight that used to blind a unit' },

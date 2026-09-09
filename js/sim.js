@@ -346,6 +346,12 @@ class Unit {
     let best = null, bs = 1e9;
     for (const t of G.near(this.x, this.y, rangePx + 40)) {
       if (t === this || !t.alive || t.inside || G.allied(this.owner, t.owner) || t.def.larva || t.def.egg) continue;
+      // A derelict is not auto-acquired. It is owned by nobody, so without this every army that walked
+      // past one shot it down on its own -- and demolishing the map's only Sentinel foundry is a
+      // decision the player should have to make, not one their marines make for them on the way to a
+      // fight. Explicitly ordering an attack still works, which is how you deny one. Wildlife is NOT
+      // exempt: a creature that has surfaced and is coming at you must be shot back at.
+      if (t.def.derelict && G.neutral && t.owner === G.neutral.id) continue;
       if (!G.targetable(this, t)) continue;
       const w = this.weaponFor(t); if (!w) continue;
       const dd = dist(this, t) - t.r - this.r; if (dd > rangePx) continue;

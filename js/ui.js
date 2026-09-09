@@ -462,6 +462,11 @@ const UI = {
       if (u.isBuilding && !u.lifted) continue; if (u.def.larva || u.def.egg) continue;
       if (u.lifted) { const d = u.def; u.setOrder({ type: 'land', tx: Math.floor(wx / TILE - d.w / 2 + .5), ty: Math.floor(wy / TILE - d.h / 2 + .5) }, shift); continue; }
       if (t && t !== u) {
+        // A derelict is the one thing on the map you take by repairing rather than by shooting, so this
+        // sits AHEAD of the not-mine branch below -- that branch would turn every right-click on one
+        // into an attack order, which is the opposite of what the player meant. Any race's worker, per
+        // `derelict.by`. Shooting one to deny it still works; that is what an explicit attack is for.
+        if (u.def.worker && t.def.derelict && G.neutral && t.owner === G.neutral.id && t.hp < t.maxHp) { u.setOrder({ type: 'repair', target: t }, shift); continue; }
         if (t.owner !== G.human && !G.allied(G.human, t.owner)) { if (u.def.worker && !u.hasWeapon()) { u.setOrder({ type: 'attack', target: t }, shift); } else if (u.hasWeapon() && u.weaponFor(t)) u.setOrder({ type: 'attack', target: t }, shift); else if (u.def.worker) u.setOrder({ type: 'attack', target: t }, shift); else u.setOrder({ type: 'move', x: wx, y: wy, target: t }, shift); }
         else if (u.def.worker && t.def.onGeyser && t.done) u.setOrder({ type: 'gather', target: t, phase: 'goto' }, shift);
         else if (u.def.worker && t.isBuilding && !t.done && t.def.race === 'T') u.setOrder({ type: 'construct', target: t }, shift);

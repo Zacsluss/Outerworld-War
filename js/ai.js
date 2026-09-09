@@ -197,7 +197,11 @@ class AI {
   mine(pred) { const out = []; for (const u of G.units) if (u.alive && u.owner === this.p.id && pred(u)) out.push(u); return out; }
   count(id, inclProd = true) { let n = 0; for (const u of G.units) { if (!u.alive || u.owner !== this.p.id) continue; if (u.def.id === id) n++; if (inclProd) for (const it of u.prod) if (it.id === id) n++; if (u.order.type === 'build' && u.order.def.id === id) n++; } if (this.pending[id] && G.frame - this.pending[id] < 360) n++; return n; }
   halls() { return this.mine(u => u.isBuilding && u.def.depot && !u.lifted); }
-  enemies() { return G.players.filter(q => !G.allied(q.id, this.p.id) && !q.defeated); }
+  // The neutral owner is not an opponent. It passes both of the other two tests -- nothing is allied
+  // with it and it is never defeated -- so without this every AI on a map with wildlife would pick a
+  // warren as an enemy base and send waves at it. Killing the wildlife is a decision a player makes
+  // about a piece of ground, not a war aim. See the RACE_INFO.N block in js/data.js.
+  enemies() { return G.players.filter(q => !G.allied(q.id, this.p.id) && !q.defeated && !q.neutral); }
   tick() {
     if (this.p.defeated) return;
     if (G.frame - this.lastThink < this.thinkEvery) { if (G.frame % 12 === 0) this.micro(); return; }
