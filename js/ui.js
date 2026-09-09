@@ -727,6 +727,62 @@ const UI = {
     } else { line(p.name); }
     ctx.restore();
   },
+  // The day/night dial. Drawn only on a map that actually has a cycle -- G.daylight is a flat 1 on
+  // every other map, so a permanently-noon sun in the corner of Lost Ruins would be furniture that
+  // means nothing, and the player would learn to stop reading it.
+  //
+  // The countdown is the point, not the icon. "Night is a window you plan a raid inside" is the whole
+  // design of the feature (see daylightAt in js/game.js), and a window you cannot see coming is just a
+  // period where you lose fights for no visible reason -- which is exactly how it was reported. So the
+  // dial says how long until the light changes, and that is the number to act on.
+  //
+  // The forward scan is capped and CACHED PER SECOND. Stepping a whole cycle at 24 fps to find the next
+  // threshold is 720 coarse samples; doing that every drawn frame would be 43,000 a second for a label.
+  // Cached on the second, it is 720 once a second, which is free. It reads daylightAt, a pure function
+  // of a frame number, so this is a render-side query of the simulation's clock and writes nothing.
+  dayPhase() {
+    if (typeof MAP_LAYOUTS === 'undefined' || typeof daylightAt !== 'function') return null;
+    const L = MAP_LAYOUTS[G.layout];
+    if (!L || !L.dayNight) return null;
+    const d = G.daylight, sec = Math.floor(G.frame / TPS);
+    if (this._dayCache && this._dayCache.sec === sec) return this._dayCache.v;
+    const DARK = 0.15, LIGHT = 0.85;
+    const state = x => (x >= LIGHT ? 'day' : x <= DARK ? 'night' : 'twilight');
+    const now = state(d), rising = daylightAt(G.frame + TPS) > d;
+    // ...to the next state change, whatever it is
+    let until = 0;
+    for (let k = 1; k <= 720; k++) { const f = G.frame + k * TPS; if (state(daylightAt(f)) !== now) { until = k; break; } }
+    const name = now === 'day' ? 'Day' : now === 'night' ? 'Night' : (rising ? 'Dawn' : 'Dusk');
+    const nextName = now === 'day' ? 'dusk' : now === 'night' ? 'dawn' : (rising ? 'day' : 'night');
+    const v = { d, name, next: nextName, until, rising };
+    this._dayCache = { sec, v };
+    return v;
+  },
+  drawDayDial(ctx, x, y) {
+    const p = this.dayPhase(); if (!p) return 0;
+    const w = 116, h = 22, r = 8, cx = x + 14, cy = y + h / 2;
+    ctx.fillStyle = '#000a'; ctx.fillRect(x, y, w, h);
+    // The disc is lit by the daylight value itself, so it reads at a glance without the label: a full
+    // pale disc at noon, a thin cold crescent at the bottom of the night.
+    const lit = p.d;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = lit > 0.5 ? '#ffd98a' : '#8fa6c8'; ctx.globalAlpha = 0.25 + 0.75 * Math.max(lit, 1 - lit);
+    ctx.fill(); ctx.globalAlpha = 1;
+    if (lit > 0.55) {                                   // sun: short rays, count rising with the light
+      ctx.strokeStyle = '#ffd98a'; ctx.lineWidth = 1;
+      for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * (r + 1.5), cy + Math.sin(a) * (r + 1.5)); ctx.lineTo(cx + Math.cos(a) * (r + 3.5), cy + Math.sin(a) * (r + 3.5)); ctx.stroke(); }
+    } else {                                            // moon: bite the disc with the background colour
+      ctx.save(); ctx.globalCompositeOperation = 'destination-out';
+      ctx.beginPath(); ctx.arc(cx + 3 + (1 - lit) * 2, cy - 1, r * 0.92, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+    ctx.textAlign = 'left'; ctx.font = 'bold 11px sans-serif';
+    ctx.fillStyle = p.name === 'Night' ? '#9fb4d6' : p.name === 'Day' ? '#ffd98a' : '#e0c07a';
+    ctx.fillText(p.name, x + 27, y + 10);
+    ctx.font = '10px sans-serif'; ctx.fillStyle = '#9aa';
+    ctx.fillText(p.until ? p.next + ' in ' + this.clock(p.until * TPS) : p.next, x + 27, y + 20);
+    return w + 6;
+  },
   drawTop() {
     const ctx = Render.ctx, p = G.players[G.human]; ctx.font = 'bold 13px sans-serif';
     const txt = [['#5df', Math.floor(p.minerals)], ['#6d5', Math.floor(p.gas)], [p.supUsed > p.supMax ? '#f55' : '#eee', `${p.supUsed}/${p.supMax}`]];
@@ -734,6 +790,7 @@ const UI = {
     for (let i = txt.length - 1; i >= 0; i--) { ctx.fillStyle = '#000a'; const tw = ctx.measureText(txt[i][1]).width + 28; ctx.fillRect(x - tw, 6, tw, 22); ctx.fillStyle = txt[i][0]; ctx.fillText(txt[i][1], x - 6, 22); ctx.fillRect(x - tw + 6, 11, 12, 12); x -= tw + 8; }
     ctx.textAlign = 'left';
     const t = Math.floor(G.frame / TPS); ctx.fillStyle = '#000a'; ctx.fillRect(6, 6, 150, 22); ctx.fillStyle = '#eee'; ctx.fillText(`${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}  ${RACE_INFO[p.race].name}` + (G.paused ? '  PAUSED' : ''), 12, 22);
+    this.drawDayDial(ctx, 162, 6);
     if (this.pending) { ctx.fillStyle = '#ff8'; ctx.fillText('Select target for ' + (this.pending.kind === 'ability' ? DATA.abilities[this.pending.abil].name : this.pending.kind) + ' (right-click to cancel)', 12, 44); }
     if (this.showHelp) this.drawHelp(ctx);
   },

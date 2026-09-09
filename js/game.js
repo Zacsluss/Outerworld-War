@@ -32,7 +32,14 @@ const SUPPLY_CAP = 500;
 // reason detectors were exempt at all is that cloak must stay answerable, and that is a claim about
 // detection RANGE -- so they now pay half the penalty instead of none, which keeps them the best eye
 // on a dark map without making them the only one.
-const DAY_CYCLE = 24 * 60 * 12, NIGHT_SIGHT = 0.75, NIGHT_DET = 0.5;
+//
+// NIGHT_AIR is the other half of idea 19, which the design says is "sight AND AIR MOVEMENT under real
+// pressure" and which shipped with only the sight half built. Flying in the dark is slower: 15% at the
+// bottom of the night, easing with the light like everything else here. It is deliberately small --
+// the point is that a night harass arrives late rather than that air becomes unusable -- and it is on
+// movement rather than on damage so that it changes WHEN a drop lands, not what it does when it gets
+// there. Ground units are unaffected: the dark does not make walking harder.
+const DAY_CYCLE = 24 * 60 * 12, NIGHT_SIGHT = 0.75, NIGHT_DET = 0.5, NIGHT_AIR = 0.85;
 // How long a hulk stands, in frames. A razed building is an obstacle for a minute and a half -- long
 // enough to matter to the fight that razed it and to the counter-attack, not long enough to wall the
 // map off -- and a dead tank or ultralisk for twenty-five seconds. See the CRATERS block in js/map.js.

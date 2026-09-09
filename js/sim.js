@@ -73,6 +73,9 @@ class Unit {
     if (this.stim > 0) s *= 1.5; if (this.fx.ensnare > 0) s *= 0.5;
     if (this.fx.suppress > 0) s *= 0.45;   // pinned by sustained fire; see DATA.techs suppress_*
     if (this.lifted) s = 1;
+    // Flying is slower in the dark -- the air half of M11 idea 19. Ground units are exempt: night makes
+    // seeing harder, not walking. See NIGHT_AIR in js/game.js.
+    if (this.fly && !this.isBuilding) { const dl = G.daylight; if (dl < 1) s *= NIGHT_AIR + (1 - NIGHT_AIR) * dl; }
     // Churned ground is slower to cross -- craters, rubble and a stripped mineral line all read as the
     // same broken footing. Ground only: a wraith does not care what the floor looks like. See the
     // CRATERS block in js/map.js.

@@ -74,6 +74,7 @@ const TESTS = [
   { name: 'craters', args: ['craters.js'], what: 'the map remembers: permanent scarring, hulks that clear' },
   { name: 'menucodex', args: ['menucodex.js'], what: 'the CODEX button works with no game running, and puts the menu back' },
   { name: 'highground', args: ['highground.js'], what: 'height applied to range, sight and damage -- and a fractional sight that used to blind a unit' },
+  { name: 'daynight', args: ['daynight.js'], what: 'the cycle a player can see: the dial, the countdown, and the air half of idea 19' },
   { name: 'campaign', args: ['campaign.js'], what: 'weighted choices resolve both ways, the record persists, narrowing cannot strand you' },
   { name: 'zoom', args: ['zoom.js'], what: 'strategic zoom clamps, anchors and swaps to icons; night runs without G.daylight' },
   { name: 'skirmish', args: ['skirmish.js'], what: 'the setup screen: every setting reaches G.init, and the default is still today\'s game' },
