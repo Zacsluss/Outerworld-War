@@ -126,13 +126,13 @@ const DATA = (() => {
   B('nuclear_silo', { name: 'Nuclear Silo', race: 'T', hp: 600, w: 2, h: 2, min: 100, gas: 100, time: 1200, hk: 'N', tier: 'addon', parent: 'command_center', req: ['covert_ops'], produces: ['nuke'] });
   B('supply_depot', { name: 'Supply Depot', race: 'T', hp: 500, w: 3, h: 2, min: 100, time: 600, hk: 'S', tier: 'basic', sup: 8 });
   B('refinery', { name: 'Refinery', race: 'T', hp: 750, w: 4, h: 2, min: 100, time: 600, hk: 'R', tier: 'basic', onGeyser: true });
-  B('barracks', { name: 'Barracks', race: 'T', hp: 1000, w: 4, h: 3, min: 150, time: 1200, hk: 'B', tier: 'basic', req: ['command_center'], produces: ['marine', 'firebat', 'medic', 'ghost'], canLift: true });
+  B('barracks', { name: 'Barracks', race: 'T', hp: 1000, w: 4, h: 3, min: 150, time: 1200, hk: 'B', tier: 'basic', req: ['command_center'], produces: ['marine', 'firebat', 'medic', 'ghost'], canLift: true, tech: ['suppress_inf'] });
   B('engineering_bay', { name: 'Engineering Bay', race: 'T', hp: 850, w: 4, h: 3, min: 125, time: 900, hk: 'E', tier: 'basic', req: ['command_center'], upg: ['infW', 'infA'], canLift: true });
   B('academy', { name: 'Academy', race: 'T', hp: 600, w: 3, h: 2, min: 150, time: 1200, hk: 'A', tier: 'basic', req: ['barracks'], tech: ['stim', 'u238', 'restoration_tech', 'optical_flare_tech', 'caduceus'] });
   B('missile_turret', { name: 'Missile Turret', race: 'T', hp: 200, armor: 0, w: 2, h: 2, min: 75, time: 450, hk: 'T', tier: 'basic', req: ['engineering_bay'], det: true, sight: 11,
     aw: W(20, 'explosive', 7, 15, { targets: 'air', upgKey: null }) });
   B('bunker', { name: 'Bunker', race: 'T', hp: 350, w: 3, h: 2, min: 100, time: 450, hk: 'U', tier: 'basic', req: ['barracks'], cargo: 4, bunker: true, abil: ['unload'] });
-  B('factory', { name: 'Factory', race: 'T', hp: 1250, w: 4, h: 3, min: 200, gas: 100, time: 1200, hk: 'F', tier: 'adv', req: ['barracks'], produces: ['vulture', 'siege_tank', 'goliath'], addons: ['machine_shop'], canLift: true });
+  B('factory', { name: 'Factory', race: 'T', hp: 1250, w: 4, h: 3, min: 200, gas: 100, time: 1200, hk: 'F', tier: 'adv', req: ['barracks'], produces: ['vulture', 'siege_tank', 'goliath'], addons: ['machine_shop'], canLift: true, tech: ['suppress_veh'] });
   B('machine_shop', { name: 'Machine Shop', race: 'T', hp: 750, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'M', tier: 'addon', parent: 'factory', tech: ['ion_thrusters', 'spider_mines_tech', 'siege_tech', 'charon'] });
   B('starport', { name: 'Starport', race: 'T', hp: 1300, w: 4, h: 3, min: 150, gas: 100, time: 1050, hk: 'S', tier: 'adv', req: ['factory'], produces: ['wraith', 'dropship', 'science_vessel', 'battlecruiser', 'valkyrie'], addons: ['control_tower'], canLift: true });
   B('control_tower', { name: 'Control Tower', race: 'T', hp: 500, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'C', tier: 'addon', parent: 'starport', tech: ['cloaking_field', 'apollo'] });
@@ -151,8 +151,8 @@ const DATA = (() => {
   B('extractor', { name: 'Extractor', race: 'Z', hp: 750, w: 4, h: 2, min: 50, time: 600, hk: 'E', tier: 'basic', onGeyser: true, creep: 3 });
   B('spawning_pool', { name: 'Spawning Pool', race: 'Z', hp: 750, w: 3, h: 2, min: 200, time: 1200, hk: 'S', tier: 'basic', req: ['hatchery'], needsCreep: true, tech: ['metabolic', 'adrenal'] });
   B('evolution_chamber', { name: 'Evolution Chamber', race: 'Z', hp: 750, w: 3, h: 2, min: 75, time: 600, hk: 'V', tier: 'basic', req: ['hatchery'], needsCreep: true, upg: ['meleeW', 'missW', 'carapace'] });
-  B('hydralisk_den', { name: 'Hydralisk Den', race: 'Z', hp: 850, w: 3, h: 2, min: 100, gas: 50, time: 600, hk: 'D', tier: 'basic', req: ['spawning_pool'], needsCreep: true, tech: ['muscular', 'grooved', 'lurker_aspect'] });
-  B('spire', { name: 'Spire', race: 'Z', hp: 600, w: 2, h: 2, min: 200, gas: 150, time: 1800, hk: 'S', tier: 'adv', req: ['lair'], needsCreep: true, upg: ['flyW', 'flyA'], morphTo: 'greater_spire' });
+  B('hydralisk_den', { name: 'Hydralisk Den', race: 'Z', hp: 850, w: 3, h: 2, min: 100, gas: 50, time: 600, hk: 'D', tier: 'basic', req: ['spawning_pool'], needsCreep: true, tech: ['muscular', 'grooved', 'lurker_aspect', 'suppress_hyd'] });
+  B('spire', { name: 'Spire', race: 'Z', hp: 600, w: 2, h: 2, min: 200, gas: 150, time: 1800, hk: 'S', tier: 'adv', req: ['lair'], needsCreep: true, upg: ['flyW', 'flyA'], morphTo: 'greater_spire', tech: ['suppress_air'] });
   B('greater_spire', { name: 'Greater Spire', race: 'Z', hp: 1000, w: 2, h: 2, min: 100, gas: 150, time: 1800, hk: 'G', tier: 'morph', req: ['hive'], upg: ['flyW', 'flyA'] });
   B('queens_nest', { name: "Queen's Nest", race: 'Z', hp: 850, w: 3, h: 2, min: 150, gas: 100, time: 900, hk: 'Q', tier: 'adv', req: ['lair'], needsCreep: true, tech: ['ensnare_tech', 'spawn_broodling_tech', 'gamete'] });
   B('ultralisk_cavern', { name: 'Ultralisk Cavern', race: 'Z', hp: 600, w: 3, h: 2, min: 150, gas: 200, time: 1200, hk: 'U', tier: 'adv', req: ['hive'], needsCreep: true, tech: ['anabolic', 'chitinous'] });
@@ -166,14 +166,14 @@ const DATA = (() => {
   B('nexus', { name: 'Nexus', race: 'P', hp: 750, sh: 750, w: 4, h: 3, min: 400, time: 1800, hk: 'N', tier: 'basic', produces: ['probe'], sup: 10, depot: true, sight: 11 });
   B('pylon', { name: 'Pylon', race: 'P', hp: 300, sh: 300, armor: 0, w: 2, h: 2, min: 100, time: 450, hk: 'P', tier: 'basic', sup: 8, psi: 6.5 });
   B('assimilator', { name: 'Assimilator', race: 'P', hp: 450, sh: 450, w: 4, h: 2, min: 100, time: 600, hk: 'A', tier: 'basic', onGeyser: true });
-  B('gateway', { name: 'Gateway', race: 'P', hp: 500, sh: 500, w: 4, h: 3, min: 150, time: 900, hk: 'G', tier: 'basic', req: ['nexus'], needsPsi: true, produces: ['zealot', 'dragoon', 'high_templar', 'dark_templar'] });
+  B('gateway', { name: 'Gateway', race: 'P', hp: 500, sh: 500, w: 4, h: 3, min: 150, time: 900, hk: 'G', tier: 'basic', req: ['nexus'], needsPsi: true, produces: ['zealot', 'dragoon', 'high_templar', 'dark_templar'], tech: ['suppress_gate'] });
   B('forge', { name: 'Forge', race: 'P', hp: 550, sh: 550, w: 3, h: 2, min: 150, time: 600, hk: 'F', tier: 'basic', req: ['nexus'], needsPsi: true, upg: ['gW', 'gA', 'shields'] });
   B('photon_cannon', { name: 'Photon Cannon', race: 'P', hp: 100, sh: 100, armor: 0, w: 2, h: 2, min: 150, time: 750, hk: 'C', tier: 'basic', req: ['forge'], needsPsi: true, det: true, sight: 11,
     gw: W(20, 'normal', 7, 22, { targets: 'both', upgKey: null }) });
   B('cybernetics_core', { name: 'Cybernetics Core', race: 'P', hp: 500, sh: 500, w: 3, h: 2, min: 200, time: 900, hk: 'Y', tier: 'basic', req: ['gateway'], needsPsi: true, upg: ['airW', 'airA'], tech: ['singularity'] });
   B('shield_battery', { name: 'Shield Battery', race: 'P', hp: 200, sh: 200, w: 3, h: 2, min: 100, time: 450, hk: 'B', tier: 'basic', req: ['gateway'], needsPsi: true, energy: 200, battery: true });
   B('robotics_facility', { name: 'Robotics Facility', race: 'P', hp: 500, sh: 500, w: 3, h: 2, min: 200, gas: 200, time: 1200, hk: 'R', tier: 'adv', req: ['cybernetics_core'], needsPsi: true, produces: ['shuttle', 'reaver', 'observer'] });
-  B('stargate', { name: 'Stargate', race: 'P', hp: 600, sh: 600, w: 4, h: 3, min: 150, gas: 150, time: 1050, hk: 'S', tier: 'adv', req: ['cybernetics_core'], needsPsi: true, produces: ['scout', 'corsair', 'carrier', 'arbiter'] });
+  B('stargate', { name: 'Stargate', race: 'P', hp: 600, sh: 600, w: 4, h: 3, min: 150, gas: 150, time: 1050, hk: 'S', tier: 'adv', req: ['cybernetics_core'], needsPsi: true, produces: ['scout', 'corsair', 'carrier', 'arbiter'], tech: ['suppress_bay'] });
   B('citadel_of_adun', { name: 'Citadel of Adun', race: 'P', hp: 450, sh: 450, w: 3, h: 2, min: 150, gas: 100, time: 900, hk: 'C', tier: 'adv', req: ['cybernetics_core'], needsPsi: true, tech: ['leg_enhancements'] });
   B('robotics_support_bay', { name: 'Robotics Support Bay', race: 'P', hp: 450, sh: 450, w: 3, h: 2, min: 150, gas: 100, time: 450, hk: 'B', tier: 'adv', req: ['robotics_facility'], needsPsi: true, tech: ['scarab_damage', 'reaver_capacity', 'gravitic_drive'] });
   B('fleet_beacon', { name: 'Fleet Beacon', race: 'P', hp: 500, sh: 500, w: 3, h: 2, min: 300, gas: 200, time: 900, hk: 'F', tier: 'adv', req: ['stargate'], needsPsi: true, tech: ['apial_sensors', 'gravitic_thrusters', 'carrier_capacity', 'disruption_web_tech', 'argus_jewel'] });
@@ -210,6 +210,20 @@ const DATA = (() => {
 
   // ============================ TECH (single research) ============================
   const T = (id, name, race, bld, hk, min, gas, time, o = {}) => TE(id, Object.assign({ name, race, bld, hk, min, gas, time }, o));
+  // Suppressing fire (M11 idea 7). One research per building that trains ranged units, unlocking it for
+  // everything that building makes -- so it is a choice about a production line, not a per-unit tax.
+  // Sustained fire pins: a suppressed unit is slowed while the fire keeps landing, so a machine-gun unit
+  // becomes area denial rather than just low damage per second, and infantry get a role beside big units.
+  // The flag lives on the tech, and Unit.suppresses reads it, so adding a fourth race would need no code.
+  // Each names the units it unlocks for. Not derived from the building's `produces` list, because Zerg
+  // trains everything off larva -- a hydralisk's `from` is 'larva', which is not a building and has no
+  // tech list -- so the only wiring that works for all three races is an explicit set on the tech.
+  T('suppress_inf', 'Suppressing Fire', 'T', 'barracks', 'U', 100, 100, 1200, { suppress: ['marine', 'firebat', 'ghost'] });
+  T('suppress_veh', 'Sustained Barrage', 'T', 'factory', 'U', 150, 150, 1500, { suppress: ['vulture', 'siege_tank', 'goliath'] });
+  T('suppress_hyd', 'Barbed Spines', 'Z', 'hydralisk_den', 'U', 100, 100, 1200, { suppress: ['hydralisk', 'lurker'] });
+  T('suppress_air', 'Harrying Flight', 'Z', 'spire', 'U', 150, 150, 1500, { suppress: ['mutalisk', 'devourer'] });
+  T('suppress_gate', 'Disruption Cadence', 'P', 'gateway', 'U', 100, 100, 1200, { suppress: ['dragoon'] });
+  T('suppress_bay', 'Phase Salvo', 'P', 'stargate', 'U', 150, 150, 1500, { suppress: ['scout', 'corsair', 'carrier'] });
   T('stim', 'Stim Packs', 'T', 'academy', 'T', 100, 100, 1200);
   T('u238', 'U-238 Shells', 'T', 'academy', 'U', 150, 150, 1500, { effect: { unit: 'marine', range: 5 } });
   T('restoration_tech', 'Restoration', 'T', 'academy', 'R', 100, 100, 1200);

@@ -69,7 +69,9 @@ class Unit {
     let s = this.def.speed || 0; const p = this.player;
     if (this.def.speedTech && p.hasTech(this.def.speedTech[0])) s = this.def.speedTech[1];
     if (this.def.id === 'vulture' && p.hasTech('ion_thrusters')) s = 8.53;
-    if (this.stim > 0) s *= 1.5; if (this.fx.ensnare > 0) s *= 0.5; if (this.lifted) s = 1;
+    if (this.stim > 0) s *= 1.5; if (this.fx.ensnare > 0) s *= 0.5;
+    if (this.fx.suppress > 0) s *= 0.45;   // pinned by sustained fire; see DATA.techs suppress_*
+    if (this.lifted) s = 1;
     return s;
   }
   get sight() { let s = this.def.sight || 7; const p = this.player; if (this.def.sightTech && p.hasTech(this.def.sightTech[0])) s = this.def.sightTech[1]; if (this.def.id === 'ghost' && p.hasTech('ocular')) s = 11; if (this.fx.blind > 0) s = 2; if (this.isBuilding && !this.done) s = 4; return s; }
@@ -99,6 +101,14 @@ class Unit {
   // is already a field, already snapshotted and already deterministic, so ranks survive a save, a rejoin
   // and a replay seek without another line of code anywhere.
   //   rank 1 at 2 kills, 2 at 5, 3 at 10.
+  // Does this unit's own production line have suppressing fire? Read off the tech table rather than a
+  // list of unit ids, so a new tech with { suppress: true } on a new building needs no code here.
+  get suppresses() {
+    if (!this.def.gw && !this.def.aw) return false;
+    const p = this.player; if (!p || !p.tech.size) return false;
+    for (const id of p.tech) { const t = DATA.techs[id]; if (t && t.suppress && t.suppress.includes(this.def.id)) return true; }
+    return false;
+  }
   get vet() { const k = this.kills || 0; return k >= 10 ? 3 : k >= 5 ? 2 : k >= 2 ? 1 : 0; }
   // ...and scarring is the other half. A unit that has been hurt never gets its full health back, so
   // maxHp drifts down over a unit's life and def.hp stays the original. No new field for that either:
@@ -148,7 +158,7 @@ class Unit {
     if (this.morphT > 0) { this.morphT--; return; }
     // status effects
     const fx = this.fx;
-    for (const k of ['lockdown', 'stasis', 'ensnare', 'maelstrom', 'blind', 'irradiate', 'plague', 'dweb']) if (fx[k] > 0) fx[k]--;
+    for (const k of ['lockdown', 'stasis', 'ensnare', 'maelstrom', 'blind', 'irradiate', 'plague', 'dweb', 'suppress']) if (fx[k] > 0) fx[k]--;
     if (fx.matrix && --fx.matrix.t <= 0) fx.matrix = null;
     if (fx.irradiate > 0 && d.bio && !this.isBuilding) { G.damageRaw(this, 250 / 720, null); for (const o of G.near(this.x, this.y, 48)) if (o !== this && o.def.bio && !o.isBuilding && !o.fly === !this.fly) G.damageRaw(o, 250 / 720, null); }
     if (fx.plague > 0) { if (this.hp > 1) this.hp = Math.max(1, this.hp - 300 / 600); }

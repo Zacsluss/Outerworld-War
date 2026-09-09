@@ -379,6 +379,10 @@ const G = {
     d = (d - t.armor) * (DMG_MULT[type] || DMG_MULT.normal)[t.def.size || 'medium'];
     // ...then where it landed. opts.splash covers explosions and spells, which have no direction.
     if (!opts.splash && !opts.noFacing) d *= FACE_MULT[hitFacing(t, src)];
+    // Suppressing fire pins what it hits, and only while the fire keeps landing: a second of slow,
+    // refreshed by every hit. Ranged attackers only, and never against buildings, larvae or eggs --
+    // nothing that was going anywhere in the first place.
+    if (src && src.suppresses && !t.isBuilding && !t.def.larva && !t.def.egg) t.fx.suppress = 24;
     if (d < 0.5) d = 0.5;
     t.hp -= d; this.onHit(t, src);
     if (t.hp <= 0) this.kill(t, src);

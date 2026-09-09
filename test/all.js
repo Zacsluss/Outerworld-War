@@ -51,6 +51,7 @@ const TESTS = [
   { name: 'aiscripts', args: ['aiscripts.js'], what: 'the AI build scripts are ordered and name only real things' },
   { name: 'veterancy', args: ['veterancy.js'], what: 'rank and scars are derived, and survive a snapshot' },
   { name: 'facing', args: ['facing.js'], what: 'a hit from behind hurts more, and explosions have no direction' },
+  { name: 'suppress', args: ['suppress.js'], what: 'suppressing fire is researched per production line and pins what it hits' },
 ];
 
 const argv = process.argv.slice(2);
