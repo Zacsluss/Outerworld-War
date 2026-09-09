@@ -70,3 +70,50 @@ Sequenced by blast radius, cheapest and most contained first, so each lands on a
   scope are not negotiable for any of this.
 - **Every sim change ships with a test.** M10 shipped a one-line build-script bug that cost Protoss its
   whole tech tree and was invisible to every existing check; test/aiscripts.js exists because of it.
+
+---
+
+# Wave two
+
+A second 25-idea brainstorm, chosen 2026-09-09. Twelve in. These are additive: none of them replaces
+anything in wave one, and the wave-one order still runs first.
+
+| # | Idea | Touches | Risk |
+|---|---|---|---|
+| 23 | AI gets a **play style** as well as a difficulty | ai | low |
+| 22 | Skirmish setup screen -- handicaps, starting resources, restrictions | ui | low |
+| 25 | In-game unit codex: stats, roles, live damage calculator | ui, hud | low |
+| 16 | Four map sizes that are different **rules**, not just dimensions | map, ui | medium |
+| 11 | A field hospital and a jamming tower **for each race** | data, sim, art | medium |
+| 15 | Walls for each race, thematically distinct | data, sim, art | medium |
+| 20 | Hazard maps -- lava, sandstorms, drifting radiation | map, sim, render | medium |
+| 19 | Vertical layers: high ground worth fighting for, ramps decisive | map, sim | **high** |
+| 18 | Destructible and dynamic map features -- bridges, dams, rock formations | map, sim, render | **high** |
+| 17 | Procedural maps with named archetypes | map, editor | **high** |
+| 1 | Neutral hostile life, surfacing when you build near it, with a **visible tell** while buried | sim, ai, art | **high** |
+| 8 | Derelict structures to capture and repair, **per-map toggle** | data, sim, map | **high** |
+
+## Order for wave two
+
+Cheap-and-contained first again, and the three map-generation items grouped so the terrain code is
+opened once rather than three times.
+
+1. **23** AI play styles. The tables already exist; this is mostly data.
+2. **22** skirmish setup screen. Pure UI, and it is where 16, 8 and 23 all surface to the player.
+3. **25** unit codex. Pure UI, and it is what makes wave one's depth visible.
+4. **11** field hospital and jamming tower, then **15** walls. Both are new buildings on an existing
+   pattern, so they go together.
+5. **16** map sizes as modes, then **20** hazards, then **18** destructibles, then **17** archetypes.
+   One pass over the map generator, in rising order of how much of it they rewrite.
+6. **19** vertical layers. Touches pathing, vision and every sprite's ground contact.
+7. **1** neutral life and **8** derelicts. Both need a third owner that is neither player nor ally, so
+   they share that work and come last.
+
+## Notes carried from the brainstorm
+
+- **1** needs a tell while buried -- disturbed ground, a heat shimmer, something that reads as "do not
+  expand here yet" without spelling it out. The horror only works if the player could have known.
+- **8** is per-map because it changes the shape of a match: a map with derelicts rewards map control
+  with tech, and that should be a property of the map, not a global rule.
+- **23** is difficulty AND style, not style instead of difficulty. Turtle, rusher, expander, harasser,
+  each at easy/normal/hard.
