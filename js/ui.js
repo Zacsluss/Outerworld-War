@@ -706,6 +706,22 @@ window.addEventListener('DOMContentLoaded', () => {
   $('nopp').addEventListener('change', rebuildOpps); rebuildOpps();
   const ms = $('mission'); if (ms) { for (const m of Missions.list) { const o = document.createElement('option'); o.value = m.id; o.textContent = `${RACE_INFO[m.race].name}: ${m.title}`; ms.appendChild(o); } $('missionBtn').addEventListener('click', () => { const m = Missions.get(ms.value); if (!m) return; UI.start({ players: [{ race: m.race, human: true, name: 'Player', team: 1 }, { race: m.enemy.race, human: false, difficulty: m.enemy.difficulty, name: 'Enemy', team: 2 }], seed: m.seed, layout: m.layout, mission: m.id }); }); }
   const hk = $('hotkeys'); if (hk) { try { hk.value = localStorage.getItem('bw_hotkeys') || 'bw'; } catch (e) { } UI.gridKeys = hk.value === 'grid'; hk.addEventListener('change', () => { UI.gridKeys = hk.value === 'grid'; try { localStorage.setItem('bw_hotkeys', hk.value); } catch (e) { } }); }
+  // The map list is built from MAP_LAYOUTS rather than written out in index.html, which is what let the
+  // four size modes and the hazard map appear without anyone remembering to add an <option> for each.
+  // Custom maps are registered into MAP_LAYOUTS too and are refreshed separately by refreshMapList.
+  const layoutSel = $('layout');
+  if (layoutSel && typeof MAP_LAYOUTS !== 'undefined') {
+    const cur = layoutSel.value;
+    layoutSel.innerHTML = '';
+    for (const [id, L] of Object.entries(MAP_LAYOUTS)) {
+      if (L.custom) continue;                       // refreshMapList owns those
+      const o = document.createElement('option');
+      o.value = id; o.textContent = (L.name || id) + (L.players ? ' (' + L.players + ' players)' : '');
+      layoutSel.appendChild(o);
+    }
+    if (cur) layoutSel.value = cur;
+    if (!layoutSel.value) layoutSel.value = 'temple';
+  }
   const sp = $('settingsPanel'), setupPanel = sp && sp.previousElementSibling;
   const showSettings = on => { if (!sp || !setupPanel) return; sp.style.display = on ? '' : 'none'; setupPanel.style.display = on ? 'none' : ''; };
   const sb = $('settingsBtn'); if (sb) sb.addEventListener('click', () => showSettings(true));

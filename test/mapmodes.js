@@ -25,8 +25,11 @@ const ok = (m, c, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fa
 
 const SIM = ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'missions', 'snapshot'];
 // The one line js/game.js still needs, and where it goes.
-const WIRE_FROM = 'Combat.tickProjectiles(); Abilities.tickFields();';
-const WIRE_TO = WIRE_FROM + ' this.map.tickHazard(this.frame, this.units);';
+// The hazard needs one call in G.tick(). It was written here as an INJECTION while the wiring was still
+// outstanding -- js/game.js belonged to another agent -- and the test asserted the feature was inert
+// without it. The call has since landed, so this now works the other way round: `bare` STRIPS it to
+// prove the hazard is what causes the difference, and the shipped file is asserted to contain it.
+const WIRE_CALL = 'this.map.tickHazard(this.frame, this.units);';
 
 const errors = [];
 function mkCtx(wire) {
@@ -37,16 +40,13 @@ function mkCtx(wire) {
   c.window = c; vm.createContext(c);
   for (const f of SIM) {
     let src = fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8');
-    if (wire && f === 'game') {
-      if (src.split(WIRE_FROM).length - 1 !== 1) { console.log('FAIL  the wiring anchor is not in js/game.js exactly once'); process.exit(2); }
-      src = src.replace(WIRE_FROM, WIRE_TO);
-    }
+    if (!wire && f === 'game') src = src.split(WIRE_CALL).join('');   // bare: the hazard call removed
     vm.runInContext(src, c, { filename: f + '.js' });
   }
   return c;
 }
-const bare = mkCtx(false);           // game.js as it is on disk: nothing calls the hazard
-const wired = mkCtx(true);           // game.js with the one line this change asks for
+const bare = mkCtx(false);           // game.js with the hazard call removed
+const wired = mkCtx(true);           // game.js exactly as it ships
 const R = (c, src) => vm.runInContext('(() => {' + src + '})();', c);
 
 // ============================================================================
@@ -215,9 +215,12 @@ const wiredCalm = play(wired, 'large', FR);
 const bareStorm = play(bare, 'dustbowl', FR);
 ok('a game on a hazard map re-runs bit-identically', wiredStorm.hash === wiredStorm2.hash, wiredStorm.hash + ' vs ' + wiredStorm2.hash);
 ok('the hazard changes the game it is in', wiredStorm.hash !== wiredCalm.hash, 'storm ' + wiredStorm.hash + ' calm ' + wiredCalm.hash);
-// The whole feature is inert until js/game.js calls tickHazard. That is a fact worth asserting rather
-// than assuming, because it is what makes shipping this ahead of the wiring safe.
-ok('unwired, a hazard map plays exactly as the same map without one', bareStorm.hash === wiredCalm.hash, bareStorm.hash + ' vs ' + wiredCalm.hash);
+// Two halves of the same fact. Strip the call and a hazard map is indistinguishable from the same map
+// without one -- which proves the hazard, and not some incidental layout difference, is what changes the
+// game. And the shipped file really does make the call, which is the part that would rot silently: the
+// feature would go quiet and every other check here would still pass.
+ok('with the hazard call removed, a hazard map plays exactly as the same map without one', bareStorm.hash === wiredCalm.hash, bareStorm.hash + ' vs ' + wiredCalm.hash);
+ok('and js/game.js actually makes that call', fs.readFileSync(path.join(root, 'js', 'game.js'), 'utf8').split(WIRE_CALL).length - 1 === 1, 'expected exactly one ' + WIRE_CALL);
 
 // A snapshot knows nothing about the hazard and does not need to: restoring one and carrying on has to
 // storm at the same frames, because the state is derived from the frame.

@@ -556,6 +556,7 @@ const G = {
       if (hit) this.nudgeOut(u, hit);
     }
     Combat.tickProjectiles(); Abilities.tickFields();
+    this.map.tickHazard(this.frame, this.units);   // weather; inert unless the layout declares a hazard. Contract is documented above GameMap.hazardState.
     for (const p of this.players) if (p.ai && this.frame % 4 === p.id % 4) p.ai.tick();
     if (this.frame % 8 === 0) this.recomputeSupply();
     if (this.frame % 24 === 0) { this.units = this.units.filter(u => u.alive); this.checkVictory(); }
