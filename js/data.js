@@ -221,7 +221,7 @@ const DATA = (() => {
   //   * a buried creature is `u.burrowed`, therefore `u.isCloaked`, therefore invisible without a
   //     detector. THAT IS THE WHOLE REASON THE TELL IS SEPARATE DATA WITH ITS OWN PAINTER: the
   //     marker has to be drawn when the creature is not
-  U('carrion_grub', { name: 'Carrion Grub', race: 'N', hp: 60, armor: 1, size: 'small', speed: 5.2, sight: 6, r: 9, neutral: true,
+  U('carrion_grub', { name: 'Carrion Grub', race: 'N', min: 0, hp: 60, armor: 1, size: 'small', speed: 5.2, sight: 6, r: 9, neutral: true,
     gw: W(9, 'normal', 0.5, 12, { upgKey: null }),
     wake: { buried: true, tell: 'churn', r: 7, by: ['build', 'mine', 'walk'], delay: 36, aggro: 10, leash: 14, rebury: 480, respawn: 0 } });
   // The one worth walking around. Two marines need about fifty seconds to chew through 500 hit
@@ -229,7 +229,7 @@ const DATA = (() => {
   // weapons hurt it and concussive ones barely scratch it, so the answer is siege tanks and dragoons
   // -- an army, which is to say later. It ignores 'walk' on purpose: you may look at it, and it only
   // wakes if you try to LIVE there.
-  U('carrion_maw', { name: 'Carrion Maw', race: 'N', hp: 500, armor: 3, size: 'large', speed: 3.6, sight: 8, r: 20, neutral: true,
+  U('carrion_maw', { name: 'Carrion Maw', race: 'N', min: 0, hp: 500, armor: 3, size: 'large', speed: 3.6, sight: 8, r: 20, neutral: true,
     gw: W(28, 'normal', 1.2, 22, { upgKey: null, splash: [0.7, 1.1, 1.6] }),
     wake: { buried: true, tell: 'mound', r: 6, by: ['build', 'mine'], delay: 48, aggro: 9, leash: 10, rebury: 720, respawn: 0 } });
   // ---------------------------------------------------------------------------------------------
