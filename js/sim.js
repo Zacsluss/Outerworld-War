@@ -351,7 +351,14 @@ class Unit {
     // progress to u.stuck, so that does not catch it either. Ten seconds without getting any closer means
     // give up and let the caller drop the order. A goal that moves (a follow target) restarts the clock.
     if (!this.progG || distPt(this.progG[0], this.progG[1], x, y) > 2 * TILE) { this.progG = [x, y]; this.bestDD = dd; this.noProgT = 0; }
-    else if (dd < this.bestDD - 4) { this.bestDD = dd; this.noProgT = 0; }
+    // Sixteen pixels, not four. The watchdog resets whenever the unit gets closer to its goal, and four
+    // pixels is inside the noise: a unit being shoved about by its neighbours drifts a few pixels toward
+    // the goal often enough to keep resetting the clock, so it never gives up. That is what made
+    // full-strength separation break test/wrongthing.js -- units rallied somewhere unreachable ground
+    // against the wall forever because the jostling read as progress. Sixteen is larger than any single
+    // separation push (half of a contact distance, and contact distances here run 12 to 31) and far
+    // below what real movement covers in the ten seconds the watchdog allows.
+    else if (dd < this.bestDD - 16) { this.bestDD = dd; this.noProgT = 0; }
     else if (++this.noProgT > 240) { this.noProgT = 0; this.stuck = 0; this.moveFailed = true; return true; }
     let gx = x, gy = y;
     if (!this.fly) {

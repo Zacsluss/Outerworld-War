@@ -121,7 +121,7 @@ const G = {
           // multiplayer rejoin path. That break is unexplained and is a real lead -- JSON round-trips a
           // snapshot exactly and there are no negative zeros, so extra position churn is exposing
           // something the snapshot does not capture. Chase it before adding a second pass for any reason.
-          const push = (min - d) * 0.5 * 0.9;
+          const push = (min - d) * 0.5;
           const am = a.sieged ? 0 : 1, bm = b.sieged ? 0 : 1;
           const ax = a.x - ux * push * am, ay = a.y - uy * push * am, bx = b.x + ux * push * bm, by = b.y + uy * push * bm;
           // passable() reads the walk grid, which says nothing useful about a flyer -- gating on it

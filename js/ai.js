@@ -22,6 +22,12 @@ const gasBuildings = ai => ai.mine(u => u.def.onGeyser).length + 1;
 const AI_COMP = {
   T: [['marine', 6], ['medic', 2], ['firebat', 1], ['ghost', 1], ['vulture', 2], ['siege_tank', 4], ['goliath', 2], ['science_vessel', 1], ['wraith', 1], ['valkyrie', 1], ['dropship', 1], ['battlecruiser', 2]],
   Z: [['zergling', 4], ['hydralisk', 6], ['mutalisk', 4], ['scourge', 1], ['ultralisk', 3], ['defiler', 1], ['queen', 1]],
+  // Terran had no per-matchup composition at all, so it built the same mech-heavy army into everyone --
+  // and test/duel.js prices that army against Protoss at 0 wins in 8, a mean supply margin of -14.5.
+  // The same test has Terran BIO beating the same Protoss army 5 of 8. Terran was building precisely the
+  // thing Protoss is best against, in the one matchup this project has measured formally outside 60/40
+  // (P 66% [61-71]). Bio-heavy here, with tanks kept for the siege line rather than as the core.
+  TvP: [['marine', 8], ['medic', 3], ['firebat', 2], ['ghost', 1], ['vulture', 1], ['siege_tank', 3], ['goliath', 2], ['science_vessel', 1], ['wraith', 1], ['valkyrie', 1], ['dropship', 1], ['battlecruiser', 1]],
   ZvT: [['zergling', 3], ['hydralisk', 5], ['mutalisk', 5], ['scourge', 1], ['ultralisk', 4], ['defiler', 2], ['queen', 1]],
   PvZ: [['zealot', 2], ['dragoon', 8], ['high_templar', 3], ['dark_templar', 1], ['reaver', 1], ['shuttle', 1], ['observer', 3], ['corsair', 2], ['scout', 1], ['carrier', 1], ['arbiter', 1]],
   ZvP: [['zergling', 3], ['hydralisk', 6], ['mutalisk', 3], ['scourge', 1], ['ultralisk', 3], ['defiler', 1], ['queen', 1]],
