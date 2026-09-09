@@ -11,6 +11,12 @@
 // same constant and the nudge cannot become a source of drift.
 const D = 0.7071067811865476;
 const SEP_DIRS = [[1, 0], [D, D], [0, 1], [-D, D], [-1, 0], [-D, -D], [0, -1], [D, -D]];
+// The supply ceiling. 200 is StarCraft's number and it exists to stop a match becoming unreadable; at
+// 500 an army is allowed to become unwieldy instead of impossible, which is the point of the attrition
+// direction -- a long game should end on a stripped map with two ruined armies, not two capped ones.
+// Referenced rather than inlined because the supply-block alert and the refusal message both have to
+// agree with it, and they did not used to.
+const SUPPLY_CAP = 500;
 const ALERTS = {
   supply:   { hold: 4, cool: 24 * 40 },  // long enough to survive the moment between finishing a unit and starting a depot
   idleProd: { hold: 8, cool: 24 * 45 },  // a queue empties for a second all the time; eight is a player not looking
@@ -325,7 +331,7 @@ const G = {
       if (u.done && !u.lifted && !u.unpowered && u.def.sup && u.isBuilding) p.supMax += u.def.sup;
       if (u.def.supGive && !u.isBuilding) p.supMax += u.def.supGive;
     }
-    for (const p of this.players) p.supMax = Math.min(200, p.supMax);
+    for (const p of this.players) p.supMax = Math.min(SUPPLY_CAP, p.supMax);
   },
 
   // ---------------- damage & death ----------------
@@ -525,13 +531,13 @@ const G = {
   // otherwise. tickAlerts drives the AI in test/alerts.js and the AI never makes a refused click, which
   // is why this survived task 3.
   // At the 200 cap there is no depot, overlord or pylon that would help, and tickAlerts knows it -- its
-  // `blocked` test is gated on supMax < 200. The refusal has to know it too, or a player at maximum
+  // `blocked` test is gated on supMax < SUPPLY_CAP. The refusal has to know it too, or a player at maximum
   // supply is told to build something that cannot exist, which is the one thing an alert must never do.
   supplyRefused(p) {
     const A = p.alertAt || (p.alertAt = {});
     if (this.frame - (A.supply || -9999) < ALERTS.supply.cool) return false;
     A.supply = this.frame; (p.alertT || (p.alertT = {})).supply = 0;
-    p.msg(p.supMax >= 200 ? 'Maximum supply reached.' : RACE_INFO[p.race].supplyMsg, 'error');
+    p.msg(p.supMax >= SUPPLY_CAP ? 'Maximum supply reached.' : RACE_INFO[p.race].supplyMsg, 'error');
     return true;
   },
   tickAlerts() {
@@ -540,12 +546,12 @@ const G = {
       // "blocked" is not only sitting on the cap: a queued unit that needs two supply with one free is
       // stalled just as hard, and that is the case the production tick used to announce over and over.
       let stalled = false;
-      if (p.supMax < 200 && p.supUsed < p.supMax) for (const u of this.units) {
+      if (p.supMax < SUPPLY_CAP && p.supUsed < p.supMax) for (const u of this.units) {
         if (!u.alive || u.owner !== p.id || !u.prod.length) continue;
         const it = u.prod[0]; if (it.kind !== 'unit' || it.started || it.reserved) continue;
         const ud = DATA.units[it.id]; if (ud && ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) { stalled = true; break; }
       }
-      const blocked = p.supMax < 200 && (p.supUsed >= p.supMax || stalled);
+      const blocked = p.supMax < SUPPLY_CAP && (p.supUsed >= p.supMax || stalled);
       // 1. supply blocked. Checked first because it also explains away idle production: a barracks with
       //    the money but no supply room is not the player forgetting to click it.
       this.alert(p, 'supply', blocked, RACE_INFO[p.race].supplyMsg, 'error');

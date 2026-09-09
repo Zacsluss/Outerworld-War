@@ -94,6 +94,7 @@ const UI = {
     for (let i = this.pings.length - 1; i >= 0; i--) if (--this.pings[i].t <= 0) this.pings.splice(i, 1);
     this.selection = this.selection.filter(u => u.alive && !u.inside);
     Render.frame(G.paused ? 1 : Math.min(1, this.accum / step));
+    if (typeof Music !== 'undefined' && Music.poll) Music.poll();   // combat music state; render-side, reads the sim and never writes it
     this.drawConsole(); this.drawTop(); this.drawMessages();
     if (this.mode === 'replay') { this.drawTimeline(); if (this.prodOverlay) this.drawProdOverlay(); }
     if (G.over && !this.menu) this.menu = 'over';

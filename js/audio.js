@@ -29,6 +29,7 @@ const Voice = {
 
 const Music = {
   on: true, ctx: null, master: null, timer: null, step: 0,
+  fight: false, fightSeen: -1e9, pollT: -1,
   scales: { T: [0, 3, 5, 7, 10], Z: [0, 1, 5, 6, 8], P: [0, 2, 4, 7, 9, 11] }, roots: { T: 41.2, Z: 36.7, P: 49.0 },
   init() { try { this.on = localStorage.getItem('bw_music') !== '0'; } catch (e) { } },
   set(v) { this.on = v; try { localStorage.setItem('bw_music', v ? '1' : '0'); } catch (e) { } if (!v) this.stop(); else if (typeof G !== 'undefined' && G.players.length) this.start(); },
@@ -40,10 +41,46 @@ const Music = {
     if (this.timer) clearInterval(this.timer); this.step = 0; this.timer = setInterval(() => this.bar(), 4000); this.bar();
   },
   stop() { if (this.timer) { clearInterval(this.timer); this.timer = null; } if (this.master && this.ctx) { this.master.gain.cancelScheduledValues(this.ctx.currentTime); this.master.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 1.5); } },
+  // Is a fight actually happening? The bar() below already had a `tension` flag, but it read the
+  // player's ATTACK ALERTS -- so it only knew about being attacked at home, and stayed calm through
+  // every battle the player themselves started. This asks the units instead: anything of ours that has
+  // traded damage in the last two seconds means a fight.
+  //
+  // Render-side and read-only, like the rest of this file: it looks at G and never writes to it.
+  inFight() {
+    if (typeof G === 'undefined' || !G.players.length) return false;
+    const me = G.human;
+    for (const u of G.units) {
+      if (!u.alive || u.inside) continue;
+      if (u.owner === me) { if (G.frame - u.lastHit < 48) return true; }
+      else if (u.lastHitBy && u.lastHitBy.owner === me && G.frame - u.lastHit < 48) return true;
+    }
+    return false;
+  },
+  // Called from the render loop twice a second. Half a second is fast enough that the swell lands while
+  // the first shots are still going, and slow enough that a full pass over the unit list is nothing.
+  // Leaving a fight waits six seconds, so a lull inside one battle does not resolve and re-swell.
+  poll() {
+    if (!this.ctx || !this.master || !this.on || (typeof Sound !== 'undefined' && Sound.muted)) return;
+    if (typeof G === 'undefined' || G.frame === this.pollT || G.frame % 12) return; this.pollT = G.frame;
+    const now = this.inFight(); if (now) this.fightSeen = G.frame;
+    if (now && !this.fight) { this.fight = true; this.swell(true); }
+    else if (!now && this.fight && G.frame - this.fightSeen > 24 * 6) { this.fight = false; this.swell(false); }
+  },
+  // The transition itself: the bed gets louder and brighter going in, quieter and darker coming out,
+  // with a short figure over the top so the change is an event rather than a fade.
+  swell(into) {
+    const t = this.ctx.currentTime, g = this.master.gain;
+    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(into ? 0.26 : 0.16, t + (into ? 0.7 : 2.5));
+    const race = G.players[G.human].race, sc = this.scales[race] || this.scales.T, root = this.roots[race] || 41.2;
+    const deg = into ? [0, 2, 4] : [4, 2, 0];
+    deg.forEach((d, i) => this.pad(root * Math.pow(2, (sc[d % sc.length] + (into ? 24 : 12)) / 12), t + i * 0.16, into ? 0.9 : 1.6, into ? 0.42 : 0.24, race === 'Z' ? 'sawtooth' : race === 'P' ? 'sine' : 'triangle', into ? 1400 : 300));
+  },
   bar() {
     if (!this.ctx || !this.master || typeof G === 'undefined' || !G.players.length) return; const race = G.players[G.human].race; const sc = this.scales[race] || this.scales.T, root = this.roots[race] || 41.2;
     const t = this.ctx.currentTime; const prog = [0, 3, 4, 2, 0, 5, 3, 1]; const deg = prog[this.step % prog.length]; this.step++;
-    const tension = G.players[G.human].msgs.some(m => m.kind === 'attack' && G.frame - m.t < 24 * 20);
+    const tension = this.fight || G.players[G.human].msgs.some(m => m.kind === 'attack' && G.frame - m.t < 24 * 20);
     const notes = [sc[deg % sc.length], sc[(deg + 2) % sc.length] + 12, sc[(deg + 4) % sc.length] + 12, sc[deg % sc.length] + 24];
     notes.forEach((n, i) => { const f = root * Math.pow(2, n / 12) * (i === 0 ? 1 : 1); this.pad(f, t, 4.2, i === 0 ? 0.5 : 0.28, race === 'Z' ? 'sawtooth' : race === 'P' ? 'sine' : 'triangle', tension ? 900 : 420); });
     if (race === 'T' || tension) for (let k = 0; k < 4; k++) this.tick(t + k * 1.0 + (k % 2 ? 0.5 : 0), tension ? 0.5 : 0.25);
