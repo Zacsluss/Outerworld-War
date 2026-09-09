@@ -84,7 +84,7 @@ const UI = {
     // the id in its constructor, and G.daylight looks the layout up in MAP_LAYOUTS by name on every
     // frame. A no-op for every id that is not composed. See UI.skirmishOptions for the whole argument.
     this.registerSkirmishLayout(opts.layout);
-    G.init(opts); this.applyStartingBank(opts); G.recording = this.mode === 'play'; G.log = []; G.pendingCmds = null; G.mission = null; if (opts.mission && typeof Missions !== 'undefined') Missions.begin(opts.mission);
+    G.init(opts); this.applyStartingBank(opts); G.recording = this.mode === 'play'; G.log = []; G.pendingCmds = null; this.branchedFrom = null; G.mission = null; if (opts.mission && typeof Missions !== 'undefined') Missions.begin(opts.mission);
     Render.reset(); if (typeof Music !== 'undefined' && Music.on && !Sound.muted) Music.start(); this.net = !!opts.net; if (this.net) G.paused = false; this.selection = []; this.groups = {}; this.pending = null; this.placing = null; this.menu = null; this.markers = []; this.pings = []; this.msgLog = []; if (G.mission) this.menu = 'brief';
     const hp = G.players[G.human]; Render.camX = hp.startX - Render.viewWorldW() / 2; Render.camY = hp.startY - Render.viewWorldH() / 2 + 40; this.clampCam();
     const hall = G.units.find(u => u.owner === G.human && u.isBuilding); if (hall) this.select([hall]);
@@ -304,6 +304,7 @@ const UI = {
     if (k === 'F8') { e.preventDefault(); if (Replay.hasAutosave()) Replay.loadAutosave(); return; }
     if ((k === 'm' || k === 'M') && e.ctrlKey) { Sound.setMuted(!Sound.muted); e.preventDefault(); const hp = G.players[G.human]; if (hp) hp.msg(Sound.muted ? 'Sound muted.' : 'Sound on.', 'info'); return; }   // plain M is the Move command
     if ((k === 'v' || k === 'V') && e.ctrlKey && this.mode === 'replay') { this.viewAll = !this.viewAll; e.preventDefault(); return; }
+    if ((k === 'b' || k === 'B') && e.ctrlKey && this.mode === 'replay') { this.branchReplay(); e.preventDefault(); return; }
     if (this.mode === 'replay') { // observer controls: whose vision, production overlay, scrubbing
       if (k === '[') { this.cycleObserved(-1); this.viewAll = false; return; }
       if (k === ']') { this.cycleObserved(1); this.viewAll = false; return; }
@@ -496,6 +497,10 @@ const UI = {
         case 'gather': { const res = G.map.resourceAt(Math.floor(wx / TILE), Math.floor(wy / TILE)); if (res && res.type === 'mineral') u.setOrder({ type: 'gather', target: res, phase: 'goto' }, shift); else if (t && t.def.onGeyser) u.setOrder({ type: 'gather', target: t, phase: 'goto' }, shift); break; }
         case 'repair': if (t && t.owner === G.human) u.setOrder({ type: 'repair', target: t }, shift); break;
         case 'unload': u.setOrder({ type: 'unload', x: wx, y: wy }, shift); break;
+        // The near end is wherever this transport is standing right now, so the route needs one click
+        // rather than two. Starting on leg 'a' means it loads before its first run even though it is
+        // already there -- moveTo returns true immediately and the same frame begins picking up.
+        case 'ferry': u.setOrder({ type: 'ferry', ax: u.x, ay: u.y, bx: wx, by: wy, leg: 'a', since: null }, shift); break;
         case 'ability': { const ab = DATA.abilities[p.abil]; if (ab.kind === 'unit') { if (t) { Abilities.issue(u, p.abil, t, wx, wy, shift); if (!ab.auto) { this.marker(wx, wy, '120,200,255'); return; } } } else Abilities.issue(u, p.abil, null, wx, wy, shift); if (ab.kind === 'point' && ['psi_storm', 'nuke', 'emp', 'stasis_field', 'maelstrom', 'plague', 'ensnare', 'dark_swarm', 'disruption_web', 'recall', 'scanner_sweep'].includes(p.abil)) { this.marker(wx, wy, '120,200,255'); return; } break; }
       }
     }
@@ -655,6 +660,9 @@ const UI = {
       else B(i++, label, ab.hk, () => { this.pending = { kind: 'ability', abil: id }; }, { energy: ab.energy });
     }
     if (mobile.some(x => x.cargo.length) && !abils.includes('unload')) B(Math.min(8, i++), 'Unload', 'U', setPending('unload'));
+    // A ferry route. Offered on anything that can actually carry something, loaded or not -- the whole
+    // point is to set it up BEFORE there is anything to move.
+    if (mobile.some(x => x.def.cargo || (x.def.cargoTech && x.player.hasTech(x.def.cargoTech)))) B(i++, 'Ferry', 'Y', setPending('ferry'));
     // mixed selections still get the merge buttons when at least two templar of a kind are selected
     for (const [id, want] of [['summon_archon', 'high_templar'], ['summon_dark_archon', 'dark_templar']]) if (!abils.includes(id) && i <= 8 && mobile.filter(x => x.def.id === want && !x.disabled).length >= 2) { const ab = DATA.abilities[id]; B(i++, ab.name, ab.hk, () => Abilities.merge(mobile, id)); }
     return btns;
@@ -772,7 +780,7 @@ const UI = {
     if (this.menu === 'waiting') return { title: 'WAITING FOR PLAYERS', lines: ['The game resumes when all players have caught up.'], items: [['Keep waiting', () => { this.menu = null; }], ['Leave game', () => { Net.disconnect(); this.toMenu(); }]] };
     if (this.net && Net.active && !Net.connected) return { title: 'CONNECTION LOST', lines: ['The relay connection dropped.', 'Reconnect from the main menu with the same name to rejoin this game.'], items: [['Keep watching', () => { this.menu = null; }], ['Return to main menu', () => this.toMenu()]] };
     if (this.menu === 'over') { const hp = G.players[G.human]; const won = G.mission ? G.winner === G.human : (G.winTeam != null ? G.winTeam === hp.team : G.winner === G.human); const mins = Math.max(1, G.frame / TPS / 60); const apm = Math.round(G.log.filter(e => e.c.p === G.human).length / mins); const lines = [`Time ${Math.floor(G.frame / TPS / 60)}:${String(Math.floor(G.frame / TPS) % 60).padStart(2, '0')}   APM ${apm}`]; if (G.mission) { lines.push('Objective: ' + G.mission.def.objective + (G.mission.done ? (won ? '  — complete' : '  — failed') : '')); if (G.mission.summary) lines.push(G.mission.summary); } lines.push(''); for (const q of G.players) { const s = q.stats; lines.push(`${q.name} (${RACE_INFO[q.race].name})  kills ${s.unitsKilled}/${s.buildingsKilled}  lost ${s.unitsLost}/${s.buildingsLost}  minerals ${s.mined}  gas ${s.gassed}${q.defeated ? '  ELIMINATED' : ''}`); } return { title: won ? 'VICTORY' : 'DEFEAT', lines, items: [['Continue playing', () => { this.menu = null; G.over = false; G.freePlay = true; }], ['Save replay', () => { Replay.saveReplay(); }], ['Return to main menu', () => this.toMenu()]] }; }
-    if (this.mode === 'replay') return { title: 'REPLAY PAUSED', lines: ['Speed: ' + this.speedName(), 'Watching: ' + (this.viewAll ? 'everyone' : G.players[G.human].name), '', '[ and ] switch player, O production overlay', 'Shift+Left/Right skip 30 s, Home restarts, click the bar to seek'], items: [['Resume (Esc)', () => { this.menu = null; }], [(Sound.muted ? 'Sound: off' : 'Sound: on') + ' (Ctrl+M)', () => Sound.setMuted(!Sound.muted)], ['Toggle full map view (Ctrl+V)', () => { this.viewAll = !this.viewAll; this.menu = null; }], ['Next player (])', () => { this.cycleObserved(1); this.viewAll = false; this.menu = null; }], ['Toggle production overlay (O)', () => { this.prodOverlay = !this.prodOverlay; this.menu = null; }], ['Quit to menu', () => this.toMenu()]] };
+    if (this.mode === 'replay') return { title: 'REPLAY PAUSED', lines: ['Speed: ' + this.speedName(), 'Watching: ' + (this.viewAll ? 'everyone' : G.players[G.human].name), '', '[ and ] switch player, O production overlay', 'Shift+Left/Right skip 30 s, Home restarts, click the bar to seek'], items: [['Resume (Esc)', () => { this.menu = null; }], [(Sound.muted ? 'Sound: off' : 'Sound: on') + ' (Ctrl+M)', () => Sound.setMuted(!Sound.muted)], ['Toggle full map view (Ctrl+V)', () => { this.viewAll = !this.viewAll; this.menu = null; }], ['Next player (])', () => { this.cycleObserved(1); this.viewAll = false; this.menu = null; }], ['Toggle production overlay (O)', () => { this.prodOverlay = !this.prodOverlay; this.menu = null; }], ['Take control from here (Ctrl+B)', () => this.branchReplay()], ['Quit to menu', () => this.toMenu()]] };
     // Settings is its own screen rather than four more rows on the pause menu: the pause menu is where
     // you go to leave or to save, and mixing "quit to menu" in with "music off" made both harder to find.
     if (this.menu === 'settings') return { title: 'SETTINGS', lines: ['Audio starts muted on every load.'], items: [
@@ -782,7 +790,15 @@ const UI = {
       ['Hotkeys: ' + (this.gridKeys ? 'Grid' : 'Brood War'), () => { this.gridKeys = !this.gridKeys; try { localStorage.setItem('bw_hotkeys', this.gridKeys ? 'grid' : 'bw'); } catch (e) { } }],
       ['Back (Esc)', () => { this.menu = 'pause'; }],
     ] };
-    return { title: 'PAUSED', lines: [], items: [['Resume (Esc)', () => { this.menu = null; }], ['Settings', () => { this.menu = 'settings'; }], ['Save game (F5)', () => { Replay.save(true); this.menu = null; }], ['Save replay', () => { Replay.saveReplay(); this.menu = null; }], ['Restart', () => { this.start(this.lastOpts); }], ['Quit to menu', () => this.toMenu()]] };
+    // A branch says so, and offers the way back. Nothing was destroyed to get here -- the file on disk
+    // is untouched and branchedFrom still holds what was loaded -- so "watch the original again" is
+    // startFromLog with data we already have.
+    const br = this.branchedFrom;
+    return { title: br ? 'PAUSED  (BRANCH)' : 'PAUSED',
+      lines: br ? ['You took control at ' + this.clock(br.at) + '. Saving a replay saves the branch.'] : [],
+      items: [['Resume (Esc)', () => { this.menu = null; }],
+      ...(br ? [['Abandon branch, watch the original', () => this.unbranch()]] : []),
+      ['Settings', () => { this.menu = 'settings'; }], ['Save game (F5)', () => { Replay.save(true); this.menu = null; }], ['Save replay', () => { Replay.saveReplay(); this.menu = null; }], ['Restart', () => { this.start(this.lastOpts); }], ['Quit to menu', () => this.toMenu()]] };
   },
   drawMenu() {
     const ctx = Render.ctx, m = this.menuItems(); const w = 420, h = 120 + m.lines.length * 22 + m.items.length * 44, x = Render.W / 2 - w / 2, y = Render.H / 2 - h / 2;
@@ -825,6 +841,47 @@ const UI = {
     c.fillStyle = '#05070a'; c.fillRect(0, 0, Render.W, Render.H);
     Codex.draw(c);
   },
+  // ==========================================================================
+  // BRANCHING REPLAY -- M11 wave three, item 24. "What if I had done that?"
+  // ==========================================================================
+  // Taking control mid-replay costs almost nothing, because a replay in this engine is not a recording
+  // of what happened -- it is the seed plus the human's commands, re-simulated. So the AI is already
+  // being re-derived live rather than played back, and "take control" is only two things: stop feeding
+  // the recorded commands in, and lift the gate in CMD.apply that refuses player input while
+  // UI.mode === 'replay'.
+  //
+  // The branch is a REAL GAME, not a preview. G.log is seeded with the recorded commands up to this
+  // frame and recording is turned back on, so Replay.data() afterwards yields a complete file that
+  // replays from frame 0 through the original opening into whatever you did instead. That is the
+  // difference between a what-if you can keep and one you can only watch once.
+  //
+  // Nothing is destroyed. The original file on disk is untouched, and `branchedFrom` keeps the loaded
+  // data, so "back to the replay" is just startFromLog again with what we already have.
+  branchReplay() {
+    if (this.mode !== 'replay' || !this.replayData) return;
+    const at = G.frame;
+    this.branchedFrom = { data: this.replayData, at };
+    G.pendingCmds = null;                                  // stop applying the recorded future
+    G.log = (this.replayData.cmds || []).filter(e => e.f <= at);   // keep the past that led here
+    G.recording = true;
+    this.mode = 'play';
+    this.viewAll = false; this.prodOverlay = false; this.menu = null;
+    // Replay speeds go to 9 and play speeds stop at 6; branching at speed 8 would otherwise leave the
+    // game running faster than any play speed can be set back to.
+    this.speedIdx = Math.min(this.speedIdx, this.maxSpeedIdx());
+    G.paused = false;
+    const p = G.players[G.human];
+    if (p) { p.human = true; p.ai = null; p.msg('You have the controls, at ' + this.clock(at) + '. This is your game now.', 'info'); }
+  },
+  // Abandon the branch and watch the original again. Only offered while `branchedFrom` is set, and it
+  // reloads rather than rewinds -- the branch has been writing into G.log and the map since, so there
+  // is nothing to rewind to that is cheaper or safer than starting the file over.
+  unbranch() {
+    const b = this.branchedFrom; if (!b) return;
+    this.branchedFrom = null;
+    this.startFromLog(b.data, 'replay');
+  },
+  clock(f) { const s = Math.floor(f / TPS); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); },
   toMenu() { this.running = false; this.menuCodex = false; this.menu = null; this.loading = null; if (this.refreshMapList) this.refreshMapList(); if (typeof Net !== 'undefined' && Net.active) Net.disconnect(); if (typeof Music !== 'undefined') Music.stop(); if (this.showPanel) this.showPanel('mainPanel'); document.getElementById('menu').style.display = 'flex'; document.getElementById('game').style.display = 'none'; const ab = document.getElementById('autosaveBtn'); if (ab) ab.style.display = Replay.hasAutosave() ? 'block' : 'none'; },
 
   // ==========================================================================

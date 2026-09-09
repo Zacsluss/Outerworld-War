@@ -320,6 +320,40 @@ class Unit {
         const near = t.isBuilding ? this.moveToRect(t, 8) : (dist(this, t) < this.r + t.r + 12 || this.moveTo(t.x, t.y, t)); if (near && (this.moveFailed || !G.loadUnit(t, this))) this.nextOrder(); break; }
       case 'pickup': { const t = o.target; if (!t || !t.alive || t.inside) { this.nextOrder(); break; } if (dist(this, t) < this.r + t.r + 12) { G.loadUnit(this, t); this.nextOrder(); } else this.moveTo(t.x, t.y, t); break; }
       case 'unload': { if (this.moveTo(o.x, o.y)) { if (this.cargo.length) { if ((G.frame & 7) === 0 && !G.unloadOne(this)) { this.player.msg('Cannot unload here.', 'error'); this.nextOrder(); } } else this.nextOrder(); } break; }
+      // A ferry route. M11 wave three, item 4: a transport that runs itself.
+      //
+      // ONE point, not two. The near end is wherever the transport is standing when you set it, and
+      // the click is the far end -- so it is "park the shuttle at your base, click the drop site", one
+      // click through the existing pending system, rather than a two-stage mode nothing else in the UI
+      // has. The route is a loop and never calls nextOrder: it runs until you give the transport
+      // something else to do, which is what "runs itself" has to mean.
+      //
+      // It only ever picks up IDLE units. Loading anything standing nearby would hijack a worker on its
+      // way to a patch, and a shuttle that steals your economy is worse than no shuttle.
+      case 'ferry': {
+        const cap = d.cargo || (d.cargoTech && this.player.hasTech(d.cargoTech) ? 8 : 0);
+        if (!cap) { this.nextOrder(); break; }
+        const tx = o.leg === 'b' ? o.bx : o.ax, ty = o.leg === 'b' ? o.by : o.ay;
+        if (!this.moveTo(tx, ty)) break;                       // still on the way
+        if (o.leg === 'b') {
+          // Far end: put everything down, then go back for more. An unload that cannot find room does
+          // not strand the cargo -- it turns around and tries again next lap.
+          if (this.cargo.length) { if ((G.frame & 7) === 0 && !G.unloadOne(this)) { o.leg = 'a'; o.since = null; } }
+          else { o.leg = 'a'; o.since = null; }
+        } else {
+          if (o.since == null) o.since = G.frame;
+          if ((G.frame & 3) === 0) {
+            for (const t of G.near(this.x, this.y, FERRY_PICKUP * TILE)) {
+              if (t === this || !t.alive || t.inside || t.fly || t.isBuilding) continue;
+              if (t.owner !== this.owner || t.def.notUnit || t.def.larva || t.def.egg) continue;
+              if (!t.idle) continue;
+              if (!G.loadUnit(this, t)) break;                 // full, or it will not fit
+            }
+          }
+          const full = G.cargoUsed(this) >= cap;
+          if (full || (this.cargo.length && G.frame - o.since >= FERRY_WAIT)) { o.leg = 'b'; o.since = null; }
+        }
+        break; }
       case 'merge': { const t = o.partner; if (!t || !t.alive || t.order.type !== 'merge' || t.order.partner !== this) { this.nextOrder(); break; } if (dist(this, t) < 28) { if (this.id < t.id) G.mergeUnits(this, t, o.unit); } else this.moveTo(t.x, t.y, t); break; }
       case 'land': { if (this.moveTo((o.tx + d.w / 2) * TILE, (o.ty + d.h / 2) * TILE)) { G.landBuilding(this, o.tx, o.ty); } break; }
       case 'nydus': { const c = o.target; if (!c || !c.alive || !c.nydusLink || !c.nydusLink.alive || !c.nydusLink.done || this.fly) { this.nextOrder(); break; } if (this.moveToRect(c, 6)) { const e = c.nydusLink; const t = G.map.findFreeTile(e.tx + 1, e.ty + e.def.h + 1, 6); if (t) { this.x = (t[0] + .5) * TILE; this.y = (t[1] + .5) * TILE; this.px = this.x; this.py = this.y; this.path = null; G.effects.push({ kind: 'ring', x: this.x, y: this.y, r: 16, t: 10, color: '#c8f' }); } this.nextOrder(); } break; }

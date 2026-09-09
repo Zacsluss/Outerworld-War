@@ -37,6 +37,10 @@ const DAY_CYCLE = 24 * 60 * 12, NIGHT_SIGHT = 0.75, NIGHT_DET = 0.5;
 // enough to matter to the fight that razed it and to the counter-attack, not long enough to wall the
 // map off -- and a dead tank or ultralisk for twenty-five seconds. See the CRATERS block in js/map.js.
 const WRECK_LIFE_BUILDING = 24 * 90, WRECK_LIFE_UNIT = 24 * 25;
+// A ferry route picks up idle units within FERRY_PICKUP tiles of its near end, and leaves once it has
+// anything and has waited FERRY_WAIT frames -- so a lone unit is not left behind waiting for a full
+// load, and a queue of them still fills the transport before it goes. See the 'ferry' order in js/sim.js.
+const FERRY_PICKUP = 5, FERRY_WAIT = 24 * 2;
 function daylightAt(frame) {
   const t = ((frame % DAY_CYCLE) + DAY_CYCLE) % DAY_CYCLE / DAY_CYCLE;   // 0..1 through the cycle
   // A raised cosine: flat-ish day, flat-ish night, and a real dusk between them rather than a ramp.

@@ -69,6 +69,8 @@ const TESTS = [
   { name: 'diegetic', args: ['diegetic.js'], what: 'the console is per-race, takes damage, and glitches reproducibly' },
   { name: 'neutrals', args: ['neutrals.js'], what: "race 'N': buried life with a tell, and derelicts nobody can build" },
   { name: 'neutralsim', args: ['neutralsim.js'], what: 'the third owner wired in: victory, the AI, buried life, and capture by repair' },
+  { name: 'ferry', args: ['ferry.js'], what: 'a transport route that runs itself, and picks up only what is idle' },
+  { name: 'branch', args: ['branch.js'], what: 'take control mid-replay; the branch saves as a whole game' },
   { name: 'craters', args: ['craters.js'], what: 'the map remembers: permanent scarring, hulks that clear' },
   { name: 'menucodex', args: ['menucodex.js'], what: 'the CODEX button works with no game running, and puts the menu back' },
   { name: 'highground', args: ['highground.js'], what: 'height applied to range, sight and damage -- and a fractional sight that used to blind a unit' },
