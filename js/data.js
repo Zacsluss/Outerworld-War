@@ -120,6 +120,47 @@ const DATA = (() => {
   U('scarab', { name: 'Scarab', race: 'P', hp: 20, size: 'small', min: 15, time: 168, speed: 12, r: 4, hk: 'S', from: 'reaver', notUnit: true, sight: 3 });
   U('hallucination', { name: 'Hallucination', race: 'P', hp: 1, size: 'small', speed: 4, sight: 7, r: 8, notUnit: true });
 
+  // ============================ AURA CONTRACT (M11 wave two, items 11 and 15) ============================
+  // Three new structures per race: a field hospital, a jamming tower and a wall. The first two project
+  // a passive field, and `aura` below is the DATA for it. Nothing reads `aura` yet -- the simulation
+  // half is another file's work -- so this comment is the interface, written before the reader exists
+  // so that reader is a lookup and not a redesign.
+  //
+  //   aura = {
+  //     kind:    'mend' | 'blind'     what the field does. One string, so the sim dispatches on it and
+  //                                   a fourth kind needs no new field
+  //     r:       <tiles>              radius in TILES from the footprint CENTRE to the unit's centre,
+  //                                   the same convention `psi` and `creep` already use on this table
+  //     affects: 'ally' | 'enemy'     'ally' is the owner plus anyone G.allied() with them; 'enemy' is
+  //                                   everyone else and never the owner. There is no 'all'
+  //     stacks:  false                two fields of the same kind over one unit do NOT add: take the
+  //                                   single strongest that covers it. Every aura here says false; the
+  //                                   field is written out so a later one can say otherwise
+  //   -- kind 'mend' --
+  //     hp:      <hp per second>      hit points restored per second, ground and air alike. PER SECOND,
+  //                                   not per frame: the caller scales by its own tick share. Absent
+  //                                   means zero
+  //     sh:      <shields per second> plasma shields restored per second. Absent means zero
+  //   -- kind 'blind' --
+  //     sight:   <multiplier 0..1>    the factor an affected unit's sight range is multiplied by while
+  //                                   it is inside. 0.5 halves it. Clamp the result at one tile, so a
+  //                                   blinded unit is short-sighted rather than blind
+  //     detect:  true | absent        while inside, an affected unit does not count as a detector, so
+  //                                   cloaked and burrowed units near the tower stay hidden from it.
+  //                                   Absent leaves detection alone
+  //
+  // Rules that hold for every aura in this table, and that belong in the reader once rather than in
+  // each building:
+  //   * only a finished building projects: `u.done`, never `u.lifted`, and never `u.unpowered` -- the
+  //     same three gates a Photon Cannon fires under
+  //   * the field is passive. No energy, no cooldown, no target choice, nothing to cast or toggle
+  //   * 'mend' never revives, never exceeds maxHp/maxSh, and does not act on buildings -- a base that
+  //     repairs itself for free is a different game
+  //   * whatever walks the units must walk `G.units` in order. Nothing about an aura may depend on Set
+  //     or Map iteration order, or the determinism tests will find it and the replay will not
+  //
+  // Walls carry no aura and instead carry `wall: true`, which is the flag to select them by: they are
+  // cheap, high-hp, produce nothing, research nothing, and exist to stand in the way.
   // ============================ TERRAN BUILDINGS ============================
   B('command_center', { name: 'Command Center', race: 'T', hp: 1500, w: 4, h: 3, min: 400, time: 1800, hk: 'C', tier: 'basic', produces: ['scv'], sup: 10, depot: true, canLift: true, addons: ['comsat_station', 'nuclear_silo'], sight: 10 });
   B('comsat_station', { name: 'Comsat Station', race: 'T', hp: 500, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'C', tier: 'addon', parent: 'command_center', req: ['academy'], energy: 200, abil: ['scanner_sweep'] });
@@ -140,6 +181,15 @@ const DATA = (() => {
   B('physics_lab', { name: 'Physics Lab', race: 'T', hp: 600, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'P', tier: 'addon', parent: 'science_facility', tech: ['yamato_tech', 'colossus'] });
   B('covert_ops', { name: 'Covert Ops', race: 'T', hp: 750, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'C', tier: 'addon', parent: 'science_facility', tech: ['lockdown_tech', 'personnel_cloaking', 'ocular', 'moebius'] });
   B('armory', { name: 'Armory', race: 'T', hp: 750, w: 3, h: 2, min: 100, gas: 50, time: 1200, hk: 'A', tier: 'adv', req: ['factory'], upg: ['vehW', 'vehA', 'shipW', 'shipA'] });
+  // Terran's three: a dressing station behind the line, an EW mast, and the concrete the engineers pour.
+  // All three sit on the Advanced page because the Basic page is full at eight -- the command card is a
+  // fixed three-by-three and slot 8 is Cancel, so eight is the hard ceiling per page. `tier` has to
+  // agree with the page it is listed on: test/playtest_bot.js picks the menu with `tier === 'adv'`.
+  B('aid_station', { name: 'Aid Station', race: 'T', hp: 550, w: 3, h: 2, min: 100, gas: 50, time: 750, hk: 'D', tier: 'adv', req: ['academy'],
+    aura: { kind: 'mend', r: 6, affects: 'ally', hp: 2.4, stacks: false } });
+  B('scrambler_mast', { name: 'Scrambler Mast', race: 'T', hp: 450, armor: 0, w: 2, h: 2, min: 100, gas: 75, time: 750, hk: 'J', tier: 'adv', req: ['engineering_bay'], sight: 9,
+    aura: { kind: 'blind', r: 8, affects: 'enemy', sight: 0.5, detect: true, stacks: false } });
+  B('blast_barricade', { name: 'Blast Barricade', race: 'T', hp: 800, armor: 2, w: 2, h: 2, min: 75, time: 300, hk: 'W', tier: 'adv', req: ['barracks'], sight: 3, wall: true });
 
   // ============================ ZERG BUILDINGS ============================
   B('hatchery', { name: 'Hatchery', race: 'Z', hp: 1250, w: 4, h: 3, min: 300, time: 1800, hk: 'H', tier: 'basic', sup: 1, depot: true, spawnsLarva: true, creep: 11, morphTo: 'lair', sight: 9 });
@@ -161,6 +211,14 @@ const DATA = (() => {
   B('defiler_mound', { name: 'Defiler Mound', race: 'Z', hp: 850, w: 4, h: 2, min: 100, gas: 100, time: 900, hk: 'D', tier: 'adv', req: ['lair'], needsCreep: true, tech: ['plague_tech', 'consume_tech', 'metasynaptic'] });
   B('nydus_canal', { name: 'Nydus Canal', race: 'Z', hp: 250, w: 2, h: 2, min: 150, time: 600, hk: 'N', tier: 'adv', req: ['hive'], needsCreep: true, nydus: true, abil: ['nydus_exit'] });
   B('infested_command_center', { name: 'Infested Command Center', race: 'Z', hp: 1500, w: 4, h: 3, time: 1, tier: 'none', produces: ['infested_terran'], sight: 10 });
+  // Zerg's three. All three need creep, like every other Zerg structure, which is the natural limit on
+  // where a Zerg player may wall or mend: on ground the swarm already holds. The ridge goes on the Basic
+  // page (six entries, two spare) and the other two on Advanced (five, three spare).
+  B('mending_pool', { name: 'Mending Pool', race: 'Z', hp: 600, w: 3, h: 2, min: 100, gas: 50, time: 750, hk: 'M', tier: 'adv', req: ['evolution_chamber'], needsCreep: true,
+    aura: { kind: 'mend', r: 8, affects: 'ally', hp: 1.4, stacks: false } });
+  B('miasma_gland', { name: 'Miasma Gland', race: 'Z', hp: 500, w: 2, h: 2, min: 100, gas: 75, time: 750, hk: 'J', tier: 'adv', req: ['lair'], needsCreep: true, sight: 9,
+    aura: { kind: 'blind', r: 10, affects: 'enemy', sight: 0.6, stacks: false } });
+  B('carapace_ridge', { name: 'Carapace Ridge', race: 'Z', hp: 700, armor: 2, w: 2, h: 2, min: 50, time: 300, hk: 'W', tier: 'basic', req: ['spawning_pool'], needsCreep: true, sight: 3, wall: true });
 
   // ============================ PROTOSS BUILDINGS ============================
   B('nexus', { name: 'Nexus', race: 'P', hp: 750, sh: 750, w: 4, h: 3, min: 400, time: 1800, hk: 'N', tier: 'basic', produces: ['probe'], sup: 10, depot: true, sight: 11 });
@@ -171,7 +229,16 @@ const DATA = (() => {
   B('photon_cannon', { name: 'Photon Cannon', race: 'P', hp: 100, sh: 100, armor: 0, w: 2, h: 2, min: 150, time: 750, hk: 'C', tier: 'basic', req: ['forge'], needsPsi: true, det: true, sight: 11,
     gw: W(20, 'normal', 7, 22, { targets: 'both', upgKey: null }) });
   B('cybernetics_core', { name: 'Cybernetics Core', race: 'P', hp: 500, sh: 500, w: 3, h: 2, min: 200, time: 900, hk: 'Y', tier: 'basic', req: ['gateway'], needsPsi: true, upg: ['airW', 'airA'], tech: ['singularity'] });
-  B('shield_battery', { name: 'Shield Battery', race: 'P', hp: 200, sh: 200, w: 3, h: 2, min: 100, time: 450, hk: 'B', tier: 'basic', req: ['gateway'], needsPsi: true, energy: 200, battery: true });
+  // The Shield Battery is the Protoss Creep Colony now: a cheap psi-fed focus that can be re-attuned
+  // into one of three things. That is not decoration, it is the only door left. The command card is a
+  // fixed three-by-three with Cancel in the last slot, so each build page holds eight buildings and no
+  // more, and Protoss already fills both pages -- eight basic, eight advanced, sixteen of sixteen, with
+  // every one of them gating a unit line or an expansion. Terran came into this with four spare slots
+  // and Zerg with five; Protoss had none, and none of its sixteen can leave without taking a unit with
+  // it. A morph needs no slot at all: `morphOptions` puts the buttons on the battery's own card, which
+  // had none.
+  B('shield_battery', { name: 'Shield Battery', race: 'P', hp: 200, sh: 200, w: 3, h: 2, min: 100, time: 450, hk: 'B', tier: 'basic', req: ['gateway'], needsPsi: true, energy: 200, battery: true,
+    morphOptions: ['rejuvenation_shrine', 'null_obelisk', 'warded_bastion'] });
   B('robotics_facility', { name: 'Robotics Facility', race: 'P', hp: 500, sh: 500, w: 3, h: 2, min: 200, gas: 200, time: 1200, hk: 'R', tier: 'adv', req: ['cybernetics_core'], needsPsi: true, produces: ['shuttle', 'reaver', 'observer'] });
   B('stargate', { name: 'Stargate', race: 'P', hp: 600, sh: 600, w: 4, h: 3, min: 150, gas: 150, time: 1050, hk: 'S', tier: 'adv', req: ['cybernetics_core'], needsPsi: true, produces: ['scout', 'corsair', 'carrier', 'arbiter'], tech: ['suppress_bay'] });
   B('citadel_of_adun', { name: 'Citadel of Adun', race: 'P', hp: 450, sh: 450, w: 3, h: 2, min: 150, gas: 100, time: 900, hk: 'C', tier: 'adv', req: ['cybernetics_core'], needsPsi: true, tech: ['leg_enhancements'] });
@@ -180,6 +247,18 @@ const DATA = (() => {
   B('templar_archives', { name: 'Templar Archives', race: 'P', hp: 500, sh: 500, w: 3, h: 2, min: 150, gas: 200, time: 900, hk: 'T', tier: 'adv', req: ['citadel_of_adun'], needsPsi: true, tech: ['psi_storm_tech', 'hallucination_tech', 'khaydarin_amulet', 'mind_control_tech', 'maelstrom_tech', 'argus_talisman'] });
   B('observatory', { name: 'Observatory', race: 'P', hp: 250, sh: 250, w: 3, h: 2, min: 50, gas: 100, time: 450, hk: 'O', tier: 'adv', req: ['robotics_facility'], needsPsi: true, tech: ['gravitic_boosters', 'sensor_array'] });
   B('arbiter_tribunal', { name: 'Arbiter Tribunal', race: 'P', hp: 500, sh: 500, w: 3, h: 2, min: 200, gas: 150, time: 900, hk: 'A', tier: 'adv', req: ['templar_archives', 'stargate'], needsPsi: true, tech: ['recall_tech', 'stasis_tech', 'khaydarin_core'] });
+  // The three attunements of the Shield Battery. Two constraints shape every number here and neither is
+  // taste. They are 3x2 because G.morphBuilding swaps the def in place and never re-blocks the map, so a
+  // morph that changed its footprint would leave the collision grid describing the building it used to
+  // be -- every Zerg morph is the same size as its source for the same reason. And all three carry
+  // `sh: 200`, the battery's own shields, because morphBuilding updates maxHp and does NOT update maxSh:
+  // whatever a morphed Protoss building says about shields, it keeps the source's. Matching the source
+  // is the only way `def.sh` and the shield bar can agree, so Protoss durability here is in hit points.
+  B('rejuvenation_shrine', { name: 'Rejuvenation Shrine', race: 'P', hp: 400, sh: 200, w: 3, h: 2, min: 75, gas: 50, time: 450, hk: 'D', tier: 'morph', req: ['cybernetics_core'], needsPsi: true,
+    aura: { kind: 'mend', r: 6, affects: 'ally', hp: 1.0, sh: 3.0, stacks: false } });
+  B('null_obelisk', { name: 'Null Obelisk', race: 'P', hp: 350, sh: 200, w: 3, h: 2, min: 75, gas: 75, time: 450, hk: 'J', tier: 'morph', req: ['citadel_of_adun'], needsPsi: true, sight: 9,
+    aura: { kind: 'blind', r: 6, affects: 'enemy', sight: 0.35, detect: true, stacks: false } });
+  B('warded_bastion', { name: 'Warded Bastion', race: 'P', hp: 700, sh: 200, armor: 2, w: 3, h: 2, min: 25, time: 240, hk: 'W', tier: 'morph', req: ['forge'], needsPsi: true, sight: 3, wall: true });
 
   // ============================ UPGRADES (3 levels) ============================
   const L3 = (id, name, race, bld, hk, extraReq) => UP(id, { name, race, bld, hk, levels: 3, min: [100, 175, 250], gas: [100, 175, 250], time: [4000, 4480, 4960], req: [null, extraReq, extraReq] });
@@ -333,10 +412,19 @@ const DATA = (() => {
   A('recall', 'Recall', 'R', 'point', { energy: 150, tech: 'recall_tech', range: 999 });
   A('stasis_field', 'Stasis Field', 'T', 'point', { energy: 100, tech: 'stasis_tech', range: 9 });
 
-  // Command-card ordering hints for worker build menus
+  // Command-card ordering hints for worker build menus.
+  //
+  // EIGHT PER PAGE, AND THAT IS A CEILING, NOT A STYLE. UI.buildCard hands entry `i` the card slot `i`
+  // and then puts Cancel in slot 8, and the card is a fixed three-by-three in both UI.cardRect and
+  // HUD's override of it. A ninth entry lands under Cancel and a tenth lands off the bottom of the
+  // console. Protoss is at sixteen of sixteen, which is why its three new structures are morphs of the
+  // Shield Battery rather than entries here.
+  //
+  // A building's `tier` must agree with the page it is listed on: test/playtest_bot.js presses "Build"
+  // or "Build Advanced" on the strength of `tier === 'adv'`.
   const buildMenu = {
-    T: { basic: ['command_center', 'supply_depot', 'refinery', 'barracks', 'engineering_bay', 'missile_turret', 'academy', 'bunker'], adv: ['factory', 'starport', 'science_facility', 'armory'] },
-    Z: { basic: ['hatchery', 'creep_colony', 'extractor', 'spawning_pool', 'evolution_chamber', 'hydralisk_den'], adv: ['spire', 'queens_nest', 'nydus_canal', 'ultralisk_cavern', 'defiler_mound'] },
+    T: { basic: ['command_center', 'supply_depot', 'refinery', 'barracks', 'engineering_bay', 'missile_turret', 'academy', 'bunker'], adv: ['factory', 'starport', 'science_facility', 'armory', 'aid_station', 'scrambler_mast', 'blast_barricade'] },
+    Z: { basic: ['hatchery', 'creep_colony', 'extractor', 'spawning_pool', 'evolution_chamber', 'hydralisk_den', 'carapace_ridge'], adv: ['spire', 'queens_nest', 'nydus_canal', 'ultralisk_cavern', 'defiler_mound', 'mending_pool', 'miasma_gland'] },
     P: { basic: ['nexus', 'pylon', 'assimilator', 'gateway', 'forge', 'photon_cannon', 'cybernetics_core', 'shield_battery'], adv: ['robotics_facility', 'stargate', 'citadel_of_adun', 'robotics_support_bay', 'fleet_beacon', 'templar_archives', 'observatory', 'arbiter_tribunal'] },
   };
   const larvaMorphs = ['drone', 'overlord', 'zergling', 'hydralisk', 'mutalisk', 'scourge', 'queen', 'ultralisk', 'defiler'];

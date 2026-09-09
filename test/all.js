@@ -53,6 +53,7 @@ const TESTS = [
   { name: 'facing', args: ['facing.js'], what: 'a hit from behind hurts more, and explosions have no direction' },
   { name: 'suppress', args: ['suppress.js'], what: 'suppressing fire is researched per production line and pins what it hits' },
   { name: 'commit', args: ['commit.js'], what: 'buildings refund nothing, units still do, and every weapon has a voice' },
+  { name: 'newbuildings', args: ['newbuildings.js'], what: 'field hospitals, jammers and walls: data, art and the nine-slot card' },
 ];
 
 const argv = process.argv.slice(2);
