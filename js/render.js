@@ -545,7 +545,29 @@ const Render = {
     if (u.isBuilding && !u.lifted) { ctx.beginPath(); ctx.ellipse(u.tx * TILE + u.def.w * TILE / 2, u.ty * TILE + u.def.h * TILE / 2 + 6, u.def.w * TILE / 2 + 4, u.def.h * TILE / 2 + 2, 0, 0, 7); ctx.stroke(); }
     else { ctx.beginPath(); ctx.ellipse(u._x || u.x, (u._y || u.y) + u.r * 0.4, u.r + 3, (u.r + 3) * 0.5, 0, 0, 7); ctx.stroke(); }
     ctx.restore();
-    if (sel) this.drawBars(ctx, u);
+    if (sel) { this.drawReload(ctx, u); this.drawBars(ctx, u); }
+  },
+  // The reload arc. A unit's rate of fire was legible only as an effect -- flashes and recoil tell you
+  // it HAS fired, never that it is about to. This is the other half: a ring that sweeps round as the
+  // weapon comes back up, and a bright pip when it is ready. The rhythm of a fight becomes something
+  // you can read and time against rather than infer, which is the whole point of the idea.
+  //
+  // Selected units only, so a 400-unit brawl does not turn into a wall of rings, and render-only --
+  // u.cooldown and u.wCd are read, never written.
+  drawReload(ctx, u) {
+    if ((u.isBuilding && !u.lifted) || u.def.worker) return;   // a worker's 'weapon' is not a cadence anyone times against, same exclusion the muzzle flash uses
+    const w = u.sieged ? SIEGE_W : (u.def.gw || u.def.aw); if (!w) return;
+    const full = u.wCd(w); if (!full || full < 4) return;   // a weapon this fast has no readable cadence
+    const k = 1 - Math.max(0, Math.min(1, u.cooldown / full));
+    const x = u._x || u.x, y = (u._y || u.y) + u.r * 0.4, rx = u.r + 6, ry = (u.r + 6) * 0.5;
+    ctx.save();
+    if (k >= 1) {   // ready: a small steady pip rather than a full ring, so a waiting army is calm
+      ctx.fillStyle = 'rgba(255,240,150,0.9)'; ctx.beginPath(); ctx.ellipse(x, y - ry, 2.2, 2.2, 0, 0, 7); ctx.fill();
+    } else {
+      ctx.strokeStyle = 'rgba(255,225,120,0.75)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
   },
   drawBars(ctx, u) {
     const w = Math.max(24, Math.min(64, u.r * 2.4)), x = (u._x || u.x) - w / 2; let y = (u._y || u.y) + u.r * 0.9 + 6; if (u.isBuilding && !u.lifted) { y = u.ty * TILE + u.def.h * TILE + 8; }
