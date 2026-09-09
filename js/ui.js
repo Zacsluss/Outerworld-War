@@ -122,6 +122,7 @@ const UI = {
     Render.frame(G.paused ? 1 : Math.min(1, this.accum / step));
     if (typeof Music !== 'undefined' && Music.poll) Music.poll();   // combat music state; render-side, reads the sim and never writes it
     this.drawConsole(); this.drawTop(); this.drawMessages();
+    if (typeof Codex !== 'undefined') Codex.draw(Render.ctx);   // above the console, below the menu
     if (this.mode === 'replay') { this.drawTimeline(); if (this.prodOverlay) this.drawProdOverlay(); }
     if (G.over && !this.menu) this.menu = 'over';
     if (this.menu) this.drawMenu();
@@ -225,6 +226,7 @@ const UI = {
   miniToWorld(x, y) { const r = this.miniRect(); return [(x - r.x) / r.s * G.map.w * TILE, (y - r.y) / r.s * G.map.h * TILE]; },
   onMove(e) {
     const m = this.mouse; m.x = e.clientX; m.y = e.clientY; [m.wx, m.wy] = this.screenToWorld(m.x, m.y);
+    if (typeof Codex !== 'undefined' && Codex.isOpen()) { Codex.move(m.x, m.y); return; }
     if (this.drag && m.down && distPt(m.x, m.y, this.drag.x0, this.drag.y0) > 4) { this.dragging = true; this.drag.x1 = m.x; this.drag.y1 = m.y; }
     if (this.lineDrag) { this.lineDrag.x1 = m.x; this.lineDrag.y1 = m.y; }
     if (this.miniDrag) { const [wx, wy] = this.miniToWorld(m.x, m.y); this.centerOn(wx, wy); }
@@ -233,6 +235,7 @@ const UI = {
   },
   onDown(e) {
     const m = this.mouse; m.x = e.clientX; m.y = e.clientY; [m.wx, m.wy] = this.screenToWorld(m.x, m.y);
+    if (typeof Codex !== 'undefined' && Codex.isOpen()) { Codex.click(m.x, m.y, e.button); return; }
     if (Sound.ctx && Sound.ctx.state === 'suspended') Sound.ctx.resume();
     if (this.menu) { this.menuClick(m.x, m.y); return; }
     if (this.mode === 'replay' && e.button === 0 && (this.timelineClick(m.x, m.y) || this.prodClick(m.x, m.y))) return;
@@ -268,6 +271,9 @@ const UI = {
   },
   onKey(e) {
     this.keys[e.key] = true; const k = e.key;
+    // The codex is modal: while it is open it eats the keyboard so nothing leaks through to the game.
+    if (typeof Codex !== 'undefined' && Codex.isOpen()) { if (Codex.key(k)) { e.preventDefault(); return; } }
+    if (k === 'F3') { e.preventDefault(); if (typeof Codex !== 'undefined') Codex.toggle(); return; }
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'F10', 'F1'].includes(k)) e.preventDefault();
     if (this.menu) { if (k === 'Escape' || k === 'F10') { if (this.menu === 'settings') this.menu = 'pause'; else if (this.menu === 'pause') this.menu = null; } return; }
     if (k === 'F10') { this.menu = 'pause'; return; }
@@ -751,6 +757,9 @@ window.addEventListener('DOMContentLoaded', () => {
   const showSettings = on => { if (!sp || !setupPanel) return; sp.style.display = on ? '' : 'none'; setupPanel.style.display = on ? 'none' : ''; };
   const sb = $('settingsBtn'); if (sb) sb.addEventListener('click', () => showSettings(true));
   const sbk = $('settingsBack'); if (sbk) sbk.addEventListener('click', () => showSettings(false));
+  // The codex opens with no game running -- it reads DATA, not G -- so it belongs on the main menu
+  // as well as on F3 in game. It draws over the canvas, so the canvas has to be visible for it.
+  const cbx = $('codexBtn'); if (cbx) cbx.addEventListener('click', () => { if (typeof Codex !== 'undefined') { document.getElementById('game').style.display = 'block'; Render.resize(); Codex.open(); } });
   const qc = $('mute'); if (qc) { qc.checked = Sound.muted; qc.addEventListener('change', () => Sound.setMuted(qc.checked)); }
   const vc = $('voice'), mc = $('music'); if (vc) { vc.checked = Voice.on; vc.addEventListener('change', () => Voice.set(vc.checked)); } if (mc) { mc.checked = Music.on; mc.addEventListener('change', () => Music.set(mc.checked)); }
   const nc = $('netConnect'); if (nc) { $('netUrl').placeholder = Net.defaultUrl(); nc.addEventListener('click', () => Net.connect($('netUrl').value.trim() || Net.defaultUrl(), $('netName').value.trim() || 'Player', 'R')); }
