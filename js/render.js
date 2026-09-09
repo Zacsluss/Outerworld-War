@@ -348,6 +348,38 @@ const Render = {
     }
     ctx.restore();
     if (UI.drag && UI.dragging) { const d = UI.drag; ctx.strokeStyle = '#4f4'; ctx.lineWidth = 1; ctx.strokeRect(Math.min(d.x0, d.x1) + .5, Math.min(d.y0, d.y1) + .5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0)); }
+    // The line-formation preview. The mechanic has worked since M11 and was reported as missing,
+    // which it effectively was: nothing drew it. You held right-drag, saw NOTHING, released, and the
+    // units moved -- indistinguishable from an ordinary move order. In Beyond All Reason the live
+    // preview IS the feature; the line tells you where every unit is going before you commit, and
+    // without it there is no reason to drag rather than click.
+    //
+    // Screen space, drawn after ctx.restore(), so it needs no camera maths and stays 1 px at any zoom.
+    if (UI.lineDrag) {
+      const d = UI.lineDrag, len = Math.hypot(d.x1 - d.x0, d.y1 - d.y0);
+      const sel = UI.ownSel ? UI.ownSel().filter(u => !u.isBuilding && !u.def.larva && !u.def.egg && !u.inside) : [];
+      const armed = len >= (UI.LINE_MIN || 24) && sel.length > 1;
+      ctx.save();
+      ctx.strokeStyle = armed ? 'rgba(120,255,120,0.95)' : 'rgba(180,180,180,0.5)';
+      ctx.lineWidth = 1.5; ctx.setLineDash(armed ? [] : [4, 4]);
+      ctx.beginPath(); ctx.moveTo(d.x0 + .5, d.y0 + .5); ctx.lineTo(d.x1 + .5, d.y1 + .5); ctx.stroke();
+      ctx.setLineDash([]);
+      if (armed) {
+        // one pip per selected unit, at the slot it will actually take -- same arithmetic as
+        // UI.lineCommand, so what you see is what you get
+        const n = sel.length;
+        for (let i = 0; i < n; i++) {
+          const f = n === 1 ? 0.5 : i / (n - 1);
+          const px = d.x0 + (d.x1 - d.x0) * f, py = d.y0 + (d.y1 - d.y0) * f;
+          ctx.beginPath(); ctx.arc(px + .5, py + .5, 3, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(120,255,120,0.9)'; ctx.fill();
+          ctx.strokeStyle = 'rgba(0,40,0,0.8)'; ctx.lineWidth = 1; ctx.stroke();
+        }
+        ctx.fillStyle = 'rgba(180,255,180,0.95)'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText(n + ' in line', d.x1 + 10, d.y1 - 8);
+      }
+      ctx.restore();
+    }
   },
   // The sprite half of the draw pass: the pooled shadow layer, both unit passes and the rims. Split out
   // of frame() so the icon path can replace all four of them with one call rather than four guards.
