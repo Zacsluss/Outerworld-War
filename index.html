@@ -31,16 +31,23 @@
     <div class="row"><label>Your team</label><select id="team"><option value="1">Team 1</option><option value="2">Team 2</option><option value="3">Team 3</option><option value="4">Team 4</option></select></div>
     <div class="row"><label>Map</label><select id="layout"><option value="temple">Lost Ruins (4 players)</option><option value="bloodbath">Blood Pit (4 players)</option><option value="valley">Twilight Valley (2 players)</option></select></div>
     <div class="row"><label>Map seed</label><input id="seed" type="number" value="1" style="width:100px"></div>
-    <div class="row"><label>Hotkeys</label><select id="hotkeys"><option value="bw">Brood War</option><option value="grid">Grid (QWE / ASD / ZXC)</option></select></div>
-    <div class="row"><label>Audio</label><label class="chk"><input type="checkbox" id="mute" checked> Mute all</label><label class="chk"><input type="checkbox" id="voice"> Voice</label><label class="chk"><input type="checkbox" id="music"> Music</label></div>
     <button id="start">START GAME</button>
     <div class="row2"><button id="loadBtn" class="small">LOAD SAVED GAME</button><button id="replayBtn" class="small">WATCH REPLAY</button></div>
     <button id="autosaveBtn" class="small" style="display:none">CONTINUE AUTOSAVE</button>
     <input type="file" id="loadFile" accept=".json" hidden><input type="file" id="replayFile" accept=".json" hidden><input type="file" id="mapFile" accept=".json" hidden>
-    <button id="editorBtn" class="small">MAP EDITOR</button>
+    <div class="row2"><button id="settingsBtn" class="small">SETTINGS</button><button id="editorBtn" class="small">MAP EDITOR</button></div>
     <details><summary>Campaign missions</summary><div class="row"><label>Mission</label><select id="mission"></select></div><button id="missionBtn" class="small">PLAY MISSION</button></details>
     <details><summary>Multiplayer (LAN)</summary><div class="row"><label>Server</label><input id="netUrl" style="flex:1"></div><div class="row"><label>Name</label><input id="netName" value="Player"></div><button id="netConnect" class="small">CONNECT</button><div id="netStatus" class="sub"></div><div id="lobby"></div><div class="help">Everyone opens this page from the same server address (see the LAN URL printed by serve.js), connects, and the host presses start.</div></details>
     <div class="help">Left click select, right click command. A attack-move, M move, S stop, H hold, P patrol, B build, V advanced build. Ctrl+1-9 control groups. F1 in-game help, F10 menu, +/- speed.</div>
+  </div>
+  <div class="panel" id="settingsPanel" style="display:none">
+    <h1>SETTINGS</h1>
+    <div class="sub">Audio starts muted every time the page loads. Unmuting lasts for this session only.</div>
+    <div class="row"><label>Audio</label><label class="chk"><input type="checkbox" id="mute" checked> Mute all</label><label class="chk"><input type="checkbox" id="voice"> Voice</label><label class="chk"><input type="checkbox" id="music"> Music</label></div>
+    <div class="row"><label>Hotkeys</label><select id="hotkeys"><option value="bw">Brood War</option><option value="grid">Grid (QWE / ASD / ZXC)</option></select></div>
+    <div class="help">In game: Ctrl+M mutes, F10 opens the pause menu, and Settings there changes the same options.<br>
+      Tab cycles the selected kind, comma finds an idle worker, Ctrl+A selects the army, Backspace centres on the selection.</div>
+    <button id="settingsBack" class="small">BACK</button>
   </div>
 </div>
 <canvas id="game"></canvas>
