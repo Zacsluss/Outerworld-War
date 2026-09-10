@@ -44,7 +44,7 @@ const AUDIT = `
         // is ten, though nine of them could not have been filled whatever the AI did. This is the part
         // the money was actually there for, and it is the number a change should be judged on.
         S.idleAfford += Math.min(idle, Math.floor(p.minerals / cheapest));
-        const a = p.ai, held = a && a.holdFor && G.frame - a.holdT < 24 * 8 ? a.holdFor : null;
+        const a = p.ai, held = a && a.topDef ? a.topDef.id : null;   // the composition hold became a committed budget claim in M13
         for (const u of idleB) {
           let why = 'no ai';
           if (a) {

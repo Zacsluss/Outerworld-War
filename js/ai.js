@@ -179,7 +179,7 @@ class AI {
     this.style = this.styleDeltas()[want] ? want : 'standard';
     this.p = p; const st = this.sty();       // p first: sty() is per race as well as per style
     this.diff = diff; this.step = 0; this.pending = {}; this.lastThink = 0; this.lastArmy = 0; this.state = 'gather'; this.target = null; this.attackN = 0; this.attackThreshold = Math.max(10, (diff === 'easy' ? 40 : diff === 'hard' ? 24 : 30) + 4 + (st.atk || 0)); this.waves = 0; this.scouted = false; this.dropOp = null; this.lastDrop = 0;
-    this.thinkEvery = diff === 'easy' ? 72 : diff === 'hard' ? 20 : 32; this.scriptIdx = 0; this.lastExpand = 0; this.rally = null; this.startedAttack = 0; this.reserveMin = 0; this.reserveGas = 0;
+    this.thinkEvery = diff === 'easy' ? 72 : diff === 'hard' ? 20 : 32; this.scriptIdx = 0; this.lastExpand = 0; this.rally = null; this.startedAttack = 0; this.commitMin = 0; this.commitGas = 0; this.claims = []; this.researchDef = null; this.topDef = null; this.headDef = null; this.workerDef = null; this.expandDef = null;
   }
   // ---------------- play styles ----------------
   // A style is a DELTA over the three tables at the top of this file, not a fourth copy of them. Six
@@ -316,39 +316,125 @@ class AI {
     if (st.res) r = r.slice(0, st.res);
     return AI_STYLE_CACHE[k] = r;
   }
-  // money set aside for the building the script/expansion logic is waiting to afford; workers, supply and gas ignore it
-  // HAS THE BUILD ORDER BEEN STUCK LONG ENOUGH THAT IT OUTRANKS EXPANDING?
+  // ======================= TWO BUDGETS, NOT ONE BRAKE =======================
   //
-  // macro() spends with force=true for expansions and production buildings, and force bypasses
-  // afford(), which is what the head step of the build script reserves with. So a Zerg expansion --
-  // 300 minerals, every few minutes, forever -- takes exactly the money the Spire is saving for.
-  // Measured on a solo 20-minute game, seed 1: the Spire held the head of the script for 842 SECONDS,
-  // 4:23 to 18:25, and spent that whole time on ~60 minerals and ~300 gas. It had the gas. It never
-  // had the minerals, because a hatchery took them first every time.
+  // WHAT WAS HERE BEFORE, and why it could not work. A single pair of numbers -- reserveMin and
+  // reserveGas -- held "the money we are saving for", and afford() refused any purchase that would
+  // eat into it. Four overrides were bolted on over four milestones because it kept misfiring: a 40%
+  // floor that switched the reserve off while the bank was low, a techStarved() hard mode that
+  // switched it back on after 45 seconds, a force flag that let expansions and production buildings
+  // walk straight past it, and a research rule that read the bank directly and ignored it entirely.
   //
-  // Expanding is not wrong and this does not stop it -- it stops it OUTRANKING a tech step that has
-  // been starved for 45 seconds. Gas buildings keep their force unconditionally: gas pays for itself
-  // and is the thing the tech step is usually short of anyway.
-  techStarved() { return this.stepT !== undefined && G.frame - this.stepT > 24 * 45; }
-  // Once 40% of the target is banked, stop spending until it is affordable. A quarter was too eager: it
-  // froze unit production for a fifth of the game while a hall was being saved for, which is the single
-  // largest cause of idle production buildings.
+  // The ledger (test/ledger.js) says what that actually did, solo 20 min, seed 1, all three races:
+  // the reserve was ENGAGED on 95-97% of thinks and BINDING on 69-84% of them. It is not the
+  // occasional brake every comment here assumed; it is the permanent condition. And it still did not
+  // save anything, because of two things it got structurally wrong:
   //
-  // THE 40% FLOOR IS A TRAP WHEN INCOME IS BEING SPENT AS FAST AS IT ARRIVES, though, and that is the
-  // normal state of a working AI. Below 40% the reserve is off, so units are bought, so the bank never
-  // reaches 40%, so the reserve is never on. The bank random-walks near zero and the thing it is
-  // "saving for" is never bought. Measured, solo 20-minute game, seed 1: Zerg's Spire held the head of
-  // the build script for 842 seconds sitting on ~60 minerals against a 200 target -- 30%, just under
-  // the floor -- while zerglings took every mineral that arrived.
+  //   1. reserve() took the MAX of the claims, not the sum. A worker walking to a 150-mineral gateway
+  //      and a 200-mineral Spire at the head of the order held 200 between them, not 350.
+  //   2. It tested HEADROOM per purchase, never a total. A 400 reserve against a 550 bank permits a
+  //      150-mineral zealot -- and permits another one next think, and another, because nothing
+  //      decrements as the money goes. Measured: the Stargate held the head of the Protoss order for
+  //      10:01 of a 20-minute game and was never built, while production() spent 42% of every mineral
+  //      mined. Colossus was the top-ranked pick 452 times and built 0; Queen 288 and 0; Science
+  //      Vessel 202 and 0.
   //
-  // So the floor is skipped once the head step has actually been starved (see techStarved). That keeps
-  // the measured behaviour in the normal case, where a step is briefly unaffordable and production
-  // should not stall, and drops it in the pathological one, where nothing is going to change on its
-  // own. It is a deadlock breaker, not a new spending policy.
-  // `soft` opts out of the starvation mode below. Research uses it: a Zerg is tech-starved most of
-  // the time, so the hard reserve was permanently on for it and upgrades stopped completely -- three
-  // seeds finished a game with one upgrade between them. Research should not outrank a build step; it
-  // should also not be switched off by one.
+  // WHAT IS HERE NOW. Two budgets, recomputed once per think, and no overrides at all.
+  //
+  //   COMMITTED -- money already spoken for. Four claimants, honoured in this order:
+  //       1. buildings a worker is already walking to   (the site payment is not optional)
+  //       2. supply, when it is about to block          (everything else stalls otherwise)
+  //       3. the head of the build order                (the tech tree)
+  //       4. the composition's top pick                 (the shape of the army)
+  //     Claims are SUMMED and the running total is clipped at the bank, so priority is real: if the
+  //     head step eats everything, the top pick gets nothing this think and waits its turn.
+  //
+  //   FREE -- the bank minus committed. Units, upgrades, expansions, extra production buildings and
+  //     workers spend only from this, and because afford() reads p.minerals live and p.minerals falls
+  //     the instant anything is bought, free shrinks as the think spends it. That single property is
+  //     the whole difference from the reserve: it is a budget rather than a headroom test, so a think
+  //     cannot spend the same money twice.
+  //
+  // A CLAIMANT SPENDS FROM THE BANK, NOT FROM FREE. Its cost is exactly what committed is holding, so
+  // asking it to clear afford() as well would demand the money twice over. claimed() names them and
+  // build()'s force flag is the same idea for buildings.
+  // EVERY CLAIM IS ARMED ONLY WHEN MONEY IS THE ONLY THING MISSING. A claim held for something that
+  // cannot be bought for another reason -- no free base left, requirements not met, no production
+  // slot -- is never spent and therefore never released, so it becomes a permanent tax on free.
+  // Measured with that guard missing on two of the five: commitMin sat within 3% of the entire bank
+  // for the whole game and 500-900 minerals floated unspent while the AI stopped at 49 workers.
+  budget() {
+    const p = this.p; let cm = 0, cg = 0; const claims = [];
+    // Each claim takes what is left of the bank, in order, and RECORDS WHAT IT ACTUALLY GOT. That
+    // second half is the part that matters: a claim clipped to nothing by the ones above it must not
+    // then be allowed to spend as though it had been funded. Measured with claimed() testing identity
+    // instead of funding, the composition's top pick spent from the bank on every think regardless,
+    // production took 88% of all gas, and the Templar Archives sat at the head of the build order for
+    // 6:08 of a 20-minute game.
+    const claim = d => { if (!d) return; const m0 = cm, g0 = cg; cm = Math.min(p.minerals, cm + d.min); cg = Math.min(p.gas, cg + d.gas); claims.push({ id: d.id, min: cm - m0, gas: cg - g0 }); };
+
+    // 1. BUILDINGS A WORKER IS ALREADY WALKING TO. The site payment is not optional: a worker that
+    //    arrives at a site the AI can no longer pay for cancels, and the walk was wasted.
+    for (const w of this.mine(u => u.def.worker && u.order.type === 'build' && u.order.def)) claim(w.order.def);
+
+    // 2. SUPPLY, WHEN IT IS ABOUT TO BLOCK. A claim rather than the exemption it replaces, because an
+    //    AI that supply-blocks itself stops doing everything else as well.
+    if (this.supplyUrgent()) claim(DATA.buildings[RACE_INFO[this.race].supply] || DATA.units[RACE_INFO[this.race].supply]);
+
+    // 3. ONE WORKER, and this is the one ordering here worth arguing about. It sits ABOVE the build
+    //    order because income is what pays for the build order: a player saving for a Stargate stops
+    //    making zealots, not probes. Measured, because the first cut of this budget got it wrong --
+    //    with workers spending from free like any other unit, free hit zero early and stayed there,
+    //    and a solo 20-minute Protoss finished on 17 workers against 62 before the change, having
+    //    mined 13.8k minerals against 33.6k. Every other number in that run was downstream of it.
+    //    Still a claim and not a hole: exactly one, and only while economy() still wants one, so the
+    //    worker target and the army-ratio gate continue to bound it.
+    claim(this.workerDef);
+
+    // 4. AN EXPANSION, for the same reason and by the same measurement. Taking the force flag off
+    //    macro()'s expansion was right -- force bypassing the reserve is what starved Zerg's Spire
+    //    for 842 seconds in M12 -- but putting nothing in its place cost the AI its third base (a
+    //    Nexus refused for money 1313 times), and economy() sizes its worker target from the mineral
+    //    fields it OWNS, so the worker cap fell with the base count. Committed rather than forced is
+    //    the whole difference: the money is held, so nothing below can spend it out from under the
+    //    expansion, and it is held in priority order, so it cannot outrank anything above it either.
+    claim(this.expandDef);
+
+    // 5. THE HEAD OF THE BUILD ORDER -- the tech tree, and the thing everything behind it waits on.
+    //    Dropped while overrun: an army arriving at the door beats a building later.
+    if (!this.overrun()) claim(this.headDef);
+
+    // 6. THE NEXT UPGRADE. Below the build order, because M12 measured upgrades outbidding it as the
+    //    reason the army stayed small; above a single unit, because an upgrade is worth more than one
+    //    zealot and the two are competing for the same gas. Without this, research() -- which runs
+    //    second to last -- was simply never asked while there was anything left: 84.8% of every gas
+    //    mined went to units and a 20-minute game finished with two upgrades against thirty-two.
+    claim(this.researchDef);
+
+    // 7. THE COMPOSITION'S TOP PICK, so the army has a shape. Last, because a unit is the one thing
+    //    on this list that can be bought again in a few seconds.
+    claim(this.topDef);
+
+    // ONE THINK STALE, and that is the point. script() and production() are the only two that know
+    // what the build order and the composition currently want, and they run fourth and fifth -- long
+    // after economy() and supply(), the two largest mineral sinks in the game, have already spent. A
+    // budget computed after them would be a budget those two never saw.
+    this.commitMin = cm; this.commitGas = cg; this.claims = claims;
+  }
+  // Supply is a claimant rather than an exemption: an AI that supply-blocks itself stops doing
+  // everything, so its cost comes off the top like any other thing we have decided to buy.
+  supplyUrgent() { const p = this.p; return p.supMax < SUPPLY_CAP && p.supMax - p.supUsed < 4; }
+  // IS THIS PURCHASE ONE OF THE COMMITTED CLAIMS? If it is, it spends from the bank rather than from
+  // free, because its cost is exactly what committed is holding and asking it to clear afford() as
+  // well would demand the money twice over -- which deadlocks, since the claim is re-armed every time
+  // the purchase it is holding for fails. Measured before this covered buildings: the Nexus was
+  // refused by its own claim 1274 times and commitMin sat equal to the entire bank for five straight
+  // minutes while 776 minerals floated. Takes a unit def or a building def; only the id is read.
+  claimed(d) {
+    if (!d) return false;
+    for (const c of this.claims) if (c.id === d.id && c.min >= d.min && c.gas >= d.gas) return true;
+    return false;
+  }
   // THE LEDGER HOOK. `this.ledger` is undefined in a real game, so every call below is one property
   // read and nothing else; test/ledger.js sets it to an array and each gate then records what it
   // refused, what that cost, and what was reserved at the time. It only appends -- no G.rand(), no
@@ -358,17 +444,18 @@ class AI {
   note(ret, gate, id, min, gas) {
     if (this.ledger) this.ledger.push({ f: G.frame, ph: this.phase || '?', gate, id: id || null,
       min: min || 0, gas: gas || 0, m: Math.round(this.p.minerals), g: Math.round(this.p.gas),
-      rm: this.reserveMin, rg: this.reserveGas, hd: (this.headDef && this.headDef.id) || null });
+      rm: this.commitMin, rg: this.commitGas, hd: (this.headDef && this.headDef.id) || null });
     return ret;
   }
-  afford(min, gas, soft) {
-    const m = this.p.minerals, g = this.p.gas, hard = !soft && this.techStarved();
-    if (min && this.reserveMin && (hard || m >= this.reserveMin * 0.4) && m - this.reserveMin < min) return this.note(false, 'reserveMin', null, min, gas);
-    if (gas && this.reserveGas && (hard || g >= this.reserveGas * 0.4) && g - this.reserveGas < gas) return this.note(false, 'reserveGas', null, min, gas);
-    if (m < min || g < gas) return this.note(false, 'broke', null, min, gas);
+  // May this be bought out of FREE? p.minerals is read live, so what is left of the budget falls as
+  // the think spends it and the same headroom cannot be handed out twice.
+  afford(min, gas) {
+    const p = this.p;
+    if (min && p.minerals - this.commitMin < min) return this.note(false, 'reserveMin', null, min, gas);
+    if (gas && p.gas - this.commitGas < gas) return this.note(false, 'reserveGas', null, min, gas);
+    if (p.minerals < min || p.gas < gas) return this.note(false, 'broke', null, min, gas);
     return this.note(true, 'ok', null, min, gas);
   }
-  reserve(def) { this.reserveMin = Math.max(this.reserveMin, def.min); this.reserveGas = Math.max(this.reserveGas, def.gas); } // hold back the single most expensive thing we are saving for, not the sum
   get race() { return this.p.race; }
   mine(pred) { const out = []; for (const u of G.units) if (u.alive && u.owner === this.p.id && pred(u)) out.push(u); return out; }
   count(id, inclProd = true) { let n = 0; for (const u of G.units) { if (!u.alive || u.owner !== this.p.id) continue; if (u.def.id === id) n++; if (inclProd) for (const it of u.prod) if (it.id === id) n++; if (u.order.type === 'build' && u.order.def.id === id) n++; } if (this.pending[id] && G.frame - this.pending[id] < 360) n++; return n; }
@@ -382,18 +469,7 @@ class AI {
     if (this.p.defeated) return;
     if (G.frame - this.lastThink < this.thinkEvery) { if (G.frame % 12 === 0) this.micro(); return; }
     this.lastThink = G.frame;
-    this.reserveMin = 0; this.reserveGas = 0;
-    for (const w of this.mine(u => u.def.worker && u.order.type === 'build' && u.order.def)) this.reserve(w.order.def); // keep the money for buildings a worker is walking to
-    // THE HEAD STEP'S COST, CARRIED FROM THE LAST THINK. Everything below runs in order, and script()
-    // -- the only thing that knows what the build order currently wants -- runs FOURTH. So economy()
-    // and supply(), which are the two largest mineral sinks in the game (every worker and every
-    // overlord), always saw a reserve of exactly zero and spent as if nothing were being saved for.
-    // That is why gating worker production on afford() changed nothing at all for Zerg: at the moment
-    // workers are trained there was never anything to be short of.
-    //
-    // One think stale is fine and is the point: the figure is only a spending brake, and the step it
-    // refers to is by definition the one that was not affordable last time.
-    if (this.headDef && !this.overrun()) this.reserve(this.headDef);
+    this.budget();
     try { this.phase = 'economy'; this.economy(); this.phase = 'supply'; this.supply(); this.phase = 'script'; this.script(); this.phase = 'macro'; this.macro(); this.phase = 'production'; this.production(); this.phase = 'research'; this.research(); this.phase = 'army'; this.army(); this.scout(); this.drops(); this.micro(); this.phase = null; } catch (e) { console.error('AI', e); }
   }
   // ---------------- economy ----------------
@@ -458,7 +534,12 @@ class AI {
     // failing it stops probe production, and fewer probes mean the nexus is saved for even longer. The
     // "expander" ended a lab game with 46 workers and four bases where plain standard had 66 and five.
     const wkFloor = (p.race !== 'Z' ? 12 : 16) + (st.wkFloor || 0), wkGate = st.wkGate || 1;
-    if (this.count(RACE_INFO[p.race].worker) < want && (p.race !== 'Z' ? (workers.length < wkFloor || armySup >= workers.length * 0.4 * wkGate) : (workers.length < wkFloor || armySup >= (workers.length - 16) * 1.5 * wkGate))) this.train(RACE_INFO[p.race].worker, 2);
+    // The decision is recorded as well as acted on, so budget() can hold a worker's cost next think
+     // without re-deriving this condition out here -- a probe that copies a guard goes stale the
+     // moment the guard is edited, and two of them did exactly that last milestone.
+    const wantWorker = this.count(RACE_INFO[p.race].worker) < want && (p.race !== 'Z' ? (workers.length < wkFloor || armySup >= workers.length * 0.4 * wkGate) : (workers.length < wkFloor || armySup >= (workers.length - 16) * 1.5 * wkGate));
+    this.workerDef = wantWorker ? DATA.units[RACE_INFO[p.race].worker] : null;
+    if (wantWorker) this.train(RACE_INFO[p.race].worker, 2);
     // transfer workers from saturated to new bases
     if (G.frame % (24 * 10) < this.thinkEvery && halls.length > 1) {
       for (const h of halls) { const near = workers.filter(w => dist(w, h) < 12 * TILE); const fields = G.map.resources.filter(r => r.type === 'mineral' && distPt(r.cx, r.cy, h.x, h.y) < 10 * TILE).length; if (near.length > fields * 2 + 3) { const other = halls.find(o => o !== h && o.done && workers.filter(w => dist(w, o) < 12 * TILE).length < 8); if (other) { const m = G.map.resources.find(r => r.type === 'mineral' && distPt(r.cx, r.cy, other.x, other.y) < 10 * TILE); if (m) for (let i = 0; i < 4; i++) { const w = near.find(w => w.order.type === 'gather' && !w.carrying); if (w) w.applyOrder({ type: 'gather', target: m, phase: 'goto' }); } } } }
@@ -481,8 +562,8 @@ class AI {
     const margin = 6 + prodN * 3;
     if (p.supMax - p.supUsed < margin) {
       const sid = RACE_INFO[p.race].supply;
-      if (p.race === 'Z') { const inFlight = this.count('overlord') - this.mine(u => u.def.id === 'overlord').length; if (inFlight < (p.supMax - p.supUsed < 4 ? 3 : prodN > 4 ? 2 : 1)) this.train('overlord', 1); }
-      else if (this.count(sid) - this.mine(u => u.def.id === sid && u.done).length < 1 + (prodN > 4 ? 1 : 0) + (prodN > 8 ? 1 : 0)) this.build(sid, p.supMax - p.supUsed < 4); // more than one in flight once there is real production to feed
+      if (p.race === 'Z') { const inFlight = this.count('overlord') - this.mine(u => u.def.id === 'overlord').length; if (inFlight < (this.supplyUrgent() ? 3 : prodN > 4 ? 2 : 1)) this.train('overlord', 1); }
+      else if (this.count(sid) - this.mine(u => u.def.id === sid && u.done).length < 1 + (prodN > 4 ? 1 : 0) + (prodN > 8 ? 1 : 0)) this.build(sid); // claim 2 covers the urgent one; the rest come out of free // more than one in flight once there is real production to feed
     }
   }
   // how many buildings are being built or walked to right now (a human never starts five things at once)
@@ -511,7 +592,11 @@ class AI {
     if (p.supUsed < s[this.scriptIdx][0]) { this.stepT = G.frame; return; }
     // Remember what the head of the order is, so turn() can hold money for it BEFORE economy() and
     // supply() get to spend next think. Cleared when the script runs out.
-    this.headDef = s[this.scriptIdx] ? DATA.buildings[s[this.scriptIdx][1]] : null;
+    // ...and only while it could be started if the money were there. A step whose requirements are
+    // not met yet cannot be bought at any price, so holding its cost buys nothing and starves
+    // everything below it in the budget until the requirement lands.
+    const hstep = s[this.scriptIdx] ? DATA.buildings[s[this.scriptIdx][1]] : null;
+    this.headDef = hstep && p.hasReq(hstep) ? hstep : null;
     const under = this.underway();
     // `!u.def.depot` excluded a Zerg hatchery, and EVERY Zerg production building is a depot -- so
     // prodDone was permanently 0 for Zerg and the gas-tech gate below (which passes at prodDone >= 3)
@@ -540,47 +625,13 @@ class AI {
       if (met(i)) continue;
       const id = s[i][1], def = DATA.buildings[id];
       if (!p.hasReq(def)) { this.note(0, 'req', id, def.min, def.gas); continue; }
-      // The head step is "the first thing we still owe", so its money should be held whether or not this
-      // think can *start* it. The reserve is set only on the affordability path below, which puts it
-      // behind two gates that skip the step for reasons that have nothing to do with money -- the
-      // underway throttle and the gas-hungry-tech gate -- so those two release the head step's money in
-      // the same breath as they refuse it. Measured over nine TvZ games with the Zerg head step on the
-      // Spire (200/150): 750 think-ticks refused by the throttle and 502 by the tech gate against 925
-      // for money, so on 58% of the ticks where the Spire was still owed, nothing was being saved for it.
-      // It finished in 1 of 9 games, the Hive and the Cavern in none, and 11 of the 20 weight in
-      // AI_COMP.ZvT therefore sits behind buildings that never exist.
-      //
-      // Zerg only, and the reason is measured rather than tidy. Holding the head step's money is not
-      // free: it trades army now for tech on time, and because `afford` exempts workers the same brake
-      // lands differently per race -- Terran pays it out of marines, Zerg pays it out of zerglings and
-      // the minerals go to drones instead. Race-neutral over 128 paired ten-minute games it was a 14.7
-      // supply swing towards Zerg, but decomposed that is Terran -9.6 (p = 0.000) and Zerg +5.2
-      // (p = 0.001): mostly a Terran regression, and PvT has no trustworthy number to check it against.
-      // Zerg is the one race whose tech tree the measurement shows amputated, so Zerg gets it.
-      //
-      // **This strengthens Zerg in PvZ too, by about as much as in TvZ**, and PvZ is the matchup that
-      // punished the last Zerg-only lever (M8: relaxing the base-count floor for Zerg took TvZ to 65%
-      // and collapsed PvZ to 11%). Proxied here at 132 ZP games: sup@10 -10.46 (p = 0.005), score@cap
-      // -16.39 (p = 0.013) against TvZ's -10.78 and -18.28. PvZ has no trustworthy absolute number yet
-      // -- M9 task 0 is producing it -- so the confirming run has to cover TZ *and* ZP, and if PvZ has
-      // come back Zerg-favoured after the Hold Position fix then this line is the first suspect.
-      // M9 measured this line and it did two things at once. TvZ went 79% -> 64% (-15, p = 0.000), which
-      // is the second largest balance move in this project's history and the direction five milestones
-      // had been trying to go. PvZ went 63% -> 36% for Protoss (-27, p = 0.000), which is about twice
-      // what centring it needed -- Protoss went from favoured to unfavoured without stopping in between.
-      // Zerg was under-built against everyone, so correcting it helped against everyone.
-      //
-      // Against Protoss the reserve therefore only engages once half the cost is already banked, rather
-      // than from zero. That is deliberately a weaker version of the same lever and not an off switch:
-      // turning it off entirely would hand PvZ back to Protoss at 63%, which is just as wrong the other
-      // way. AI_COMP already carries ZvT and ZvP variants, so conditioning Zerg's economy on the
-      // opponent is the idiom here rather than a special case.
-      //
-      // UNMEASURED. Proxy it against the shipped code before believing a number, and confirm on TZ and
-      // ZP together -- TvZ must not give back the 15 points it just gained.
-      const vsP = (this.enemies()[0] || {}).race === 'P';
-      if (this.race === 'Z' && i === this.scriptIdx && this.count(id) <= this.scriptHave(cnt, id)
-          && (!vsP || p.minerals >= def.min * 0.5)) this.reserve(def);
+      // THE M7 ZERG LEVER IS GONE, and it is gone because step 1 subsumed it rather than because it
+      // stopped mattering. It reserved for the head step UNCONDITIONALLY, for Zerg only, with a
+      // half-cost softener against Protoss -- worth 15 points in TvZ and 27 in PvZ when it landed,
+      // and the reason Zerg needed an exemption from the research brake that no other race needed.
+      // Claimant 3 in budget() now holds the head step's cost for EVERY race on every think, which is
+      // a strictly stronger version of the same thing with no race in it. If TvZ or PvZ moves when
+      // the balance run is finally made, this paragraph is the first place to look.
       if (def.tier === 'addon') { if (this.addon(id)) { this.stepT = G.frame; return; } continue; }
       if (def.tier === 'morph') { if (this.mine(u => u.prod.some(it => it.kind === 'morph' && it.id === id)).length) continue; if (this.morph(id)) { this.stepT = G.frame; return; } continue; }
       if (this.count(id) > this.scriptHave(cnt, id)) { this.note(0, 'pending', id, def.min, def.gas); continue; } // already pending / in construction
@@ -598,10 +649,10 @@ class AI {
           && under >= (def.depot ? 3 : 2) + (st.under || 0) + slots + (i === this.scriptIdx ? 1 : 0)) { this.note(0, 'throttle', id, def.min, def.gas); continue; } // finish what is already going up first
       // gas-hungry tech waits until there is an army and enough production to use it
       if (def.gas >= 100 && !def.produces.length && (this.armySup || 0) < 16 && prodDone < 3) { this.note(0, 'techgate', id, def.min, def.gas); continue; }
-      if (p.minerals < def.min || p.gas < def.gas) { this.note(0, 'stepBroke', id, def.min, def.gas); if (i === this.scriptIdx && !this.overrun()) this.reserve(def); continue; } // save up for the head step instead of spending on units -- unless an army is on its way here, in which case units now beat a building later
+      if (p.minerals < def.min || p.gas < def.gas) { this.note(0, 'stepBroke', id, def.min, def.gas); continue; } // budget() already holds the head step's cost, for every race, whenever an army is not on its way here
       // Only the head step may spend past the reserve; a step reached by scanning ahead must not eat the
       // money the step in front of it is saving for, or it would starve the thing it jumped over.
-      if (this.build(id, i === this.scriptIdx && !this.mine(u => u.def.worker && u.order.type === 'build' && u.order.def).length)) { this.stepT = G.frame; return; } // a worker already walking to a site keeps its money
+      if (this.build(id)) { this.stepT = G.frame; return; } // the head step draws on claim 5; a look-ahead step spends from free, so it cannot eat the money the step it jumped over is saving for
     }
     if (G.frame - this.stepT > 24 * 200) { this.scriptIdx++; this.stepT = G.frame; } // nothing in the whole order was startable for that long: stop asking for the head
   }
@@ -614,7 +665,7 @@ class AI {
     // floor that grows with the clock so every race keeps taking ground.
     const st = this.sty(), exT = st.expandT || 1; // an expander runs the same clock faster and starts a base ahead of it; a turtle runs it slower and stays a base behind
     const wantHalls = Math.min(G.map.bases.length, 2 + (st.halls || 0) + Math.floor(G.frame / (24 * 60 * 3 * exT)));
-    if (G.frame - this.lastExpand > 24 * 45 * exT && (p.minerals > 500 || workers > halls.length * 16 || halls.length < wantHalls || ((this.armySup || 0) >= 30 && halls.length < 3)) && this.count(RACE_INFO[r].hall) <= halls.length) { const hd = DATA.buildings[RACE_INFO[r].hall]; if (p.minerals < hd.min) { if (this.pickExpansion()) this.reserve(hd); } else if (this.build(RACE_INFO[r].hall, !this.techStarved() || (st.halls || 0) > 0)) this.lastExpand = G.frame; } // ...but an EXPANDER keeps its forced expansion: taking ground before teching is the whole style, and yielding it cost a base against standard // start saving as soon as a free base exists, or the army eats the money forever
+    if (G.frame - this.lastExpand > 24 * 45 * exT && (p.minerals > 500 || workers > halls.length * 16 || halls.length < wantHalls || ((this.armySup || 0) >= 30 && halls.length < 3)) && this.count(RACE_INFO[r].hall) <= halls.length) { const hd = DATA.buildings[RACE_INFO[r].hall]; if (this.build(RACE_INFO[r].hall, (st.halls || 0) > 0)) { this.lastExpand = G.frame; this.expandDef = null; } else this.expandDef = this.pickExpansion() ? hd : null; } else this.expandDef = null; // released the moment the rule stops asking, so an AI that is done expanding does not sit on a hall's worth of minerals -- but NOT cleared before the attempt above, or claimed() would not recognise the very claim budget() is holding and the expansion would be refused by its own reserved money // ...but an EXPANDER keeps its forced expansion: taking ground before teching is the whole style, and yielding it cost a base against standard // start saving as soon as a free base exists, or the army eats the money forever
     // more production when floating
     // production capacity should track income: roughly one production building per 4 workers
     const prodWant = Math.min(10, Math.max(2, Math.floor(workers / 4)));
@@ -623,7 +674,7 @@ class AI {
       // it ever adding production: eight command centres, one barracks and no army at ten minutes.
       if (this.underway() >= 3 + (st.under || 0)) return; const prodId = r === 'T' ? (this.count('factory') >= 2 && p.gas > 200 ? 'factory' : 'barracks') : r === 'P' ? 'gateway' : 'hatchery';
       if (r === 'Z' && this.count('hatchery') + this.count('lair') + this.count('hive') < 8 && workers >= 12 * this.mine(u => u.isBuilding && u.def.spawnsLarva).length) this.build('hatchery');
-      else if (r !== 'Z' && this.count(prodId) < prodWant) this.build(prodId, !this.techStarved()); // the army engine outranks whatever the script is saving for -- unless that step has been starved for 45s
+      else if (r !== 'Z' && this.count(prodId) < prodWant) this.build(prodId); // out of free, like every other discretionary building: it must not outbid the head of the build order
     }
     // Zerg macro hatcheries: larvae are the bottleneck, so floating minerals with no larva means another hatchery, not more drones per hatchery
     if (r === 'Z' && ((p.minerals > 300 && !this.mine(u => u.def.larva).length) || p.minerals > 550) && workers >= 5 * this.mine(u => u.isBuilding && u.def.spawnsLarva).length && this.count('hatchery') <= this.halls().length && this.mine(u => u.isBuilding && u.def.spawnsLarva).length < 6 && halls.length) { const h = halls[Math.floor(G.rand() * halls.length)]; this.buildNear('hatchery', h.x, h.y); } // macro hatcheries go next to a base we already hold; real expansions come from the shared rule below
@@ -778,32 +829,34 @@ class AI {
     // was a seventh of every idle-production-building-second the audit counts (test/aiaudit.js). For
     // Zerg every unit comes off larva, so a Zerg hold still holds everything, which is right: larva is
     // the shared resource being saved.
-    let holding = null;
+    // THE TOP PICK IS A COMMITMENT, NOT A HOLD.
+    //
+    // What was here was a hand-rolled saving mechanism: if the best unit was within 70% of its
+    // minerals and 35% of its gas, stop that building type for up to eight seconds. Two thresholds
+    // and a timer, and the ledger says it did not fire for the units it exists for -- Colossus was
+    // the top-ranked pick 452 times in a 20-minute game and never built, because 70% of 300 minerals
+    // is 210 and the bank averaged 150, so "close" was false, so nothing was held, so the
+    // fall-through bought a zealot and took the minerals. Every think, all game.
+    //
+    // The budget already has the right primitive for this, so it is used instead of a fifth knob:
+    // the top pick joins the committed claims and its money stops being free for anything else. That
+    // deletes both thresholds, the timer, and the per-building hold. canTrainSoon() is the guard that
+    // matters -- it checks requirements, supply room and a free production slot -- because committing
+    // money to something that cannot be trained for a non-money reason would hold it forever.
+    //
+    // One think stale, like headDef: budget() runs before production() does.
     const want = cands.find(([, id]) => this.canTrainSoon(id));
-    if (want) { const wd = DATA.units[want[1]];
-      // Only wait when the money is nearly there; saving from nothing just idles production (and wastes
-      // Zerg larvae). GAS GETS A LOWER BAR THAN MINERALS, though, because the two arrive at completely
-      // different rates: a geyser admits one worker at a time, so gas is a trickle next to a mineral
-      // line, and demanding 70% of it banked before the AI is willing to wait means it never waits.
-      // Measured: solo 20-minute Protoss produced 81 zealots and 4 dragoons. The Dragoon is the BETTER
-      // pick by composition score (0.40 against the Zealot's 0.50) and lost every single time, because
-      // it costs 50 gas and the Zealot costs none -- so the fall-through bought a zealot, which spent
-      // the minerals, and the gas never mattered. That is the cheap-unit ratchet the comment above
-      // this block describes, arriving through gas instead of through minerals.
-      const close = p.minerals >= wd.min * 0.7 && p.gas >= wd.gas * 0.35;
-      if ((p.minerals < wd.min || p.gas < wd.gas) && close) { if (this.holdFor !== want[1]) { this.holdFor = want[1]; this.holdT = G.frame; } if (G.frame - this.holdT < 24 * 8) holding = wd.from; }
-      else this.holdFor = null;
-    } else this.holdFor = null;
+    this.topDef = want ? DATA.units[want[1]] : null;
     // One pass over the composition queues at most one of each unit, so a Terran with six idle barracks
     // needed six thinks -- eight seconds -- to fill them, and the audit counted every one of those
     // building-seconds as idle production. It was 58% of the whole count and nothing in the audit could
     // name it. Keep going while something can still be trained, re-scoring the unit just trained so the
-    // composition ratios still decide the order. train() applies the money reserve on every call, so
-    // this cannot empty the bank into units.
+    // composition ratios still decide the order. Every train() spends from the free budget, which
+    // shrinks as it goes, so this loop stops on its own when free runs out.
     let made = 0, pick;
     do {                                                  // a think is 1.3 s at normal; twelve is far more than income can pay for
       pick = null;
-      for (const c of cands) { if (holding && DATA.units[c[1]].from === holding) continue; if (this.train(c[1], 3)) { pick = c; break; } }
+      for (const c of cands) { if (this.train(c[1], 3)) { pick = c; break; } }
       if (!pick) break;
       const [, id, w, sup] = pick; counts[id] = (counts[id] || 0) + 1; pick[0] = (counts[id] * sup + sup) / w; cands.sort((a, b) => a[0] - b[0]); made++;
     } while (made < 12);
@@ -812,32 +865,44 @@ class AI {
   // alone, which is the form M6's handoff called "a real lever if approached from the Zerg side only":
   // it was worth +5 points to Terran over 360 paired seeds. Zerg buys upgrades it does not live to use.
   research() {
-    // Research read the bank directly and so walked past the reserve the build order saves with --
-    // the same bug as the morph clauses in production(). It matters: over a solo 20-minute game this
-    // AI mines ~9,100 gas and upgrades are the largest single claim on it, so an upgrade bought one
-    // think before a Stargate is affordable delays the Stargate by minutes. Holding the gas back took
-    // Protoss from 315 to 500 supply and from one heavy unit to Dark Templar, Reavers and Archons.
+    // UPGRADES SPEND FROM FREE, like everything else discretionary, and that is the whole rule now.
     //
-    // GAS ONLY, not afford(). Running it through afford() switched Zerg's research off completely --
-    // three seeds finished a whole game with one upgrade between them -- because Zerg is MINERAL-bound
-    // and near-permanently tech-starved, so the reserve was always engaged against it. Gas is the
-    // contended resource here and the only one worth protecting from upgrades.
-    const p = this.p; if (p.minerals < 200 || p.gas < 150) return this.note(undefined, 'resPoor', null, 200, 150);
-    // ...and do not outbid a build step that is ABOUT to be affordable. Only then, though: gating this
-    // on afford() unconditionally switched Zerg's research off completely -- three seeds finished a
-    // whole game with one upgrade between them -- because Zerg is mineral-bound and near-permanently
-    // tech-starved, so the reserve was always engaged against it. When the order is hopelessly stuck,
-    // holding income back from upgrades as well buys nothing and idles it. Worth it: over a solo
-    // 20-minute game this AI mines ~9,100 gas and upgrades are the largest single claim on it.
-    // NOT FOR ZERG. Zerg reserves for its head step UNCONDITIONALLY (the M7 lever a dozen lines into
-    // script(), kept because it is worth 15 points in TvZ), so its reserve is engaged essentially all
-    // game and any reserve-based brake silences its research entirely -- measured as three seeds
-    // finishing a whole game with one upgrade between them. The brake is meaningful only where the
-    // reserve is intermittent, which is Terran and Protoss.
-    if (this.race !== 'Z' && !this.techStarved() && (p.minerals < 200 + (this.reserveMin || 0) * 0.5 || p.gas < 150 + (this.reserveGas || 0) * 0.5)) return this.note(undefined, 'resSurplus', null, 200, 150);
+    // Two things used to be here and both are gone. Research read p.minerals and p.gas directly, so
+    // it walked past the reserve entirely; then a surplus rule was added on top to stop it outbidding
+    // a build step -- and that rule needed a Zerg exemption, because Zerg was tech-starved so much of
+    // the time that any reserve-based brake silenced its research completely (three seeds finished a
+    // whole game with one upgrade between them). A special case nobody could explain, guarding an
+    // override, guarding a brake.
+    //
+    // It mattered: the ledger puts upgrades at 54.8% of every gas Zerg mines, 39.6% for Protoss and
+    // 29.8% for Terran, while the Spire and the Stargate sat unbuilt at the head of the build order.
+    // research() runs second-to-last in the think, so by the time it is asked, free is genuinely what
+    // is left over -- which is what "do not outbid the build order" was trying to express all along.
+    //
+    // THE FLAT GATE STAYS. M4 tried a cost-aware one for every race (TvZ 97%) and M7 tried it for
+    // Zerg alone; the flat one is what the balance numbers were measured against. It is a floor on
+    // when to start upgrading at all, not a reserve, so the budget does not subsume it.
+    const p = this.p; this.researchDef = null;
+    if (p.minerals < 200 || p.gas < 150) return this.note(undefined, 'resPoor', null, 200, 150);
     for (const id of this.styleResearch(this.race, this.style)) {
-      if (DATA.techs[id]) { if (p.tech.has(id) || p.researching.has(id)) continue; const td = DATA.techs[id]; const b = this.mine(u => u.isBuilding && u.done && u.def.id === td.bld && !u.prod.length && !u.lifted)[0]; if (!b) continue; if (G.queueTech(b, id)) return; }
-      else if (DATA.upgrades[id]) { const ud = DATA.upgrades[id]; const lvl = p.upgLevel(id); if (lvl >= 3 || p.researching.has(id)) continue; if (this.diff === 'easy' && lvl >= 1) continue; const b = this.mine(u => u.isBuilding && u.done && (u.def.id === ud.bld || (ud.bld === 'spire' && u.def.id === 'greater_spire')) && !u.prod.length)[0]; if (!b) continue; if (G.queueUpgrade(b, id)) return; }
+      // want: what this upgrade would cost, in the shape claim() and claimed() both read. The first
+      // one the list still owes and cannot pay for becomes next think's claim 6; anything it CAN pay
+      // for out of free is simply bought now and no claim is needed.
+      let want = null, bld = null;
+      if (DATA.techs[id]) { if (p.tech.has(id) || p.researching.has(id)) continue; const td = DATA.techs[id]; want = { id, min: td.min, gas: td.gas }; bld = this.mine(u => u.isBuilding && u.done && u.def.id === td.bld && !u.prod.length && !u.lifted)[0]; }
+      else if (DATA.upgrades[id]) { const ud = DATA.upgrades[id]; const lvl = p.upgLevel(id); if (lvl >= 3 || p.researching.has(id)) continue; if (this.diff === 'easy' && lvl >= 1) continue; want = { id, min: ud.min[lvl], gas: ud.gas[lvl] }; bld = this.mine(u => u.isBuilding && u.done && (u.def.id === ud.bld || (ud.bld === 'spire' && u.def.id === 'greater_spire')) && !u.prod.length)[0]; }
+      if (!want || !bld) continue;                       // no building to research it in: money would be held for nothing
+      // A RESEARCH LIST IS NOT A QUEUE EITHER, and this is the same fault script() was rewritten for
+      // in M11. Stopping at the first item we cannot pay for reads as a priority order and behaves as
+      // a blockage: one expensive upgrade at the head of the list silences everything behind it for
+      // as long as it is unaffordable. Measured immediately -- test/zerg12.js went red because a Zerg
+      // reached exactly one tech in ten minutes and none of the five M12 ones.
+      //
+      // So the head of the list becomes next think claim 6 and the scan CONTINUES. Anything further
+      // down that free can pay for is bought now, and it cannot eat the claim, because the claim has
+      // already been taken out of free before this line is reached.
+      if (!this.claimed(want) && !this.afford(want.min, want.gas)) { if (!this.researchDef) this.researchDef = want; this.note(0, 'resFree', id, want.min, want.gas); continue; }
+      if (DATA.techs[id] ? G.queueTech(bld, id) : G.queueUpgrade(bld, id)) return;
     }
   }
   // ---------------- helpers ----------------
@@ -850,7 +915,7 @@ class AI {
     // of the second, and between them they took every mineral that arrived while the Spire sat at the
     // head of the script on one mineral. Supply keeps its exemption unconditionally, because blocking
     // it trades a tech stall for a supply block, which is worse.
-    if (!(ud.supGive && p.supMax - p.supUsed < 4) && (!ud.worker || this.techStarved()) && !this.afford(ud.min, ud.gas)) return this.note(false, 'trainReserve', id, ud.min, ud.gas);
+    if (!this.claimed(ud) && !this.afford(ud.min, ud.gas)) return this.note(false, 'trainReserve', id, ud.min, ud.gas);
     if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) return this.note(false, 'trainSupply', id, ud.min, ud.gas);
     if (ud.from === 'larva') { const l = this.mine(u => u.def.larva)[0]; if (!l) return false; return G.larvaMorph(l, id); }
     const bs = this.mine(u => u.isBuilding && u.done && !u.lifted && u.def.produces.includes(id) && u.prod.length < (maxQ || 2) && !(u.addon && !u.addon.done)); if (!bs.length) return this.note(false, 'trainNoProd', id, ud.min, ud.gas);
@@ -875,7 +940,7 @@ class AI {
   // force: this is the building being saved for (script step, expansion, gas, urgent supply); otherwise the reserve applies
   build(id, force) {
     const def = DATA.buildings[id], p = this.p; if (!p.hasReq(def)) return false;
-    if (def.depot) { const base = this.pickExpansion(); if (!base) return false; return this.buildAt(id, base.x, base.y, force); }
+    if (def.depot) { const base = this.pickExpansion(); if (!base) return this.note(false, 'noBase', id, def.min, def.gas); return this.buildAt(id, base.x, base.y, force); }
     if (def.onGeyser) { for (const h of this.halls()) { const base = G.map.bases.find(b => distPt(b.cx, b.cy, h.x, h.y) < 3 * TILE); if (base && base.geyser && !(base.geyser.building && base.geyser.building.alive) && base.geyser.amount > 0) return this.buildAt(id, base.geyser.x, base.geyser.y, true); } return false; }
     const halls = this.halls(); const defensive = def.gw || def.aw || def.id === 'creep_colony'; const h = (defensive && halls.length > 1 ? halls[halls.length - 1] : halls[Math.floor(G.rand() * Math.min(2, halls.length))]) || { x: p.startX, y: p.startY }; // static defence goes to the newest (most exposed) base
     return this.buildNear(id, h.x, h.y, force);
@@ -885,9 +950,9 @@ class AI {
     return this.buildAt(id, spot[0], spot[1], force);
   }
   buildAt(id, tx, ty, force) {
-    const def = DATA.buildings[id], p = this.p; if (p.minerals < def.min || p.gas < def.gas) return this.note(false, 'buildBroke', id, def.min, def.gas); if (!force && !this.afford(def.min, def.gas)) return this.note(false, 'buildReserve', id, def.min, def.gas);
-    const w = this.pickWorker((tx + def.w / 2) * TILE, (ty + def.h / 2) * TILE); if (!w) return false;
-    w.setOrder({ type: 'build', def, tx, ty }); this.pending[id] = G.frame; this.reserve(def); return true; // the walk to the site must not be spent
+    const def = DATA.buildings[id], p = this.p; if (p.minerals < def.min || p.gas < def.gas) return this.note(false, 'buildBroke', id, def.min, def.gas); if (!force && !this.claimed(def) && !this.afford(def.min, def.gas)) return this.note(false, 'buildReserve', id, def.min, def.gas);
+    const w = this.pickWorker((tx + def.w / 2) * TILE, (ty + def.h / 2) * TILE); if (!w) return this.note(false, 'noWorker', id, def.min, def.gas);
+    w.setOrder({ type: 'build', def, tx, ty }); this.pending[id] = G.frame; return true; // claimant 1 in budget() holds the money for the walk from the next think onwards
   }
   // A MULE must never be picked to put up a building: it expires, and a Terran building whose builder
   // is gone stops advancing (Unit.tickBuilding requires the builder to be standing on it), so the site

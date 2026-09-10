@@ -174,7 +174,8 @@ const PROBE = (race, ledgered) => `(() => {
       for (const id of compIds) { if (srcB[id] !== undefined) continue; srcB[id] = null;
         for (const k of Object.keys(DATA.buildings)) if ((DATA.buildings[k].produces || []).includes(id)) { srcB[id] = k; break; } }
       if (L && i % 1440 === 0) timeline.push({ f: G.frame, m: Math.round(p.minerals), g: Math.round(p.gas),
-        rm: ai.reserveMin, rg: ai.reserveGas, hd: (ai.headDef && ai.headDef.id) || null, idx: ai.scriptIdx,
+        rm: ai.commitMin, rg: ai.commitGas, hd: (ai.headDef && ai.headDef.id) || null, idx: ai.scriptIdx,
+        by: (ai.claims || []).filter(c => c.min || c.gas),
         sup: p.supUsed, wk: G.units.filter(u => u.alive && u.owner === 0 && u.def.worker).length });
     }
   }
@@ -263,6 +264,7 @@ for (const race of RACES) {
 
   // ---- 5. the timeline -----------------------------------------------------
   console.log('\n5. TIMELINE   (once a minute)');
-  console.log('   ' + pad('time', 7) + num('min', 6) + num('gas', 6) + num('resMin', 8) + num('resGas', 8) + num('step', 6) + num('sup', 5) + num('wk', 4) + '  head of order');
-  for (const t of r.timeline) console.log('   ' + pad(mmss(t.f), 7) + num(t.m, 6) + num(t.g, 6) + num(t.rm, 8) + num(t.rg, 8) + num(t.idx, 6) + num(t.sup, 5) + num(t.wk, 4) + '  ' + (t.hd || '-'));
+  console.log('   ' + pad('time', 7) + num('min', 6) + num('gas', 6) + num('cmtMin', 8) + num('cmtGas', 8) + num('step', 6) + num('sup', 5) + num('wk', 4) + '  ' + pad('head of order', 22) + 'committed to');
+  for (const t of r.timeline) console.log('   ' + pad(mmss(t.f), 7) + num(t.m, 6) + num(t.g, 6) + num(t.rm, 8) + num(t.rg, 8) + num(t.idx, 6) + num(t.sup, 5) + num(t.wk, 4) + '  ' + pad(t.hd || '-', 22) +
+    (t.by || []).map(c => c.id + ' ' + c.min + 'm' + (c.gas ? '/' + c.gas + 'g' : '')).join(' '));
 }
