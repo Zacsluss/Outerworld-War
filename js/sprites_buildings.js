@@ -246,6 +246,21 @@ const BUILDING_PAINTERS = {
     h.C(mx + 6 + lean, 14, 2, rustD, null);
     h.R(4, H - 10, Math.min(20, W / 2), 4, 1, TC, null); c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(4, H - 10, Math.min(20, W / 2), 4);
   },
+  // ---- M12 item 12: the Warp Gate ----
+  // A Gateway is a vertical arch you walk out of -- a tall rounded panel standing on end, above. This
+  // is a flat ring lying on the plinth, because nothing walks out of it: the aperture points at the
+  // sky and what it makes appears somewhere else. The two share a 4x3 footprint (a morph must, since
+  // G.morphBuilding never re-blocks the map), so shape is the ONLY thing that can tell a player which
+  // of them they are looking at, and it is deliberately the opposite shape rather than a variation.
+  warp_gate(h, c, W, H, TC) {
+    BP.pBase(h, c, W, H, TC);
+    h.E(W / 2, H / 2 - 4, 40, 27, TCOL.Aud, OUT, 1.5);
+    h.E(W / 2, H / 2 - 4, 30, 20, '#1c2a55', null);
+    h.E(W / 2, H / 2 - 4, 30, 20, null, '#4a7ad8', 2.5);
+    h.E(W / 2, H / 2 - 4, 13, 9, '#bcd8ff', null);
+    for (let k = 0; k < 4; k++) { const a = k * 1.5708 + 0.785; h.C(W / 2 + Math.cos(a) * 38, H / 2 - 4 + Math.sin(a) * 26, 5, TCOL.Au, OUT, 1); }
+    BP.crystal(h, 18, H / 2 - 4, 9); BP.crystal(h, W - 18, H / 2 - 4, 9);
+  },
 };
 // Animated overlays drawn on top of static sprites each frame (world coords, x0/y0 = footprint top-left)
 const BUILDING_ANIM = {
@@ -254,6 +269,19 @@ const BUILDING_ANIM = {
   sunken_colony(ctx, u, x0, y0, W, H, f) { if (u.cooldown > 24) { const cx = x0 + W / 2, cy = y0 + H / 2, a = u.facing, len = 40 + (u.cooldown - 24) * 6; ctx.strokeStyle = '#6a3a48'; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.quadraticCurveTo(cx + Math.cos(a) * len * .5, cy + Math.sin(a) * len * .5 - 16, cx + Math.cos(a) * len, cy + Math.sin(a) * len); ctx.stroke(); ctx.strokeStyle = TCOL.bone; ctx.lineWidth = 2; ctx.stroke(); } },
   spawning_pool(ctx, u, x0, y0, W, H, f) { const cx = x0 + W / 2, cy = y0 + H / 2 + 2; ctx.fillStyle = 'rgba(160,230,120,0.35)'; for (let k = 0; k < 3; k++) { const t = ((f / 40) + k / 3) % 1; ctx.beginPath(); ctx.arc(cx + Math.cos(k * 2.1) * 14, cy + Math.sin(k * 2.1) * 7, 2 + t * 6, 0, 7); ctx.fill(); } },
   gateway(ctx, u, x0, y0, W, H, f) { if (u.unpowered) return; const cx = x0 + W / 2, cy = y0 + H / 2 - 8; ctx.save(); ctx.globalCompositeOperation = 'lighter'; for (let k = 0; k < 3; k++) { ctx.strokeStyle = 'rgba(90,180,255,0.35)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, 8 + k * 6, f * 0.06 + k, f * 0.06 + k + 2.2); ctx.stroke(); } ctx.restore(); },
+  // The one piece of state a Warp Gate has that a player needs to read across a whole base: whether it
+  // is ready. `u.cooldown` is the recharge Abilities.cast sets, so the aperture is bright and turning
+  // when it can warp and a dim closing iris while it cannot. Render-only, derived from sim state, and
+  // it never writes anything -- the invariant this file has always obeyed.
+  warp_gate(ctx, u, x0, y0, W, H, f) {
+    if (u.unpowered) return;
+    const cx = x0 + W / 2, cy = y0 + H / 2 - 4, ready = !(u.cooldown > 0);
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = ready ? 'rgba(120,200,255,0.55)' : 'rgba(120,200,255,0.16)'; ctx.lineWidth = 3;
+    for (let k = 0; k < 2; k++) { ctx.beginPath(); ctx.ellipse(cx, cy, 24 - k * 8, 16 - k * 5, 0, f * 0.05 + k * 2, f * 0.05 + k * 2 + 3.4); ctx.stroke(); }
+    if (ready) { ctx.fillStyle = 'rgba(180,220,255,0.35)'; ctx.beginPath(); ctx.ellipse(cx, cy, 9 + Math.sin(f * 0.08) * 2, 6 + Math.sin(f * 0.08) * 1.4, 0, 0, 7); ctx.fill(); }
+    ctx.restore();
+  },
   stargate(ctx, u, x0, y0, W, H, f) { if (u.unpowered) return; const cx = x0 + W / 2, cy = y0 + H / 2 - 6; ctx.save(); ctx.globalCompositeOperation = 'lighter'; for (let k = 0; k < 3; k++) { ctx.strokeStyle = 'rgba(90,180,255,0.3)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(cx, cy, 10 + k * 7, 7 + k * 5, 0, f * 0.05 + k, f * 0.05 + k + 2.5); ctx.stroke(); } ctx.restore(); },
   pylon(ctx, u, x0, y0, W, H, f) { if (!u.done) return; const cx = x0 + W / 2, cy = y0 + H / 2; const a = 0.35 + Math.sin(f * 0.1) * 0.15; ctx.save(); ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, 26); g.addColorStop(0, `rgba(120,200,255,${a})`); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 26, 0, 7); ctx.fill(); ctx.restore(); },
   nexus(ctx, u, x0, y0, W, H, f) { const cx = x0 + W / 2, cy = y0 + H / 2 - 12; const a = 0.3 + Math.sin(f * 0.08) * 0.12; ctx.save(); ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, 34); g.addColorStop(0, `rgba(120,200,255,${a})`); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 34, 0, 7); ctx.fill(); ctx.restore(); },

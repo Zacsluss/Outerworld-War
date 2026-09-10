@@ -39,24 +39,19 @@ const NCOL = {
 };
 // Which units animate how
 const ANIM_KIND = {
-  biped: new Set(['scv', 'marine', 'firebat', 'medic', 'ghost', 'zealot', 'high_templar', 'dark_templar', 'infested_terran', 'marauder', 'reaper']),
-  legged: new Set(['zergling', 'hydralisk', 'lurker', 'ultralisk', 'defiler', 'broodling', 'dragoon', 'goliath', 'drone', 'larva', 'reaver',
-    'carrion_grub', 'carrion_maw', 'sentinel',   // race 'N': two walkers and a tripod. The tells are not units and are not listed.
-    'thor', 'widow_mine', 'viking_a']),          // M12: a walker, a tripod-on-a-disc, and a Viking with its legs down
+  biped: new Set(['scv', 'marine', 'firebat', 'medic', 'ghost', 'zealot', 'high_templar', 'dark_templar', 
+    'infested_terran', 'marauder', 'reaper']),
+  legged: new Set(['zergling', 'hydralisk', 'lurker', 'ultralisk', 'defiler', 'broodling', 'dragoon', 'goliath', 
+    'drone', 'larva', 'reaver', 'carrion_grub', 'carrion_maw', 'sentinel', 'thor', 'widow_mine', 'viking_a']),
   treads: new Set(['siege_tank', 'cyclone']),
-  winged: new Set(['mutalisk', 'guardian', 'devourer', 'scourge', 'queen', 'overlord', 'cocoon']),
+  winged: new Set(['mutalisk', 'guardian', 'devourer', 'scourge', 'queen', 'overlord', 'cocoon', 'viper', 'overseer']),
   // `engine` is the one of these five that Render.animOf actually reads, and what it means is "this
   // never stops moving, so run its walk cycle whether or not it is going anywhere". Every M12 flyer is
   // here, and so are the hellion and the MULE: a wheeled vehicle idling still has its wheels turning.
-  engine: new Set(['wraith', 'valkyrie', 'dropship', 'science_vessel', 'battlecruiser', 'vulture', 'probe', 'shuttle', 'observer', 'scout', 'corsair', 'carrier', 'arbiter', 'interceptor',
-    'banshee', 'liberator', 'viking', 'medivac', 'raven', 'hellion', 'mule']),
-  // M12 wave four: everything Zerg added that walks rather than flies
-  zergWalk: new Set(['roach', 'ravager', 'baneling', 'swarm_host', 'locust', 'infestor']),
-  treads: new Set(['siege_tank']),
-  // `brood_cocoon` is deliberately NOT here, for the same reason `lurker_egg` never was: this set is
-  // "animates its walk cycle while standing still", and a ground egg sits.
-  winged: new Set(['mutalisk', 'guardian', 'devourer', 'scourge', 'queen', 'overlord', 'cocoon', 'viper', 'overseer']),
-  engine: new Set(['wraith', 'valkyrie', 'dropship', 'science_vessel', 'battlecruiser', 'vulture', 'probe', 'shuttle', 'observer', 'scout', 'corsair', 'carrier', 'arbiter', 'interceptor']),
+  engine: new Set(['wraith', 'valkyrie', 'dropship', 'science_vessel', 'battlecruiser', 'vulture', 'probe', 
+    'shuttle', 'observer', 'scout', 'corsair', 'carrier', 'arbiter', 'interceptor', 'banshee', 'liberator', 
+    'viking', 'medivac', 'raven', 'hellion', 'mule', 'sentry', 'disruptor', 'warp_prism', 'phoenix', 'oracle', 
+    'void_ray', 'tempest', 'mothership']),
 };
 const UNIT_PAINTERS = {
   scv(h, r, TC, TCd, st) { const { M, Md, Ml, visor, gun } = TCOL; const { sw, ak } = ANIM(st); h.feet(-r * .3, r * .62, r * .34, Md, sw); h.R(-r * 1.15, -r * .35, r * .35, r * .7, 2, Md); h.R(-r * .85, -r * .75, r * 1.6, r * 1.5, 3, M); h.R(-r * .6, -r * .55, r * .9, r * .5, 2, TC, OUT, 1); h.E(r * .45, 0, r * .35, r * .45, visor); const ex = ak * r * .25; h.L(r * .2, -r * .65, r * 1.15 + ex, -r * .55, gun, 3); h.L(r * 1.05 + ex, -r * .7, r * 1.25 + ex, -r * .45, Ml, 3); h.L(r * .2, r * .65, r * 1.15 + ex, r * .55, gun, 3); h.L(r * 1.05 + ex, r * .7, r * 1.25 + ex, r * .45, Ml, 3); h.G(-r * 1.2, 0, r * .4, '#7fd0ff'); },
@@ -127,6 +122,68 @@ const UNIT_PAINTERS = {
   scarab(h, r) { h.C(0, 0, r * 1.2, TCOL.Au); h.C(r * .3, 0, r * .5, TCOL.psi, null); },
   interceptor(h, r, TC) { h.P([[r * 1.6, 0], [-r * .6, -r * 1.2], [-r * .2, 0], [-r * .6, r * 1.2]], TCOL.Au); h.C(r * .2, 0, r * .4, TC, null); },
   hallucination(h, r) { h.C(0, 0, r * .6, 'rgba(120,200,255,0.6)'); },
+
+  // ---- M12: the Protoss twelve --------------------------------------------------------------
+  // These are the VECTOR FALLBACK, which js/sprites.js takes whenever the atlas has no baked sheet
+  // for a def (`UNIT_PAINTERS[id] || UNIT_PAINTERS.marine`). Without an entry here a Colossus draws
+  // as a marine, which is the M11 failure test/baked.js was written for, one layer down -- and it is
+  // the layer that is actually live until somebody runs tools/bake.js. Each one carries the SAME
+  // outline-breaking feature as its 3D model so the two agree: legs and height on the ground, plan
+  // shape in the air.
+  sentry(h, r, TC, TCd, st) { const { Au, Aud, psi } = TCOL; const { sw2, ak } = ANIM(st);
+    for (let k = 0; k < 3; k++) { const a = k * 2.09 + .6; h.L(Math.cos(a) * r * .35, Math.sin(a) * r * .35, Math.cos(a) * r * .8, Math.sin(a) * r * .8 + r * .12 * sw2, Aud, 2.5); }
+    h.E(0, 0, r * .78, r * .62, Au); h.E(-r * .12, -r * .08, r * .45, r * .34, Aud, null);
+    h.R(-r * .5, -r * .18, r * .38, r * .36, 2, TC, OUT, 1);
+    h.C(r * .34, 0, r * .22 + ak * r * .08, psi, null);
+    for (const s of [-1, 1]) h.C(-r * .1, s * r * .52, r * .13 + ak * r * .1, psi, null); },
+  immortal(h, r, TC, TCd, st) { const { Au, Aud, Aul, psi } = TCOL; const { sw, rec } = ANIM(st);
+    for (const [a, s] of [[0.7, 1], [0.7, -1], [2.44, 1], [2.44, -1]]) { const ph = s * sw * r * .16; h.L(Math.cos(a) * r * .45, Math.sin(a) * r * .45 * s, Math.cos(a) * r * .95 + ph, Math.sin(a) * r * 1.0 * s, Aud, 3.5); }
+    h.E(-r * .05, 0, r * .78, r * .66, Aud); h.E(-r * .1, -r * .06, r * .56, r * .44, Au, null);
+    const bx = -rec * r * .12;
+    for (const s of [-1, 1]) { h.R(bx + r * .1, s * r * .52 - r * .14, r * .72, r * .28, 2, Au, OUT, 1); h.C(bx + r * .88, s * r * .52, r * .1, psi, null); }
+    h.R(-r * .5, -r * .2, r * .4, r * .4, 2, TC, OUT, 1);
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) h.C(sx * r * .32, sy * r * .34, r * .09, '#9fd8ff', null); },
+  colossus(h, r, TC, TCd, st) { const { Au, Aud, Aul } = TCOL; const { sw, ak } = ANIM(st);
+    for (const [a, s] of [[0.7, 1], [0.7, -1], [2.44, 1], [2.44, -1]]) { const ph = s * sw * r * .3; const kx = Math.cos(a) * r * .75 + ph * .5, ky = Math.sin(a) * r * .8 * s; h.L(Math.cos(a) * r * .3, Math.sin(a) * r * .3 * s, kx, ky, Aud, 2.5); h.L(kx, ky, Math.cos(a) * r * 1.35 + ph, Math.sin(a) * r * 1.45 * s, Aud, 2); }
+    h.E(0, -r * .05, r * .5, r * .42, Aud); h.E(-r * .04, -r * .12, r * .36, r * .26, Au, null);
+    h.R(-r * .36, -r * .1, r * .3, r * .22, 2, TC, OUT, 1);
+    for (const s of [-1, 1]) { h.L(r * .22, s * r * .2, r * .55, s * r * .28, Aul, 2.5); h.C(r * .6, s * r * .3, r * .1 + ak * r * .14, '#ffb35c', null); } },
+  disruptor(h, r, TC, TCd, st) { const { Au, Aud } = TCOL; const { sw2, ak } = ANIM(st);
+    h.C(0, 0, r * .52 + ak * r * .16, '#b877ff', null); h.C(0, 0, r * .3 + ak * r * .1, '#e6cdff', null);
+    for (let k = 0; k < 3; k++) { const a = k * 1.047 + sw2 * .25; h.E(0, 0, r * .85, r * .28, null, Aud, 2.4, a); }
+    h.R(-r * .3, r * .5, r * .3, r * .22, 2, TC, OUT, 1); },
+  warp_prism(h, r, TC, TCd, st) { const { Au, Aud, psi } = TCOL; const { sw2 } = ANIM(st);
+    h.R(-r * .8, -r * .6, r * 1.6, r * 1.2, 5, Aud); h.R(-r * .15, -r * .8, r * .35, r * 1.6, 3, Au, OUT, 1);
+    h.P([[0, -r * .5], [r * .42, 0], [0, r * .5], [-r * .42, 0]], psi, '#1a4a80', 1.4);
+    h.R(-r * .62, -r * .22, r * .32, r * .44, 2, TC, OUT, 1);
+    h.G(-r * .85, -r * .32, r * (.24 + sw2 * .06), '#8fe0ff'); h.G(-r * .85, r * .32, r * (.24 - sw2 * .06), '#8fe0ff'); },
+  phoenix(h, r, TC, TCd, st) { const { Au, Aud, psi } = TCOL; const { sw2, ak } = ANIM(st);
+    h.P([[r * 1.35, 0], [r * .1, -r * .28], [-r * .55, -r * 1.05], [-r * .95, -r * .85], [-r * .6, -r * .18], [-r * .6, r * .18], [-r * .95, r * .85], [-r * .55, r * 1.05], [r * .1, r * .28]], Au);
+    h.L(r * .35, 0, r * 1.25, 0, Aud, 2.5);
+    h.R(-r * .5, -r * .18, r * .42, r * .36, 2, TC, OUT, 1);
+    h.C(r * .78, 0, r * .13 + ak * r * .14, psi, null); h.G(-r * .8, 0, r * (.3 + sw2 * .08), '#a8f0ff'); },
+  oracle(h, r, TC, TCd, st) { const { Aud, psi } = TCOL; const { sw2, ak } = ANIM(st);
+    h.P([[r * 1.15, 0], [r * .2, -r * .62], [-r * .8, -r * .5], [-r * .95, 0], [-r * .8, r * .5], [r * .2, r * .62]], '#e2d8bd');
+    h.P([[r * .55, 0], [-r * .3, -r * .2], [-r * .75, 0], [-r * .3, r * .2]], Aud, null);
+    h.R(-r * .55, -r * .2, r * .36, r * .4, 2, TC, OUT, 1);
+    h.C(r * .42, 0, r * .2 + ak * r * .12, '#f2b8ff', null); h.G(-r * .9, 0, r * (.26 + sw2 * .07), '#e8a8ff'); },
+  void_ray(h, r, TC, TCd, st) { const { Au, Aud } = TCOL; const { sw2, ak } = ANIM(st);
+    h.R(-r * .75, -r * .45, r * 1.15, r * .9, 4, '#2c3b70');
+    h.R(-r * .5, -r * .62, r * .7, r * 1.24, 4, Aud, OUT, 1);
+    h.P([[r * 1.55, 0], [r * .4, -r * .22 - ak * r * .06], [r * .4, r * .22 + ak * r * .06]], '#9b8cff', '#4a3fa0', 1.4);
+    h.R(-r * .62, -r * .2, r * .3, r * .4, 2, TC, OUT, 1);
+    h.G(-r * .8, 0, r * (.28 + sw2 * .07), '#8fa8ff'); },
+  tempest(h, r, TC, TCd, st) { const { Au, Aud, psi } = TCOL; const { sw2, ak } = ANIM(st);
+    h.C(0, 0, r * 1.0, Aud); h.C(0, 0, r * .74, null, '#3f66c8', 3);
+    h.E(0, 0, r * .46, r * .42, Au); h.R(-r * .3, r * .55, r * .34, r * .22, 2, TC, OUT, 1);
+    for (let k = 0; k < 4; k++) { const a = k * 1.5708 + sw2 * .2; h.L(Math.cos(a) * r * .5, Math.sin(a) * r * .5, Math.cos(a) * r * .95, Math.sin(a) * r * .95, '#7ba0ff', 2); }
+    h.C(0, 0, r * .18 + ak * r * .12, psi, null); },
+  mothership(h, r, TC, TCd, st) { const { Au, Aud, Aul, psi } = TCOL; const { sw2, ak } = ANIM(st);
+    h.C(0, 0, r * 1.05, Aud); h.C(0, 0, r * .8, Au, null); h.C(0, 0, r * .44, '#2c3b70', null);
+    for (let k = 0; k < 6; k++) { const a = k * 1.047 + .5; h.L(Math.cos(a) * r * .5, Math.sin(a) * r * .5, Math.cos(a) * r * .95, Math.sin(a) * r * .95, Aul, 2.5); }
+    for (let k = 0; k < 3; k++) { const a = k * 2.09 + sw2 * .15; h.P([[Math.cos(a) * r * .62, Math.sin(a) * r * .62], [Math.cos(a) * r * .78 - Math.sin(a) * r * .1, Math.sin(a) * r * .78 + Math.cos(a) * r * .1], [Math.cos(a) * r * .95, Math.sin(a) * r * .95], [Math.cos(a) * r * .78 + Math.sin(a) * r * .1, Math.sin(a) * r * .78 - Math.cos(a) * r * .1]], '#b49aff', null); }
+    h.R(-r * .42, r * .62, r * .42, r * .24, 2, TC, OUT, 1);
+    h.C(0, 0, r * .24 + ak * r * .1, psi, null); },
 
   // ============================ NEUTRAL LIFE, AND THE GROUND ABOVE IT ============================
   // Painted in NCOL, not TCOL: the wildlife belongs to no race and must not read as a fourth army.

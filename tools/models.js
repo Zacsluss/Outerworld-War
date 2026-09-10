@@ -360,6 +360,114 @@ const UNITS = {
   interceptor: () => RIG.ship({ bodySize: [1.2, 0.3, 0.6], color: C.gold, cockpit: false, engines: [[-0.6, 0, 0]] }),
   scarab: () => { const r = N([0, 0.3, 0]); r.children.push(P('sphere', [1.2, 0.6, 1.0], [0, 0, 0], m(C.gold)), P('sphere', [0.4, 0.4, 0.4], [0.4, 0.1, 0], GLOW(C.psi))); return r; },
   hallucination: () => { const r = N([0, 0.5, 0]); r.children.push(P('sphere', [1.2, 1.2, 1.2], [0, 0, 0], GLOW([0.5, 0.8, 1]))); return r; },
+  // ---- M12: the Protoss twelve -------------------------------------------------------------------
+  // The rule M8 wrote down for the Terran infantry applies here with more force, because Protoss is
+  // ten new units in one race and every one of them is gold: at 40 px under fog with a team tint,
+  // COLOUR IS THE FIRST THING YOU LOSE, so each of these carries one oversized outline-breaking
+  // feature and no two share it. Legs and height do most of the work -- a Colossus is four spider
+  // legs and almost no body, an Immortal is a squat brick on four short ones, a Sentry is a small
+  // thing that hovers -- and the air units separate on plan shape: a dart, a shell, a spike, a disc
+  // and a saucer. None of them is a recoloured Scout.
+  //
+  // THE SENTRY hovers, which nothing else on the Protoss ground card does, and it is small. Three
+  // dangling legs under a floating shell read as "not a soldier" at any size.
+  sentry: () => {
+    const r = N([0, 0.55, 0]);
+    r.children.push(P('dome', [1.15, 0.75, 1.15], [0, 0.08, 0], m(C.gold, { spec: 0.62 })), P('cyl', [1.0, 0.16, 1.0], [0, 0.04, 0], m(C.goldD, { spec: 0.5 })));
+    r.children.push(P('sphere', [0.42, 0.42, 0.42], [0.32, 0.10, 0], GLOW(C.psi)), P('box', [0.42, 0.07, 0.5], [-0.2, 0.42, 0], TEAM));
+    for (let k = 0; k < 3; k++) { const a = k * 2.094 + 0.6; r.children.push(P('cyl', [0.10, 0.62, 0.10], [Math.cos(a) * 0.44, -0.32, Math.sin(a) * 0.44], m(C.goldD), { rot: [Math.sin(a) * 0.3, 0, -Math.cos(a) * 0.3], anim: st => ({ pos: [0, st.idle == null ? 0 : 0.05 * IDLE(st), 0] }) })); }
+    for (const s of [-1, 1]) r.children.push(P('oct', [0.22, 0.4, 0.22], [-0.1, 0.5, s * 0.5], GLOW(C.psi), { anim: st => ({ size: [1 + AK(st) * 0.8, 1 + AK(st) * 0.8, 1 + AK(st) * 0.8] }) }));
+    return r;
+  },
+  // THE IMMORTAL is the Dragoon rig deliberately -- it IS a dragoon lineage machine -- but squat and
+  // wide where the Dragoon is tall and round, with two slab arm cannons that double its width. Same
+  // family, opposite proportions, which is how a player reads "the big one" without a label.
+  immortal: () => {
+    const r = RIG.walker4({ bodySize: [1.45, 0.85, 1.5], bodyY: 0.82, legLen: 0.78, color: C.goldD });
+    const b = r.children[0];
+    for (const s of [-1, 1]) {
+      const arm = N([0.25, -0.05, s * 0.95], { anim: recoil(0.2) });
+      arm.children.push(P('box', [1.15, 0.42, 0.42], [0.45, 0, 0], m(C.gold, { spec: 0.6 })), P('box', [0.3, 0.2, 0.2], [1.1, 0, 0], GLOW(C.psi)));
+      b.children.push(arm);
+    }
+    // the hardened-shield emitters: four lit posts standing proud of the hull, so the silhouette has
+    // a spiky top edge the Dragoon's smooth dome does not
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.children.push(P('cyl', [0.09, 0.5, 0.09], [sx * 0.5, 0.55, sz * 0.55], m(C.goldL, { spec: 0.7 })), P('oct', [0.17, 0.26, 0.17], [sx * 0.5, 0.86, sz * 0.55], GLOW([0.6, 0.9, 1])));
+    return r;
+  },
+  // THE COLOSSUS: four very long thin legs and almost no body. This is the whole silhouette and it is
+  // the only one like it in the game, which matters more than usual because the def flies -- the
+  // player has to be able to tell at a glance that the thing walking over the cliff is theirs and is
+  // not a ship.
+  colossus: () => {
+    const r = N([0, 0, 0]);
+    const body = N([0, 2.5, 0], { anim: withDeath(st => ({ pos: [0, st.idle == null ? 0 : 0.06 * IDLE(st), 0] }), t => ({ pos: [0, -2.1 * t, 0], rot: [0.9 * t, 0, 0.5 * t] })) });
+    r.children.push(body);
+    body.children.push(P('sphere', [1.05, 0.6, 0.9], [0, 0, 0], m(C.goldD, { spec: 0.6 })), P('dome', [1.15, 0.5, 1.0], [0, 0.2, 0], m(C.gold, { spec: 0.65 })), P('box', [0.5, 0.08, 0.6], [-0.35, 0.42, 0], TEAM));
+    for (const s of [-1, 1]) body.children.push(P('cyl', [0.16, 0.55, 0.16], [0.42, 0.28, s * 0.38], m(C.goldL, { spec: 0.7 })), P('sphere', [0.26, 0.26, 0.26], [0.42, 0.58, s * 0.38], GLOW([0.9, 0.6, 0.3]), { anim: st => ({ size: [1 + AK(st) * 1.4, 1 + AK(st) * 1.4, 1 + AK(st) * 1.4] }) }));
+    [[0.7, -1], [0.7, 1], [2.44, -1], [2.44, 1]].forEach(([a, s], i) => {
+      const hip = N([Math.cos(a) * 0.55, 2.4, Math.sin(a) * 0.55 * s], { rot: [0, -Math.atan2(Math.sin(a) * s, Math.cos(a)), 0], anim: withDeath(yaw(0.22, i % 2 ? Math.PI : 0, 1), t => ({ rot: [0, 0, (i < 2 ? 1.2 : -1.0) * t] })) });
+      const up = N([0, 0, 0], { rot: [0, 0, -1.15] });
+      up.children.push(P('cyl', [0.13, 1.5, 0.13], [0, -0.75, 0], m(C.goldD, { spec: 0.55 })));
+      const knee = N([0, -1.5, 0], { rot: [0, 0, 2.0] }); knee.children.push(P('cyl', [0.10, 1.6, 0.10], [0, -0.8, 0], m(C.goldD, { spec: 0.55 })));
+      up.children.push(knee); hip.children.push(up); r.children.push(hip);
+    });
+    return r;
+  },
+  // THE DISRUPTOR: a caged sphere. No legs at all, so it is the only Protoss ground unit that is a
+  // circle from above, and the cage rings turn while it charges.
+  disruptor: () => {
+    const r = N([0, 0.7, 0]);
+    r.children.push(P('sphere', [1.0, 1.0, 1.0], [0, 0, 0], GLOW([0.75, 0.45, 1]), { anim: st => ({ size: [1 + AK(st) * 0.5, 1 + AK(st) * 0.5, 1 + AK(st) * 0.5] }) }));
+    for (let k = 0; k < 3; k++) r.children.push(P('cyl', [1.55, 0.14, 1.55], [0, 0, 0], m(C.goldD, { spec: 0.6 }), { rot: [k === 0 ? 0 : Math.PI / 2, 0, k === 2 ? Math.PI / 2 : 0], anim: st => ({ rot: [0, (st.idle || 0) * 6.283 * (k + 1) * 0.4, 0] }) }));
+    r.children.push(P('sphere', [0.45, 0.45, 0.45], [0, -0.75, 0], m(C.goldD)), P('box', [0.5, 0.08, 0.45], [-0.2, 0.85, 0], TEAM));
+    return r;
+  },
+  // THE WARP PRISM is a Pylon that flies and it should look like one: the same floating octahedron the
+  // Pylon carries, slung under a flat carrier plate. Nothing else in the air has a lit crystal hanging
+  // below it, which is the tell that this is the thing making ground powered.
+  warp_prism: () => RIG.ship({ body: 'box', bodySize: [1.7, 0.32, 1.5], color: C.goldD, cockpit: C.psi, engines: [[-0.9, 0, -0.4], [-0.9, 0, 0.4]], engineColor: [0.6, 0.9, 1],
+    extra: () => [P('oct', [0.85, 1.3, 0.85], [0, -0.62, 0], GLOW(C.psi), { anim: st => ({ rot: [0, (st.idle || 0) * 6.283, 0], pos: [0, st.idle == null ? 0 : 0.07 * IDLE(st), 0] }) }),
+      P('cyl', [0.16, 0.4, 0.16], [0, -0.28, 0], m(C.gold)),
+      P('box', [0.35, 0.14, 1.9], [0.2, 0.1, 0], m(C.gold, { spec: 0.6 }))] }),
+  // THE PHOENIX: a dart. Long, narrow, sharply swept wings, and the smallest plan area of any Protoss
+  // ship -- against the Corsair's fat twin booms it is unmistakable.
+  phoenix: () => RIG.ship({ bodySize: [2.1, 0.34, 0.5], color: C.gold, cockpit: C.psi, wings: { len: 0.75, span: 1.55, sweep: 1.25, x: -0.3 }, wingColor: C.goldD, engines: [[-1.0, 0, 0]], engineColor: [0.7, 0.95, 1],
+    extra: () => [P('cone', [0.28, 0.9, 0.28], [1.2, 0, 0], m(C.goldL, { spec: 0.7 }), { rot: [0, 0, -Math.PI / 2] }),
+      P('sphere', [0.18, 0.18, 0.18], [0.95, 0.05, 0], GLOW([0.7, 1, 1]), { anim: st => ({ size: [1 + AK(st) * 1.6, 1 + AK(st) * 1.6, 1 + AK(st) * 1.6] }) })] }),
+  // THE ORACLE: a curved shell with a wide dorsal fin, which gives it a tall silhouette from the side
+  // and a teardrop from above. It is the harasser, so it should read as fast and thin-skinned.
+  oracle: () => RIG.ship({ bodySize: [1.9, 0.62, 0.85], color: C.cream, cockpit: false, engines: [[-0.95, 0, 0]], engineColor: [0.9, 0.7, 1],
+    extra: () => [P('wedge', [1.5, 0.85, 0.16], [-0.15, 0.35, 0], m(C.goldD, { spec: 0.6 })),
+      P('oct', [0.5, 0.75, 0.5], [0.55, 0.28, 0], GLOW([0.95, 0.75, 1]), { anim: st => ({ size: [1 + AK(st) * 0.9, 1 + AK(st) * 0.9, 1 + AK(st) * 0.9] }) }),
+      P('box', [0.5, 0.07, 0.55], [-0.4, 0.3, 0], TEAM)] }),
+  // THE VOID RAY: a spike. The prism spine is longer than the hull and does the whole job of saying
+  // "this fires one continuous heavy beam", which is the opposite reading from the Scout's two guns.
+  void_ray: () => RIG.ship({ body: 'box', bodySize: [1.5, 0.7, 0.8], color: C.navy, cockpit: false, engines: [[-0.85, 0, 0]], engineColor: [0.55, 0.75, 1],
+    extra: () => [P('oct', [0.55, 2.6, 0.55], [0.85, 0.05, 0], GLOW([0.6, 0.55, 1]), { rot: [0, 0, -Math.PI / 2], anim: st => ({ size: [1 + AK(st) * 0.4, 1, 1 + AK(st) * 0.4] }) }),
+      P('box', [0.6, 0.5, 1.6], [-0.35, 0.05, 0], m(C.goldD, { spec: 0.6 })),
+      P('cyl', [0.35, 0.9, 0.35], [-0.3, 0.05, 0], m(C.gold), { rot: [Math.PI / 2, 0, 0] }),
+      P('box', [0.45, 0.07, 0.5], [-0.5, 0.42, 0], TEAM)] }),
+  // THE TEMPEST: a wide flat disc with a floating ring above it, the largest plan area of any Protoss
+  // ship except the Mothership. Big and slow should look big and slow from the minimap up.
+  tempest: () => RIG.ship({ alt: 0.35, body: 'box', bodySize: [1.5, 0.4, 1.5], color: C.goldD, cockpit: false, engines: [], extra: () => [
+    P('cyl', [3.0, 0.22, 3.0], [0, 0, 0], m(C.gold, { spec: 0.6 })),
+    P('cyl', [2.2, 0.1, 2.2], [0, 0.22, 0], GLOW([0.35, 0.55, 0.95]), { anim: st => ({ rot: [0, (st.idle || 0) * 6.283, 0] }) }),
+    P('dome', [1.3, 0.7, 1.3], [0, 0.24, 0], m(C.goldD, { spec: 0.66 })),
+    P('oct', [0.5, 0.9, 0.5], [0, 0.85, 0], GLOW(C.psi), { anim: st => ({ size: [1 + AK(st) * 0.7, 1 + AK(st) * 0.7, 1 + AK(st) * 0.7] }) }),
+    P('box', [0.6, 0.07, 0.55], [-0.9, 0.3, 0], TEAM)] }),
+  // THE MOTHERSHIP: the largest thing in the game and it has to read that way instantly -- a saucer
+  // with three crystals orbiting it. Made of two Arbiters, so the Arbiter's floating octahedron is
+  // kept and multiplied rather than replaced.
+  mothership: () => {
+    const r = N([0, 0.5, 0]);
+    r.children.push(P('cyl', [4.0, 0.3, 4.0], [0, 0, 0], m(C.goldD, { spec: 0.62 })), P('dome', [3.0, 1.2, 3.0], [0, 0.15, 0], m(C.gold, { spec: 0.7 })), P('cyl', [1.6, 0.24, 1.6], [0, 1.2, 0], m(C.navy)));
+    r.children.push(P('oct', [1.1, 1.8, 1.1], [0, 1.9, 0], GLOW(C.psi), { anim: st => ({ pos: [0, st.idle == null ? 0 : 0.12 * IDLE(st), 0], rot: [0, (st.idle || 0) * 6.283, 0] }) }));
+    for (let k = 0; k < 3; k++) { const a = k * 2.094; r.children.push(P('oct', [0.5, 0.85, 0.5], [Math.cos(a) * 2.4, 0.55, Math.sin(a) * 2.4], GLOW([0.7, 0.55, 1]), { anim: st => ({ pos: [0, st.idle == null ? 0 : 0.09 * Math.sin((st.idle || 0) * 6.283 + k * 2.1), 0] }) })); }
+    r.children.push(P('box', [1.0, 0.08, 0.7], [-1.6, 0.35, 0], TEAM));
+    for (let k = 0; k < 6; k++) { const a = k * 1.047 + 0.5; r.children.push(P('box', [0.7, 0.12, 0.22], [Math.cos(a) * 1.9, 0.22, Math.sin(a) * 1.9], m(C.goldL, { spec: 0.72 }), { rot: [0, -a, 0] })); }
+    return r;
+  },
   // ---- M11 additions: the map's own units --------------------------------------------------------
   // Three units shipped with no model and so had no baked sheet at all. See the M11 block in BUILDINGS
   // for why that matters. None of these may look like it belongs to a race: the creatures are dirt and
@@ -806,6 +914,21 @@ const BUILDINGS = {
   templar_archives: (w, h) => { const r = B.protossSlab(w, h, { height: 0.5 }); r.children.push(P('box', [1.6, 1.0, 1.2], [0, 1.25, 0], m(C.goldD)), B.crystal(0, 0, 0.45, 1.75, C.violet), B.crystal(-1.2, -0.3, 0.22, 0.75, C.violet), B.crystal(1.2, -0.3, 0.22, 0.75, C.violet)); return r; },
   observatory: (w, h) => { const r = B.protossSlab(w, h, { height: 0.4 }); r.children.push(P('cyl', [1.1, 0.5, 1.1], [0, 0.9, 0], m(C.goldD)), P('sphere', [0.6, 0.6, 0.6], [0, 1.3, 0], m(C.navy)), P('cyl', [0.1, 1.2, 0.1], [0.4, 1.7, -0.3], m(C.goldL), { rot: [0.5, 0, -0.6] })); return r; },
   arbiter_tribunal: (w, h) => { const r = B.protossSlab(w, h, { height: 0.5 }); r.children.push(P('oct', [2.0, 1.2, 1.6], [0, 1.2, 0], m(C.goldD, { spec: 0.6 })), B.crystal(0, 0, 0.35, 1.7)); return r; },
+  // THE WARP GATE (M12 item 12). It shares the Gateway's 4x3 footprint -- a morph must, because
+  // G.morphBuilding never re-blocks the map -- so the only thing that can tell a player which one they
+  // are looking at is the SHAPE, and the two are deliberately opposites. A Gateway is a vertical arch
+  // you walk out of: two uprights, a lintel, a lit panel standing on end. A Warp Gate is a horizontal
+  // ring lying flat on the plinth, because nothing walks out of it -- it is an aperture pointing at
+  // the sky, and the thing it makes appears somewhere else entirely.
+  warp_gate: (w, h) => {
+    const r = B.protossSlab(w, h, { height: 0.4, coreColor: [0.55, 0.7, 1] });
+    r.children.push(P('cyl', [3.0, 0.24, 2.2], [0, 1.0, -0.1], m(C.goldD, { spec: 0.66 })),
+      P('cyl', [2.4, 0.12, 1.7], [0, 1.16, -0.1], GLOW([0.35, 0.6, 1]), { anim: st => ({ rot: [0, (st.idle || 0) * 6.283, 0] }) }),
+      P('cyl', [1.2, 0.1, 0.9], [0, 1.26, -0.1], GLOW([0.8, 0.92, 1])));
+    for (let k = 0; k < 4; k++) { const a = k * 1.5708 + 0.785; r.children.push(P('cyl', [0.22, 1.0, 0.22], [Math.cos(a) * 1.25, 0.55, -0.1 + Math.sin(a) * 0.9], m(C.goldD, { spec: 0.6 }), { rot: [Math.sin(a) * 0.22, 0, -Math.cos(a) * 0.22] })); }
+    r.children.push(B.crystal(-1.5, -0.1, 0.28, 1.6), B.crystal(1.5, -0.1, 0.28, 1.6));
+    return r;
+  },
   // ============================ M11 ADDITIONS ============================
   // Thirteen buildings and three units shipped this milestone with no MODEL, which meant no baked
   // sheet, which meant js/sprites.js fell through to the flat vector painter for every one of them.
