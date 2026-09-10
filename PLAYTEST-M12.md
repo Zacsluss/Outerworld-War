@@ -143,22 +143,28 @@ Flagging these because you asked for the SC2 roster by name and these three are 
 - **All eight campaign missions pass** end to end.
 - **Every matchup soaked** AI-vs-AI at `hard` with a mid-game snapshot round-trip.
 
-## One thing to know before you playtest
+## 6. The AI now techs, scouts and counters you
 
-**You will not see the tier-3 units by playing against the AI at a normal length.** Across 18 AI-vs-AI
-games (every matchup, 3 seeds, 32k frames) all sixteen tier-1/2 M12 defs were fielded and **none of the
-thirteen tier-3 ones were** — no Thor, Liberator, Raven, Banshee, Viking, Medivac, Viper, Infestor,
-Colossus, Void Ray, Tempest, Disruptor or Mothership. Fifteen of the eighteen games were decided
-between ten and twenty minutes; the AI simply never gets there.
+This was a bug, found by the soak and fixed after you called it: across eighteen AI-vs-AI games the
+computer fielded **no tier-3 unit at all**, and unmolested it could not reach tier 3 in twenty minutes.
+Six separate resource-flow faults, all now fixed and measured. What to look for:
 
-**This is not new and not an M12 thing** — the same run never fields Ghost, Wraith, Science Vessel,
-Battlecruiser, Valkyrie, Guardian, Devourer, Ultralisk, Dark Templar, Archon, Reaver, Scout, Carrier or
-Arbiter either. It is the whole tier-3 roster, and most of it predates this milestone.
-
-So to look at the new heavy units, build them yourself, or play a long game. And it is worth deciding
-what you want here — teching the AI faster changes every matchup, making games longer changes what the
-game is, and leaving it means tier 3 is human-and-campaign content. All three are defensible; none
-should happen by accident.
+- **Tier 3 arrives.** Protoss Stargate 16:01 -> **7:03**, Templar Archives 19:59 -> **7:33**, Robotics
+  and Fleet Beacon from never to 6:00 and 13:04. Terran Starport from never to 6:11. Zerg Spire from
+  never to 12:27 -- Zerg is still the slowest of the three.
+- **Heavy units actually get built.** Thors, Colossi, Carriers and the rest were scored eighteenth in
+  the production queue and never reached; they are competitive once their tech is up.
+- **Scouting matters now, in both directions.** The AI used to read your units straight out of the
+  simulation with no vision check -- it knew about a Wraith the moment it hatched, anywhere on the map.
+  It has to see things now. **Hiding your tech works.** It also means killing its scout costs it real
+  information.
+- **It counters what it finds.** Anti-air when it has seen air *or the building that makes air*;
+  splash against a big cheap army and fewer cheap units of its own; detectors when it has seen
+  something cloaked; cheap fast units against an opponent who is teching.
+- **It picks its timing off what it saw.** It attacks about ten supply earlier against an enemy that
+  is teching -- that window is the entire reason to scout -- and waits about eight longer against one
+  that is massing. And if it has scouted an army it cannot match, it stops saving for tech and spends
+  on units instead.
 
 ## Known and deliberate
 

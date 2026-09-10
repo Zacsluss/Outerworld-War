@@ -194,26 +194,73 @@ explicit instruction. Recorded so the run has a starting list rather than a blan
 | `test/saveload.js` | 54 pass, including the new M12 morphs |
 | `test/eightplayer.js` | Passes after three stale assertions were fixed (see below) |
 
-### The thing worth knowing: the AI never reaches tier 3
+### The AI never reached tier 3, and that was a bug
 
-Fifteen of the eighteen soak games were decided between **f15168 and f30024** — ten to twenty minutes.
-Coverage over all eighteen:
+Filed first as a design question about game length. That was wrong, and the correction came from the
+person who plays this game: a human reaches tier 3 in well under eight minutes, and build order,
+scouting and countering the opponent are most of what a real match consists of. So it is a bug.
 
-- **Every tier-1/2 M12 def is fielded: 16/16.** Marauder, Reaper, Hellion, Widow Mine, Cyclone, Roach,
-  Baneling, Ravager, Swarm Host, Overseer, Creep Tumour, Sentry, Immortal, Phoenix, Oracle, Warp Prism.
-- **No tier-3 def is fielded: 0/13.** Thor, Liberator, Raven, Banshee, Viking, Medivac, Viper,
-  Infestor, Colossus, Void Ray, Tempest, Disruptor, Mothership.
+Measured with `test/techtime.js`, a new diagnostic that suppresses victory and gives the AI an
+opponent that does nothing, so the build ORDER is measured rather than the outcome of a war. Against
+nobody at all, the AI could not reach tier 3 in twenty minutes.
 
-**This is not an M12 property.** The same run never fields Ghost, Wraith, Science Vessel, Battlecruiser,
-Valkyrie, Guardian, Devourer, Ultralisk, Dark Templar, Archon, Reaver, Scout, Carrier or Arbiter either
-— the entire Brood War tier-3 roster, which predates this milestone by nine of them. The games end
-first. So more than half of everything ever built for this game has never been seen by anyone playing
-against a computer opponent at a normal length.
+The decisive experiment was to hand it unlimited gas: every race then reached every tier-3 building in
+five to eight minutes. So the tech tree and the scripts were sound and the entire problem was resource
+flow. Five separate causes, each measured before it was touched:
 
-That is a design question rather than a bug, and it is worth putting in front of a human before
-anything is done about it. The options are not equivalent: making the AI tech faster changes every
-matchup; making games longer changes what the game *is*; leaving it means tier 3 is campaign-and-human
-content only, which is a legitimate answer but should be a chosen one.
+1. **The concurrent-build limit was a constant** -- a flat 2, right for a twelve-worker opening and
+   absurd for a seventy-worker one, and `macro()` ignores it entirely. `under` therefore sat at 3-5
+   permanently and the head of the tech order was never startable: Protoss's Citadel was refused for
+   this reason **423 times in one game**, its Robotics 226, Zerg's Spire 225. The 200-second escape
+   hatch then advanced past them, so those buildings were not delayed, they were **skipped**.
+2. **Tier 3 sat behind the optional buildings.** Protoss had NINE side-buildings between the Templar
+   Archives and the Stargate.
+3. **`prodDone` counted `!u.def.depot`**, and every Zerg production building is a depot -- so it was
+   permanently 0 for Zerg and the gas-tech gate could never open by that arm.
+4. **The reserve was set after the spending.** `turn()` zeroes it, runs `economy()` and `supply()` --
+   every worker and every overlord, the two largest mineral sinks in the game -- and only then
+   `script()`, the one thing that knows what is being saved for. Both sinks always saw zero.
+5. **The 40% floor deadlocked.** Below 40% of the target the reserve is off, so units are bought, so
+   the bank never reaches 40%. Zerg's Spire held the head of the script for **842 seconds** sitting on
+   ~60 minerals against a 200 target.
+
+Plus a sixth in the economy: geysers at newly taken bases sat on **zero workers**, because candidates
+were restricted to workers already within 20 tiles and a base you have just taken has none.
+
+Medians over three seeds, before and after:
+
+| | before | after |
+|---|---|---|
+| Terran Starport | never | 6:11 |
+| Terran Armory | 19:01 | 6:23 |
+| Zerg Spire | never | 12:27 |
+| Zerg Queen's Nest | 15:20 | 11:56 |
+| Protoss Stargate | 16:01 | **7:03** |
+| Protoss Templar Archives | 19:59 | **7:33** |
+| Protoss Robotics | never | 6:00 |
+| Protoss Fleet Beacon | never | 13:04 |
+
+And a seventh cause for the tier-3 UNITS, separate from the buildings: `AI.production` scores a
+candidate as `(count * sup + sup) / weight`, so a 6-supply Thor at weight 2 opened at 3.00 against a
+Marine's 0.17 -- eighteenth in line -- and because `count` is LIVE units, attrition kept resetting the
+Marine's score before the queue ever got there. Every unit needing an advanced building or 100+ gas
+now has a weight putting its score at 1.25 or better.
+
+### Scouting was decorative, and now is not
+
+`enemyAir` -- the switch deciding whether Zerg builds Scourge and Spore Colonies and whether Protoss
+builds Corsairs -- was a raw scan of `G.units` with **no vision test at all**. The AI knew about a
+Wraith the moment it hatched, from across an unexplored map. Hiding your tech bought you nothing.
+
+There is an intel model now (`observe`, `sawAir`, `sawCloak`, `readEnemy`), gated on `G.canSee` for
+units and `G.explored` for buildings, remembering what it has seen. From it: composition counters
+(anti-air, splash against a massing enemy, cheap units against a teching one, detectors), attack
+timing (a teching enemy is soft *now* -- that window is the whole reason to scout), and `overrun()`,
+which stops the build order saving for tech when an army it cannot match is already on the way.
+
+`test/aiadapt.js` covers it, and the negative control is the point of every check: an AI that cheats
+passes "the AI knows about air" exactly as well as one that scouted, so each check shows it the thing
+and requires the answer to flip.
 
 ### Three stale assertions, and one landmine
 
