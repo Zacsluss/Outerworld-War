@@ -769,6 +769,10 @@ node test/cardsay.js               # every greyed command-card button explains i
 node test/wrongthing.js            # do the wrong thing on purpose: nothing crashes, nothing wedges
 node test/net_many.js              # 3-4 lockstep clients, simultaneous drops, host migration
 node test/longgame.js              # a 60-minute game and its replay past the checkpoint thinning
+node test/techtime.js [min] [seeds] [solo|vs]   # when the AI reaches each tier. `solo` gives it an
+                                   # opponent that does nothing, so it measures the BUILD ORDER rather
+                                   # than the outcome of a war -- the two are easy to confuse and the
+                                   # first read of this file confused them
 node test/soak.js                  # every matchup x 3 seeds at 32k frames: no throws, no NaN, nothing
                                    # unbounded, a mid-game snapshot round-trip, and a coverage report
                                    # of which defs/abilities/upgrades an AI ever actually reached
