@@ -372,7 +372,7 @@ class AI {
     //
     // One think stale is fine and is the point: the figure is only a spending brake, and the step it
     // refers to is by definition the one that was not affordable last time.
-    if (this.headDef) this.reserve(this.headDef);
+    if (this.headDef && !this.overrun()) this.reserve(this.headDef);
     try { this.economy(); this.supply(); this.script(); this.macro(); this.production(); this.research(); this.army(); this.scout(); this.drops(); this.micro(); } catch (e) { console.error('AI', e); }
   }
   // ---------------- economy ----------------
@@ -569,7 +569,7 @@ class AI {
           && under >= (def.depot ? 3 : 2) + (st.under || 0) + slots + (i === this.scriptIdx ? 1 : 0)) continue; // finish what is already going up first
       // gas-hungry tech waits until there is an army and enough production to use it
       if (def.gas >= 100 && !def.produces.length && (this.armySup || 0) < 16 && prodDone < 3) continue;
-      if (p.minerals < def.min || p.gas < def.gas) { if (i === this.scriptIdx) this.reserve(def); continue; } // save up for the head step instead of spending on units
+      if (p.minerals < def.min || p.gas < def.gas) { if (i === this.scriptIdx && !this.overrun()) this.reserve(def); continue; } // save up for the head step instead of spending on units -- unless an army is on its way here, in which case units now beat a building later
       // Only the head step may spend past the reserve; a step reached by scanning ahead must not eat the
       // money the step in front of it is saving for, or it would starve the thing it jumped over.
       if (this.build(id, i === this.scriptIdx && !this.mine(u => u.def.worker && u.order.type === 'build' && u.order.def).length)) { this.stepT = G.frame; return; } // a worker already walking to a site keeps its money
@@ -936,6 +936,20 @@ class AI {
     const I = this.observe();
     for (const k of Object.keys(I.unit)) { const d = DATA.units[k]; if (d && (d.cloak || d.burrow || d.permaCloak)) return true; }
     return ['covert_ops', 'control_tower', 'templar_archives', 'hydralisk_den'].some(b => I.bld[b]);
+  }
+  // ARE WE ABOUT TO BE OVERRUN? The other half of "sometimes massing tier 1 is the right answer":
+  // holding 200 minerals for a Spire is correct against an opponent who is teching too, and suicidal
+  // against one who is walking across the map with thirty zerglings right now. When the army we have
+  // SEEN is half again ours and the read says massing, the build order stops reserving and the money
+  // goes into units this minute.
+  //
+  // Deliberately strict -- it needs BOTH the read and the supply deficit -- because the failure mode of
+  // getting this wrong is an AI that panics permanently and never techs at all, which is the bug this
+  // whole branch was fixing.
+  overrun() {
+    if (this.readEnemy() !== 'massing') return false;
+    const mine = this.armyUnits().reduce((t, u) => t + (u.def.sup || 1), 0);
+    return this.seenEnemyArmy() > mine * 1.5 + 8;
   }
   // Is the enemy MASSING or TECHING? The two call for opposite answers and the whole point of scouting
   // is to tell them apart. "Massing" is a big cheap army with a shallow tech tree; "teching" is the
