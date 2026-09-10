@@ -476,8 +476,8 @@ const DATA = (() => {
   // THE WARP PRISM is a Pylon that flies, and `psi` on a mobile def is the whole feature -- it is what
   // makes item 12's warp-in mobile instead of a thing you do at home. Its field is 4 against a Pylon's
   // 6.5, so a prism projects a real but small pocket of ground you can warp on to, and it is a 100/100
-  // hull with no weapon holding it up. GameMap.recomputePsi walks buildings by their `tx`; a moving
-  // source is painted separately, once every twelve frames, by Abilities.tickProtoss.
+  // hull with no weapon holding it up. GameMap.recomputePsi paints it from its pixel position rather
+  // than a building's `tx`; Abilities.tickProtoss is what notices it has moved, every twelve frames.
   U('warp_prism', { name: 'Warp Prism', race: 'P', hp: 100, sh: 100, armor: 1, size: 'large', min: 250, gas: 0, sup: 2, time: 900, speed: 4.44, sight: 9, r: 16, hk: 'W', from: 'robotics_facility', mech: true, fly: true, cargo: 8, psi: 4,
     abil: ['unload'], upgA: 'airA', speedTech: ['gravitic_drive', 6.67] });
 

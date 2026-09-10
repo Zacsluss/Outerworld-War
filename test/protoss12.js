@@ -574,6 +574,42 @@ console.log('\n--- the Warp Prism as a mobile pylon ---');
   ok(r.far === false, '...over a radius, not the whole map');
   ok(r.moved.there && r.moved.gone, 'and the power grid follows it when it moves', JSON.stringify(r.moved));
   ok(r.dead === true, '...and goes out when it dies');
+
+  // THE REGRESSION THAT BROKE WARP-IN ONTO A PARKED PRISM, and the reason the checks above all passed
+  // while it was broken: every one of them moves or kills the prism, which is exactly the case the bug
+  // did NOT hit. Abilities.tickProtoss is keyed on prism positions and skips when nothing moved, so a
+  // STATIONARY prism was only ever repainted by luck -- and any other caller of recomputePsi (a pylon
+  // finishing, a pylon dying) wiped the grid back to buildings only and nothing ever put it back.
+  //
+  // A prism you are parked on to warp onto is the one that never moves. So: park it, then disturb the
+  // grid from somewhere else entirely, and the field must survive.
+  const q = json(`(() => {
+    this.setup();
+    const [fx, fy] = this.field, m = G.map;
+    const wp = G.spawnUnit('warp_prism', 0, (fx + 3.5) * TILE, (fy + 3.5) * TILE);
+    this.ticks(13);
+    const at = () => m.hasPsi(0, fx + 3, fy + 3);
+    const out = { parked: at(), x: wp.x, y: wp.y };
+    // a pylon COMPLETING, far away, recomputes the grid
+    const p = G.players[0];
+    const spot = m.findFreeTile(Math.floor(p.startX / TILE) + 7, Math.floor(p.startY / TILE) + 7, 10);
+    const pyl = G.placeBuilding(DATA.buildings.pylon, spot[0], spot[1], 0);
+    G.completeBuilding(pyl);
+    out.afterPylonDone = at();
+    this.ticks(26);
+    out.afterPylonDoneSettled = at();
+    // ...and a pylon DYING recomputes it again
+    G.kill(pyl, null, true);
+    out.afterPylonDead = at();
+    this.ticks(26);
+    out.afterPylonDeadSettled = at();
+    out.stillParked = wp.x === out.x && wp.y === out.y;
+    return out;
+  })()`);
+  ok(q.stillParked === true, 'the parked-prism check is not vacuous: the prism never moved', JSON.stringify([q.x, q.y]));
+  ok(q.parked === true, 'a parked Warp Prism has a field to begin with');
+  ok(q.afterPylonDone === true && q.afterPylonDoneSettled === true, 'a pylon completing elsewhere does not wipe it', JSON.stringify(q));
+  ok(q.afterPylonDead === true && q.afterPylonDeadSettled === true, '...and neither does one dying elsewhere', JSON.stringify(q));
 }
 
 // ============================================================================ 11. determinism and the stamp

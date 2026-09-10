@@ -559,7 +559,11 @@ const G = {
   },
   kill(u, killer, silent) {
     if (!u.alive) return; u.alive = false; const p = this.players[u.owner];
-    if (u.isBuilding) { if (!u.lifted) this.map.unblock(u.tx, u.ty, u.def.w, u.def.h, u.id); if (u.def.creep) this.map.recomputeCreep(this.units); if (u.def.psi) this.map.recomputePsi(u.owner, this.units); if (u.geyser) u.geyser.building = null; for (const l of u.larvae) this.kill(l, null, true); if (u.def.bunker) { while (u.cargo.length) this.unloadOne(u); } if (u.addon) { u.addon.parent = null; } if (u.parent) u.parent.addon = null; if (u.builder && u.builder.order.target === u) u.builder.nextOrder(); for (const it of u.prod) if (it.kind === 'upg' || it.kind === 'tech') p.researching.delete(it.id); }
+    if (u.isBuilding) { if (!u.lifted) this.map.unblock(u.tx, u.ty, u.def.w, u.def.h, u.id); if (u.def.creep) this.map.recomputeCreep(this.units); if (u.geyser) u.geyser.building = null; for (const l of u.larvae) this.kill(l, null, true); if (u.def.bunker) { while (u.cargo.length) this.unloadOne(u); } if (u.addon) { u.addon.parent = null; } if (u.parent) u.parent.addon = null; if (u.builder && u.builder.order.target === u) u.builder.nextOrder(); for (const it of u.prod) if (it.kind === 'upg' || it.kind === 'tech') p.researching.delete(it.id); }
+    // Outside the isBuilding branch above, because a Warp Prism is a psi source that is not a building.
+    // It used to sit inside it, so a dead prism left its field painted on the map until it happened to
+    // be recomputed for some unrelated reason.
+    if (u.def.psi) this.map.recomputePsi(u.owner, this.units);
     for (const c of u.cargo) { c.inside = null; if (!u.def.bunker) this.kill(c, killer, true); }
     if (u.launched) for (const ic of u.launched) if (ic.alive) this.kill(ic, null, true);
     if (u.parent && u.parent.launched) { const i = u.parent.launched.indexOf(u); if (i >= 0) u.parent.launched.splice(i, 1); }

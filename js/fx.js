@@ -220,6 +220,75 @@ const FX = {
     else if (f.kind === 'nuke_target') { ctx.fillStyle = frame % 14 < 7 ? '#ff2020' : '#a00000'; ctx.beginPath(); ctx.arc(f.x, f.y, 5, 0, 7); ctx.fill(); ctx.strokeStyle = 'rgba(255,60,60,0.5)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(f.x, f.y, 10 + (frame % 24), 0, 7); ctx.stroke(); }
     else if (f.kind === 'scan' && f.owner === G.human) { ctx.globalCompositeOperation = 'lighter'; const k = (frame % 48) / 48; ctx.strokeStyle = `rgba(120,255,140,${0.6 * (1 - k)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(f.x, f.y, r * k, 0, 7); ctx.stroke(); ctx.fillStyle = 'rgba(80,255,120,0.05)'; ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, 7); ctx.fill(); }
     else if (f.kind === 'recall') { ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = 'rgba(120,200,255,0.8)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(f.x, f.y, r * (f.t / 30), 0, 7); ctx.stroke(); }
+    // ---- the persistent fields that used to draw NOTHING ------------------------------------------
+    // G.fields is the only path to the screen for these, and none of them had a branch, so nine kinds
+    // of ongoing effect were invisible for their entire duration. The one-frame `ring()` each pushes at
+    // cast time is what made that survive review: something flashed, so the ability looked wired up.
+    //
+    // A FORCE FIELD IS TERRAIN. It writes blocked tiles through GameMap.raiseForceField and stops an
+    // army dead, so an invisible one is not a missing effect, it is a wall the player cannot see. It is
+    // drawn solid and bright for that reason, and everything else here is drawn to read as a hazard you
+    // can stand outside of.
+    else if (f.kind === 'force_field') {
+      const a = Math.min(1, f.t / 30);                                         // only the last 30 frames fade
+      ctx.globalAlpha = a; ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(f.x, f.y, r * 0.2, f.x, f.y, r);
+      g.addColorStop(0, 'rgba(150,205,255,0.42)'); g.addColorStop(0.72, 'rgba(90,160,255,0.30)'); g.addColorStop(1, 'rgba(190,225,255,0.55)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, 7); ctx.fill();
+      ctx.strokeStyle = 'rgba(210,235,255,0.9)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, 7); ctx.stroke();
+      for (let i = 0; i < 6; i++) { const a0 = i * 1.047 + frame * 0.006; ctx.strokeStyle = 'rgba(170,215,255,0.35)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(f.x + Math.cos(a0) * r, f.y + Math.sin(a0) * r * 0.85); ctx.lineTo(f.x + Math.cos(a0 + 1.047) * r, f.y + Math.sin(a0 + 1.047) * r * 0.85); ctx.stroke(); }
+    }
+    else if (f.kind === 'time_warp') {
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, r);
+      g.addColorStop(0, 'rgba(150,120,255,0.10)'); g.addColorStop(0.8, 'rgba(120,150,255,0.22)'); g.addColorStop(1, 'rgba(180,200,255,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, 7); ctx.fill();
+      for (let k = 0; k < 3; k++) { const rr = r * (1 - ((frame / 90 + k / 3) % 1)); ctx.strokeStyle = `rgba(170,190,255,${0.45 * (rr / r)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(f.x, f.y, rr, 0, 7); ctx.stroke(); }
+    }
+    // Fuses. The countdown ring CLOSES on the target, so the fraction of the ring that is left is the
+    // time you have left to walk out of it -- which is the only number that matters to whoever is in it.
+    else if (f.kind === 'nova' || f.kind === 'bile') {
+      const nova = f.kind === 'nova', full = (nova ? DATA.abilities.purification_nova : DATA.abilities.corrosive_bile).delay;
+      const k = Math.max(0, Math.min(1, f.t / full)), col = nova ? [190, 120, 255] : [150, 220, 70];
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, r);
+      g.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},${0.5 * (1 - k) + 0.15})`); g.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},0)`);
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, 7); ctx.fill();
+      ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},0.85)`; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(f.x, f.y, r, -1.571, -1.571 + 6.283 * k); ctx.stroke();
+      ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},0.35)`; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, 7); ctx.stroke();
+      if (nova) { ctx.fillStyle = 'rgba(235,215,255,0.9)'; ctx.beginPath(); ctx.arc(f.x, f.y, 3 + (1 - k) * 5, 0, 7); ctx.fill(); }
+    }
+    else if (f.kind === 'fungal') {
+      ctx.globalAlpha = Math.min(1, f.t / 24);
+      const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, r);
+      g.addColorStop(0, 'rgba(150,210,80,0.45)'); g.addColorStop(0.7, 'rgba(90,150,50,0.35)'); g.addColorStop(1, 'rgba(60,110,40,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, 7); ctx.fill();
+      ctx.strokeStyle = 'rgba(180,230,110,0.5)'; ctx.lineWidth = 1.5;
+      for (let i = 0; i < 8; i++) { const a0 = i * 0.785 + frame * 0.02; ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.quadraticCurveTo(f.x + Math.cos(a0) * r * 0.6, f.y + Math.sin(a0) * r * 0.5, f.x + Math.cos(a0 + 0.3) * r * 0.95, f.y + Math.sin(a0 + 0.3) * r * 0.8); ctx.stroke(); }
+    }
+    else if (f.kind === 'jam') {
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.75;
+      ctx.fillStyle = 'rgba(60,130,220,0.10)'; ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, 7); ctx.fill();
+      ctx.strokeStyle = 'rgba(140,200,255,0.55)'; ctx.lineWidth = 1; ctx.setLineDash([6, 5]); ctx.lineDashOffset = -frame * 0.5;
+      ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+      for (let i = 0; i < 4; i++) { const a0 = this.rnd() * 6.283, d = this.rnd() * r; ctx.strokeStyle = 'rgba(190,225,255,0.7)'; ctx.beginPath(); ctx.moveTo(f.x + Math.cos(a0) * d, f.y + Math.sin(a0) * d * 0.8); ctx.lineTo(f.x + Math.cos(a0) * d + (this.rnd() - .5) * 14, f.y + Math.sin(a0) * d * 0.8 + (this.rnd() - .5) * 10); ctx.stroke(); }
+    }
+    // r is 0 on these two: they mark a BUILDING, so the radius comes from the building they are on.
+    else if (f.kind === 'chrono' || f.kind === 'inject') {
+      const b = f.bld || f.hall, br = b && b.def ? Math.max(b.def.w, b.def.h) * TILE * 0.6 : 24;
+      const chrono = f.kind === 'chrono', col = chrono ? 'rgba(255,205,90,' : 'rgba(200,140,255,';
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = col + '0.5)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(f.x, f.y, br, 0, 7); ctx.stroke();
+      for (let i = 0; i < 3; i++) { const a0 = frame * (chrono ? 0.09 : 0.05) + i * 2.094; const x = f.x + Math.cos(a0) * br, y = f.y + Math.sin(a0) * br * 0.6; ctx.fillStyle = col + '0.95)'; ctx.beginPath(); ctx.arc(x, y, 3, 0, 7); ctx.fill(); const g = ctx.createRadialGradient(x, y, 0, x, y, 9); g.addColorStop(0, col + '0.5)'); g.addColorStop(1, col + '0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.fill(); }
+    }
+    else if (f.kind === 'beacon') {
+      ctx.globalCompositeOperation = 'lighter';
+      const k = (frame % 60) / 60;
+      ctx.strokeStyle = `rgba(255,225,120,${0.7 * (1 - k)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(f.x, f.y, r * k, 0, 7); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,225,120,0.45)'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 6]); ctx.lineDashOffset = frame * 0.4;
+      ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+    }
     ctx.restore();
   },
 };

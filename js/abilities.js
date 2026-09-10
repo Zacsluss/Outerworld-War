@@ -368,12 +368,15 @@ const Abilities = {
     }
     return null;
   },
-  // THE MOVING HALF OF THE PSI GRID. GameMap.recomputePsi walks every unit with `def.psi` and paints
-  // its ellipse from `u.tx`, which only a building has -- so a Warp Prism would project nothing at all
-  // through that path, and G.kill only recomputes psi inside its `if (u.isBuilding)` branch, so a dead
-  // prism would leave its field on the map forever. Both are fixed here rather than in js/map.js,
-  // which this change does not own: the buildings are recomputed by the map's own method and the
-  // mobile sources are painted on top of the result with the map's own `ellipse`.
+  // THE MOVING HALF OF THE PSI GRID -- the part that notices a source has MOVED. A building never
+  // does, so nothing outside this function ever had to ask; a Warp Prism does it constantly.
+  //
+  // Painting is not this function's job any more. It used to recompute the buildings and then paint
+  // the mobile sources on top, because js/map.js was not this change's to edit -- and that overlay
+  // was worse than the bug it worked around, since it is keyed and therefore skipped when nothing
+  // moved, while any other caller of recomputePsi (a pylon completing or dying) wiped the grid back
+  // to buildings only and left a parked prism with no field for the rest of the game. GameMap.
+  // recomputePsi now handles both kinds of source, so this is only the trigger.
   //
   // IT IS KEYED, NOT UNCONDITIONAL. `p.psiKey` is a digest of every mobile source's id and tile, so a
   // full recompute happens only when one appears, moves a tile or dies -- and a Protoss player with no
@@ -394,13 +397,7 @@ const Abilities = {
       }
       if (key === (p.psiKey || 0)) continue;
       p.psiKey = key;
-      m.recomputePsi(p.id, G.units);          // the buildings, by the map's own rule
-      if (!key) continue;                     // the last prism just died: buildings only is the answer
-      const grid = m.psi[p.id];
-      for (const u of G.units) {
-        if (!u.alive || u.owner !== p.id || !u.def.psi || u.isBuilding) continue;
-        m.ellipse(Math.floor(u.x / TILE), Math.floor(u.y / TILE), u.def.psi, u.def.psi * 0.7, (x, y) => { grid[m.idx(x, y)] = 1; });
-      }
+      m.recomputePsi(p.id, G.units);          // buildings AND mobile sources; the map owns both now
     }
   },
   // ---------------- ability order execution ----------------

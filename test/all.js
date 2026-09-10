@@ -79,6 +79,7 @@ const TESTS = [
   { name: 'push', args: ['push.js'], what: 'a moving unit flows past a standing ally; enemies still block' },
   { name: 'controls', args: ['controls.js'], what: 'every global action is named, listed, rebindable and actually consulted' },
   { name: 'baked', args: ['baked.js'], what: 'every unit and building has a 3D model and a baked sheet, not the flat fallback' },
+  { name: 'fields', args: ['fields.js'], what: 'every persistent field paints something -- an invisible force field is a wall with no wall' },
   { name: 'campaign', args: ['campaign.js'], what: 'weighted choices resolve both ways, the record persists, narrowing cannot strand you' },
   { name: 'zoom', args: ['zoom.js'], what: 'strategic zoom clamps, anchors and swaps to icons; night runs without G.daylight' },
   { name: 'skirmish', args: ['skirmish.js'], what: 'the setup screen: every setting reaches G.init, and the default is still today\'s game' },

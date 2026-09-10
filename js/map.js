@@ -1524,12 +1524,27 @@ class GameMap {
       this.ellipse(cx - 0.5, cy - 0.5, r, r * 0.8, (x, y) => { if (this.walk[this.idx(x, y)] && this.height[this.idx(x, y)] !== 1) this.creep[this.idx(x, y)] = 1; });
     }
   }
+  // A PSI SOURCE IS NOT ALWAYS A BUILDING. This used to read the centre out of `u.tx`, which only a
+  // building has, so a Warp Prism -- a Pylon that flies, and the whole of M12 item 12's mobile half --
+  // painted its ellipse from `undefined + 0.5` and projected nothing at all through this path.
+  //
+  // Abilities.tickProtoss worked around that by painting the mobile sources on top afterwards, and
+  // that hid a worse bug than the one it fixed: the overlay is keyed on prism positions, so it is
+  // skipped when nothing has moved, while EVERY OTHER caller of this method -- a pylon completing,
+  // a pylon dying, G.init -- wiped the grid back to buildings only. A stationary prism therefore lost
+  // its field permanently the first time any pylon appeared or died anywhere on the map, which is
+  // exactly the prism you are parked on to warp onto.
+  //
+  // So the fix belongs here: this method alone is now the complete answer, and every caller gets a
+  // correct grid without having to know that mobile sources exist. The building branch is unchanged
+  // -- `tx + 0.5` is what every Pylon has painted from since M3 and is not this fix's business.
   recomputePsi(pid, units) {
     const p = this.psi[pid] || (this.psi[pid] = new Uint8Array(this.w * this.h));
     p.fill(0);
     for (const u of units) {
       if (!u.alive || u.owner !== pid || !u.def.psi || !u.done) continue;
-      this.ellipse(u.tx + 0.5, u.ty + 0.5, u.def.psi, u.def.psi * 0.7, (x, y) => { p[this.idx(x, y)] = 1; });
+      const cx = u.isBuilding ? u.tx + 0.5 : Math.floor(u.x / TILE), cy = u.isBuilding ? u.ty + 0.5 : Math.floor(u.y / TILE);
+      this.ellipse(cx, cy, u.def.psi, u.def.psi * 0.7, (x, y) => { p[this.idx(x, y)] = 1; });
     }
   }
   // find a free nearby walkable tile (spiral)
