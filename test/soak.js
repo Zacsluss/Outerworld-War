@@ -272,9 +272,9 @@ function finish() {
   // reads as an indictment of the tech tree when it is mostly a statement about game length.
   const live = results.filter(r => !r.threw && !r.over).length;
   const ends = results.filter(r => r.over).map(r => r.endedAt).sort((a, b) => a - b);
-  console.log('\ngame length: ' + live + '/' + results.length + ' still live at the ' + FRAMES + '-frame budget; ' +
-    'the rest ended between f' + ends[0] + ' and f' + ends[ends.length - 1] +
-    ' (median f' + ends[Math.floor(ends.length / 2)] + ')');
+  console.log('\ngame length: ' + live + '/' + results.length + ' still live at the ' + FRAMES + '-frame budget' +
+    (ends.length ? '; the rest ended between f' + ends[0] + ' and f' + ends[ends.length - 1] +
+      ' (median f' + ends[Math.floor(ends.length / 2)] + ')' : '; none of them ended'));
 
   // The one coverage claim worth ASSERTING: wave four is reachable in a real game.
   //
