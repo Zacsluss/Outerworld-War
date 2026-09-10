@@ -764,7 +764,16 @@ class AI {
     let holding = null;
     const want = cands.find(([, id]) => this.canTrainSoon(id));
     if (want) { const wd = DATA.units[want[1]];
-      const close = p.minerals >= wd.min * 0.7 && p.gas >= wd.gas * 0.7; // only wait when the money is nearly there; saving from nothing just idles production (and wastes Zerg larvae)
+      // Only wait when the money is nearly there; saving from nothing just idles production (and wastes
+      // Zerg larvae). GAS GETS A LOWER BAR THAN MINERALS, though, because the two arrive at completely
+      // different rates: a geyser admits one worker at a time, so gas is a trickle next to a mineral
+      // line, and demanding 70% of it banked before the AI is willing to wait means it never waits.
+      // Measured: solo 20-minute Protoss produced 81 zealots and 4 dragoons. The Dragoon is the BETTER
+      // pick by composition score (0.40 against the Zealot's 0.50) and lost every single time, because
+      // it costs 50 gas and the Zealot costs none -- so the fall-through bought a zealot, which spent
+      // the minerals, and the gas never mattered. That is the cheap-unit ratchet the comment above
+      // this block describes, arriving through gas instead of through minerals.
+      const close = p.minerals >= wd.min * 0.7 && p.gas >= wd.gas * 0.35;
       if ((p.minerals < wd.min || p.gas < wd.gas) && close) { if (this.holdFor !== want[1]) { this.holdFor = want[1]; this.holdT = G.frame; } if (G.frame - this.holdT < 24 * 8) holding = wd.from; }
       else this.holdFor = null;
     } else this.holdFor = null;
