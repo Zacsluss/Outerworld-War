@@ -76,7 +76,13 @@ risk and strictly decreasing independence. **D1 -- the AI raiding expansions and
 main -- sits immediately before step 1 below on purpose:** both are AI, both need the same
 measure-first discipline, and `test/ledger.js` serves both.
 
-Four open questions at the end of that file need the user's answer before the items they affect start.
+**All four open questions have been answered and are folded in** — see "Decisions already taken" at the
+top of that file. One of the answers changed the plan: the AI *does* read the Sensor Tower's contacts,
+which makes them simulation state, so that item moved out of the interface group into Group C and the
+build stamp moves with it.
+
+Nineteen entries cover the twenty-one items — 1, 3 and 14 are one feature. There is a traceability
+table so none can be lost.
 
 ### 1. The composition ratchet — the one thing M13 left standing
 
