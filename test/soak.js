@@ -299,8 +299,27 @@ function finish() {
   const LONG = FRAMES >= 80000;
   if (LONG) ok(late.length <= M12_LATE.length / 3, 'and most of the tier-3 M12 defs are reached in a LONG game',
     (M12_LATE.length - late.length) + '/' + M12_LATE.length + ' seen; missing: ' + late.join(', '));
-  else console.log('tier-3 M12 defs at this length: ' + (M12_LATE.length - late.length) + '/' + M12_LATE.length +
-    ' seen; missing ' + late.join(', ') + '\n  (not asserted -- rerun with --frames=90000 to make this a fair question)');
+  // ...and BINDING AT ORDINARY LENGTH from M13 onwards. This stayed a report for as long as the answer
+  // was 4/13, because asserting a number nobody could reach is just a permanent red that tells you
+  // nothing. M13 split the AI's single spending reserve into a committed budget and a free one and the
+  // number went to 11/13 in a 32k-frame run, so it becomes a floor: it may go up, it may not quietly
+  // go back down.
+  //
+  // THE TWO EXEMPTIONS ARE NAMED RATHER THAN ALLOWED FOR AS SLACK, so that fixing either one tightens
+  // this test by itself instead of leaving a gap a third def could slip into. Both are morphs whose
+  // gate in AI.production wants more of the source unit than the composition ever builds -- a Viper
+  // needs five Mutalisks and a Mothership needs three Arbiters, and a solo 20-minute Zerg finishes on
+  // two Mutalisks. That is the composition ratchet and it is NOT an economy fault: the buildings, the
+  // tech and the money are all there by then.
+  else {
+    const KNOWN = ['viper', 'mothership'];
+    const unexpected = late.filter(id => !KNOWN.includes(id));
+    ok(unexpected.length === 0, 'every tier-3 M12 def but the two named morph gates is fielded at ordinary length',
+      (M12_LATE.length - late.length) + '/' + M12_LATE.length + ' seen; missing ' + (late.join(', ') || 'none') +
+      (unexpected.length ? '  --  NOT on the known list: ' + unexpected.join(', ') : '  (both known: they need 5 Mutalisks / 3 Arbiters)'));
+    const fixed = KNOWN.filter(id => !late.includes(id));
+    if (fixed.length) console.log('  NOTE: ' + fixed.join(', ') + ' is now reached -- delete it from KNOWN in test/soak.js so this stays binding');
+  }
 
   console.log('\nwall clock ' + Math.round((Date.now() - t0) / 1000) + 's');
   console.log((fail ? 'FAILURES ' : 'ALL PASS  ') + pass + ' passed, ' + fail + ' failed');
