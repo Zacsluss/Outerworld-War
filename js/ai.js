@@ -34,7 +34,19 @@ const AI_SCRIPTS = {
   // (infestor, swarm host, viper) is lair-tier or later and Zerg reaching lair tech at all is the
   // thing this AI has historically been worst at. Both inserted in ascending order -- test/aiscripts.js
   // exists because ONE inverted pair once hid Protoss's whole tech tree.
-  P: [[8, 'pylon'], [10, 'gateway'], [12, 'assimilator'], [14, 'cybernetics_core'], [15, 'pylon'], [18, 'gateway'], [20, 'nexus'], [22, 'pylon'], [24, 'citadel_of_adun'], [26, 'forge'], [27, 'pylon'], [28, 'robotics_facility'], [29, 'shield_battery'], [30, 'observatory'], [31, 'shield_battery'], [32, 'templar_archives'], [33, 'rejuvenation_shrine'], [34, 'gateway'], [35, 'shield_battery'], [36, 'pylon'], [37, 'null_obelisk'], [38, 'photon_cannon'], [39, 'shield_battery'], [40, 'gateway'], [41, 'warded_bastion'], [42, 'stargate'], [44, 'nexus'], [46, 'arbiter_tribunal'], [48, 'pylon'], [50, 'robotics_support_bay'], [52, 'fleet_beacon'], [56, 'gateway'], [66, 'gateway'], [72, 'stargate'], [80, 'nexus']],
+  // M12 wave four adds exactly ONE Protoss step, and where it sits is the only judgement in it. The
+  // Warp Gate at 30 is behind the Robotics Facility (28) and level with the Observatory, which is the
+  // first supply at which `warp_gate_tech` has realistically finished -- AI.research needs 200/150
+  // spare and the tech is second in AI_RESEARCH.P, so it lands somewhere in the middle twenties.
+  // AI.script skips a step whose `req` is unmet (`p.hasReq`) and comes back to it, so arriving early
+  // costs nothing but arriving late would waste the mechanic for the whole opening.
+  //
+  // ONE Warp Gate, not all of them. AI.morph takes the first plain Gateway it owns, so the AI ends up
+  // with one warp gate and rebuilds the gateway it converted -- `scriptHave` counts by def id, and a
+  // converted gateway stops counting, so the later `gateway` steps go unmet and one more goes up. That
+  // is the right shape for a computer opponent: it keeps a queue-based production line AND gains the
+  // ability to put reinforcements at the front, rather than betting the whole army on warp-in.
+  P: [[8, 'pylon'], [10, 'gateway'], [12, 'assimilator'], [14, 'cybernetics_core'], [15, 'pylon'], [18, 'gateway'], [20, 'nexus'], [22, 'pylon'], [24, 'citadel_of_adun'], [26, 'forge'], [27, 'pylon'], [28, 'robotics_facility'], [29, 'shield_battery'], [30, 'observatory'], [30, 'warp_gate'], [31, 'shield_battery'], [32, 'templar_archives'], [33, 'rejuvenation_shrine'], [34, 'gateway'], [35, 'shield_battery'], [36, 'pylon'], [37, 'null_obelisk'], [38, 'photon_cannon'], [39, 'shield_battery'], [40, 'gateway'], [41, 'warded_bastion'], [42, 'stargate'], [44, 'nexus'], [46, 'arbiter_tribunal'], [48, 'pylon'], [50, 'robotics_support_bay'], [52, 'fleet_beacon'], [56, 'gateway'], [66, 'gateway'], [72, 'stargate'], [80, 'nexus']],
 };
 const gasBuildings = ai => ai.mine(u => u.def.onGeyser).length + 1;
 const AI_COMP = {
@@ -78,9 +90,22 @@ const AI_COMP = {
   // Roaches heavier into Terran than into Protoss: normal damage and 145 hit points is what holds a
   // line against marines and does very little against a zealot's shields, and Terran is the matchup
   // where Zerg spends the game being shot at from range.
-  PvZ: [['zealot', 2], ['dragoon', 8], ['high_templar', 3], ['dark_templar', 1], ['reaver', 1], ['shuttle', 1], ['observer', 3], ['corsair', 2], ['scout', 1], ['carrier', 1], ['arbiter', 1]],
+  // M12 wave four weights the nine new Protoss units that have a producer, in both Protoss lists,
+  // because AI.production only ever scores what is named here -- a def missing from this table is a
+  // unit no computer opponent can field, which is the M11 failure test/aiscripts.js exists to catch.
+  // The tenth, the Mothership, is deliberately absent: nothing trains it, so a weight on it would be a
+  // permanent zero-count top pick that production() re-scores every think and can never satisfy. It is
+  // merged explicitly in production() beside the Archon, which is the same shape the Viking's assault
+  // mode and the MULE are handled in.
+  //
+  // Weights take share from the line they join rather than resetting the table, as the Terran block
+  // above does and for the same reason: every existing number is what HANDOFF.md's balance figures
+  // were measured against, and thirty-seven new units already dilute all of them. Into Zerg the
+  // Colossus is heavier (splash into a swarm is the reason the unit exists) and the Immortal lighter
+  // (explosive is wasted on a zergling); in the generic list it is the other way round.
+  PvZ: [['zealot', 2], ['dragoon', 8], ['sentry', 2], ['high_templar', 3], ['dark_templar', 1], ['immortal', 1], ['colossus', 3], ['disruptor', 1], ['reaver', 1], ['shuttle', 1], ['warp_prism', 1], ['observer', 3], ['corsair', 2], ['phoenix', 1], ['oracle', 1], ['void_ray', 1], ['scout', 1], ['carrier', 1], ['tempest', 1], ['arbiter', 1]],
   ZvP: [['zergling', 3], ['hydralisk', 6], ['roach', 3], ['mutalisk', 3], ['scourge', 1], ['ultralisk', 3], ['defiler', 1], ['queen', 1], ['infestor', 1]],
-  P: [['zealot', 4], ['dragoon', 5], ['high_templar', 2], ['dark_templar', 1], ['reaver', 1], ['shuttle', 1], ['observer', 1], ['corsair', 1], ['scout', 1], ['carrier', 2], ['arbiter', 1]],
+  P: [['zealot', 4], ['dragoon', 5], ['sentry', 1], ['high_templar', 2], ['dark_templar', 1], ['immortal', 2], ['colossus', 2], ['disruptor', 1], ['reaver', 1], ['shuttle', 1], ['warp_prism', 1], ['observer', 1], ['corsair', 1], ['phoenix', 1], ['oracle', 1], ['void_ray', 1], ['scout', 1], ['carrier', 2], ['tempest', 1], ['arbiter', 1]],
 };
 const AI_RESEARCH = {
   T: ['stim', 'siege_tech', 'u238', 'infW', 'infA', 'ion_thrusters', 'spider_mines_tech', 'vehW', 'charon', 'vehA', 'irradiate_tech', 'emp_tech', 'personnel_cloaking', 'lockdown_tech', 'yamato_tech', 'shipW', 'shipA', 'cloaking_field', 'suppress_inf', 'suppress_veh', 'restoration_tech', 'optical_flare_tech', 'caduceus', 'moebius', 'ocular', 'apollo', 'titan', 'colossus'],
@@ -91,7 +116,15 @@ const AI_RESEARCH = {
   // Order here is priority only -- research() skips anything whose building does not exist yet -- and
   // HANDOFF.md records that reordering this list has never moved a measured outcome.
   Z: ['metabolic', 'flyW', 'lurker_aspect', 'volatile_bile', 'carapace', 'meleeW', 'ravager_aspect', 'grooved', 'muscular', 'glial_reconstitution', 'missW', 'flyA', 'burrow_tech', 'pneumatized', 'anabolic', 'chitinous', 'adrenal', 'consume_tech', 'plague_tech', 'pathogen_glands', 'suppress_hyd', 'suppress_air', 'spawn_broodling_tech', 'ensnare_tech', 'pressurised_glands', 'ventral_sacs', 'antennae', 'gamete', 'metasynaptic'],
-  P: ['singularity', 'gW', 'leg_enhancements', 'gA', 'psi_storm_tech', 'shields', 'scarab_damage', 'gravitic_drive', 'airW', 'carrier_capacity', 'stasis_tech', 'khaydarin_amulet', 'airA', 'recall_tech', 'suppress_gate', 'suppress_bay', 'maelstrom_tech', 'mind_control_tech', 'hallucination_tech', 'disruption_web_tech', 'reaver_capacity', 'gravitic_boosters', 'sensor_array', 'apial_sensors', 'gravitic_thrusters', 'argus_talisman', 'argus_jewel', 'khaydarin_core'],
+  // M12's two Protoss researches are placed by what they unlock, not appended. `warp_gate_tech` is
+  // SECOND, right behind Singularity Charge: it is the only prerequisite of a scripted building
+  // (`warp_gate` at supply 30), and everything a research list can do to a build order it does by
+  // being early enough to have finished when the order reaches the step. `blink` goes behind Leg
+  // Enhancements because they are the same kind of thing, both come off the Citadel, and the Citadel is
+  // already in the script at 24. Order here is priority only -- research() skips anything whose
+  // building does not exist yet -- and HANDOFF.md records that reordering this list has never moved a
+  // measured outcome.
+  P: ['singularity', 'warp_gate_tech', 'gW', 'leg_enhancements', 'blink', 'gA', 'psi_storm_tech', 'shields', 'scarab_damage', 'gravitic_drive', 'airW', 'carrier_capacity', 'stasis_tech', 'khaydarin_amulet', 'airA', 'recall_tech', 'suppress_gate', 'suppress_bay', 'maelstrom_tech', 'mind_control_tech', 'hallucination_tech', 'disruption_web_tech', 'reaver_capacity', 'gravitic_boosters', 'sensor_array', 'apial_sensors', 'gravitic_thrusters', 'argus_talisman', 'argus_jewel', 'khaydarin_core'],
 };
 // Derived style tables, built once on first use from the deltas in AI.styleDeltas() and never edited
 // afterwards. It is a cache of a pure function of two constants, so a rejoining client, a replay in a
@@ -553,6 +586,20 @@ class AI {
         const dts = this.mine(u => u.def.id === 'dark_templar' && u.order.type !== 'merge');
         if (dts.length >= 2 && (counts.dark_templar || 0) > 2) Abilities.merge(dts, 'summon_dark_archon');
       }
+      // M12 wave four: THE MOTHERSHIP, WHICH NOTHING PRODUCES. It has no `from`, so AI_COMP cannot
+      // reach it and AI.train cannot build it -- the only way a computer opponent ever fields one is
+      // this line, and without it the def would be exactly the M11 failure test/aiscripts.js exists to
+      // catch, with a merge in place of a morph.
+      //
+      // ONE, EVER, and only from a surplus. Two Arbiters are 200/700 and both of them can Recall and
+      // Stasis, which the Mothership cannot; converting the pair the moment it exists would trade the
+      // AI's only escape hatch for a bigger gun. So it waits for a THIRD arbiter -- the pair it spends
+      // is the surplus above the one it keeps -- and it checks `order.type !== 'merge'` so a merge
+      // already under way is not re-issued every think.
+      if ((counts.mothership || 0) < 1 && p.hasBuilding('fleet_beacon')) {
+        const arbs = this.mine(u => u.def.id === 'arbiter' && u.order.type !== 'merge' && u.energy < DATA.abilities.recall.energy);
+        if (arbs.length >= 2 && (counts.arbiter || 0) > 2) { Abilities.merge(arbs, 'summon_mothership'); return; }
+      }
     }
     // Reaver scarabs / carrier interceptors
     for (const u of this.mine(u => (u.def.id === 'reaver' || u.def.id === 'carrier') && !u.prod.length)) { if (u.def.id === 'reaver' && u.scarabs < 5) G.queueUnit(u, 'scarab'); if (u.def.id === 'carrier' && u.interceptors < (p.hasTech('carrier_capacity') ? 8 : 4)) G.queueUnit(u, 'interceptor'); }
@@ -904,9 +951,85 @@ class AI {
     }
     return null;
   }
+  // ---- M12 wave four: the two Protoss mechanics micro() cannot reach ------------------------------
+  // Both live on BUILDINGS, and micro()'s per-unit loop skips buildings outright -- the same structural
+  // reason the Comsat, the Orbital Command and the Zerg tumour chain are handled before that loop.
+  protossMacro() {
+    const p = this.p;
+    // ITEM 11, CHRONO BOOST. One cast per player per few ticks, not one per Nexus per tick.
+    //
+    // WHAT IT IS AIMED AT is the whole mechanic, so it is chosen rather than dumped on the caster: the
+    // building with something in its queue that is worth the most supply, ignoring anything already
+    // boosted. Preferring supply over "the first thing found" is what makes it accelerate a Carrier or
+    // an Archon rather than the probe a Nexus happens to be making, and preferring a non-hall breaks
+    // the tie towards army: economy is what the AI is already best at.
+    if (this.turn(p.id, 3)) {
+      const cb = DATA.abilities.chrono_boost;
+      const nxs = this.mine(u => u.def.id === 'nexus' && u.done && !u.unpowered && u.energy >= cb.energy);
+      nxs.sort((a, b) => b.energy - a.energy || a.id - b.id);        // ties by id so two full Nexuses do not jitter
+      if (nxs.length) {
+        let best = null, bs = -1;
+        for (const b of this.mine(u => u.isBuilding && u.done && !u.lifted && !u.unpowered && u.prod.length)) {
+          if (G.fields.some(f => f.kind === 'chrono' && f.bld === b)) continue;
+          const it = b.prod[0];
+          const s = (it.kind === 'unit' ? (DATA.units[it.id].sup || 1) * 2 : 3) + (b.def.depot ? 0 : 1);
+          if (s > bs) { bs = s; best = b; }
+        }
+        if (best) Abilities.issue(nxs[0], 'chrono_boost', null, best.x, best.y);
+      }
+    }
+    this.warpIn();
+  }
+  // ITEM 12. A Warp Gate has NO production queue, so this is the only way one ever makes anything --
+  // without it, morphing a Gateway would be a strict downgrade for a computer opponent and the whole
+  // item would be unreachable, which is exactly the M11 failure test/aiscripts.js exists to catch.
+  //
+  // WHAT to warp is decided by the composition table, scored the same way AI.production scores it --
+  // share of army supply, cheapest-satisfied first -- so warp-in obeys the same ratios as the Gateways
+  // beside it rather than being a second, disagreeing opinion about what the army should be.
+  //
+  // WHERE is the interesting half and it is deliberately conservative: at the army's rally point if
+  // that ground is powered, and at a base otherwise. Warping ON TO the enemy is the aggressive use and
+  // it needs a Warp Prism flown somewhere dangerous first, which is a piece of judgement this AI does
+  // not have; reinforcing at the front is the honest version of the mechanic and is worth most of it.
+  warpIn() {
+    const p = this.p;
+    const gates = this.mine(u => u.def.id === 'warp_gate' && u.done && !u.unpowered && u.cooldown <= 0);
+    if (!gates.length) return;
+    const foe = this.enemies()[0];
+    const key = foe && AI_COMP[this.race + 'v' + foe.race] ? this.race + 'v' + foe.race : this.race;
+    const counts = {};
+    for (const u of G.units) if (u.alive && u.owner === p.id) { counts[u.def.id] = (counts[u.def.id] || 0) + 1; for (const it of u.prod) if (it.kind === 'unit') counts[it.id] = (counts[it.id] || 0) + 1; }
+    let best = null, bs = 1e9;
+    for (const [id, wgt] of this.styleComp(key, this.style)) {
+      if (!wgt || !DATA.abilities['warp_' + id]) continue;
+      const ud = DATA.units[id]; if (!p.hasReq(ud) || !this.afford(ud.min, ud.gas)) continue;
+      const sup = ud.sup || 1; if (p.supUsed + sup > p.supMax) continue;
+      const s = ((counts[id] || 0) * sup + sup) / wgt;
+      if (s < bs) { bs = s; best = id; }
+    }
+    if (!best) return;
+    const spot = this.warpSpot();
+    if (spot) Abilities.issue(gates[0], 'warp_' + best, null, spot[0], spot[1]);
+  }
+  // A powered tile to warp on to. GameMap.findFreeTile already spirals outward and already refuses
+  // anything unwalkable, so the psi test goes in as its predicate and the two rules the mechanic has
+  // are asked in one query -- which matters, because Abilities.warpIn refuses rather than sliding, so
+  // an unpowered guess is simply a wasted think.
+  warpSpot() {
+    const p = this.p, m = G.map, out = [];
+    if (this.rally) out.push([this.rally.x, this.rally.y]);
+    for (const h of this.halls()) if (h.done) out.push([h.x, h.y]);
+    for (const [ax, ay] of out) {
+      const t = m.findFreeTile(Math.floor(ax / TILE), Math.floor(ay / TILE), 10, (x, y) => m.hasPsi(p.id, x, y));
+      if (t) return [(t[0] + 0.5) * TILE, (t[1] + 0.5) * TILE];
+    }
+    return null;
+  }
   micro() {
     const p = this.p;
     if (p.race === 'Z') this.zergCreep();
+    if (p.race === 'P') this.protossMacro();
     // Terran: scan where our units are being hit by something we cannot see (burrowed lurkers, cloaked units)
     if (p.race === 'T' && this.turn(p.id, 4)) { const cs = this.mine(u => u.def.id === 'comsat_station' && u.done && u.energy >= 50)[0]; if (cs) { const hit = this.mine(u => !u.isBuilding && G.frame - u.lastHit < 24 && u.lastHitBy && u.lastHitBy.alive && u.lastHitBy.isCloaked && !G.detected(u.lastHitBy, p.id))[0];
       if (hit) Abilities.issue(cs, 'scanner_sweep', null, hit.lastHitBy.x, hit.lastHitBy.y);
@@ -949,6 +1072,35 @@ class AI {
       if (!u.alive || u.owner !== p.id || u.isBuilding || u.inside) continue;
       const d = u.def.id;
       if (d === 'siege_tank' && p.hasTech('siege_tech') && u.transT <= 0) { const near = G.near(u.x, u.y, 11 * TILE).some(o => o.owner !== p.id && !o.fly && o.alive && (o.hasWeapon() || o.isBuilding)); const veryNear = G.near(u.x, u.y, 2 * TILE).some(o => o.owner !== p.id && !o.fly && o.alive && o.hasWeapon()); if (near && !u.sieged && !veryNear && this.turn(u.id, 2)) Abilities.instant(u, 'siege_mode'); else if (u.sieged && !near && this.turn(u.id, 8)) Abilities.instant(u, 'siege_mode'); }
+      // M12 wave four: BLINK, and it CLOSES rather than retreats. It sits ahead of the kite clause
+      // below on purpose -- both are dragoon clauses in an else-if chain, and a dragoon that can be
+      // shooting this second should not spend the tick shuffling.
+      //
+      // THE OBVIOUS TRIGGER IS UNREACHABLE IN THIS ENGINE AND WAS MEASURED BEFORE IT WAS ABANDONED.
+      // "Blink out when you are losing the trade" is the use a human gets most from, and it was
+      // written first, as `u.sh <= 0 && u.hp < u.maxHp * 0.5`. Two things are wrong with it. Unit.tick
+      // regenerates 0.045 shields EVERY frame, so `sh <= 0` is true on roughly the one frame shields
+      // break and micro only looks once in twelve. And the honest version -- combined bar under 40%,
+      // hit within the last second -- fires no more often: instrumented over four AI games and 82,701
+      // dragoon micro-ticks after Blink finished researching, "hurt" happened 0 times and "hit in the
+      // last second" happened 4. Fights here are decisive and units are healthy or dead. That is the
+      // same finding HANDOFF.md records for army retreats ("0 retreats in 12 games"), and a clause
+      // that provably never fires is the M9 failure this milestone exists not to repeat.
+      //
+      // So the trigger is the one that actually happens: an attacking dragoon whose target is past its
+      // gun but inside a blink hops the gap and starts shooting. Aimed to just inside its own range
+      // rather than on top of the target, and gated on two friends nearby -- a dragoon that blinks
+      // into a line alone is a dragoon donated, and the gate is what keeps this a group manoeuvre.
+      else if (d === 'dragoon' && p.hasTech('blink') && this.state === 'attack' && this.turn(u.id, 2)
+               && (u.order.type === 'attack' || u.order.type === 'attackmove') && u.order.target && u.order.target.alive && !u.order.target.fly
+               && G.frame - (typeof u.blinkAt === 'number' ? u.blinkAt : -1e9) >= DATA.abilities.blink.cd) {
+        const t = u.order.target, gap = distPt(u.x, u.y, t.x, t.y) / TILE, reach = u.maxRange();
+        if (gap > reach + 1.5 && gap < DATA.abilities.blink.range
+            && this.mine(o => o !== u && !o.isBuilding && o.hasWeapon() && distPt(o.x, o.y, u.x, u.y) < 6 * TILE).length >= 2) {
+          const a = Math.atan2(t.y - u.y, t.x - u.x), hop = (gap - reach * 0.8) * TILE;
+          Abilities.issue(u, 'blink', null, u.x + Math.cos(a) * hop, u.y + Math.sin(a) * hop);
+        }
+      }
       else if ((d === 'vulture' || d === 'mutalisk' || d === 'dragoon') && u.order.type === 'attack' && this.turn(u.id, 1)) this.kite(u);
       // Stim: the marauder and the reaper are bio and carry it, so they use it. The hp floor is raised
       // for them in proportion to what stim costs -- a flat 10 hp off a 60-hp reaper is a sixth of it.
@@ -1129,6 +1281,62 @@ class AI {
         const t = G.near(u.x, u.y, DATA.abilities.contaminate.range * TILE).find(o => o.alive && !G.allied(o.owner, p.id) && o.isBuilding && o.done
           && (o.def.produces.length || o.def.spawnsLarva || (o.def.tech || []).length) && !(o.fx.maelstrom > 0));
         if (t) Abilities.issue(u, 'contaminate', t);
+      }
+      // ---- M12 wave four: the five Protoss casters with something to press ---------------------
+      // THE SENTRY, and the order of its two spells is the design. Guardian Shield is cheaper, cannot
+      // miss and wants exactly the moment a fight starts, so it is offered first and the Force Field
+      // only gets the tick when there is nothing to shield. Both clauses are inside ONE `d === 'sentry'`
+      // arm rather than two, because this is an else-if chain: a second sentry arm further down would
+      // never be reached, which is the mistake the Queen's inject clause documents further up.
+      //
+      // The shield's test is the defiler's -- "our ground units are being shot at" -- and not "we are
+      // attacking, because a bubble is worth as much defending a ramp as it is walking up one.
+      else if (d === 'sentry' && this.turn(u.id, 1)) {
+        const gs = DATA.abilities.guardian_shield, ff = DATA.abilities.force_field;
+        if (u.energy >= gs.energy && !u.fx.matrix
+            && this.cluster(u, gs.r, 3, o => o.owner === p.id && !o.isBuilding && o.hasWeapon() && G.frame - o.lastHit < 48)) Abilities.instant(u, 'guardian_shield');
+        else if (u.energy >= ff.energy) {
+          // A wall in front of the enemy's GROUND army only: a force field costs 50 energy and does
+          // nothing whatever to something flying, and the AI has no way to tell "this splits their
+          // army" from "this walls off my own zealots", so it is put where the enemy is thickest and
+          // left at that.
+          const c = this.cluster(u, ff.range, 3, o => !G.allied(o.owner, p.id) && !o.isBuilding && !o.fly && o.hasWeapon());
+          if (c && !Abilities.inField(c.x, c.y, 'force_field')) Abilities.issue(u, 'force_field', null, c.x, c.y);
+        }
+      }
+      // Lift the most expensive thing in reach, which is the Viper's abduct rule with the sign
+      // flipped: supply cost plus a bonus for anything sieged or with an energy bar, so a Phoenix
+      // takes a siege tank or a high templar out of the fight rather than the nearest marine.
+      else if (d === 'phoenix' && u.energy >= DATA.abilities.graviton_beam.energy && this.turn(u.id, 2)) {
+        const ab = DATA.abilities.graviton_beam;
+        let best = null, bs = 2;
+        for (const o of G.near(u.x, u.y, ab.range * TILE)) {
+          if (!o.alive || G.allied(o.owner, p.id) || o.fly || o.isBuilding || o.def.worker || o.def.larva || o.def.egg || o.def.notUnit || o.fx.maelstrom > 0) continue;
+          const s = (o.def.sup || 0) + (o.sieged || o.maxEnergy ? 2 : 0); if (s > bs) { bs = s; best = o; }
+        }
+        if (best) Abilities.issue(u, 'graviton_beam', best);
+      }
+      // Revelation buys vision on what the army is about to walk into, which is the Comsat's second
+      // clause with a ship instead of an add-on. Only when the target cannot already be seen: a scan
+      // on ground you are looking at is 50 energy for nothing.
+      else if (d === 'oracle' && u.energy >= DATA.abilities.revelation.energy && this.turn(u.id, 4)
+               && this.state === 'attack' && this.target && this.target.alive && !G.visibleAt(p.id, this.target.x, this.target.y)) {
+        Abilities.issue(u, 'revelation', null, this.target.x, this.target.y);
+      }
+      // The nova is a fuse that hits our own army too, so it goes where the ENEMY is thickest and the
+      // AI accepts the friendly fire -- exactly the deal the high templar's psi storm clause makes.
+      // `inField` stops two disruptors arming the same patch of ground twice.
+      else if (d === 'disruptor' && u.energy >= DATA.abilities.purification_nova.energy && this.turn(u.id, 2)) {
+        const ab = DATA.abilities.purification_nova;
+        const c = this.cluster(u, ab.range, 3, o => !G.allied(o.owner, p.id) && !o.isBuilding && !o.fly);
+        if (c && !Abilities.inField(c.x, c.y, 'nova')) Abilities.issue(u, 'purification_nova', null, c.x, c.y);
+      }
+      // Time Warp on the thickest enemy ground: it is the Mothership's only spell, it costs 100 of the
+      // 200 it can hold, and there is nothing else to save the energy for.
+      else if (d === 'mothership' && u.energy >= DATA.abilities.time_warp.energy && this.turn(u.id, 2)) {
+        const ab = DATA.abilities.time_warp;
+        const c = this.cluster(u, ab.range, 3, o => !G.allied(o.owner, p.id) && !o.isBuilding && !o.fly);
+        if (c && !Abilities.inField(c.x, c.y, 'time_warp')) Abilities.issue(u, 'time_warp', null, c.x, c.y);
       }
     }
   }

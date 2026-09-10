@@ -83,6 +83,7 @@ const TESTS = [
   { name: 'zoom', args: ['zoom.js'], what: 'strategic zoom clamps, anchors and swaps to icons; night runs without G.daylight' },
   { name: 'skirmish', args: ['skirmish.js'], what: 'the setup screen: every setting reaches G.init, and the default is still today\'s game' },
   { name: 'terran12', args: ['terran12.js'], what: 'M12 Terran: the MULE expires, the Reactor doubles, the Viking has two sets of teeth' },
+  { name: 'protoss12', args: ['protoss12.js'], what: 'M12 Protoss: warp-in respects the psi grid, a force field is terrain, chrono cannot stack' },
 ];
 
 const argv = process.argv.slice(2);

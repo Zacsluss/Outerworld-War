@@ -378,15 +378,24 @@ const DATA = (() => {
     gw: W(5, 'normal', 0.4, 22, { upgKey: null }), abil: ['gather', 'build_basic', 'build_adv'], upgA: 'gA' });
   U('zealot', { name: 'Zealot', race: 'P', hp: 100, sh: 60, armor: 1, size: 'small', min: 100, sup: 2, time: 600, speed: 4, sight: 7, r: 9, hk: 'Z', from: 'gateway', bio: true, cargoSize: 2,
     gw: W(8, 'normal', 0.4, 22, { hits: 2, upgKey: 'gW' }), upgA: 'gA', speedTech: ['leg_enhancements', 6.4] });
+  // M12 wave four: THE DRAGOON IS THE STALKER. Blink lives here rather than on a second def -- see the
+  // Protoss block further down this file for the argument. Everything else about the unit is unchanged,
+  // deliberately: the fold must not also be a buff, or a balance run could not tell the two apart.
   U('dragoon', { name: 'Dragoon', race: 'P', hp: 100, sh: 80, armor: 1, size: 'large', min: 125, gas: 50, sup: 2, time: 750, speed: 5, sight: 8, r: 14, hk: 'D', from: 'gateway', req: ['cybernetics_core'], mech: true, cargoSize: 4,
-    gw: W(20, 'explosive', 4, 30, { upgKey: 'gW', upgDmg: 2, targets: 'both', rangeTech: ['singularity', 6] }), upgA: 'gA' });
+    gw: W(20, 'explosive', 4, 30, { upgKey: 'gW', upgDmg: 2, targets: 'both', rangeTech: ['singularity', 6] }), abil: ['blink'], upgA: 'gA' });
   U('high_templar', { name: 'High Templar', race: 'P', hp: 40, sh: 40, size: 'small', min: 50, gas: 150, sup: 2, time: 750, speed: 3.2, sight: 7, r: 8, hk: 'T', from: 'gateway', req: ['templar_archives'], bio: true, cargoSize: 2, energy: 200,
     abil: ['psi_storm', 'hallucination', 'summon_archon'], upgA: 'gA' });
   U('dark_templar', { name: 'Dark Templar', race: 'P', hp: 80, sh: 40, armor: 1, size: 'small', min: 125, gas: 100, sup: 2, time: 750, speed: 4.92, sight: 7, r: 8, hk: 'K', from: 'gateway', req: ['templar_archives'], bio: true, cargoSize: 2, cloaked: true, permaCloak: true,
     gw: W(40, 'normal', 0.4, 30, { upgKey: 'gW', upgDmg: 3 }), abil: ['summon_dark_archon'], upgA: 'gA' });
-  U('archon', { name: 'Archon', race: 'P', hp: 10, sh: 350, size: 'large', sup: 4, time: 300, speed: 4.92, sight: 8, r: 16, bio: true, cargoSize: 4, name2: 'Archon',
+  // `min: 0` on both, added with the Mothership in M12. All three are MERGED rather than bought, and a
+  // merged def is exactly the one somebody leaves blank -- U() defaults `gas` and does not default
+  // `min`, so these two carried an undefined mineral cost from the day they were written. Nothing has
+  // read it yet (G.mergeUnits charges nothing and neither is ever in a production queue), which is
+  // precisely how the spider mine's undefined build time survived until the AI was taught to repair.
+  // Zero costs nothing to spell out and cannot become NaN.
+  U('archon', { name: 'Archon', race: 'P', hp: 10, sh: 350, size: 'large', min: 0, gas: 0, sup: 4, time: 300, speed: 4.92, sight: 8, r: 16, bio: true, cargoSize: 4, name2: 'Archon',
     gw: W(30, 'normal', 2, 20, { upgKey: 'gW', upgDmg: 3, targets: 'both', splash: [0.5, 1, 1.5] }), upgA: 'gA' });
-  U('dark_archon', { name: 'Dark Archon', race: 'P', hp: 25, sh: 200, armor: 1, size: 'large', sup: 4, time: 300, speed: 4.92, sight: 10, r: 16, bio: true, cargoSize: 4, energy: 200,
+  U('dark_archon', { name: 'Dark Archon', race: 'P', hp: 25, sh: 200, armor: 1, size: 'large', min: 0, gas: 0, sup: 4, time: 300, speed: 4.92, sight: 10, r: 16, bio: true, cargoSize: 4, energy: 200,
     abil: ['feedback', 'mind_control', 'maelstrom'], upgA: 'gA' });
   U('reaver', { name: 'Reaver', race: 'P', hp: 100, sh: 80, size: 'large', min: 200, gas: 100, sup: 4, time: 1050, speed: 1.78, sight: 10, r: 18, hk: 'V', from: 'robotics_facility', req: ['robotics_support_bay'], mech: true, cargoSize: 4,
     gw: W(100, 'normal', 8, 60, { upgKey: null, scarab: true, splash: [0.6, 1.2, 1.8], dmgTech: ['scarab_damage', 25] }), abil: ['build_scarab'], upgA: 'gA', scarabs: 0, scarabTech: ['reaver_capacity', 10] });
@@ -401,10 +410,116 @@ const DATA = (() => {
   U('carrier', { name: 'Carrier', race: 'P', hp: 300, sh: 150, armor: 4, size: 'large', min: 350, gas: 250, sup: 6, time: 2100, speed: 3.33, sight: 11, r: 22, hk: 'C', from: 'stargate', req: ['fleet_beacon'], mech: true, fly: true,
     gw: W(6, 'normal', 8, 37, { upgKey: 'airW', targets: 'both', interceptor: true }), abil: ['build_interceptor'], upgA: 'airA', interceptors: 0, interceptorTech: ['carrier_capacity', 8] });
   U('arbiter', { name: 'Arbiter', race: 'P', hp: 200, sh: 150, armor: 1, size: 'large', min: 100, gas: 350, sup: 4, time: 2400, speed: 5, sight: 9, r: 18, hk: 'A', from: 'stargate', req: ['arbiter_tribunal'], mech: true, fly: true, energy: 200, cloakField: 8,
-    gw: W(10, 'explosive', 5, 45, { upgKey: 'airW', targets: 'both' }), abil: ['recall', 'stasis_field'], upgA: 'airA' });
+    gw: W(10, 'explosive', 5, 45, { upgKey: 'airW', targets: 'both' }), abil: ['recall', 'stasis_field', 'summon_mothership'], upgA: 'airA' });
   U('interceptor', { name: 'Interceptor', race: 'P', hp: 40, sh: 40, size: 'small', min: 25, time: 300, speed: 13, sight: 6, r: 5, mech: true, fly: true, hk: 'I', from: 'carrier', notUnit: true, gw: W(6, 'normal', 2, 45, { upgKey: 'airW', targets: 'both' }), upgA: 'airA' });
   U('scarab', { name: 'Scarab', race: 'P', hp: 20, size: 'small', min: 15, time: 168, speed: 12, r: 4, hk: 'S', from: 'reaver', notUnit: true, sight: 3 });
   U('hallucination', { name: 'Hallucination', race: 'P', hp: 1, size: 'small', speed: 4, sight: 7, r: 8, notUnit: true });
+
+  // ===================== PROTOSS UNITS, M12 WAVE FOUR =====================
+  // Ten units, and the shortest way to describe the set is by what is NOT here.
+  //
+  // THERE IS NO STALKER. DESIGN-M12 lists twelve Protoss items and the Stalker is one of them; it is
+  // shipped as Blink on the DRAGOON instead of as a def of its own. A Stalker beside a Dragoon is two
+  // ranged, mechanical, 125/50-ish gateway units with an explosive attack and four supply between
+  // them -- the same role, the same production building, the same counter, and the player would pick
+  // whichever number was larger. The interesting half of a Stalker is Blink, and Blink on the unit
+  // that already fills the role is the whole item with none of the duplication. test/protoss12.js
+  // pins the decision in both directions so that a later change cannot quietly turn it back into a
+  // clone: no `stalker` def, and `blink` on the Dragoon's `abil`.
+  //
+  // THE SHUTTLE SURVIVES. The Warp Prism is not a rename of it: it is 50 more minerals for the same
+  // eight cargo slots plus `psi`, which is the whole of item 12's mobile half. So the decision is
+  // "ferry, or ferry that carries the warp field with it", which is a decision -- where a straight
+  // replacement would have deleted a Brood War unit to add an SC2 one, which this milestone's rule
+  // (take the ergonomics, take the mechanics only where they add a decision) says not to do.
+  //
+  // WHERE THEY SIT is chosen so no producer's card overflows and no hotkey collides: five on the
+  // Gateway (one new), seven on the Robotics Facility (four new), eight on the Stargate (four new).
+  // The card is twelve slots since M12 wave one, and the Stargate at eight units plus a research plus
+  // Set Rally is the fullest of the three at ten. test/protoss12.js checks all of them for duplicate
+  // keys, whole cards rather than only the newcomers, because a collision is a property of the card.
+
+  // ---- the Gateway line ---------------------------------------------------------------------------
+  // THE SENTRY is the first Protoss unit that is worth more for what it does to the ground than for
+  // what it shoots. Its gun is deliberately feeble -- 6 damage at 5 range is a third of a dragoon's --
+  // because everything it is for is in the two abilities: Guardian Shield, which is a bubble of
+  // absorbed damage over the army it walks with, and Force Field, which is TERRAIN. Nothing else in
+  // this game lets a player put a wall down in the middle of a fight, and that is the reason the unit
+  // exists rather than a fourth Gateway body.
+  U('sentry', { name: 'Sentry', race: 'P', hp: 40, sh: 40, armor: 1, size: 'small', min: 50, gas: 100, sup: 2, time: 550, speed: 4.4, sight: 9, r: 9, hk: 'E', from: 'gateway', req: ['cybernetics_core'], mech: true, cargoSize: 2, energy: 200,
+    gw: W(6, 'normal', 5, 12, { upgKey: 'gW', targets: 'both' }), abil: ['guardian_shield', 'force_field'], upgA: 'gA' });
+
+  // ---- the Robotics line --------------------------------------------------------------------------
+  // THE IMMORTAL is explosive damage off a Robotics Facility, which is a hole Protoss has always had:
+  // every other explosive weapon it owns is a dragoon or a ship. 30 explosive at 5 range into `large`
+  // targets means it is the answer to a siege line and to an ultralisk, and the concussive/explosive
+  // table (DMG_MULT) means it is a poor answer to marines and zerglings -- which is the point, and is
+  // why it does not simply replace the dragoon at twice the price.
+  U('immortal', { name: 'Immortal', race: 'P', hp: 200, sh: 100, armor: 1, size: 'large', min: 250, gas: 100, sup: 4, time: 900, speed: 4.4, sight: 9, r: 15, hk: 'I', from: 'robotics_facility', mech: true, cargoSize: 4,
+    gw: W(30, 'explosive', 5, 30, { upgKey: 'gW', upgDmg: 3 }), upgA: 'gA' });
+  // THE COLOSSUS WALKS OVER CLIFFS, and `fly: true` is the only lever this engine has that says so.
+  // That is a trade rather than a free win and it is worth spelling out, because the def looks odd:
+  // `fly` also means Unit.weaponFor hands a plain ground unit NOTHING against it, so a colossus is
+  // untouchable by marines and zealots and dies instantly to anything with an air weapon. In SC2 it
+  // is hit by both. Getting that here would need a third targeting class in js/sim.js, which this
+  // change does not own -- and of the two half-versions available, "crosses terrain, needs an escort
+  // against air" is the one that keeps the unit's identity. It keeps `gW`/`gA` rather than the air
+  // lines because it is a walker that happens to step over things, not an aircraft.
+  U('colossus', { name: 'Colossus', race: 'P', hp: 200, sh: 150, armor: 1, size: 'large', min: 300, gas: 200, sup: 6, time: 1350, speed: 4.0, sight: 11, r: 20, hk: 'C', from: 'robotics_facility', req: ['robotics_support_bay'], mech: true, fly: true,
+    gw: W(15, 'normal', 7, 22, { hits: 2, upgKey: 'gW', upgDmg: 2, splash: [0.4, 0.8, 1.2] }), upgA: 'gA' });
+  // THE DISRUPTOR HAS NO WEAPON AT ALL, which makes it the only army unit in the game that cannot
+  // shoot. Everything it is worth is Purification Nova, and the nova is a FUSE: it arms, it sits
+  // there for two seconds in plain sight, and then it hits everything -- including the caster's own
+  // army, exactly as Psionic Storm does. A disruptor caught alone is 150/150 of nothing.
+  U('disruptor', { name: 'Disruptor', race: 'P', hp: 100, sh: 100, armor: 1, size: 'large', min: 150, gas: 150, sup: 3, time: 900, speed: 4.4, sight: 9, r: 14, hk: 'D', from: 'robotics_facility', req: ['robotics_support_bay'], mech: true, cargoSize: 4, energy: 200,
+    abil: ['purification_nova'], upgA: 'gA' });
+  // THE WARP PRISM is a Pylon that flies, and `psi` on a mobile def is the whole feature -- it is what
+  // makes item 12's warp-in mobile instead of a thing you do at home. Its field is 4 against a Pylon's
+  // 6.5, so a prism projects a real but small pocket of ground you can warp on to, and it is a 100/100
+  // hull with no weapon holding it up. GameMap.recomputePsi walks buildings by their `tx`; a moving
+  // source is painted separately, once every twelve frames, by Abilities.tickProtoss.
+  U('warp_prism', { name: 'Warp Prism', race: 'P', hp: 100, sh: 100, armor: 1, size: 'large', min: 250, gas: 0, sup: 2, time: 900, speed: 4.44, sight: 9, r: 16, hk: 'W', from: 'robotics_facility', mech: true, fly: true, cargo: 8, psi: 4,
+    abil: ['unload'], upgA: 'airA', speedTech: ['gravitic_drive', 6.67] });
+
+  // ---- the Stargate line --------------------------------------------------------------------------
+  // THE PHOENIX is air-superiority only -- no ground attack whatever -- against the Scout, which has
+  // both and is worse at each. What it has instead is Graviton Beam: it picks a GROUND unit up and
+  // holds it out of the fight, which is the only way Protoss can remove a siege tank or a lurker from
+  // a line without killing it first. Fast enough (7.5) to arrive, thin enough (120/60) to die to a
+  // turret it did not see.
+  U('phoenix', { name: 'Phoenix', race: 'P', hp: 120, sh: 60, size: 'medium', min: 150, gas: 100, sup: 2, time: 600, speed: 7.5, sight: 10, r: 12, hk: 'X', from: 'stargate', mech: true, fly: true, energy: 200,
+    aw: W(10, 'normal', 5, 15, { hits: 2, upgKey: 'airW', targets: 'air' }), abil: ['graviton_beam'], upgA: 'airA' });
+  // THE ORACLE is the mirror of that: ground only, short range, and a hard-hitting beam for its price.
+  // Revelation is a Comsat scan cast from a ship, which is deliberately NOT detection -- it reveals
+  // ground, it does not un-cloak. Protoss keeps the Observer for that, and this is what a harasser
+  // uses to find out whether the base it is about to dive is defended.
+  U('oracle', { name: 'Oracle', race: 'P', hp: 100, sh: 60, size: 'medium', min: 150, gas: 150, sup: 3, time: 750, speed: 7.0, sight: 10, r: 13, hk: 'E', from: 'stargate', mech: true, fly: true, energy: 200,
+    gw: W(15, 'normal', 4, 12, { upgKey: 'airW' }), abil: ['revelation'], upgA: 'airA' });
+  // THE VOID RAY hits both and hits hard and slowly, which is what makes it the anti-armour ship: one
+  // heavy beam every second is wasted on a scourge and is exactly right against a battlecruiser or a
+  // building. It is the Stargate's line-holder, where the Corsair is its skirmisher.
+  U('void_ray', { name: 'Void Ray', race: 'P', hp: 150, sh: 100, size: 'large', min: 250, gas: 150, sup: 4, time: 1000, speed: 4.4, sight: 10, r: 14, hk: 'V', from: 'stargate', mech: true, fly: true,
+    gw: W(20, 'normal', 6, 24, { upgKey: 'airW', targets: 'both' }), upgA: 'airA' });
+  // THE TEMPEST out-ranges everything on the map except a sieged tank, and pays for it in every other
+  // way: 3.0 speed is the slowest thing that flies, and a 55-frame cooldown means it contributes about
+  // as much damage per second as a dragoon. It exists to shoot things that cannot shoot back -- a
+  // siege line, a colony, a turret -- and to be useless the moment anything reaches it.
+  U('tempest', { name: 'Tempest', race: 'P', hp: 200, sh: 150, armor: 2, size: 'large', min: 300, gas: 200, sup: 4, time: 1400, speed: 3.0, sight: 12, r: 18, hk: 'T', from: 'stargate', req: ['fleet_beacon'], mech: true, fly: true,
+    gw: W(35, 'explosive', 10, 55, { upgKey: 'airW', upgDmg: 3, targets: 'both' }), upgA: 'airA' });
+
+  // ---- and the one nothing builds -----------------------------------------------------------------
+  // THE MOTHERSHIP has no `from`, no build time and no price, because it is MADE OF TWO ARBITERS --
+  // the archon merge, applied to the most expensive unit Protoss owns. That is the whole design of it:
+  // you cannot have a Mothership and the two Arbiters, so the 200/700 it costs is paid in a capability
+  // you already had. Deliberately NOT a bigger Arbiter: no Recall, no Stasis Field and no cloak field,
+  // because a strictly-better Arbiter would make the Arbiter dead data the moment the Beacon is up.
+  // What it has instead is Time Warp and detection, neither of which an Arbiter has.
+  //
+  // `min: 0, gas: 0, time: 0` are spelled out rather than left off. Nothing charges them -- G.mergeUnits
+  // takes no money -- but `undefined * n` is NaN and this repository has lost an afternoon to exactly
+  // that twice, and a def that is never purchased is precisely the one somebody leaves blank.
+  U('mothership', { name: 'Mothership', race: 'P', hp: 350, sh: 350, armor: 2, size: 'large', min: 0, gas: 0, sup: 6, time: 0, speed: 3.0, sight: 14, r: 26, req: ['fleet_beacon'], mech: true, fly: true, det: true, energy: 200,
+    gw: W(20, 'normal', 7, 30, { hits: 2, upgKey: 'airW', upgDmg: 2, targets: 'both' }), abil: ['time_warp'], upgA: 'airA' });
 
   // ============================ THE FOURTH RACE: race 'N' ============================
   // Everything below this line belongs to NOBODY. Neutral life (wave two, item 1) and capturable
@@ -722,14 +837,20 @@ const DATA = (() => {
   B('nydus_worm', { name: 'Nydus Worm', race: 'Z', hp: 300, armor: 1, w: 2, h: 2, min: 75, gas: 0, time: 360, hk: 'W', tier: 'none', needsCreep: true, nydus: true, sight: 7 });
 
   // ============================ PROTOSS BUILDINGS ============================
-  B('nexus', { name: 'Nexus', race: 'P', hp: 750, sh: 750, w: 4, h: 3, min: 400, time: 1800, hk: 'N', tier: 'basic', produces: ['probe'], sup: 10, depot: true, sight: 11 });
+  // M12 ITEM 11: the Nexus has an energy bar now, and one thing to spend it on. Chrono Boost is the
+  // Protoss macro mechanic and it is the least intrusive of the three -- a MULE is a unit and an
+  // inject is a delivery, where this only makes something that was already happening happen twice as
+  // fast. That is deliberate: it rewards LOOKING at your production without changing what production
+  // is. Energy 200, 50 a cast, so a Nexus left alone banks four boosts and then wastes everything
+  // after that, which is the same pressure an Orbital is under.
+  B('nexus', { name: 'Nexus', race: 'P', hp: 750, sh: 750, w: 4, h: 3, min: 400, time: 1800, hk: 'N', tier: 'basic', produces: ['probe'], sup: 10, depot: true, sight: 11, energy: 200, abil: ['chrono_boost'] });
   B('pylon', { name: 'Pylon', race: 'P', hp: 300, sh: 300, armor: 0, w: 2, h: 2, min: 100, time: 450, hk: 'P', tier: 'basic', sup: 8, psi: 6.5 });
   B('assimilator', { name: 'Assimilator', race: 'P', hp: 450, sh: 450, w: 4, h: 2, min: 100, time: 600, hk: 'A', tier: 'basic', onGeyser: true });
-  B('gateway', { name: 'Gateway', race: 'P', hp: 500, sh: 500, w: 4, h: 3, min: 150, time: 900, hk: 'G', tier: 'basic', req: ['nexus'], needsPsi: true, produces: ['zealot', 'dragoon', 'high_templar', 'dark_templar'], tech: ['suppress_gate'] });
+  B('gateway', { name: 'Gateway', race: 'P', hp: 500, sh: 500, w: 4, h: 3, min: 150, time: 900, hk: 'G', tier: 'basic', req: ['nexus'], needsPsi: true, produces: ['zealot', 'dragoon', 'sentry', 'high_templar', 'dark_templar'], tech: ['suppress_gate'], morphOptions: ['warp_gate'] });
   B('forge', { name: 'Forge', race: 'P', hp: 550, sh: 550, w: 3, h: 2, min: 150, time: 600, hk: 'F', tier: 'basic', req: ['nexus'], needsPsi: true, upg: ['gW', 'gA', 'shields'] });
   B('photon_cannon', { name: 'Photon Cannon', race: 'P', hp: 100, sh: 100, armor: 0, w: 2, h: 2, min: 150, time: 750, hk: 'C', tier: 'basic', req: ['forge'], needsPsi: true, det: true, sight: 11,
     gw: W(20, 'normal', 7, 22, { targets: 'both', upgKey: null }) });
-  B('cybernetics_core', { name: 'Cybernetics Core', race: 'P', hp: 500, sh: 500, w: 3, h: 2, min: 200, time: 900, hk: 'Y', tier: 'basic', req: ['gateway'], needsPsi: true, upg: ['airW', 'airA'], tech: ['singularity'] });
+  B('cybernetics_core', { name: 'Cybernetics Core', race: 'P', hp: 500, sh: 500, w: 3, h: 2, min: 200, time: 900, hk: 'Y', tier: 'basic', req: ['gateway'], needsPsi: true, upg: ['airW', 'airA'], tech: ['singularity', 'warp_gate_tech'] });
   // The Shield Battery is the Protoss Creep Colony now: a cheap psi-fed focus that can be re-attuned
   // into one of three things. That is not decoration, it is the only door left. The command card is a
   // fixed three-by-three with Cancel in the last slot, so each build page holds eight buildings and no
@@ -740,9 +861,9 @@ const DATA = (() => {
   // had none.
   B('shield_battery', { name: 'Shield Battery', race: 'P', hp: 200, sh: 200, w: 3, h: 2, min: 100, time: 450, hk: 'B', tier: 'basic', req: ['gateway'], needsPsi: true, energy: 200, battery: true,
     morphOptions: ['rejuvenation_shrine', 'null_obelisk', 'warded_bastion'] });
-  B('robotics_facility', { name: 'Robotics Facility', race: 'P', hp: 500, sh: 500, w: 3, h: 2, min: 200, gas: 200, time: 1200, hk: 'R', tier: 'adv', req: ['cybernetics_core'], needsPsi: true, produces: ['shuttle', 'reaver', 'observer'] });
-  B('stargate', { name: 'Stargate', race: 'P', hp: 600, sh: 600, w: 4, h: 3, min: 150, gas: 150, time: 1050, hk: 'S', tier: 'adv', req: ['cybernetics_core'], needsPsi: true, produces: ['scout', 'corsair', 'carrier', 'arbiter'], tech: ['suppress_bay'] });
-  B('citadel_of_adun', { name: 'Citadel of Adun', race: 'P', hp: 450, sh: 450, w: 3, h: 2, min: 150, gas: 100, time: 900, hk: 'C', tier: 'adv', req: ['cybernetics_core'], needsPsi: true, tech: ['leg_enhancements'] });
+  B('robotics_facility', { name: 'Robotics Facility', race: 'P', hp: 500, sh: 500, w: 3, h: 2, min: 200, gas: 200, time: 1200, hk: 'R', tier: 'adv', req: ['cybernetics_core'], needsPsi: true, produces: ['shuttle', 'warp_prism', 'observer', 'immortal', 'reaver', 'colossus', 'disruptor'] });
+  B('stargate', { name: 'Stargate', race: 'P', hp: 600, sh: 600, w: 4, h: 3, min: 150, gas: 150, time: 1050, hk: 'S', tier: 'adv', req: ['cybernetics_core'], needsPsi: true, produces: ['scout', 'phoenix', 'corsair', 'oracle', 'void_ray', 'carrier', 'tempest', 'arbiter'], tech: ['suppress_bay'] });
+  B('citadel_of_adun', { name: 'Citadel of Adun', race: 'P', hp: 450, sh: 450, w: 3, h: 2, min: 150, gas: 100, time: 900, hk: 'C', tier: 'adv', req: ['cybernetics_core'], needsPsi: true, tech: ['leg_enhancements', 'blink'] });
   B('robotics_support_bay', { name: 'Robotics Support Bay', race: 'P', hp: 450, sh: 450, w: 3, h: 2, min: 150, gas: 100, time: 450, hk: 'B', tier: 'adv', req: ['robotics_facility'], needsPsi: true, tech: ['scarab_damage', 'reaver_capacity', 'gravitic_drive'] });
   B('fleet_beacon', { name: 'Fleet Beacon', race: 'P', hp: 500, sh: 500, w: 3, h: 2, min: 300, gas: 200, time: 900, hk: 'F', tier: 'adv', req: ['stargate'], needsPsi: true, tech: ['apial_sensors', 'gravitic_thrusters', 'carrier_capacity', 'disruption_web_tech', 'argus_jewel'] });
   B('templar_archives', { name: 'Templar Archives', race: 'P', hp: 500, sh: 500, w: 3, h: 2, min: 150, gas: 200, time: 900, hk: 'T', tier: 'adv', req: ['citadel_of_adun'], needsPsi: true, tech: ['psi_storm_tech', 'hallucination_tech', 'khaydarin_amulet', 'mind_control_tech', 'maelstrom_tech', 'argus_talisman'] });
@@ -760,6 +881,33 @@ const DATA = (() => {
   B('null_obelisk', { name: 'Null Obelisk', race: 'P', hp: 350, sh: 200, w: 3, h: 2, min: 75, gas: 100, time: 450, hk: 'J', tier: 'morph', req: ['citadel_of_adun'], needsPsi: true, sight: 9,
     aura: { kind: 'blind', r: 6, affects: 'enemy', sight: 0.35, detect: true, stacks: false } });
   B('warded_bastion', { name: 'Warded Bastion', race: 'P', hp: 700, sh: 200, armor: 2, w: 3, h: 2, min: 100, time: 240, hk: 'W', tier: 'morph', req: ['forge'], needsPsi: true, sight: 3, wall: true });
+
+  // ===================== THE WARP GATE (M12 item 12) =====================
+  // A Gateway that has given up its production queue. `produces: []` is not an oversight and it is
+  // not a placeholder -- it IS the trade, and it is written in the data rather than enforced by a rule
+  // so that every part of the game that asks "what does this building make" gets the right answer for
+  // free: the command card, AI.canTrainSoon, AI.production's producer filter, G.queueUnit's
+  // `produces.includes` guard and G.tickAlerts's idle-production check all stop offering it units
+  // without one line of code knowing what a Warp Gate is.
+  //
+  // What it has instead is five warp-in abilities, one per Gateway unit. Each puts the unit down
+  // ANYWHERE the player holds psi -- so production stops being "at the building" and becomes "at the
+  // front", which is the entire mechanic. The costs are the same, the unit is helpless while it forms,
+  // and the gate then recharges for a quarter LONGER than training would have taken. That last number
+  // is the balance of the whole item: a Warp Gate is not faster, it is closer, and if you use it at
+  // home it is strictly worse than the Gateway you converted.
+  //
+  // FREE, AND THAT IS DELIBERATE. `min: 0, gas: 0` -- the price was paid once for the whole army as
+  // the research, exactly as SC2 charges it. Spelled out as numbers because G.queueMorph subtracts
+  // them and `undefined` there is NaN minerals.
+  //
+  // THE FOOTPRINT AND THE SHIELDS MUST MATCH THE GATEWAY'S, and neither is taste. G.morphBuilding
+  // swaps `def` in place and never re-blocks the collision grid, so a different `w`/`h` would leave
+  // the map describing the building this used to be; and it updates `maxHp` and NOT `maxSh`, so a
+  // different `sh` would be a number the shield bar never honours. Both are the same constraints the
+  // three Shield Battery attunements above are written under.
+  B('warp_gate', { name: 'Warp Gate', race: 'P', hp: 500, sh: 500, w: 4, h: 3, min: 0, gas: 0, time: 300, hk: 'W', tier: 'morph', req: ['warp_gate_tech'], needsPsi: true, produces: [],
+    abil: ['warp_zealot', 'warp_dragoon', 'warp_sentry', 'warp_high_templar', 'warp_dark_templar'] });
 
   // ============================ NEUTRAL STRUCTURES (race 'N') ============================
   // Four of them: one nest that belongs to the wildlife, and three derelicts that belong to whoever
@@ -989,6 +1137,20 @@ const DATA = (() => {
   T('carrier_capacity', 'Carrier Capacity', 'P', 'fleet_beacon', 'C', 100, 100, 1500);
   T('disruption_web_tech', 'Disruption Web', 'P', 'fleet_beacon', 'D', 200, 200, 1200);
   T('argus_jewel', 'Argus Jewel', 'P', 'fleet_beacon', 'J', 100, 100, 2500, { energy: 'corsair' });
+  // M12 wave four, Protoss. Two researches and each of them IS a milestone item rather than a number.
+  //
+  // `blink` is the folded Stalker (see the unit block in this file): the Citadel is where a Protoss
+  // movement upgrade already lives, beside Leg Enhancements, so a player looking for "the thing that
+  // makes my army move differently" finds both on one card. Note the id is shared with the ability of
+  // the same name -- that is legal and intentional, DATA.techs and DATA.abilities are separate tables
+  // and `DATA.all` is units plus buildings only, so nothing can confuse the two.
+  //
+  // `warp_gate_tech` is item 12, and it sits on the Cybernetics Core because that is the building
+  // whose whole job is upgrading what a Gateway does. It carries no `effect` or `energy` key: both
+  // are inert in this engine, and everything this research does is gate the Warp Gate morph through
+  // that building's `req`.
+  T('blink', 'Blink', 'P', 'citadel_of_adun', 'B', 150, 150, 1800);
+  T('warp_gate_tech', 'Warp Gate', 'P', 'cybernetics_core', 'G', 150, 150, 1800);
   T('recall_tech', 'Recall', 'P', 'arbiter_tribunal', 'R', 150, 150, 1800);
   T('stasis_tech', 'Stasis Field', 'P', 'arbiter_tribunal', 'S', 150, 150, 1800);
   T('khaydarin_core', 'Khaydarin Core', 'P', 'arbiter_tribunal', 'K', 150, 150, 2500, { energy: 'arbiter' });
@@ -1095,6 +1257,60 @@ const DATA = (() => {
   A('disruption_web', 'Disruption Web', 'D', 'point', { energy: 125, tech: 'disruption_web_tech', range: 9 });
   A('recall', 'Recall', 'R', 'point', { energy: 150, tech: 'recall_tech', range: 999 });
   A('stasis_field', 'Stasis Field', 'T', 'point', { energy: 100, tech: 'stasis_tech', range: 9 });
+  // ---- M12 wave four: the Protoss additions ----------------------------------------------------
+  // Hotkeys avoid M, S, A, P and H for the same reason the Zerg block above does: UI.buildCard pins
+  // Move/Stop/Attack/Patrol/Hold to those on every mobile card and the dispatcher takes the FIRST
+  // button with a matching key, so an ability on one of them is a key that does the wrong thing.
+  //
+  // ITEM 11, CHRONO BOOST. Cast from a building, so `range: 999` matches Scanner Sweep and the MULE:
+  // Abilities.issue's building branch does not consult range at all and a small number here would be
+  // a lie. `t` is 20 seconds of DOUBLE speed on one building's queue, and it cannot stack -- a second
+  // cast on the same building is refused and refunded rather than adding a third unit of progress a
+  // frame, because "cast it twice" is the first thing a player tries and the answer has to be one a
+  // player can predict. The boost lives in G.fields, not in a counter on the building, so a replay
+  // seek and a rejoin reproduce the remaining time exactly.
+  A('chrono_boost', 'Chrono Boost', 'C', 'point', { energy: 50, range: 999, t: 480 });
+  // GUARDIAN SHIELD reuses `fx.matrix` -- the Science Vessel's Defensive Matrix -- rather than adding a
+  // status of its own. A pool of absorbed damage over every unit nearby is a fair reading of the SC2
+  // shield and it needs nothing from js/sim.js or js/snapshot.js: the pool ticks down in Unit.tick and
+  // G.damage already spends it before armour. The alternative, a flat -2 on incoming ranged damage,
+  // would have been a new branch in the damage path, which this change does not own.
+  A('guardian_shield', 'Guardian Shield', 'G', 'instant', { energy: 75, r: 3, absorb: 60, t: 360 });
+  // FORCE FIELD IS TERRAIN WITH A TIMER, and that is the one thing js/map.js warns will desync a
+  // replay seek if it remembers a countdown of its own. It does not: the tiles go in G.fields beside
+  // storm, dark swarm and the jamming field, and the walk grid is in the snapshot already.
+  A('force_field', 'Force Field', 'F', 'point', { energy: 50, range: 9, r: 1.5, t: 360 });
+  // GRAVITON BEAM lifts a GROUND unit out of the fight. Reuses `fx.maelstrom`, which is the one status
+  // this engine has that returns from Unit.tick outright -- so a lifted unit does not move, shoot or
+  // cast, which is what being held in the air means. An air target is refused and refunded.
+  A('graviton_beam', 'Graviton Beam', 'G', 'unit', { energy: 50, range: 6, t: 240 });
+  // REVELATION is a Comsat scan cast from a ship, and it is the Comsat's own field kind so it needs no
+  // new vision code: G.updateVision already marks `scan` fields for whoever owns them. It is not
+  // detection -- an Observer is still the only thing Protoss has that sees a cloaked unit.
+  A('revelation', 'Revelation', 'R', 'point', { energy: 50, range: 12, r: 8, t: 480 });
+  // PURIFICATION NOVA is a fuse and not a hit: two seconds pass between the cast and the blast, and it
+  // hits the caster's own army too. Both halves are the balance of it -- anything with legs walks out,
+  // and a nova dropped on a melee scrum kills the zealots in it.
+  A('purification_nova', 'Purification Nova', 'N', 'point', { energy: 75, range: 8, delay: 48, r: 1.5, dmg: 100 });
+  // TIME WARP slows enemy GROUND units inside it, and refreshes `fx.ensnare` every frame the way
+  // Disruption Web and the Jamming Field refresh theirs -- so walking out of it clears in two frames
+  // with no per-unit list for a snapshot to carry. Allies are exempt and flyers are exempt.
+  A('time_warp', 'Time Warp', 'W', 'point', { energy: 100, range: 9, r: 2.5, t: 720 });
+  // BLINK. No energy: a Dragoon has no energy bar, so the whole cost is the ten-second recharge, which
+  // is stamped on the unit as `blinkAt` rather than kept as a counting-down field. That is deliberate
+  // and it is the determinism-safe half: a frame stamp is a fact about the past that a snapshot
+  // restores by copying one number, where a countdown has to be ticked by something.
+  A('blink', 'Blink', 'B', 'point', { tech: 'blink', range: 8, cd: 240 });
+  // The Mothership is merged, not built. `from` names what is consumed: Abilities.merge used to derive
+  // it from the id ('summon_archon' or else dark templar), which silently made this one want dark
+  // templar, so the pair is named in the data now and the old guess is only a fallback.
+  A('summon_mothership', 'Summon Mothership', 'W', 'merge', { unit: 'mothership', from: 'arbiter' });
+  // ITEM 12, THE FIVE WARP-INS. One per Gateway unit, each carrying the unit's own hotkey so a Warp
+  // Gate's card reads exactly like the Gateway's did. `range: 999` for the reason Chrono Boost has it:
+  // the real limit is the psi grid, not a distance from the building, and a number here would suggest
+  // otherwise. `form` is how long the unit is helpless after it lands.
+  const WARP = (id, hk) => A('warp_' + id, 'Warp In ' + units[id].name, hk, 'point', { warp: true, unit: id, range: 999, form: 48, cdMult: 1.25 });
+  WARP('zealot', 'Z'); WARP('dragoon', 'D'); WARP('sentry', 'E'); WARP('high_templar', 'T'); WARP('dark_templar', 'K');
 
   // Command-card ordering hints for worker build menus.
   //
