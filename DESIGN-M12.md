@@ -122,17 +122,38 @@ measures nothing. Balance measurement remains separately gated on an explicit in
 
 ## Status
 
-**Wave one: DONE** (2026-09-09). Items 1-9 all land, `test/qol.js` covers them, 43 suites green.
+Updated 2026-09-10.
 
-Two of the nine turned out to be already built and only needed verifying, which is worth recording so
-nobody builds them twice: **7 repeat/queue building** already worked -- `UI.confirmPlacement(shift)`
-queues the order and keeps the placement ghost alive -- and **8 control-group tab across types** already
-worked, via `UI.cycleSubgroup` with the command card following `UI.subgroup`.
+| Wave | State |
+|---|---|
+| **One — quality of life (1-9)** | **DONE.** `test/qol.js`, `test/controls.js`. |
+| **Two — the shell (10)** | **DONE.** Four screens: Main, Lobby, Settings, Controls. |
+| **Three — macro (11-14)** | **MULE, larva inject, creep tumours, collision push DONE.** Chrono boost and warp-in are with the Protoss data. |
+| **Four — the roster (15)** | **Terran 15/15 DONE. Zerg 10/10 DONE. Protoss in progress.** |
+| **Five — long testing (16)** | Not started; runs once Protoss lands. |
 
-And one was smaller than it looked but in a different place than expected. **5 smart casting** was
-supposed to stop N casters all firing at one point; that was already true, because the ability branch in
-`execPending` returns after the first unit. What was NOT true is that it picked a sensible caster -- it
-took whatever was first in the selection, with no energy and standing furthest away. So smart casting
-here means "the right caster", not "one caster", and the test measures that.
+Two of wave one turned out to be already built and only needed verifying, recorded here so nobody
+builds them twice: **7 repeat/queue building** already worked (`UI.confirmPlacement(shift)` queues the
+order and keeps the placement ghost alive) and **8 control-group tab across types** already worked, via
+`UI.cycleSubgroup` with the command card following `UI.subgroup`.
 
-Waves two to five: not started.
+And **5 smart casting** was a different feature than it looked. "One press, one cast" was already true,
+because the ability branch in `execPending` returns after the first unit. What was not true is that it
+picked a sensible caster -- it took whatever was first in the selection, no energy and furthest away
+included. Smart casting here means "the right caster", not "one caster", and the test measures that.
+
+## Things this milestone learned the hard way
+
+Written down because all three cost hours and none is visible in a diff.
+
+1. **`git show <rev>:file` emits LF and the working tree is CRLF.** Every three-way merge attempted
+   without normalising first sees nearly every line as changed and produces garbage that looks like a
+   real conflict. Normalise all three inputs before merging anything in this repo.
+2. **Duplicate object keys are silent data loss.** A union merge of `AI_SCRIPTS`, `AI_COMP` and the
+   sprite animation sets produced two `T:` keys and three `treads:` keys. That is valid JavaScript --
+   the last one wins -- so an entire race's roster vanished from the AI with no error and a file that
+   parsed. `test/terran12.js` caught it only because it asserts every new unit is in an AI table.
+3. **`map.height` was not snapshotted** on the reasoning that `syncFeature`/`syncWrecks` re-derive it.
+   They only paint tiles they still own, so a wreck that skipped a tile a building later took left that
+   tile raised live and flat restored. It presented as a lurker firing in one process and not the
+   other, three ticks after a restore, with every unit field identical. Height is captured now.
