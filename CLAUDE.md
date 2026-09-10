@@ -1,7 +1,8 @@
 # Working agreement — Brood War remake
 
 Loaded automatically every session. Kept short on purpose; the detail lives in `HANDOFF-M14.md`
-(current state and plan), `DESIGN-M13.md` (what was built and why), and `PLAYTEST-M13.md`.
+(current state and plan), `FIXLIST-M14.md` (twenty-one locked player-reported items, which
+come first), `DESIGN-M13.md` (what was built and why), and `PLAYTEST-M13.md`.
 
 ---
 

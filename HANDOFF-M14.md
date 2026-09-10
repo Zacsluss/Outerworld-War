@@ -63,6 +63,21 @@ workers, and every tier-3 building completes on every seed.
 
 ## What is next, in order
 
+### 0. FIXLIST-M14.md — twenty-one player-reported items, and they come FIRST
+
+**Read `FIXLIST-M14.md` before anything below.** The user played the game and reported twenty-one
+faults and requests, all of which were checked against the code and locked into that document with
+acceptance criteria. Three of them are not what they look like: creep tumours come from the Overlord
+rather than the Queen, the Hellion's line attack already works and is merely drawn as Lurker spines,
+and the defeat screen exists but has no Restart. One is already correct and needs only a hand check.
+
+They are ordered A (data) -> B (interface) -> C (simulation) -> D (AI), which is strictly increasing
+risk and strictly decreasing independence. **D1 -- the AI raiding expansions and never committing to a
+main -- sits immediately before step 1 below on purpose:** both are AI, both need the same
+measure-first discipline, and `test/ledger.js` serves both.
+
+Four open questions at the end of that file need the user's answer before the items they affect start.
+
 ### 1. The composition ratchet — the one thing M13 left standing
 
 Everything the budget could fix, it fixed. What is left is `AI_COMP`, and the single number that says
