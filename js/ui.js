@@ -241,18 +241,68 @@ const UI = {
     // paginating command card, so the cap was producing clicking rather than decisions. drawSelGrid is
     // what keeps an unbounded selection legible.
     if (list.length > 1) list = list.filter(u => !u.def.larva || list.every(v => v.def.larva));
-    this.selection = list; this.pending = null; this.placing = null; this.cardMenu = null;
+    // A unit selection and a resource selection are exclusive (FIXLIST-M14 B1). Clearing it HERE
+    // rather than at each call site is what guarantees it: control groups, select-all-army, the idle
+    // worker key and the multi-select strip all come through this one function.
+    this.selection = list; this.selRes = null; this.pending = null; this.placing = null; this.cardMenu = null;
     if (list.length) Sound.select(list[0]);
   },
   onUnitDied(u) { const i = this.selection.indexOf(u); if (i >= 0) this.selection.splice(i, 1); for (const k in this.groups) { const j = this.groups[k].indexOf(u); if (j >= 0) this.groups[k].splice(j, 1); } },
-  // The hit radius is in WORLD units, so at the strategic view it shrinks with everything else while
-  // the icon the player is actually aiming at does not. Max against the icon's own size keeps a unit
-  // clickable at the size it is drawn rather than the size it is.
+  // The hit area is in WORLD units, so at the strategic view it shrinks with everything else while the
+  // icon the player is actually aiming at does not -- Render.hitBox carries the floor that handles that.
+  //
+  // FIXLIST-M14 B3: the area comes from Render.hitBox, which is measured from the DRAWN SPRITE rather
+  // than derived from `u.r`. It is a box and not a circle because the ink is not symmetric about the
+  // unit -- see the SPRITE_INK block in js/render.js for the measurement and why. The tie-break is
+  // unchanged and is what stops the wider area making a clump worse: among everything the click lands
+  // on, the NEAREST CENTRE still wins.
   unitAt(wx, wy) {
     let best = null, bd = 1e9;
-    for (const u of G.units) { if (!u.alive || u.inside || u.def.notUnit) continue; if (u.owner !== G.human && !G.canSee(G.human, u) && !(u.isBuilding && G.explored(G.human, Math.floor(u.x / TILE), Math.floor(u.y / TILE)))) continue; let hit, d; if (u.isBuilding && !u.lifted) { hit = wx >= u.tx * TILE && wx < (u.tx + u.def.w) * TILE && wy >= u.ty * TILE && wy < (u.ty + u.def.h) * TILE; d = 500; } else { d = distPt(wx, wy, u.x, u.y); hit = d <= Math.max(u.r + 4, Render.iconH(u) * 1.4); } if (hit && d < bd) { bd = d; best = u; } }
+    for (const u of G.units) { if (!u.alive || u.inside || u.def.notUnit) continue; if (u.owner !== G.human && !G.canSee(G.human, u) && !(u.isBuilding && G.explored(G.human, Math.floor(u.x / TILE), Math.floor(u.y / TILE)))) continue; let hit, d; if (u.isBuilding && !u.lifted) { hit = wx >= u.tx * TILE && wx < (u.tx + u.def.w) * TILE && wy >= u.ty * TILE && wy < (u.ty + u.def.h) * TILE; d = 500; } else { const b = Render.hitBox(u); const dx = wx - u.x, dy = wy - u.y; hit = dx >= -b.side && dx <= b.side && dy >= -b.up && dy <= b.down; d = distPt(wx, wy, u.x, u.y); } if (hit && d < bd) { bd = d; best = u; } }
     return best;
   },
+  // ==========================================================================
+  // RESOURCES ARE CLICKABLE -- FIXLIST-M14 B1 (reported items 1, 3 and 14)
+  // ==========================================================================
+  // "Click a mineral node to see how many minerals are left", "click a gas patch for gas remaining",
+  // "hovering either should show a ring so you know you are over it".
+  //
+  // This was a MISSING FEATURE, not a broken one: `unitAt` walks `G.units`, and mineral patches and
+  // geysers live in `G.map.resources`, so no click could ever reach one. They are not Units and must
+  // not become Units -- a resource in `UI.selection` would be handed orders, swept into control groups
+  // and drawn in the multi-select strip, all of which want a `def`, an owner and hit points.
+  //
+  // So a resource selection is its own field. `selRes` is set only when nothing else was hit, is
+  // cleared by any unit selection, and is read by exactly two places: the console panel, and the hover
+  // ring. It never enters `selection`, so nothing downstream has to learn that it exists.
+  selRes: null,
+  hoverRes: null,
+  // A patch, a geyser, or the geyser under a finished refinery/extractor/assimilator. Fog-gated: a
+  // patch on ground the player has never explored is not there as far as the interface is concerned.
+  resourceAt(wx, wy) {
+    if (!G.map || !G.map.resources) return null;
+    const tx = Math.floor(wx / TILE), ty = Math.floor(wy / TILE);
+    if (!G.explored(G.human, tx, ty)) return null;
+    for (const r of G.map.resources) {
+      if (wx < r.x * TILE || wx >= (r.x + r.w) * TILE || wy < r.y * TILE || wy >= (r.y + r.h) * TILE) continue;
+      return r;
+    }
+    return null;
+  },
+  // The geyser under a gas building, so clicking a Refinery answers the same question clicking the
+  // geyser did. `b.geyser` is set by G.placeBuilding and cleared when the building dies.
+  resourceUnder(u) { return (u && u.isBuilding && u.def.onGeyser && u.geyser) ? u.geyser : null; },
+  DOUBLE_MS: 350,
+  // "Is this the second click of a double-click on the same thing?" -- its own question rather than a
+  // condition buried in onUp, so test/clicking.js can ASK IT rather than re-typing it. A test that
+  // retypes the condition is testing its own copy: putting the removed clause back would leave it
+  // green, which is exactly what happened the first time this was written.
+  //
+  // FIXLIST-M14 B2 (item 2) is the clause that is NOT here any more: `&& !t.isBuilding`. It was the
+  // only thing stopping a double-click on a Barracks selecting every Barracks on screen, and the
+  // Ctrl-click branch two lines below in onUp already did select-all-of-type without excluding
+  // buildings -- which is what said the exclusion was unmotivated rather than load-bearing.
+  isDoubleClick(t, now) { return now - this.lastClick < this.DOUBLE_MS && this.lastClickUnit === t && t.owner === G.human; },
   // ---------------- input ----------------
   // Delegated to Render, which owns the zoom. This is the load-bearing line: every click, drag,
   // order and hover goes through it, so leaving the old `sx + camX` here would land every one of them
@@ -271,6 +321,9 @@ const UI = {
     if (this.miniDrag) { const [wx, wy] = this.miniToWorld(m.x, m.y); this.centerOn(wx, wy); }
     if (this.placing) { const d = this.placing.def; this.placing.tx = Math.floor(m.wx / TILE - d.w / 2 + 0.5); this.placing.ty = Math.floor(m.wy / TILE - d.h / 2 + 0.5); if (d.onGeyser) { const g = G.map.resources.find(r => r.type === 'geyser' && m.wx >= r.x * TILE - 16 && m.wx < (r.x + r.w) * TILE + 16 && m.wy >= r.y * TILE - 16 && m.wy < (r.y + r.h) * TILE + 16); if (g) { this.placing.tx = g.x; this.placing.ty = g.y; } } }
     this.hover = (m.y < Render.H - this.consoleH) ? this.unitAt(m.wx, m.wy) : null;
+    // B1: the ring. A resource only reads as hovered when nothing is standing on it, so a worker
+    // mining a patch still highlights as the worker -- the unit is what a click there would select.
+    this.hoverRes = (!this.hover && m.y < Render.H - this.consoleH) ? this.resourceAt(m.wx, m.wy) : (this.hover ? this.resourceUnder(this.hover) : null);
   },
   onDown(e) {
     const m = this.mouse; m.x = e.clientX; m.y = e.clientY; [m.wx, m.wy] = this.screenToWorld(m.x, m.y);
@@ -316,7 +369,15 @@ const UI = {
     }
     if (e.button !== 0 || !m.down) return; m.down = false;
     if (this.dragging && this.drag) { const d = this.drag; const [x0, y0] = this.screenToWorld(Math.min(d.x0, d.x1), Math.min(d.y0, d.y1)), [x1, y1] = this.screenToWorld(Math.max(d.x0, d.x1), Math.max(d.y0, d.y1)); const inBox = G.units.filter(u => u.alive && !u.inside && !u.isBuilding && u.x >= x0 && u.x <= x1 && u.y >= y0 && u.y <= y1 && (u.owner === G.human || G.canSee(G.human, u)) && !u.def.notUnit); let own = inBox.filter(u => u.owner === G.human); if (!own.length && inBox.length) own = [inBox[0]]; if (own.length) this.select(own, e.shiftKey); else if (!e.shiftKey) { const b = G.units.filter(u => u.alive && u.isBuilding && u.owner === G.human && u.x >= x0 && u.x <= x1 && u.y >= y0 && u.y <= y1)[0]; if (b) this.select([b]); } }
-    else if (this.drag) { const t = this.unitAt(m.wx, m.wy); const now = performance.now(); if (t) { if (now - this.lastClick < 350 && this.lastClickUnit === t && t.owner === G.human && !t.isBuilding) { const same = G.units.filter(u => u.alive && u.owner === G.human && u.def.id === t.def.id && !u.inside && u.x > Render.camX && u.x < Render.camX + Render.viewWorldW() && u.y > Render.camY && u.y < Render.camY + Render.viewWorldH()); this.select(same, e.shiftKey); } else if (e.shiftKey && this.selection.includes(t)) { this.selection = this.selection.filter(u => u !== t); } else if (e.ctrlKey) { const same = G.units.filter(u => u.alive && u.owner === t.owner && u.def.id === t.def.id && !u.inside && u.x > Render.camX && u.x < Render.camX + Render.viewWorldW() && u.y > Render.camY && u.y < Render.camY + Render.viewWorldH()); this.select(same, e.shiftKey); } else this.select([t], e.shiftKey && t.owner === G.human); this.lastClick = now; this.lastClickUnit = t; } else if (!e.shiftKey) { this.selection = []; this.cardMenu = null; } }
+    // B2 (item 2): the `!t.isBuilding` clause that used to sit in the double-click test is GONE.
+    // Double-clicking a building now selects every building of that type on screen, exactly as it has
+    // always done for units -- same 350 ms window, same on-screen restriction, same code path.
+    // Ctrl-click on the very next branch already did select-all-of-type WITHOUT excluding buildings,
+    // which is what said the exclusion was unmotivated rather than load-bearing.
+    else if (this.drag) { const t = this.unitAt(m.wx, m.wy); const now = performance.now(); if (t) { if (this.isDoubleClick(t, now)) { const same = G.units.filter(u => u.alive && u.owner === G.human && u.def.id === t.def.id && !u.inside && u.x > Render.camX && u.x < Render.camX + Render.viewWorldW() && u.y > Render.camY && u.y < Render.camY + Render.viewWorldH()); this.select(same, e.shiftKey); } else if (e.shiftKey && this.selection.includes(t)) { this.selection = this.selection.filter(u => u !== t); } else if (e.ctrlKey) { const same = G.units.filter(u => u.alive && u.owner === t.owner && u.def.id === t.def.id && !u.inside && u.x > Render.camX && u.x < Render.camX + Render.viewWorldW() && u.y > Render.camY && u.y < Render.camY + Render.viewWorldH()); this.select(same, e.shiftKey); } else this.select([t], e.shiftKey && t.owner === G.human); this.lastClick = now; this.lastClickUnit = t; }
+      // B1: nothing was hit, so ask the map. A resource click clears the unit selection and fills
+      // `selRes` instead -- the two are exclusive, and only one of them can be given an order.
+      else { const r = this.resourceAt(m.wx, m.wy); if (r) { this.selRes = r; if (!e.shiftKey) { this.selection = []; this.cardMenu = null; } } else if (!e.shiftKey) { this.selection = []; this.selRes = null; this.cardMenu = null; } } }
     this.drag = null; this.dragging = false;
   },
   // ==========================================================================

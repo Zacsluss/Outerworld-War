@@ -831,7 +831,10 @@ Object.assign(UI, {
     this.hotspots = []; const cr = this.cardRect();
     const ix = mr.x + mr.s + 18, iw = cr.x - ix - 14; HUD.inset(ctx, ix, y0 + 8, iw, ch - 16);
     const sel = this.selection;
-    if (sel.length === 1) this.drawUnitInfo(ctx, sel[0], ix, y0 + 8, iw, ch - 16);
+    // B1: a selected mineral patch or geyser gets the panel a unit would get. It is checked FIRST but
+    // it can only be set when `selection` is empty (UI.select clears it), so the two never contend.
+    if (this.selRes) this.drawResourceInfo(ctx, this.selRes, ix, y0 + 8, iw, ch - 16);
+    else if (sel.length === 1) this.drawUnitInfo(ctx, sel[0], ix, y0 + 8, iw, ch - 16);
     else if (sel.length > 1) { const cols = Math.min(6, Math.floor((iw - 16) / 46)); sel.forEach((u, i) => { const bx = ix + 10 + (i % cols) * 46, by = y0 + 16 + Math.floor(i / cols) * 58; HUD.bevel(ctx, bx, by, 42, 52, true, sk.slot); const hr = u.hp / u.maxHp; const tint = hr > .66 ? 'rgba(60,230,60,0.8)' : hr > .33 ? 'rgba(240,220,60,0.8)' : 'rgba(255,60,60,0.8)'; ctx.drawImage(Sprites.tinted(u.def.id, G.players[u.owner].color, 36, tint), bx + 3, by + 3); if (u.maxSh) { ctx.fillStyle = '#5aa8ff'; ctx.fillRect(bx + 3, by + 42, 36 * u.sh / u.maxSh, 2); } ctx.fillStyle = hr > .66 ? '#3fe83f' : hr > .33 ? '#f0e040' : '#ff3c3c'; ctx.fillRect(bx + 3, by + 46, 36 * hr, 3); this.hotspots.push({ x: bx, y: by, w: 42, h: 52, fn: () => { if (this.keys.Shift) this.selection = this.selection.filter(v => v !== u); else this.select([u]); } }); }); }
     // The console's own condition, said out loud in the one place there is room for it. A HUD that
     // degrades and never says why is atmosphere; a HUD that names the thing degrading is a readout,
@@ -870,6 +873,34 @@ Object.assign(UI, {
     // the cursor was tried once and it makes the game feel broken rather than the console.
     HUD.glitchDraw(ctx, 0, y0, W, ch);
   },
+  // FIXLIST-M14 B1: what is left in a patch or a geyser. Deliberately shaped like drawUnitInfo -- the
+  // same inset, the same portrait socket, the same name-then-facts column -- because a player clicking
+  // a patch is asking the console the same kind of question they ask of a unit, and an answer that
+  // looked different would read as a different screen rather than the same one.
+  //
+  // Never called for unexplored ground: UI.resourceAt refuses to return a resource the player has not
+  // explored, so a patch nobody has walked past cannot be clicked and cannot be reported.
+  drawResourceInfo(ctx, r, x, y, w, h) {
+    const sk = HUD.skin(); ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+    const gas = r.type === 'geyser';
+    HUD.bevel(ctx, x + 8, y + 8, 80, 80, false, sk.ink);
+    const g = ctx.createRadialGradient(x + 48, y + 48, 4, x + 48, y + 48, 44);
+    g.addColorStop(0, sk.hi); g.addColorStop(1, sk.ink); ctx.fillStyle = g; ctx.fillRect(x + 9, y + 9, 78, 78);
+    ctx.save(); ctx.beginPath(); ctx.rect(x + 9, y + 9, 78, 78); ctx.clip(); ctx.translate(x + 48, y + 52);
+    try { const s = Render.resourceSprite(gas ? 'gas' : 'mineral', gas ? (r.amount > 0 ? 1 : 0) : Math.max(0, Math.min(5, Math.round(r.amount / 1500 * 5)))); const k = Math.min(66 / s.W, 66 / s.H); ctx.scale(k, k); ctx.drawImage(s.cv, -s.W / 2, -s.H / 2); } catch (e) { }
+    ctx.restore(); ctx.fillStyle = 'rgba(255,255,255,0.04)'; for (let i = 0; i < 78; i += 3) ctx.fillRect(x + 9, y + 9 + i, 78, 1);
+    let ly = y + 24; const tx = x + 100;
+    const line = (s, col = '#c8d0d8', sz = 11, bold = false) => { HUD.text(ctx, s, tx, ly, col, sz, bold); ly += 14; };
+    HUD.text(ctx, gas ? 'Vespene Geyser' : 'Mineral Field', tx, ly, gas ? '#7ee07a' : '#6fe0ff', 14); ly += 18;
+    const amt = Math.max(0, Math.round(r.amount));
+    line((gas ? 'Vespene remaining ' : 'Minerals remaining ') + amt, gas ? '#7ee07a' : '#6fe0ff', 12, true);
+    // `start` is on mineral patches and not on geysers, so the share is only offered where it is real.
+    if (r.start) line('of ' + r.start + '  (' + Math.round(100 * r.amount / r.start) + '%)', '#9aa4b0');
+    if (amt === 0) line(gas ? 'Depleted -- it still yields a trickle.' : 'Mined out.', '#c98a6a');
+    if (gas) { const b = r.building; line(b && b.alive ? (b.done ? b.def.name + ' built here' : b.def.name + ' under construction') : 'No refinery on it', '#9aa4b0'); }
+    else if (r.miner) line('Being mined', '#9aa4b0');
+    ctx.restore();
+  },
   drawUnitInfo(ctx, u, x, y, w, h) {
     const p = G.players[u.owner], sk = HUD.skin(); ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
     // portrait. The backlight behind it is the console's own material, so a Zerg wireframe sits in a
@@ -892,6 +923,9 @@ Object.assign(UI, {
       // is exactly the information the delay exists to withhold.
       if (u.def.dig && u.burrowed) line(u.digT > 0 ? `Arming   ${(u.digT / TPS).toFixed(1)}s` : 'Armed', u.digT > 0 ? '#ffb020' : '#ff6a5a');
       if (u.isBuilding && u.def.spawnsLarva) line(`Larvae ${u.larvae.length}`, '#9aa4b0');
+      // B1, the third reported item: clicking a built Refinery / Extractor / Assimilator answers the
+      // same question clicking the geyser under it does, in the same place.
+      if (u.isBuilding && u.def.onGeyser && u.geyser) line(`Vespene remaining ${Math.max(0, Math.round(u.geyser.amount))}`, u.geyser.amount > 0 ? '#7ee07a' : '#c98a6a');
       if (u.isBuilding && !u.done) line(`Constructing ${Math.floor(100 * u.progress / u.def.time)}%` + (u.def.race === 'T' && !(u.builder && u.builder.alive && u.builder.order.target === u) ? '  (no SCV)' : ''), '#ffe45a');
       if (u.isBuilding && u.addon) line(`Add-on: ${u.addon.def.name}${u.addon.done ? '' : ' (building)'}`, '#9aa4b0');
       if (u.prod.length) { const qx = tx, qy = ly + 2; u.prod.forEach((it, i) => { const name = it.kind === 'unit' ? DATA.units[it.id].name : it.kind === 'upg' ? DATA.upgrades[it.id].name + ' L' + it.level : it.kind === 'tech' ? DATA.techs[it.id].name : DATA.buildings[it.id].name; const bx = qx + i * 50; HUD.bevel(ctx, bx, qy, 46, 40, true, sk.slot); if (it.kind === 'unit' || it.kind === 'morph') ctx.drawImage(Sprites.icon(it.id, p.color, 28), bx + 9, qy + 2); else { ctx.font = HUD.font(8); ctx.fillStyle = '#cfd6de'; ctx.fillText(name.slice(0, 9), bx + 3, qy + 18); } if (i === 0) { ctx.fillStyle = '#000'; ctx.fillRect(bx + 3, qy + 32, 40, 5); ctx.fillStyle = '#3fe83f'; ctx.fillRect(bx + 3, qy + 32, 40 * it.progress / it.total, 5); } this.hotspots.push({ x: bx, y: qy, w: 46, h: 40, fn: () => G.cancelProd(u, i) }); }); if (u.prod[0]) { const it = u.prod[0]; const name = it.kind === 'unit' ? DATA.units[it.id].name : it.kind === 'upg' ? DATA.upgrades[it.id].name + ' ' + it.level : it.kind === 'tech' ? DATA.techs[it.id].name : DATA.buildings[it.id].name; HUD.text(ctx, name, tx + u.prod.length * 50 + 6, qy + 26, '#ffe45a', 11); } ly += 46; }

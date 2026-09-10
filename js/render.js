@@ -322,6 +322,12 @@ const Render = {
     for (const u of UI.selection) { if (!u.alive || u.inside) continue; this.drawSelection(ctx, u, true); }
     this.drawRallies(ctx);
     if (UI.hover && UI.hover.alive && !UI.selection.includes(UI.hover)) this.drawSelection(ctx, UI.hover, false);
+    // FIXLIST-M14 B1 (item 14): a 50% transparent ring under the cursor when it is over a patch or a
+    // geyser, so the hover is unambiguous BEFORE the click. Deliberately the same drawResourceRing the
+    // rally indicator and the order marker use, at half alpha -- a second, different ring for the same
+    // object would read as a different thing rather than as "you are over this".
+    if (UI.hoverRes) this.drawResourceRing(ctx, UI.hoverRes, 0.5);
+    if (UI.selRes) this.drawResourceRing(ctx, UI.selRes, 0.9);
     if (!icons) for (const u of list) if (u.hp < u.maxHp && !UI.selection.includes(u) && (u.owner === G.human || G.frame - u.lastHit < 72)) this.drawBars(ctx, u);
     if (UI.selection.length === 1 && UI.selection[0].rally && UI.selection[0].owner === G.human) {
       const b = UI.selection[0], r = b.rally;
@@ -698,6 +704,75 @@ const Render = {
   iconH(u) {
     const d = u.def, z = this.zoom;
     return u.isBuilding ? Math.max(ICON_HB / z, d.w * TILE * 0.42) : Math.max((ICON_HS[d.size] || ICON_HS.medium) / z, u.r * 0.75);
+  },
+  // ==========================================================================
+  // HOW BIG A UNIT IS DRAWN -- FIXLIST-M14 B3, "units are hard to click"
+  // ==========================================================================
+  // The clickable area used to be a circle of `Math.max(u.r + 4, iconH(u) * 1.4)`. `u.r` is a
+  // SIMULATION radius -- 9 for a Widow Mine, 20 for a Thor -- chosen for pathing and collision, and it
+  // has no relationship to how big the sprite is. The report was that the clickable area is smaller
+  // than the visible model, and it was measured rather than argued: every baked sheet was decoded and
+  // the alpha bounding box taken across every facing of every idle and attack frame.
+  //
+  //   the old hit radius was a MEDIAN 0.62x the drawn sprite, and as low as 0.36x
+  //
+  // Two things the measurement said that reasoning would not have:
+  //
+  //   * THE INK IS NOT SYMMETRIC ABOUT THE UNIT. The sheets are rendered at 50 degrees of elevation
+  //     with the model centred in the frame, so a tall unit's mass sits ABOVE its own position: `up`
+  //     runs to 2.67x the model scale and `down` to only 0.53x on the median. A Colossus's ink starts
+  //     ABOVE its own centre -- `down` is 0. A circle cannot express that, so the hit test is a BOX.
+  //   * THE RATIO VARIES FAR TOO MUCH FOR A FORMULA. `up` over the model scale runs 0.57 to 2.67
+  //     across the roster, so one multiplier would be badly wrong for most of the game.
+  //
+  // So the numbers are a measured table, per unit, in world pixels from the unit's own position:
+  // [up, down, side]. THEY ARE NOT MAINTAINED BY HAND. test/clicking.js re-decodes the PNGs and
+  // asserts this table still matches them, and names every unit that has moved -- so a re-bake of the
+  // art turns the check red instead of leaving a stale table nobody notices. That is the same trap
+  // HANDOFF-M13 records as "regex probes that go stale", answered the way it says to answer it.
+  //
+  // `u.r` IS NOT TOUCHED. It drives pathing, collision and combat, and it is in the build stamp.
+  SPRITE_INK: {
+    arbiter: [31, 24, 31], archon: [26, 6, 16], baneling: [19, 8, 14], banshee: [28, 27, 32],
+    battlecruiser: [50, 37, 44], brood_cocoon: [26, 6, 15], broodling: [16, 10, 16], carrier: [37, 29, 36],
+    carrion_grub: [25, 15, 23], carrion_maw: [61, 32, 52], cocoon: [26, 6, 15], colossus: [65, 0, 22],
+    corsair: [32, 26, 33], cyclone: [31, 18, 26], dark_archon: [26, 6, 16], dark_templar: [41, 20, 35],
+    defiler: [39, 19, 28], devourer: [33, 21, 32], disruptor: [29, 7, 16], dragoon: [35, 9, 22], drone: [28, 16, 25],
+    dropship: [26, 20, 26], egg: [22, 5, 12], firebat: [38, 15, 30], ghost: [37, 16, 30], goliath: [40, 21, 29],
+    guardian: [31, 20, 31], hallucination: [14, 4, 9], hellion: [40, 29, 40], high_templar: [30, 9, 22],
+    hydralisk: [32, 16, 29], immortal: [37, 19, 33], infested_terran: [24, 6, 11], infestor: [28, 18, 26],
+    interceptor: [8, 5, 8], larva: [12, 7, 11], liberator: [29, 19, 24], locust: [17, 12, 17], lurker: [33, 21, 30],
+    lurker_egg: [26, 6, 15], marauder: [30, 10, 20], marine: [35, 11, 24], medic: [32, 9, 17], medivac: [28, 21, 27],
+    mothership: [82, 50, 80], mule: [31, 21, 30], mutalisk: [35, 26, 36], observer: [20, 10, 18],
+    oracle: [24, 16, 22], overlord: [33, 23, 30], overseer: [44, 18, 34], phoenix: [25, 20, 28], probe: [17, 9, 15],
+    queen: [42, 32, 44], ravager: [44, 23, 36], raven: [32, 21, 31], reaper: [24, 8, 15], reaver: [36, 23, 34],
+    roach: [29, 18, 26], scarab: [7, 3, 6], science_vessel: [30, 21, 26], scourge: [22, 15, 22], scout: [28, 24, 31],
+    scv: [34, 14, 28], sentinel: [38, 20, 31], sentry: [22, 7, 12], shuttle: [25, 19, 25], siege_tank: [38, 22, 31],
+    siege_tank_s: [49, 29, 42], spider_mine: [10, 7, 9], swarm_host: [38, 21, 30], tempest: [34, 23, 32],
+    thor: [65, 36, 59], ultralisk: [60, 26, 50], valkyrie: [28, 24, 31], viking: [31, 26, 34],
+    viking_a: [51, 21, 31], viper: [46, 31, 46], void_ray: [39, 32, 42], vulture: [26, 17, 25],
+    warp_prism: [23, 17, 22], widow_mine: [22, 9, 15], wraith: [28, 24, 31], zealot: [53, 25, 45],
+    zergling: [29, 20, 29],
+  },
+  HIT_PAD: 3,   // a couple of pixels of grace at the edge of the ink, the same idea the old `r + 4` had
+  // The clickable half-extents of a unit, in WORLD pixels: how far up, down and sideways from its own
+  // position you may click and still hit it. Used by UI.unitAt and by nothing else.
+  hitBox(u) {
+    // The icon regime. Below ZOOM_ICON the sprite is not drawn at all -- drawIcons puts a role glyph
+    // there whose world size GROWS as the zoom shrinks -- so the icon's extent has to take over or a
+    // unit becomes unclickable at exactly the zoom where it is smallest on screen. Carried over from
+    // the rule this replaces, where it was the second half of the same Math.max.
+    const ic = this.iconH(u) * 1.4;
+    // A siege tank in siege mode is a different sheet and is visibly bigger; a burrowed unit and a
+    // spider mine are not drawn from their sheet at all -- they are a mound and a dot -- so they keep
+    // the old circle, or a Lurker would be clickable across a tile of empty ground.
+    const floor = Math.max(u.r + 4, ic);
+    if (u.burrowed || u.def.mine) return { up: floor, down: floor, side: floor };
+    const id = (u.def.id === 'siege_tank' && u.sieged) ? 'siege_tank_s' : u.def.id;
+    const ink = this.SPRITE_INK[id];
+    if (!ink) return { up: floor, down: floor, side: floor };
+    const p = this.HIT_PAD;
+    return { up: Math.max(ink[0] + p, floor), down: Math.max(ink[1] + p, floor), side: Math.max(ink[2] + p, floor) };
   },
   iconPath(ctx, x, y, h, role) {
     switch (role) {
