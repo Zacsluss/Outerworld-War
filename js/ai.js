@@ -31,10 +31,14 @@ const AI_SCRIPTS = {
   // Tower right behind it. Nothing is removed -- the defensive and utility buildings move to AFTER
   // the tech that decides what army you are allowed to have.
   T: [[9, 'supply_depot'], [11, 'barracks'], [12, 'refinery'], [15, 'supply_depot'], [16, 'factory'], [18, 'machine_shop'], [19, 'supply_depot'], [20, 'academy'], [22, 'starport'], [23, 'bunker'], [24, 'command_center'], [25, 'control_tower'], [26, 'supply_depot'], [27, 'armory'], [28, 'factory'], [29, 'engineering_bay'], [30, 'comsat_station'], [31, 'orbital_command'], [32, 'science_facility'], [34, 'supply_depot'], [36, 'blast_barricade'], [37, 'scrambler_mast'], [38, 'machine_shop'], [39, 'aid_station'], [42, 'physics_lab'], [44, 'barracks'], [45, 'reactor'], [46, 'command_center'], [48, 'planetary_fortress'], [50, 'factory'], [52, 'sensor_tower'], [56, 'missile_turret'], [62, 'science_facility'], [64, 'starport'], [66, 'covert_ops'], [68, 'nuclear_silo'], [70, 'barracks'], [80, 'factory']],
+  // CHEAPEST TECH FIRST. The head step reserves its cost against everything behind it, so putting the
+  // most expensive building first is the worst order available: the Spire (200/150) held the head of
+  // the Zerg script for over ten minutes while the Queen's Nest (150/100) and Infestation Pit (100/100)
+  // waited behind it, and all three were affordable in that time -- just not the biggest one first.
   // Lair moves 20 -> 16 and everything behind it moves with it. Hive was at supply 52 behind a
   // Queen's Nest at 44, so a Zerg reached Hive at seventeen minutes when it reached it at all, and
   // Ultralisk Cavern and Greater Spire at 60 and 70 were unreachable in any real game.
-  Z: [[11, 'spawning_pool'], [12, 'hatchery'], [13, 'extractor'], [15, 'hydralisk_den'], [16, 'lair'], [17, 'roach_warren'], [18, 'creep_colony'], [19, 'sunken_colony'], [20, 'spire'], [21, 'carapace_ridge'], [22, 'extractor'], [24, 'hatchery'], [25, 'queens_nest'], [26, 'infestation_pit'], [28, 'evolution_chamber'], [30, 'hive'], [31, 'spore_colony'], [32, 'defiler_mound'], [34, 'hatchery'], [35, 'greater_spire'], [36, 'mending_pool'], [38, 'creep_colony'], [40, 'ultralisk_cavern'], [42, 'miasma_gland'], [44, 'creep_colony'], [48, 'extractor'], [56, 'creep_colony'], [64, 'hatchery'], [68, 'nydus_canal'], [80, 'hatchery']],
+  Z: [[11, 'spawning_pool'], [12, 'hatchery'], [13, 'extractor'], [15, 'hydralisk_den'], [16, 'lair'], [17, 'roach_warren'], [18, 'creep_colony'], [19, 'sunken_colony'], [20, 'queens_nest'], [21, 'carapace_ridge'], [22, 'extractor'], [24, 'infestation_pit'], [25, 'hatchery'], [26, 'spire'], [28, 'evolution_chamber'], [30, 'hive'], [31, 'spore_colony'], [32, 'defiler_mound'], [34, 'hatchery'], [35, 'greater_spire'], [36, 'mending_pool'], [38, 'creep_colony'], [40, 'ultralisk_cavern'], [42, 'miasma_gland'], [44, 'creep_colony'], [48, 'extractor'], [56, 'creep_colony'], [64, 'hatchery'], [68, 'nydus_canal'], [80, 'hatchery']],
   // M12 wave four adds two steps and no more: the Roach Warren at 17, between the den and the first
   // creep colony, because the Roach is a tier-one unit and AI_COMP.Z now spends four of its weight on
   // one; and the Infestation Pit at 42, ahead of the Queen's Nest, because everything behind it
@@ -444,7 +448,15 @@ class AI {
     }
   }
   supply() {
-    const p = this.p; if (p.supMax >= 200) return;
+    // SUPPLY_CAP, not a literal 200. M11 raised the ceiling to 500 and this early return did not
+    // follow it, so the AI stopped building supply at 200 and then sat at its own cap for the rest of
+    // the game. Everything expensive is what a capped player cannot buy: measured on a solo 20-minute
+    // Protoss game, it finished 252/252 having produced 77 zealots, 3 dragoons and NOTHING else --
+    // every one of Immortal, Colossus, Reaver, Carrier, Arbiter, Void Ray and Tempest reported
+    // 'supply' as the reason it was never built. This was the last and largest reason no tier-3 unit
+    // ever appeared, and it is the same stale-constant bug as the <= 200 assertion in
+    // test/eightplayer.js: a number the game stopped using a whole milestone ago.
+    const p = this.p; if (p.supMax >= SUPPLY_CAP) return;
     const prodN = this.mine(u => u.isBuilding && u.def.produces.length && u.done).length + (p.race === 'Z' ? this.halls().length : 0);
     // A depot takes 25 s to finish and late-game production eats supply faster than that, so the margin
     // has to scale with how much production is actually running. Measured with test/aiaudit.js: the AI
