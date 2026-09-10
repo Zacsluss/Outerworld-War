@@ -1,7 +1,7 @@
 # Working agreement — Brood War remake
 
-Loaded automatically every session. Kept short on purpose; the detail lives in `HANDOFF-M13.md`
-(current state and plan), `DESIGN-M12.md` (what was built and why), and `PLAYTEST-M12.md`.
+Loaded automatically every session. Kept short on purpose; the detail lives in `HANDOFF-M14.md`
+(current state and plan), `DESIGN-M13.md` (what was built and why), and `PLAYTEST-M13.md`.
 
 ---
 
@@ -17,7 +17,7 @@ over to a fresh one. The prompt must stand alone — someone pasting it into an 
 nothing else:
 
 - repo path, branch, HEAD commit, whether the tree is clean
-- which file to read first for state (`HANDOFF-M13.md` or its successor)
+- which file to read first for state (`HANDOFF-M14.md` or its successor)
 - the single next action, stated as an action, not a topic
 - the test gate (`node test/all.js`)
 - any known reds and whether they block
