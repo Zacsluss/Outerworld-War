@@ -25,6 +25,8 @@
 //   test/aiaudit.js         counts, does not assert
 //   test/casters.js         counts, does not assert
 //   test/micro.js           prints a duel frame by frame; explicitly diagnostic
+//   test/soak.js            every matchup x three seeds at 32k frames; minutes, and its coverage
+//                           half is a report rather than a pass or a fail
 //   test/smoke.js           one AI game; a harness for the above rather than a check
 //   test/diag.js            AI progression dump
 //   test/diverge.js         finds the first non-deterministic frame; run it when determinism.js breaks

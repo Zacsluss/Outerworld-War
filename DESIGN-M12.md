@@ -122,15 +122,21 @@ measures nothing. Balance measurement remains separately gated on an explicit in
 
 ## Status
 
-Updated 2026-09-10.
+Updated 2026-09-10. **All sixteen items are built and tested.**
 
 | Wave | State |
 |---|---|
-| **One — quality of life (1-9)** | **DONE.** `test/qol.js`, `test/controls.js`. |
+| **One — quality of life (1-9)** | **DONE.** `test/qol.js` (22), `test/controls.js` (19). |
 | **Two — the shell (10)** | **DONE.** Four screens: Main, Lobby, Settings, Controls. |
-| **Three — macro (11-14)** | **MULE, larva inject, creep tumours, collision push DONE.** Chrono boost and warp-in are with the Protoss data. |
-| **Four — the roster (15)** | **Terran 15/15 DONE. Zerg 10/10 DONE. Protoss in progress.** |
-| **Five — long testing (16)** | Not started; runs once Protoss lands. |
+| **Three — macro (11-14)** | **DONE.** MULE, larva inject, chrono boost, warp-in, creep tumours, collision push. `test/push.js`. |
+| **Four — the roster (15)** | **DONE.** Terran 15/15, Zerg 10/10, Protoss 12/12. `test/terran12.js` (135), `test/zerg12.js` (162), `test/protoss12.js` (114). |
+| **Five — long testing (16)** | **DONE.** `test/soak.js` (new), plus `test/longgame.js` and `test/missions.js` re-run. |
+
+Three deliberate deviations from a literal reading of item 15, each pinned by a test in both
+directions so it cannot be quietly undone: **no Stalker def** (it is Blink on the Dragoon, because a
+Stalker beside a Dragoon is the same role at the same building), **the Shuttle survives** beside the
+Warp Prism (the prism is +50 minerals for `psi`, which makes it a decision rather than a rename), and
+**no Baneling Nest** (banelings sit behind a tech, one fewer structure for the same decision).
 
 Two of wave one turned out to be already built and only needed verifying, recorded here so nobody
 builds them twice: **7 repeat/queue building** already worked (`UI.confirmPlacement(shift)` queues the
