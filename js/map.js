@@ -919,6 +919,41 @@ class GameMap {
   // restores `wrecks`, `walk` and `blocked` but not `height`, so something has to put height back, and
   // this is safe to run halfway through a restore.
   syncWrecks() { for (const wk of this.wrecks) this.paintWreck(wk, true); return this.wrecks.length; }
+
+  // ---- the force field, which is TERRAIN --------------------------------------------------------
+  // M12 item 12's sibling mechanic. It lived on GameMap.prototype at the top of js/abilities.js while
+  // three race branches were editing in parallel and none of them owned this file; the note there said
+  // to move it here verbatim at the next merge, and this is that. Moving it also drops the
+  // `typeof GameMap !== 'undefined' && !GameMap.prototype.raiseForceField` guard it needed, which was
+  // load-order-sensitive in exactly the direction that fails quietly -- abilities.js before map.js and
+  // a Sentry raises nothing at all.
+  //
+  // WHY THE TILE LIST LIVES IN G.fields AND NOTHING COUNTS DOWN HERE. The sandstorm comment above is
+  // the rule: anything with a timer a replay seek must reproduce has to be state the snapshot carries
+  // or a pure function of the frame. `walk` is in the snapshot and so is G.fields, so a restored
+  // checkpoint comes back with the same wall standing and the same number of frames left on it. A
+  // countdown remembered inside the map -- the obvious first shape -- would restore to a fresh one and
+  // the wall would expire dozens of frames late, a desync nothing would notice for minutes.
+  //
+  // A tile is only CLAIMED if it is plain open ground, exactly the rule addWreck uses and for the same
+  // reason: whatever we set back to walkable on expiry, we must have taken. Cliffs, buildings, mineral
+  // lines, hulks and destructible features are all skipped, so a Force Field can never hand back
+  // terrain it never owned.
+  raiseForceField(px, py, r) {
+    const cx = Math.floor(px / TILE), cy = Math.floor(py / TILE), tiles = [];
+    if (!this.inb(cx, cy)) return tiles;
+    this.ellipse(cx, cy, r, r, (x, y) => {
+      const i = this.idx(x, y);
+      if (this.walk[i] !== 1 || this.blocked[i] !== -1 || this.cliff[i] !== 0) return;
+      if (this.featTile && this.featTile[i] >= 0) return;   // a destructible's own tiles open and shut on their own schedule
+      tiles.push(i);
+    });
+    for (const i of tiles) this.walk[i] = 0;
+    return tiles;
+  }
+  clearForceField(tiles) {
+    for (const i of tiles) if (this.walk[i] === 0) this.walk[i] = 1;
+  }
   // Decay. Called once a frame by G.tick; returns how many cleared, which is what tells the renderer
   // its chunk cache is stale.
   tickWrecks(frame) {

@@ -44,45 +44,6 @@ const MULE_HAUL = 16;
 // extending that or-chain, because two other races are adding to the same function this milestone
 // and a three-way merge of one long boolean is how somebody's work goes missing.
 const Z12_ASPECTS = new Set(['baneling_aspect', 'ravager_aspect', 'swarm_host_aspect', 'viper_aspect', 'overseer_aspect']);
-// ---------------------------------------------------------------------------------------------
-// M12 wave four, Protoss: THE FORCE FIELD IS TERRAIN, so it belongs to the map.
-//
-// These two methods are the js/map.js half of item 12's sibling mechanic and they are written HERE
-// only because this branch does not own js/map.js and three race branches are editing in parallel.
-// They are on GameMap.prototype rather than on Abilities because that is where they belong, because
-// js/build.js hashes GameMap.prototype by name (so the stamp moves when they change, wherever the
-// text lives), and because js/abilities.js loads after js/map.js in index.html and in every headless
-// harness. MOVE THEM INTO js/map.js, verbatim, next to paintWreck, at the next merge.
-//
-// WHY THE TILE LIST LIVES IN G.fields AND NOTHING COUNTS DOWN HERE. js/map.js's own sandstorm comment
-// is the rule: anything with a timer that a replay seek must reproduce has to be state the snapshot
-// carries or a pure function of the frame. `walk` is in the snapshot and so is G.fields, so a restored
-// checkpoint comes back with the same wall standing and the same number of frames left on it. A
-// countdown remembered inside the map -- which was the obvious first shape -- would restore to a fresh
-// one and the wall would expire dozens of frames late, which is a desync nothing would notice for
-// minutes.
-//
-// A tile is only CLAIMED if it is plain open ground, exactly the rule GameMap.addWreck uses and for
-// the same reason: whatever we set back to walkable on expiry, we must have taken. Cliffs, buildings,
-// mineral lines, hulks and destructible features are all skipped, so a Force Field can never hand back
-// terrain it never owned.
-if (typeof GameMap !== 'undefined' && !GameMap.prototype.raiseForceField) {
-  GameMap.prototype.raiseForceField = function (px, py, r) {
-    const cx = Math.floor(px / TILE), cy = Math.floor(py / TILE), tiles = [];
-    if (!this.inb(cx, cy)) return tiles;
-    this.ellipse(cx, cy, r, r, (x, y) => {
-      const i = this.idx(x, y);
-      if (this.walk[i] !== 1 || this.blocked[i] !== -1 || this.cliff[i] !== 0) return;
-      if (this.featTile && this.featTile[i] >= 0) return;   // a destructible's own tiles open and shut on their own schedule
-      tiles.push(i);
-    });
-    for (const i of tiles) this.walk[i] = 0;
-    return tiles;
-  };
-  GameMap.prototype.clearForceField = function (tiles) {
-    for (const i of tiles) if (this.walk[i] === 0) this.walk[i] = 1;
-  };
-}
 // How far a ground unit must be able to WALK from a blink destination for that destination to be legal.
 // See Abilities.blinkReach for what this is protecting against and why it is not a reachability test
 // from the caster.
