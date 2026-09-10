@@ -689,6 +689,17 @@ class AI {
     if ((p.minerals > 250 && this.scriptIdx >= 6 && this.mine(u => u.isBuilding && u.def.produces.length && !u.def.depot && u.done).length < prodWant) || p.minerals > 600) {
       // An expander always has a base going up, and without the style term here its own expansions stop
       // it ever adding production: eight command centres, one barracks and no army at ten minutes.
+      // THE FLAT 3 STAYS, and this note is here because it looks obviously wrong and both obvious
+      // fixes were tried and measured. test/eightplayer.js fails one assertion on it: a Terran there
+      // sits on 2,968 minerals with three things going up and this line refusing a fourth, because
+      // both its geysers are dry and everything it wants costs gas.
+      //   + Math.floor(workers / 12)   -- the same slots script() uses. Relaxes the throttle in every
+      //     developed game rather than only the stuck ones; tier-3 soak coverage 11/13 -> 9/13,
+      //     because the extra production buildings spend the money the tech steps are waiting for.
+      //   + Math.floor(p.minerals / 600)  -- targeted at the actual symptom, and it does fix the
+      //     hoarding (2,968 -> 263) while holding 11/13. It also shifts the first attack wave enough
+      //     to turn test/aistyles.js red on the gate seed, 28 supply against standard's 26.
+      // Neither is free and neither can be priced without the balance run. Do not re-derive them.
       if (this.underway() >= 3 + (st.under || 0)) return; const prodId = r === 'T' ? (this.count('factory') >= 2 && p.gas > 200 ? 'factory' : 'barracks') : r === 'P' ? 'gateway' : 'hatchery';
       if (r === 'Z' && this.count('hatchery') + this.count('lair') + this.count('hive') < 8 && workers >= 12 * this.mine(u => u.isBuilding && u.def.spawnsLarva).length) this.build('hatchery');
       else if (r !== 'Z' && this.count(prodId) < prodWant) this.build(prodId); // out of free, like every other discretionary building: it must not outbid the head of the build order

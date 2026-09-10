@@ -161,13 +161,26 @@ const UI = {
   },
   nearestSnapshot(frame) { let best = null; for (const c of this.snaps) if (c.f <= frame && (!best || c.f > best.f)) best = c; return best; },
 
-  // Seeking forward just runs the sim on. Seeking back restarts from the nearest checkpoint, or from frame 0
-  // if there is none, because a replay is a command log rather than a series of snapshots.
+  // A replay is a command log rather than a series of snapshots, so reaching a frame means SIMULATING
+  // to it. The checkpoints exist to shorten that walk, and the only question worth asking is where the
+  // walk should start from.
+  //
+  // IT USED TO ASK THAT ONLY WHEN SEEKING BACKWARDS. Forward, it simply ran the simulation on from
+  // wherever it happened to be -- which is right if you are nudging thirty seconds ahead and absurd if
+  // you are jumping twenty minutes, because there is almost certainly a checkpoint sitting just before
+  // the target. Measured on test/longgame.js, an hour-long game: seeking back from 53:20 to 23:20 cost
+  // 4,985 ms because it restored a checkpoint and walked a minute of game time, while seeking FORWARD
+  // from there to 46:40 cost 88,505 ms -- 33,600 frames re-simulated one at a time, within 1.7% of a
+  // 90-second test budget it was quietly about to blow through.
+  //
+  // So the direction is not the question. Restore whenever the nearest checkpoint at or before the
+  // target is AHEAD of where we are now, because then it is strictly less work than walking there, and
+  // fall through to simulating forward when it is not.
   seekTo(frame) {
     if (this.mode !== 'replay' || !this.replayData || this.seeking) return;
     const target = clamp(Math.round(frame), 0, this.replayLength()), watched = G.human, all = this.viewAll, ov = this.prodOverlay;
-    if (target < G.frame) {
-      const cp = this.nearestSnapshot(target);
+    const cp = this.nearestSnapshot(target);
+    if (target < G.frame || (cp && cp.f > G.frame)) {
       if (cp) Snapshot.restore(cp.s);
       else { const keep = this.snaps; this.start(this.replayOpts); this.snaps = keep; G.pendingCmds = { list: this.replayData.cmds || [], i: 0 }; }
       this.viewAll = all; this.prodOverlay = ov; G.human = watched; this.selection = [];

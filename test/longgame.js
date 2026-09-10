@@ -192,9 +192,16 @@ async function seek(frame, label, budgetMs) {
   const at = m => { const f = TPS * 60 * m; return f - (f % 4800); };
   // A failed seek leaves the simulation half-restored, so there is nothing to learn from the ones after
   // it; say so rather than reporting three copies of one fault.
+  // BUDGETS RE-BASED IN M13, and what changed was the seek rather than the number. The forward seek
+  // used to ignore the checkpoints entirely -- UI.seekTo only consulted them when going backwards --
+  // so jumping from 23:20 to 46:40 re-simulated 33,600 frames one at a time and took 88,505 ms
+  // against the 90,000 it was allowed. It is 4,413 ms now, and the backward seek into the thinned
+  // region 9,029 ms, both measured on this machine WHILE a soak run was using the other cores.
+  // 30,000 ms is roughly three times the slower of those, which still catches the regression that
+  // was just fixed by a factor of three.
   if (await seek(at(55), 'inside the dense tail', 20000)) {
-    await seek(at(24), 'inside the thinned region', 90000);
-    await seek(at(48), 'forward again, past the boundary', 90000);
+    await seek(at(24), 'inside the thinned region', 30000);
+    await seek(at(48), 'forward again, past the boundary', 30000);
   } else console.log('  (skipping the remaining seeks: the failed one left the simulation half-restored)');
   ok('no JS errors in the replay either', errors.length === 0, errors.slice(0, 3).join(' || '));
   console.log('  final heap ' + mb(heap()) + ' MB');
