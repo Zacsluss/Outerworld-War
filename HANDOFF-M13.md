@@ -1,7 +1,8 @@
 # HANDOFF — M13: the AI economy
 
 Written 2026-09-10, at the end of the session that finished M12 and then spent most of itself fixing
-the AI. Branch `m10-overnight`, working tree clean, HEAD `ba7a87e`.
+the AI. Branch `m10-overnight`, working tree clean. (HEAD moves as this file and CLAUDE.md are committed --
+trust `git log -1`, not a hash written here.)
 
 **Read `DESIGN-M12.md` first** — it carries the full write-up of what was found and why. This file is
 the state transition: where things stand, what is next, and what will bite you.
