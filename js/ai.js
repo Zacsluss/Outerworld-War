@@ -349,11 +349,24 @@ class AI {
   // the time, so the hard reserve was permanently on for it and upgrades stopped completely -- three
   // seeds finished a game with one upgrade between them. Research should not outrank a build step; it
   // should also not be switched off by one.
+  // THE LEDGER HOOK. `this.ledger` is undefined in a real game, so every call below is one property
+  // read and nothing else; test/ledger.js sets it to an array and each gate then records what it
+  // refused, what that cost, and what was reserved at the time. It only appends -- no G.rand(), no
+  // state change, no ordering effect -- so a ledgered game is bit-identical to an unledgered one.
+  // The hooks sit AT each guard rather than re-deriving it in a probe, which is what stops them going
+  // stale the moment the guard is edited.
+  note(ret, gate, id, min, gas) {
+    if (this.ledger) this.ledger.push({ f: G.frame, ph: this.phase || '?', gate, id: id || null,
+      min: min || 0, gas: gas || 0, m: Math.round(this.p.minerals), g: Math.round(this.p.gas),
+      rm: this.reserveMin, rg: this.reserveGas, hd: (this.headDef && this.headDef.id) || null });
+    return ret;
+  }
   afford(min, gas, soft) {
     const m = this.p.minerals, g = this.p.gas, hard = !soft && this.techStarved();
-    if (min && this.reserveMin && (hard || m >= this.reserveMin * 0.4) && m - this.reserveMin < min) return false;
-    if (gas && this.reserveGas && (hard || g >= this.reserveGas * 0.4) && g - this.reserveGas < gas) return false;
-    return m >= min && g >= gas;
+    if (min && this.reserveMin && (hard || m >= this.reserveMin * 0.4) && m - this.reserveMin < min) return this.note(false, 'reserveMin', null, min, gas);
+    if (gas && this.reserveGas && (hard || g >= this.reserveGas * 0.4) && g - this.reserveGas < gas) return this.note(false, 'reserveGas', null, min, gas);
+    if (m < min || g < gas) return this.note(false, 'broke', null, min, gas);
+    return this.note(true, 'ok', null, min, gas);
   }
   reserve(def) { this.reserveMin = Math.max(this.reserveMin, def.min); this.reserveGas = Math.max(this.reserveGas, def.gas); } // hold back the single most expensive thing we are saving for, not the sum
   get race() { return this.p.race; }
@@ -381,7 +394,7 @@ class AI {
     // One think stale is fine and is the point: the figure is only a spending brake, and the step it
     // refers to is by definition the one that was not affordable last time.
     if (this.headDef && !this.overrun()) this.reserve(this.headDef);
-    try { this.economy(); this.supply(); this.script(); this.macro(); this.production(); this.research(); this.army(); this.scout(); this.drops(); this.micro(); } catch (e) { console.error('AI', e); }
+    try { this.phase = 'economy'; this.economy(); this.phase = 'supply'; this.supply(); this.phase = 'script'; this.script(); this.phase = 'macro'; this.macro(); this.phase = 'production'; this.production(); this.phase = 'research'; this.research(); this.phase = 'army'; this.army(); this.scout(); this.drops(); this.micro(); this.phase = null; } catch (e) { console.error('AI', e); }
   }
   // ---------------- economy ----------------
   economy() {
@@ -526,7 +539,7 @@ class AI {
       if (p.supUsed < s[i][0]) break;                                    // not time for this one, nor for anything after it
       if (met(i)) continue;
       const id = s[i][1], def = DATA.buildings[id];
-      if (!p.hasReq(def)) continue;
+      if (!p.hasReq(def)) { this.note(0, 'req', id, def.min, def.gas); continue; }
       // The head step is "the first thing we still owe", so its money should be held whether or not this
       // think can *start* it. The reserve is set only on the affordability path below, which puts it
       // behind two gates that skip the step for reasons that have nothing to do with money -- the
@@ -570,7 +583,7 @@ class AI {
           && (!vsP || p.minerals >= def.min * 0.5)) this.reserve(def);
       if (def.tier === 'addon') { if (this.addon(id)) { this.stepT = G.frame; return; } continue; }
       if (def.tier === 'morph') { if (this.mine(u => u.prod.some(it => it.kind === 'morph' && it.id === id)).length) continue; if (this.morph(id)) { this.stepT = G.frame; return; } continue; }
-      if (this.count(id) > this.scriptHave(cnt, id)) continue;           // already pending / in construction
+      if (this.count(id) > this.scriptHave(cnt, id)) { this.note(0, 'pending', id, def.min, def.gas); continue; } // already pending / in construction
       // Static defence is cheap and time-critical, so it must not queue behind expansions: Zerg kept letting its
       // scripted creep colonies time out while hatcheries were going up, and met the first push with no sunkens.
       // ...and a style that adds steps has to be allowed to start them. Measured, and it is the reason
@@ -582,10 +595,10 @@ class AI {
       // building the AI owns and everything behind it waits on it, whereas a step reached by scanning
       // ahead is by definition optional right now.
       if (!(def.gw || def.aw || def.id === 'creep_colony')
-          && under >= (def.depot ? 3 : 2) + (st.under || 0) + slots + (i === this.scriptIdx ? 1 : 0)) continue; // finish what is already going up first
+          && under >= (def.depot ? 3 : 2) + (st.under || 0) + slots + (i === this.scriptIdx ? 1 : 0)) { this.note(0, 'throttle', id, def.min, def.gas); continue; } // finish what is already going up first
       // gas-hungry tech waits until there is an army and enough production to use it
-      if (def.gas >= 100 && !def.produces.length && (this.armySup || 0) < 16 && prodDone < 3) continue;
-      if (p.minerals < def.min || p.gas < def.gas) { if (i === this.scriptIdx && !this.overrun()) this.reserve(def); continue; } // save up for the head step instead of spending on units -- unless an army is on its way here, in which case units now beat a building later
+      if (def.gas >= 100 && !def.produces.length && (this.armySup || 0) < 16 && prodDone < 3) { this.note(0, 'techgate', id, def.min, def.gas); continue; }
+      if (p.minerals < def.min || p.gas < def.gas) { this.note(0, 'stepBroke', id, def.min, def.gas); if (i === this.scriptIdx && !this.overrun()) this.reserve(def); continue; } // save up for the head step instead of spending on units -- unless an army is on its way here, in which case units now beat a building later
       // Only the head step may spend past the reserve; a step reached by scanning ahead must not eat the
       // money the step in front of it is saving for, or it would starve the thing it jumped over.
       if (this.build(id, i === this.scriptIdx && !this.mine(u => u.def.worker && u.order.type === 'build' && u.order.def).length)) { this.stepT = G.frame; return; } // a worker already walking to a site keeps its money
@@ -809,7 +822,7 @@ class AI {
     // three seeds finished a whole game with one upgrade between them -- because Zerg is MINERAL-bound
     // and near-permanently tech-starved, so the reserve was always engaged against it. Gas is the
     // contended resource here and the only one worth protecting from upgrades.
-    const p = this.p; if (p.minerals < 200 || p.gas < 150) return;
+    const p = this.p; if (p.minerals < 200 || p.gas < 150) return this.note(undefined, 'resPoor', null, 200, 150);
     // ...and do not outbid a build step that is ABOUT to be affordable. Only then, though: gating this
     // on afford() unconditionally switched Zerg's research off completely -- three seeds finished a
     // whole game with one upgrade between them -- because Zerg is mineral-bound and near-permanently
@@ -821,7 +834,7 @@ class AI {
     // game and any reserve-based brake silences its research entirely -- measured as three seeds
     // finishing a whole game with one upgrade between them. The brake is meaningful only where the
     // reserve is intermittent, which is Terran and Protoss.
-    if (this.race !== 'Z' && !this.techStarved() && (p.minerals < 200 + (this.reserveMin || 0) * 0.5 || p.gas < 150 + (this.reserveGas || 0) * 0.5)) return;
+    if (this.race !== 'Z' && !this.techStarved() && (p.minerals < 200 + (this.reserveMin || 0) * 0.5 || p.gas < 150 + (this.reserveGas || 0) * 0.5)) return this.note(undefined, 'resSurplus', null, 200, 150);
     for (const id of this.styleResearch(this.race, this.style)) {
       if (DATA.techs[id]) { if (p.tech.has(id) || p.researching.has(id)) continue; const td = DATA.techs[id]; const b = this.mine(u => u.isBuilding && u.done && u.def.id === td.bld && !u.prod.length && !u.lifted)[0]; if (!b) continue; if (G.queueTech(b, id)) return; }
       else if (DATA.upgrades[id]) { const ud = DATA.upgrades[id]; const lvl = p.upgLevel(id); if (lvl >= 3 || p.researching.has(id)) continue; if (this.diff === 'easy' && lvl >= 1) continue; const b = this.mine(u => u.isBuilding && u.done && (u.def.id === ud.bld || (ud.bld === 'spire' && u.def.id === 'greater_spire')) && !u.prod.length)[0]; if (!b) continue; if (G.queueUpgrade(b, id)) return; }
@@ -830,17 +843,17 @@ class AI {
   // ---------------- helpers ----------------
   train(id, maxQ) {
     const p = this.p, ud = DATA.units[id]; if (!ud || !p.hasReq(ud)) return false;
-    if (p.minerals < ud.min || p.gas < ud.gas) return false;
+    if (p.minerals < ud.min || p.gas < ud.gas) return this.note(false, 'trainBroke', id, ud.min, ud.gas);
     // Saving up never starves workers or urgent supply -- EXCEPT when the build order has been starved
     // for 45 seconds, at which point another drone is not what is wrong with this game. Zerg is the
     // reason: drones and overlords both skip afford(), Zerg wants ~70 of the first and a steady stream
     // of the second, and between them they took every mineral that arrived while the Spire sat at the
     // head of the script on one mineral. Supply keeps its exemption unconditionally, because blocking
     // it trades a tech stall for a supply block, which is worse.
-    if (!(ud.supGive && p.supMax - p.supUsed < 4) && (!ud.worker || this.techStarved()) && !this.afford(ud.min, ud.gas)) return false;
-    if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) return false;
+    if (!(ud.supGive && p.supMax - p.supUsed < 4) && (!ud.worker || this.techStarved()) && !this.afford(ud.min, ud.gas)) return this.note(false, 'trainReserve', id, ud.min, ud.gas);
+    if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) return this.note(false, 'trainSupply', id, ud.min, ud.gas);
     if (ud.from === 'larva') { const l = this.mine(u => u.def.larva)[0]; if (!l) return false; return G.larvaMorph(l, id); }
-    const bs = this.mine(u => u.isBuilding && u.done && !u.lifted && u.def.produces.includes(id) && u.prod.length < (maxQ || 2) && !(u.addon && !u.addon.done)); if (!bs.length) return false;
+    const bs = this.mine(u => u.isBuilding && u.done && !u.lifted && u.def.produces.includes(id) && u.prod.length < (maxQ || 2) && !(u.addon && !u.addon.done)); if (!bs.length) return this.note(false, 'trainNoProd', id, ud.min, ud.gas);
     bs.sort((a, b) => a.prod.length - b.prod.length); return G.queueUnit(bs[0], id);
   }
   // could we train this if we had the money? (requirements, supply room and a production building with a free slot)
@@ -872,7 +885,7 @@ class AI {
     return this.buildAt(id, spot[0], spot[1], force);
   }
   buildAt(id, tx, ty, force) {
-    const def = DATA.buildings[id], p = this.p; if (p.minerals < def.min || p.gas < def.gas) return false; if (!force && !this.afford(def.min, def.gas)) return false;
+    const def = DATA.buildings[id], p = this.p; if (p.minerals < def.min || p.gas < def.gas) return this.note(false, 'buildBroke', id, def.min, def.gas); if (!force && !this.afford(def.min, def.gas)) return this.note(false, 'buildReserve', id, def.min, def.gas);
     const w = this.pickWorker((tx + def.w / 2) * TILE, (ty + def.h / 2) * TILE); if (!w) return false;
     w.setOrder({ type: 'build', def, tx, ty }); this.pending[id] = G.frame; this.reserve(def); return true; // the walk to the site must not be spent
   }
