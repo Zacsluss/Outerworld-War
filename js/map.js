@@ -1512,7 +1512,11 @@ class GameMap {
   recomputeCreep(units) {
     this.creep.fill(0);
     for (const u of units) {
-      if (!u.alive || !u.def.creep || u.fly) continue;
+      // `u.lifted` is M12's uprooted Spine/Spore crawler and nothing else: no creep source in the game
+      // could be lifted before this, because no Zerg building carries `canLift`. Without it a crawler
+      // that has walked away keeps painting creep at the tx/ty it left behind -- those do not move
+      // while a lifted building walks, only x/y do -- so its old patch would hang there for good.
+      if (!u.alive || !u.def.creep || u.fly || u.lifted) continue;
       if (u.def.id !== 'hatchery' && u.def.id !== 'lair' && u.def.id !== 'hive' && !u.done) continue;
       // the source's CURRENT radius, not its final one -- see CREEP_GROW in sim.js
       const cx = u.tx + u.def.w / 2, cy = u.ty + u.def.h / 2, r = Math.min(u.def.creep, u.creepR || 0);

@@ -39,6 +39,11 @@ if (typeof EQUIV !== 'undefined' && Array.isArray(EQUIV.command_center)) {
 // without debiting the field -- would have been three characters shorter and would have quietly made
 // the one economy mechanic in the game the one thing that does not obey it.
 const MULE_HAUL = 16;
+// M12 wave four. The five new Zerg morph-aspects are checked exactly the way the three older ones
+// are -- "can this player have the thing it turns into" -- but on their own line rather than by
+// extending that or-chain, because two other races are adding to the same function this milestone
+// and a three-way merge of one long boolean is how somebody's work goes missing.
+const Z12_ASPECTS = new Set(['baneling_aspect', 'ravager_aspect', 'swarm_host_aspect', 'viper_aspect', 'overseer_aspect']);
 const Abilities = {
   // Is ability usable/visible for this unit right now?
   available(u, id) {
@@ -52,6 +57,12 @@ const Abilities = {
     if (id === 'unload' && !u.cargo.length) return false;
     if (id === 'lurker_aspect' || id === 'guardian_aspect' || id === 'devourer_aspect') { const ud = DATA.units[ab.unit]; if (!p.hasReq(ud)) return false; }
     if ((id === 'guardian_aspect' || id === 'devourer_aspect') && !p.hasBuilding('greater_spire')) return false;
+    if (Z12_ASPECTS.has(id)) { const ud = DATA.units[ab.unit]; if (!p.hasReq(ud)) return false; }
+    // A tumour seeds exactly one child, ever. `tumoured` is a flag and not a counter on purpose: a
+    // tumour that could seed twice covers the map while the player is looking somewhere else, and the
+    // whole mechanic is supposed to cost attention rather than minerals.
+    if (id === 'spawn_tumour' && (u.tumoured || !u.done)) return false;
+    if (id === 'uproot' && (!u.done || u.prod.length || u.lifted)) return false;
     return true;
   },
   label(u, id) { const ab = DATA.abilities[id]; if (id === 'siege_mode') return u.sieged ? 'Tank Mode' : 'Siege Mode'; if (id === 'burrow') return u.burrowed ? 'Unburrow' : 'Burrow'; if (id === 'viking_mode') return u.def.id === 'viking' ? 'Assault Mode' : 'Fighter Mode'; if (id === 'cloak_ghost' || id === 'cloak_wraith') return u.cloaked ? 'Decloak' : ab.name; return ab.name; },
@@ -101,6 +112,9 @@ const Abilities = {
         G.recomputeSupply();
         return true;
       }
+      case 'uproot': return this.uproot(u);
+      case 'volatile_burst': return this.volatileBurst(u);
+      case 'spawn_locusts': return this.spawnLocusts(u);
     }
     return false;
   },
@@ -109,7 +123,85 @@ const Abilities = {
     if (!p.hasReq(ud)) { p.msg('Requires ' + p.missingReq(ud), 'error'); return false; }
     if (!p.canAfford(ud.min, ud.gas)) return false;
     const extra = ud.sup - u.def.sup; if (extra > 0 && p.supUsed + extra > p.supMax && !(G.cheats.food && p.human)) { G.supplyRefused(p); return false; } // one voice for being supply blocked; see G.supplyRefused
-    p.minerals -= ud.min; p.gas -= ud.gas; G.morphUnit(u, toId); return true;
+    p.minerals -= ud.min; p.gas -= ud.gas; G.morphUnit(u, toId);
+    // G.morphUnit picks `lurker_egg` for a Lurker and the FLYING `cocoon` for everything else, which
+    // was correct while every other morph in the game was a mutalisk turning into another flyer. M12
+    // adds three morphs whose product WALKS (baneling, ravager, swarm host), and a cocoon would put
+    // them in the air for the whole morph -- drifting, and shootable only by anti-air. Swapped here
+    // rather than in js/game.js because this is the caller that knows what it asked for.
+    if (!ud.fly && u.def.id === 'cocoon') { const ed = DATA.units.brood_cocoon; u.def = ed; u.maxHp = ed.hp; u.hp = ed.hp; u.r = ed.r; u.fly = false; }
+    return true;
+  },
+  // ---------------- M12 wave four: Zerg ----------------
+  // Uproot is half of a pair and the other half is the Land button UI.buildCard already grows for
+  // anything `lifted`, so this only ever has to handle standing UP -- except from the AI, which needs
+  // to be able to put one down where it stands, so both directions live here.
+  //
+  // `fly` STAYS FALSE, and that is the difference between this and G.liftBuilding. A Terran building
+  // that lifts flies, ignores terrain and crosses cliffs; a crawler that could do that would be a
+  // 300-hit-point turret that walks up a wall, which is a change to what high ground is worth. So it
+  // pathfinds like any ground unit (Unit.moveTo's `!this.fly` branch), at the speed `lifted` pins it
+  // to (1 px/frame in Unit.speed -- deliberately slow), and it cannot shoot on the way because
+  // Unit.tickBuilding returns at `if (this.lifted)` before it reaches tickCombatBuilding.
+  //
+  // It can never ROOT off creep: G.landBuilding calls GameMap.canPlace, and both crawler defs carry
+  // `needsCreep`. It may walk anywhere it likes; it may only stand up on ground the swarm holds.
+  uproot(u) {
+    if (!u.def.crawler || !u.done || u.prod.length) return false;
+    if (u.lifted) { G.landBuilding(u, Math.round(u.x / TILE - u.def.w / 2), Math.round(u.y / TILE - u.def.h / 2)); return true; }
+    u.lifted = true; u.fly = false;
+    G.map.unblock(u.tx, u.ty, u.def.w, u.def.h, u.id);
+    u.order = { type: 'idle' }; u.queue = []; u.path = null; u.target = null;
+    u.creepKey = -1; G.map.recomputeCreep(G.units);   // its creep patch leaves with it; see tickZergNet
+    G.effects.push({ kind: 'ring', x: u.x, y: u.y, r: u.r, t: 12, color: '#c8f' });
+    return true;
+  },
+  // The Baneling's blast. Not a `suicide: true` weapon -- see the def in js/data.js for the two
+  // reasons -- so the damage table is written here rather than in the weapon table. Doubled against
+  // buildings, which is the one thing that makes a baneling worth its gas next to a zergling: it is
+  // the swarm's answer to a wall, a bunker and a row of colonies, not to an army.
+  volatileBurst(u) {
+    const ab = DATA.abilities.volatile_burst, p = u.player;
+    const dmg = ab.dmg + p.upgLevel('meleeW') * 2;
+    for (const o of G.near(u.x, u.y, ab.r * TILE + 16)) {
+      if (!o.alive || o.fly || o.inside || o.def.larva || G.allied(o.owner, u.owner)) continue;
+      const d = Math.max(0, distPt(o.x, o.y, u.x, u.y) - o.r) / TILE; if (d > ab.r) continue;
+      const fall = d <= ab.r * 0.5 ? 1 : d <= ab.r * 0.8 ? 0.6 : 0.3;
+      G.damage(o, dmg * fall * (o.isBuilding ? ab.bldMult : 1), 'concussive', u, { splash: true });   // a blast has no facing
+    }
+    G.map.damageFeatureAt(u.x, u.y, dmg);
+    G.effects.push({ kind: 'boom', x: u.x, y: u.y, t: 16, r: ab.r * TILE * 0.7 });
+    if (typeof Sound !== 'undefined') Sound.boom();
+    G.kill(u, null, true);
+    return true;
+  },
+  // Locusts arrive with an order already on them. A swarm host whose brood stands still is a swarm
+  // host that does nothing: they live 20 seconds and the walk is most of it, so they are pointed at
+  // the nearest thing worth attacking the moment they surface.
+  spawnLocusts(u) {
+    const ab = DATA.abilities.spawn_locusts, p = u.player;
+    if (u.energy < ab.energy) { p.msg('Not enough energy.', 'error'); return false; }
+    u.energy -= ab.energy;
+    const n = p.hasTech('pressurised_glands') ? 3 : 2;
+    let tx = u.x + Math.cos(u.facing) * 8 * TILE, ty = u.y + Math.sin(u.facing) * 8 * TILE, bd = 1e9;
+    for (const o of G.near(u.x, u.y, 14 * TILE)) { if (!o.alive || G.allied(o.owner, u.owner) || o.def.notUnit) continue; const d = dist(u, o); if (d < bd) { bd = d; tx = o.x; ty = o.y; } }
+    for (let i = 0; i < n; i++) {
+      const a = u.facing + (i - (n - 1) / 2) * 0.7;
+      const l = G.spawnUnit('locust', u.owner, u.x + Math.cos(a) * (u.r + 12), u.y + Math.sin(a) * (u.r + 12));
+      l.facing = a; l.applyOrder({ type: 'attackmove', x: tx, y: ty });
+    }
+    G.effects.push({ kind: 'ring', x: u.x, y: u.y, r: u.r + 12, t: 12, color: '#8c4' });
+    return true;
+  },
+  // Both tumour paths, shared. Placement goes through GameMap.canPlace exactly like a drone-built
+  // structure, so `needsCreep` does the gating and nothing here has to know what creep is.
+  plantTumour(u, x, y) {
+    const p = u.player, def = DATA.buildings.creep_tumour;
+    const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+    const err = G.map.canPlace(def, tx, ty, p, G.units, null); if (err) { p.msg(err, 'error'); return null; }
+    if (!p.canAfford(def.min, def.gas)) return null;
+    p.minerals -= def.min; p.gas -= def.gas;
+    return G.placeBuilding(def, tx, ty, u.owner);
   },
   // Pair up selected units for Archon / Dark Archon merging
   merge(units, id) {
@@ -267,7 +359,63 @@ const Abilities = {
       case 'disruption_web': G.fields.push({ kind: 'dweb', x, y, r: 2.5, t: 576, owner: u.owner }); break;
       case 'stasis_field': for (const o of G.near(x, y, 1.5 * TILE)) if (!o.isBuilding) { o.fx.stasis = 720; o.path = null; } ring(1.5, '#8cf'); break;
       case 'infest': { if (!t || t.def.id !== 'command_center' || !t.done || t.hp >= t.maxHp * 0.5 || t.lifted) { p.msg('Only a damaged, landed Command Center can be infested.', 'error'); break; } if (t.addon) { t.addon.parent = null; t.addon = null; } for (const it of t.prod) if (it.kind === 'upg' || it.kind === 'tech') G.players[t.owner].researching.delete(it.id); t.prod = []; t.rally = null; while (t.cargo.length) G.unloadOne(t); const od = G.players[t.owner]; t.owner = u.owner; t.def = DATA.buildings.infested_command_center; t.maxHp = t.def.hp; t.done = true; G.recomputeSupply(); if (od.human) od.msg('Your Command Center has been infested!', 'attack'); if (p.human) p.msg('Command Center infested.'); ring(1, '#c4f'); break; }
-      case 'nydus_exit': { const def = DATA.buildings.nydus_canal; const tx = Math.floor(x / TILE - def.w / 2 + .5), ty = Math.floor(y / TILE - def.h / 2 + .5); const err = G.map.canPlace(def, tx, ty, p, G.units, null); if (err) { p.msg(err, 'error'); break; } const e = G.placeBuilding(def, tx, ty, u.owner); e.nydusLink = u; u.nydusLink = e; break; }
+      case 'nydus_exit': { const def = DATA.buildings.nydus_canal; const tx = Math.floor(x / TILE - def.w / 2 + .5), ty = Math.floor(y / TILE - def.h / 2 + .5); const err = G.map.canPlace(def, tx, ty, p, G.units, null); if (err) { p.msg(err, 'error'); break; } const e = G.placeBuilding(def, tx, ty, u.owner); e.nydusLink = u; u.nydusLink = e; (u.nydusNet || (u.nydusNet = [])).push(e); break; }   // the old two-ended exit joins the network too, so there is one list and one rule
+      // ---- M12 wave four -----------------------------------------------------------------------
+      // A worm may only surface on creep (`needsCreep` on the def), which is what ties this to the
+      // Creep Tumour: the tumour chain is how creep gets somewhere worth surfacing at.
+      case 'nydus_worm': { const def = DATA.buildings.nydus_worm; const tx = Math.floor(x / TILE - def.w / 2 + .5), ty = Math.floor(y / TILE - def.h / 2 + .5); const err = G.map.canPlace(def, tx, ty, p, G.units, null); if (err) { p.msg(err, 'error'); break; } if (!p.canAfford(def.min, def.gas)) break; p.minerals -= def.min; p.gas -= def.gas; const w = G.placeBuilding(def, tx, ty, u.owner); w.nydusLink = u; (u.nydusNet || (u.nydusNet = [])).push(w); u.nydusLink = w; break; }
+      case 'plant_tumour': { this.plantTumour(u, x, y); break; }
+      case 'spawn_tumour': { if (this.plantTumour(u, x, y)) u.tumoured = true; break; }
+      // Corrosive Bile is a delayed shell, not a hit. The delay is the whole balance of it: anything
+      // with legs walks out, anything sieged, burrowed, rooted or built does not. Routed through
+      // Combat.splash so it also reaches destructible map features -- the wall a defender is standing
+      // behind is a legitimate target, and this is Zerg's only way to shoot one.
+      case 'corrosive_bile': { const a = DATA.abilities.corrosive_bile; G.fields.push({ kind: 'bile', x, y, r: a.r, t: a.delay, owner: u.owner, src: u }); ring(a.r, '#9d4'); break; }
+      // Fungal Growth roots AND silences: fx.maelstrom is the one status this engine already has that
+      // returns from Unit.tick outright, so nothing inside the cloud moves, shoots or casts. Allies
+      // are exempt, which is not how SC2 plays it and is how this reads at a glance -- "the cloud
+      // holds what is not yours" is a rule a player can see happening.
+      case 'fungal_growth': { const a = DATA.abilities.fungal_growth; G.fields.push({ kind: 'fungal', x, y, r: a.r, t: a.t, owner: u.owner, tickT: 0 }); ring(a.r, '#6c5'); break; }
+      // The one ability in the game that makes `infested_terran` a unit anybody ever sees. It is
+      // otherwise reachable only by infesting a damaged Command Center, which needs a Terran opponent
+      // to have let a hall fall below half. Given a lifetime so an Infestor cannot supply-lock itself.
+      case 'spawn_infested': { for (let i = 0; i < 2; i++) { const it = G.spawnUnit('infested_terran', u.owner, x + (i ? 14 : -14), y + (i ? 8 : -8)); it.lifetime = 720; } ring(1, '#8c4'); break; }
+      // Nothing else in this game moves an enemy unit. Un-sieges and un-burrows what it takes, which
+      // is most of the value: a tank pulled out of its line arrives in tank mode, in your army.
+      case 'abduct': {
+        const ab = DATA.abilities.abduct;
+        if (!t || t.isBuilding || t.def.larva || t.def.egg || t.def.notUnit || t.def.mine || t.fx.stasis > 0) { p.msg('Invalid target.', 'error'); u.energy += ab.energy; break; }
+        let ax = u.x, ay = u.y;
+        if (!t.fly) { const tl = G.map.findFreeTile(Math.floor(u.x / TILE), Math.floor(u.y / TILE), 6); if (!tl) { p.msg('No room to pull it to.', 'error'); u.energy += ab.energy; break; } ax = (tl[0] + .5) * TILE; ay = (tl[1] + .5) * TILE; }
+        if (t.burrowed) { t.burrowed = false; t.transT = 24; }
+        if (t.sieged) { t.sieged = false; t.transT = 40; }
+        t.x = ax; t.y = ay; t.px = ax; t.py = ay; t.path = null; t.target = null; t.stuck = 0; t.applyOrder({ type: 'idle' });
+        G.effects.push({ kind: 'line', x: u.x, y: u.y, tx: ax, ty: ay, t: 8, color: '#7d5' }); ring(0.8, '#7d5'); break;
+      }
+      // The defiler eats your zerglings; the viper eats your buildings. Same idea, opposite cost, and
+      // it means a viper parked over a hatchery sustains itself without spending army.
+      case 'consume_essence': {
+        if (!t || t.owner !== u.owner || !t.isBuilding || !t.done || t.hp <= 120) { p.msg('Invalid target.', 'error'); break; }
+        G.damageRaw(t, 100, null); u.energy = Math.min(u.maxEnergy, u.energy + 50); ring(0.8, '#8f8'); break;
+      }
+      // Contaminate reuses fx.maelstrom because Unit.tick returns on it BEFORE tickBuilding runs, so a
+      // contaminated structure produces nothing, researches nothing, spawns no larva and grows no
+      // creep, without a single new status field for js/snapshot.js to learn about. A Terran medic's
+      // Restoration clears it, which is a counterplay this happens to get for free and is welcome.
+      case 'contaminate': {
+        const ab = DATA.abilities.contaminate;
+        if (!t || !t.isBuilding || !t.done || G.allied(t.owner, u.owner)) { p.msg('Invalid target.', 'error'); u.energy += ab.energy; break; }
+        t.fx.maelstrom = 720; ring(1.2, '#a6f'); break;
+      }
+      // ITEM 11. The cast only books the delivery; tickFields hatches it, exactly the way the nuke and
+      // Recall already work, which is what keeps the ten-second wait inside G.fields where snapshots,
+      // replay seeks and rejoins all reproduce it without knowing this ability exists.
+      case 'larva_inject': {
+        const ab = DATA.abilities.larva_inject;
+        if (!t || t.owner !== u.owner || !t.isBuilding || !t.def.spawnsLarva || !t.done) { p.msg('Spawn Larva needs one of your hatcheries.', 'error'); u.energy += ab.energy; break; }
+        if (G.fields.some(f => f.kind === 'inject' && f.hall === t)) { p.msg('That hatchery is already spawning larva.', 'error'); u.energy += ab.energy; break; }
+        G.fields.push({ kind: 'inject', x: t.x, y: t.y, r: 0, t: ab.delay, owner: u.owner, hall: t }); ring(1.4, '#c8f'); break;
+      }
     }
   },
   changeOwner(t, pid) { if (t.order.type === 'gather' && t.order.target && t.order.target.miner === t) t.order.target.miner = null; if (t.order.type === 'gather' && t.order.phase === 'inside' && t.order.target) { t.order.target.occupant = null; t.inside = null; } if (t.order.type === 'construct' && t.order.target && t.order.target.builder === t) t.order.target.builder = null; t.owner = pid; t.order = { type: 'idle' }; t.queue = []; t.path = null; t.target = null; t.carrying = null; t.wave = 0; if (typeof UI !== 'undefined' && UI.onUnitDied) UI.onUnitDied(t); G.recomputeSupply(); if (t.player.human) t.player.msg('Unit mind controlled.'); },
@@ -343,8 +491,37 @@ const Abilities = {
     it.progress += (G.cheats.cwal && p.human) ? 10 : 1;
     if (it.progress >= it.total) { b.prod.splice(1, 1); G.finishProduction(b, it); }
   },
+  // Per-frame bookkeeping for the two M12 Zerg structures whose state js/sim.js has no way to notice.
+  // It lives here, and is called from tickFields, for one reason: tickFields is the only per-frame
+  // hook this file owns, and giving it a second one would mean a new line in G.tick -- js/game.js,
+  // which this change may not touch. Staggered to one frame in twelve and it reads two properties per
+  // unit, so it costs about forty property reads a frame amortised at 500 units.
+  //
+  // Two jobs:
+  //   NYDUS -- the hub's `nydusLink` is the newest living mouth. js/sim.js's 'nydus' order reads one
+  //   link per building, so a network of N worms is expressed as "every worm points home, the canal
+  //   points at the newest". When that worm dies the canal has to fall back to the next newest, or
+  //   the whole network silently stops working and nothing tells the player why.
+  //   CRAWLERS -- an uprooted crawler still carries `def.creep`. GameMap.recomputeCreep skips it while
+  //   it is `lifted`, but nothing calls recomputeCreep when it stands back up: G.landBuilding does not,
+  //   and creepR has already reached def.creep so Unit.tickBuilding's growth step never fires again.
+  //   Keyed on the tile it is standing on so the recompute happens once per move, not once per frame.
+  tickZergNet() {
+    if (G.frame % 12) return;
+    let recreep = false;
+    for (const u of G.units) {
+      if (!u.alive || !u.isBuilding) continue;
+      if (u.nydusNet) {
+        if (u.nydusNet.some(w => !w.alive)) u.nydusNet = u.nydusNet.filter(w => w.alive);
+        if (!u.nydusLink || !u.nydusLink.alive) u.nydusLink = u.nydusNet.length ? u.nydusNet[u.nydusNet.length - 1] : null;
+      }
+      if (u.def.crawler) { const key = u.lifted ? -1 : u.tx * 4096 + u.ty; if (u.creepKey !== key) { u.creepKey = key; recreep = true; } }
+    }
+    if (recreep) G.map.recomputeCreep(G.units);   // one recompute per pass however many crawlers moved
+  },
   tickFields() {
     this.tickTerran();
+    this.tickZergNet();
     const fs = G.fields;
     for (let i = fs.length - 1; i >= 0; i--) {
       const f = fs[i]; f.t--;
@@ -361,6 +538,30 @@ const Abilities = {
       else if (f.kind === 'jam') {
         for (const o of G.near(f.x, f.y, f.r * TILE)) if (!G.allied(o.owner, f.owner)) o.fx.blind = 3;
         if (f.t % 12 === 0) G.effects.push({ kind: 'ring', x: f.x, y: f.y, r: f.r * TILE, t: 12, color: '#7ae' });
+      }
+      // M12: the Infestor's cloud. Refreshed to 2 every frame so it decays two frames after the field
+      // ends rather than needing an expiry pass of its own, and the damage rides the same eight-frame
+      // cadence a Psionic Storm uses so the two read as the same kind of thing.
+      else if (f.kind === 'fungal') {
+        for (const o of G.near(f.x, f.y, f.r * TILE)) { if (!o.alive || o.isBuilding || o.fly || o.inside || o.def.larva || o.def.egg || G.allied(o.owner, f.owner)) continue; o.fx.maelstrom = 2; o.path = null; }
+        if (++f.tickT % 8 === 0) for (const o of G.near(f.x, f.y, f.r * TILE)) { if (!o.alive || o.isBuilding || o.fly || o.inside || G.allied(o.owner, f.owner)) continue; G.damageRaw(o, 6, null); }
+      }
+      // M12: the Ravager's shell lands. `ff: false` so it does not eat the army that walked in behind
+      // it; Combat.splash reaches destructible map features on its own, which is the half of this that
+      // makes a Ravager the thing Zerg sends at a wall.
+      else if (f.kind === 'bile' && f.t <= 0) {
+        const a = DATA.abilities.corrosive_bile, src = f.src;
+        if (src) Combat.splash(src, f.x, f.y, a.dmg + G.players[f.owner].upgLevel('missW') * 2, { type: 'normal', targets: 'ground', hits: 1, splash: [f.r * 0.5, f.r * 0.8, f.r] }, null);
+      }
+      // M12 item 11: the injected larvae arrive. Capped at the same three Unit.tickBuilding allows, so
+      // inject fills a hatchery rather than raising its ceiling -- and the loop is bounded by that cap
+      // whatever state h.larvae is in. G.kill splices a dead larva out of it, so its length is live.
+      else if (f.kind === 'inject' && f.t <= 0) {
+        const h = f.hall, cap = DATA.abilities.larva_inject.cap;
+        if (h && h.alive && h.done && h.def.spawnsLarva && h.owner === f.owner) {
+          for (let n = h.larvae.length; n < cap; n++) G.spawnLarva(h);
+          G.effects.push({ kind: 'ring', x: h.x, y: h.y, r: 26, t: 14, color: '#c8f' });
+        }
       }
       else if (f.kind === 'recall' && f.t <= 0) { const src = f.src; if (src && src.alive) for (const o of G.near(f.x, f.y, f.r * TILE)) if (o.owner === f.owner && !o.isBuilding && !o.inside) { const tl = G.map.findFreeTile(Math.floor(src.x / TILE), Math.floor(src.y / TILE), 5); if (tl) { o.x = (tl[0] + .5) * TILE; o.y = (tl[1] + .5) * TILE; o.px = o.x; o.py = o.y; o.path = null; G.effects.push({ kind: 'ring', x: o.x, y: o.y, r: 16, t: 10, color: '#8cf' }); } } }
       else if (f.kind === 'nuke_target' && f.t <= 0 && !f.cancel) {

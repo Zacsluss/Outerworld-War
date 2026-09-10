@@ -278,6 +278,71 @@ const UNITS = {
   larva: () => { const r = N([0, 0, 0]); for (let k = 0; k < 3; k++) r.children.push(P('sphere', [0.8, 0.6 + k * 0.1, 0.65 + k * 0.1], [-0.5 + k * 0.45, 0.3, 0], m(k === 2 ? [0.78, 0.6, 0.66] : [0.68, 0.5, 0.58]), { anim: st => ({ pos: [0, 0, st.walk == null ? 0 : Math.sin(st.walk * Math.PI * 2 + k) * 0.1] }) })); r.children.push(P('sphere', [0.1, 0.1, 0.1], [0.55, 0.35, -0.15], m(C.dark)), P('sphere', [0.1, 0.1, 0.1], [0.55, 0.35, 0.15], m(C.dark))); return r; },
   egg: () => { const r = N([0, 0, 0]); r.children.push(P('sphere', [1.6, 1.9, 1.6], [0, 0.9, 0], m([0.62, 0.52, 0.58], { spec: 0.5 })), P('sphere', [0.9, 1.1, 0.9], [0, 0.95, 0], m([0.45, 0.25, 0.42]))); return r; },
   lurker_egg: () => UNITS.egg(), cocoon: () => { const r = UNITS.egg(); r.children[0].mat = m([0.48, 0.4, 0.5], { spec: 0.5 }); return r; },
+  // ---- M12 wave four: the Zerg ten ---------------------------------------------------------------
+  // Same rule the Terran infantry got in M8 and the Zerg carapace got in M9: at 40 px under fog with a
+  // team tint, SHAPE is the only thing you identify a unit by. Each of these carries one deliberately
+  // oversized feature that breaks its outline seen from directly overhead, because overhead is the
+  // only angle this game is ever drawn from -- the roach is a low armoured slab, the ravager is that
+  // slab with a mortar sac standing off the back of it, the baneling is two green bulbs and almost no
+  // body, the swarm host is a shell with an open hatch, the viper is a long spine with reaching arms.
+  brood_cocoon: () => { const r = UNITS.egg(); r.children[0].mat = m([0.52, 0.36, 0.34], { spec: 0.35 }); return r; },
+  // Low, wide and plated: the silhouette says "this does not die quickly", which is the whole unit.
+  roach: () => { const r = RIG.bug({ segs: [[-0.1, 0.05, 1.7, 0.72, 1.45]], legs: 3, legLen: 0.55, legW: 0.15, legX0: 0.5, legGap: 0.55, headR: 0.55, headX: 0.85, bodyY: 0.34, plates: 7, bands: 4, spines: 4, spineLen: 0.7, color: [0.44, 0.32, 0.30], color2: C.carapace, lunge: 0.09 });
+    const b = r.children[0];
+    for (const s of [-1, 1]) b.children.push(P('sphere', [0.42, 0.30, 0.34], [0.55, 0.18, s * 0.52], m(C.carapaceD, { spec: 0.6 })));
+    b.children.push(P('sphere', [0.34, 0.26, 0.30], [0.95, 0.10, 0], GLOW([0.55, 0.85, 0.35]), { anim: st => ({ size: [1 + AK(st) * 0.5, 1 + AK(st) * 0.5, 1 + AK(st) * 0.5] }) }));   // the acid gland it spits from
+    return r; },
+  // A roach with a mortar on its back. The sac is the read: it stands proud of the shell, it is the
+  // only bright thing on the model, and it swells on the attack frame.
+  ravager: () => { const r = RIG.bug({ segs: [[-0.15, 0.1, 1.95, 0.9, 1.55]], legs: 3, legLen: 0.7, legW: 0.19, legX0: 0.6, legGap: 0.65, headR: 0.6, headX: 1.0, bodyY: 0.46, plates: 6, bands: 4, spines: 5, color: [0.40, 0.28, 0.30], color2: C.carapaceD, lunge: 0.1 });
+    const b = r.children[0];
+    b.children.push(P('sphere', [0.85, 0.85, 0.85], [-0.45, 0.72, 0], m(C.carapace, { spec: 0.5 })));
+    b.children.push(P('cone', [0.44, 0.9, 0.44], [-0.35, 1.15, 0], m([0.30, 0.42, 0.20], { spec: 0.3 }), { rot: [0, 0, -0.35] }));
+    b.children.push(P('sphere', [0.26, 0.26, 0.26], [-0.05, 1.5, 0], GLOW([0.72, 0.95, 0.30]), { anim: st => ({ size: [1 + AK(st), 1 + AK(st), 1 + AK(st)] }) }));
+    for (const s of [-1, 1]) b.children.push(P('cone', [0.15, 0.7, 0.15], [0.6, 0.35, s * 0.55], m(C.bone), { rot: [s * 0.3, 0, -0.9] }));
+    return r; },
+  // Two acid sacs with legs. Almost no carapace on purpose -- it has 35 hit points and the model
+  // should say so -- and the sacs pulse on the attack channel so a rolling baneling reads as armed.
+  baneling: () => { const r = RIG.bug({ segs: [[0, 0.1, 1.0, 0.85, 1.0]], legs: 2, legLen: 0.45, legW: 0.1, legX0: 0.2, legGap: 0.42, head: false, bodyY: 0.32, plates: 2, bands: 1, spines: 2, spineLen: 0.5, color: [0.46, 0.42, 0.26], color2: [0.36, 0.34, 0.22], teamX: -0.1, lunge: 0.16 });
+    const b = r.children[0];
+    for (const s of [-1, 1]) b.children.push(P('sphere', [0.62, 0.62, 0.55], [0.05, 0.42, s * 0.36], GLOW([0.55, 0.9, 0.25]), { anim: st => ({ size: [1 + AK(st) * 0.35, 1 + AK(st) * 0.35, 1 + AK(st) * 0.35] }) }));
+    b.children.push(P('sphere', [0.30, 0.26, 0.28], [0.62, 0.05, 0], m(C.carapaceD)));
+    for (const s of [-1, 1]) b.children.push(P('sphere', [0.09, 0.09, 0.09], [0.74, 0.14, s * 0.14], GLOW(C.eye)));
+    return r; },
+  // A shell with a hatch in it. The hatch is the feature: it is the only opening on any Zerg ground
+  // unit, and it is what tells you the thing crawling towards you is not the thing that will hit you.
+  swarm_host: () => { const r = RIG.bug({ segs: [[-0.1, 0.12, 1.6, 1.05, 1.5]], legs: 3, legLen: 0.5, legW: 0.16, legX0: 0.45, legGap: 0.5, headR: 0.42, headX: 0.85, bodyY: 0.38, plates: 4, bands: 3, spines: 3, color: [0.40, 0.34, 0.28], color2: C.carapaceD, lunge: 0 });
+    const b = r.children[0];
+    b.children.push(P('sphere', [0.95, 0.55, 0.95], [-0.25, 0.62, 0], m([0.14, 0.07, 0.11], { spec: 0.1 })));   // the open hatch, recessed and dark
+    b.children.push(P('sphere', [0.34, 0.24, 0.34], [-0.25, 0.72, 0], GLOW([0.55, 0.85, 0.35])));
+    for (let k = 0; k < 4; k++) { const a = k * 1.571 + 0.4; b.children.push(P('cone', [0.13, 0.55, 0.13], [-0.25 + Math.cos(a) * 0.6, 0.6, Math.sin(a) * 0.6], m(C.bone), { rot: [Math.sin(a) * 0.9, 0, -Math.cos(a) * 0.9] })); }
+    return r; },
+  // Small, fast and disposable. Kept plain: a dozen of these arrive at once and anything ornate at
+  // this size turns into noise.
+  locust: () => RIG.bug({ segs: [[0, 0, 1.1, 0.5, 0.7]], legs: 2, legLen: 0.5, legW: 0.09, legX0: 0.2, legGap: 0.45, headR: 0.4, headX: 0.6, bodyY: 0.3, plates: 3, bands: 2, spines: 3, spineLen: 0.7, color: [0.5, 0.44, 0.3], color2: [0.38, 0.32, 0.24], lunge: 0.14, teamSpot: true }),
+  // Long, thin and reaching. The two arms are the whole silhouette and they are what Abduct looks
+  // like -- the model should make it obvious which flyer is the one that pulls things.
+  viper: () => RIG.flyer({ alt: 0.5, bodySize: [2.2, 0.55, 0.7], wingLen: 1.4, wingSpan: 2.1, flap: 0.4, tail: 1.4, color: [0.42, 0.46, 0.32], wingColor: [0.36, 0.42, 0.30], headColor: [0.30, 0.40, 0.24],
+    extra: r => [P('sphere', [0.20, 0.20, 0.20], [1.25, 0.06, 0], GLOW([0.75, 0.95, 0.35])),
+      ...[-1, 1].map(s => P('cyl', [0.11, 1.5, 0.11], [0.5, -0.28, s * 0.4], m(C.fleshD), { rot: [0, 0, -1.15], anim: st => ({ rot: [0, s * (0.4 - AK(st) * 1.1), -1.15] }) })),
+      ...[-1, 1].map(s => P('cone', [0.14, 0.5, 0.14], [1.25, -0.42, s * 0.55], m(C.bone), { rot: [0, 0, -1.4] }))] }),
+  // A sac carried under the body, dragging. It is the one Zerg ground caster that is not a defiler,
+  // so it deliberately does NOT get the defiler's raised scythe -- low and swollen instead of tall.
+  infestor: () => { const r = RIG.bug({ segs: [[-0.15, 0.02, 1.5, 0.6, 1.05]], legs: 3, legLen: 0.6, legW: 0.12, legX0: 0.4, legGap: 0.5, headR: 0.45, headX: 0.8, bodyY: 0.34, plates: 4, bands: 3, spines: 4, color: [0.36, 0.42, 0.30], color2: [0.28, 0.36, 0.26], lunge: 0.06 });
+    const b = r.children[0];
+    b.children.push(P('sphere', [0.85, 0.62, 0.75], [-0.55, -0.18, 0], m([0.48, 0.62, 0.34], { spec: 0.2 })));
+    b.children.push(P('sphere', [0.32, 0.26, 0.30], [-0.75, 0.2, 0], GLOW([0.62, 0.95, 0.40])));
+    for (let k = 0; k < 3; k++) b.children.push(P('sphere', [0.16, 0.16, 0.16], [-0.2 - k * 0.3, 0.42, (k % 2 ? 0.28 : -0.28)], GLOW([0.5, 0.85, 0.35])));
+    return r; },
+  // Built off the overlord on purpose: it has to read as the same creature at a glance, because the
+  // decision a player makes about it is "which of my overlords is this". The single huge eye is the
+  // difference, and the drop tentacles are gone -- it carries nothing.
+  overseer: () => { const r = RIG.flyer({ alt: 0.7, bodySize: [2.0, 1.3, 1.6], color: [0.46, 0.40, 0.44], head: false, flap: 0.22, wingLen: 1.2, wingSpan: 1.1, wingColor: [0.38, 0.30, 0.36],
+    extra: r2 => [P('sphere', [0.75, 0.7, 0.7], [0.95, 0.05, 0], m(C.carapace, { spec: 0.45 })),
+      P('sphere', [0.42, 0.42, 0.42], [1.25, 0.05, 0], GLOW([0.95, 0.75, 0.30]), { anim: st => ({ size: [1 + 0.08 * IDLE(st), 1 + 0.08 * IDLE(st), 1 + 0.08 * IDLE(st)] }) }),
+      P('sphere', [0.16, 0.16, 0.16], [1.5, 0.05, 0], m(C.dark))] });
+    for (let k = 0; k < 5; k++) { const a = k * 1.256 + 0.5; r.children.push(P('cone', [0.13, 0.7, 0.13], [Math.cos(a) * 0.8 - 0.3, 0.62, Math.sin(a) * 0.75], m(C.bone), { rot: [Math.sin(a) * 0.8, 0, -Math.cos(a) * 0.8] })); }
+    return r; },
   probe: () => RIG.ship({ alt: 0.4, bodySize: [1.7, 0.9, 1.2], color: C.gold, cockpit: C.psi, engines: [[-0.85, 0, 0]], extra: r => [P('oct', [0.5, 0.5, 0.5], [0.3, 0.55, 0], GLOW(C.psi))] }),
   zealot: () => { const r = RIG.biped({ suit: C.gold, headColor: C.goldD, visor: C.psi, gun: null, pack: false, padMat: TEAM, torsoW: 1.0, stride: 0.7, chest: C.goldD, antenna: false, dark: C.goldD }); const t = r.children[2]; for (const s of [-1, 1]) { const arm = N([0.3, 0.1, s * 0.6], { anim: lunge(0.35) }); arm.children.push(cylX(0.5, 0.18, [0.2, 0, 0], m(C.goldD)), cylX(1.0, 0.07, [0.95, 0, 0], GLOW(C.psi))); t.children.push(arm); } return r; },
   dragoon: () => RIG.walker4({}),
@@ -821,6 +886,50 @@ const BUILDINGS = {
       r.children.push(P('cone', [0.13, 0.40, 0.13], [x, 0.40, -h * 0.28], m(C.bone), { rot: [-0.75, 0, (k % 2 ? 0.18 : -0.18)] }));
     }
     r.children.push(P('sphere', [0.34, 0.10, 0.22], [0, 0.36, h * 0.26], TEAM));
+    return r;
+  },
+  // ---- M12 wave four: the four new Zerg structures ----------------------------------------------
+  // A burrow with a lip round it, and five spines leaning inward over the hole. Reads as a den rather
+  // than as another mound, which matters because it sits on the Basic page next to five other mounds.
+  roach_warren: (w, h) => {
+    const r = B.zergMound(w, h, { height: 0.5, color: [0.44, 0.31, 0.30], crest: 3, ribs: 6 });
+    r.children.push(P('cyl', [w * 0.46, 0.20, h * 0.46], [0.1, 0.52, 0.1], m([0.14, 0.06, 0.10], { spec: 0.1 })));
+    r.children.push(P('cyl', [w * 0.58, 0.14, h * 0.58], [0.1, 0.44, 0.1], m(C.carapaceD, { spec: 0.5 })));
+    for (let k = 0; k < 5; k++) { const a = k * 1.256 + 0.4; r.children.push(P('cone', [0.16, 0.7, 0.16], [0.1 + Math.cos(a) * w * 0.32, 0.6, 0.1 + Math.sin(a) * h * 0.32], m(C.bone), { rot: [-Math.sin(a) * 1.0, 0, Math.cos(a) * 1.0] })); }
+    return r;
+  },
+  // A pit: the mound is inverted into a dark bowl with three sacs bubbling in it, so the one Zerg
+  // building that is a HOLE looks like a hole from directly overhead.
+  infestation_pit: (w, h) => {
+    const r = B.zergMound(w, h, { height: 0.42, color: [0.36, 0.40, 0.30], crest: 4 });
+    r.children.push(P('cyl', [w * 0.66, 0.18, h * 0.66], [0, 0.40, 0], m([0.12, 0.16, 0.10], { spec: 0.1 })));
+    for (let k = 0; k < 3; k++) { const a = k * 2.094 + 0.5, cx = Math.cos(a) * w * 0.20, cz = Math.sin(a) * h * 0.20;
+      r.children.push(P('sphere', [0.42, 0.34, 0.42], [cx, 0.52, cz], m([0.44, 0.58, 0.32], { spec: 0.35 })));
+      r.children.push(P('sphere', [0.15, 0.15, 0.15], [cx, 0.68, cz], GLOW([0.62, 0.98, 0.42]))); }
+    return r;
+  },
+  // One tile. Everything on this has to survive being drawn 32 px across, so it is one low blister,
+  // one glowing membrane and three short roots -- nothing that would turn into mush at that size.
+  creep_tumour: (w, h) => {
+    const r = N([0, 0, 0]);
+    r.children.push(P('dome', [w * 0.92, 0.34, h * 0.92], [0, 0, 0], m([0.42, 0.28, 0.34], { spec: 0.3 })));
+    r.children.push(P('sphere', [w * 0.40, 0.20, h * 0.40], [0, 0.24, 0], GLOW([0.72, 0.42, 0.68])));
+    for (let k = 0; k < 3; k++) { const a = k * 2.094 + 0.6;
+      r.children.push(P('cyl', [0.07, 0.42, 0.07], [Math.cos(a) * w * 0.42, 0.08, Math.sin(a) * h * 0.42], m(C.fleshD), { rot: [Math.sin(a) * 1.3, 0, -Math.cos(a) * 1.3] })); }
+    r.children.push(P('sphere', [0.22, 0.08, 0.16], [0, 0.32, 0], TEAM));
+    return r;
+  },
+  // Deliberately NOT a nydus canal in a different colour: a canal is a ringed pit, this is a head that
+  // has come up through the floor. Two people have to be able to tell the hub from a mouth at a glance
+  // to know which end of the network they are looking at.
+  nydus_worm: (w, h) => {
+    const r = N([0, 0, 0]);
+    r.children.push(P('cyl', [w * 0.94, 0.16, h * 0.94], [0, 0.08, 0], m([0.34, 0.22, 0.28], { spec: 0.25 })));
+    r.children.push(P('sphere', [w * 0.60, 1.15, h * 0.60], [0, 0.62, 0], m(C.carapace, { spec: 0.45 })));
+    r.children.push(P('sphere', [w * 0.34, 0.42, h * 0.34], [0, 1.10, 0], m([0.13, 0.06, 0.10], { spec: 0.1 })));
+    for (let k = 0; k < 6; k++) { const a = k * 1.047 + 0.3;
+      r.children.push(P('cone', [0.14, 0.62, 0.14], [Math.cos(a) * w * 0.26, 1.02, Math.sin(a) * h * 0.26], m(C.bone), { rot: [Math.sin(a) * 0.85, 0, -Math.cos(a) * 0.85] })); }
+    r.children.push(P('sphere', [0.4, 0.12, 0.28], [0, 0.24, h * 0.30], TEAM));
     return r;
   },
   rejuvenation_shrine: (w, h) => {    const r = B.protossSlab(w, h, { height: 0.42, tiers: 2, coreColor: [0.49, 1.0, 0.82] });    for (let k = 0; k < 6; k++) {      const a = k * 1.047 + 0.5;      r.children.push(B.crystal(Math.cos(a) * (w * 0.28), Math.sin(a) * (h * 0.26), 0.20, 0.62, [0.49, 1.0, 0.82]));    }    r.children.push(P('cyl', [w * 0.44, 0.06, h * 0.44], [0, 0.60, 0], m(C.goldL, { spec: 0.7 })));    return r;  },  null_obelisk: (w, h) => {    const r = B.protossSlab(w, h, { height: 0.38, tiers: 2, coreColor: C.violet });    r.children.push(P('oct', [0.42, 2.0, 0.42], [0, 1.35, 0], m([0.16, 0.12, 0.22], { spec: 0.55 })));    r.children.push(P('oct', [0.16, 1.5, 0.16], [0, 1.40, 0], GLOW(C.violet)));    r.children.push(P('oct', [0.24, 0.34, 0.24], [0, 2.45, 0], GLOW([0.78, 0.62, 1.0]),      { anim: st => ({ pos: [0, 0.05 * IDLE(st), 0], rot: [0, (st.idle || 0) * 6.283, 0] }) }));    for (const s of [-1, 1]) r.children.push(B.crystal(s * (w / 2 - 0.5), 0, 0.16, 0.52, [0.35, 0.24, 0.50]));    return r;  },  // The Protoss wall. Darker gold than a shrine and with a dark skirt under it, because the first

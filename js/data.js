@@ -250,19 +250,27 @@ const DATA = (() => {
   U('drone', { name: 'Drone', race: 'Z', hp: 40, size: 'small', min: 50, sup: 1, time: 300, speed: 4.92, sight: 7, r: 9, hk: 'D', from: 'larva', worker: true, bio: true, cargoSize: 1,
     gw: W(5, 'normal', 0.4, 22, { upgKey: null }), abil: ['gather', 'build_basic', 'build_adv', 'burrow'], upgA: 'carapace' });
   U('overlord', { name: 'Overlord', race: 'Z', hp: 200, size: 'large', min: 100, sup: 0, supGive: 8, time: 600, speed: 0.83, sight: 9, r: 18, hk: 'O', from: 'larva', bio: true, fly: true, det: true,
-    abil: ['unload'], upgA: 'flyA', speedTech: ['pneumatized', 2.5], cargoTech: 'ventral_sacs', sightTech: ['antennae', 11] });
+    abil: ['unload', 'plant_tumour', 'overseer_aspect'], upgA: 'flyA', speedTech: ['pneumatized', 2.5], cargoTech: 'ventral_sacs', sightTech: ['antennae', 11] });
   U('zergling', { name: 'Zergling', race: 'Z', hp: 35, size: 'small', min: 50, sup: 0.5, time: 420, speed: 5.49, sight: 5, r: 7, hk: 'Z', from: 'larva', req: ['spawning_pool'], bio: true, cargoSize: 1, pair: true,
-    gw: W(5, 'normal', 0.5, 8, { upgKey: 'meleeW', cdTech: ['adrenal', 6] }), abil: ['burrow'], upgA: 'carapace', speedTech: ['metabolic', 6.58] });   // Brood War's own pair: 5.49 base, 6.58 boosted. The table had 2.61/5.49 -- the boosted value was BW's base, and the base was invented under it, leaving a zergling slower than a high templar.
+    gw: W(5, 'normal', 0.5, 8, { upgKey: 'meleeW', cdTech: ['adrenal', 6] }), abil: ['burrow', 'baneling_aspect'], upgA: 'carapace', speedTech: ['metabolic', 6.58] });   // Brood War's own pair: 5.49 base, 6.58 boosted. The table had 2.61/5.49 -- the boosted value was BW's base, and the base was invented under it, leaving a zergling slower than a high templar.
   U('hydralisk', { name: 'Hydralisk', race: 'Z', hp: 80, size: 'medium', min: 75, gas: 25, sup: 1, time: 420, speed: 3.66, sight: 6, r: 10, hk: 'H', from: 'larva', req: ['hydralisk_den'], bio: true, cargoSize: 2,
     gw: W(10, 'explosive', 4, 15, { upgKey: 'missW', targets: 'both', rangeTech: ['grooved', 5] }), abil: ['burrow', 'lurker_aspect'], upgA: 'carapace', speedTech: ['muscular', 5.0] });
   U('lurker', { name: 'Lurker', race: 'Z', hp: 125, armor: 1, size: 'medium', min: 50, gas: 100, sup: 2, time: 600, speed: 5.82, sight: 8, r: 12, from: 'hydralisk', req: ['lurker_aspect'], bio: true, cargoSize: 2, morphFrom: 'hydralisk', hk: 'L',
     gw: W(20, 'normal', 6, 37, { upgKey: 'missW', upgDmg: 2, line: true, burrowOnly: true }), abil: ['burrow'], upgA: 'carapace' });
   U('mutalisk', { name: 'Mutalisk', race: 'Z', hp: 120, size: 'medium', min: 100, gas: 100, sup: 2, time: 600, speed: 6.67, sight: 7, r: 12, hk: 'M', from: 'larva', req: ['spire'], bio: true, fly: true,
-    gw: W(9, 'normal', 3, 30, { upgKey: 'flyW', targets: 'both', glaive: true }), abil: ['guardian_aspect', 'devourer_aspect'], upgA: 'flyA' });
+    gw: W(9, 'normal', 3, 30, { upgKey: 'flyW', targets: 'both', glaive: true }), abil: ['guardian_aspect', 'devourer_aspect', 'viper_aspect'], upgA: 'flyA' });
   U('scourge', { name: 'Scourge', race: 'Z', hp: 25, size: 'small', min: 25, gas: 75, sup: 0.5, time: 450, speed: 6.67, sight: 5, r: 8, hk: 'S', from: 'larva', req: ['spire'], bio: true, fly: true, pair: true,
     aw: W(110, 'normal', 0.3, 1, { targets: 'air', suicide: true, upgKey: null }), upgA: 'flyA' });
+  // `larva_inject` goes FIRST and `infest` stays LAST, and the order is the whole of the decision.
+  // UI.buildCard flows a mobile unit's abilities from slot 5 and stops at `if (i > 8) break`, so a
+  // unit shows at most FOUR abilities. A Queen with both of its researches finished already has four.
+  // Inject is M12 item 11 -- the macro mechanic the whole race's production rate now runs through --
+  // so it takes the first slot, and the ability that falls off the end is `infest`, which HANDOFF.md
+  // describes as "niche, and the only reason it is here is that every ability should mean every one".
+  // It is not lost: the Infestor carries it too, and an Infestor infesting a command centre is a
+  // better home for it than a Queen was.
   U('queen', { name: 'Queen', race: 'Z', hp: 120, size: 'medium', min: 100, gas: 100, sup: 2, time: 750, speed: 6.67, sight: 10, r: 14, hk: 'Q', from: 'larva', req: ['queens_nest'], bio: true, fly: true, energy: 200,
-    abil: ['parasite', 'ensnare', 'spawn_broodling', 'infest'], upgA: 'flyA' });
+    abil: ['larva_inject', 'parasite', 'ensnare', 'spawn_broodling', 'infest'], upgA: 'flyA' });
   U('guardian', { name: 'Guardian', race: 'Z', hp: 150, armor: 2, size: 'large', min: 50, gas: 100, sup: 2, time: 600, speed: 2.5, sight: 11, r: 16, from: 'mutalisk', req: ['greater_spire'], bio: true, fly: true, morphFrom: 'mutalisk', hk: 'G',
     gw: W(20, 'normal', 8, 30, { upgKey: 'flyW', upgDmg: 2 }), upgA: 'flyA' });
   U('devourer', { name: 'Devourer', race: 'Z', hp: 250, armor: 2, size: 'large', min: 150, gas: 50, sup: 2, time: 600, speed: 5, sight: 10, r: 16, from: 'mutalisk', req: ['greater_spire'], bio: true, fly: true, morphFrom: 'mutalisk', hk: 'V',
@@ -275,6 +283,95 @@ const DATA = (() => {
     gw: W(4, 'normal', 0.4, 15, { upgKey: 'meleeW' }), upgA: 'carapace' });
   U('infested_terran', { name: 'Infested Terran', race: 'Z', hp: 60, size: 'small', min: 100, gas: 50, sup: 1, time: 600, speed: 4, sight: 5, r: 8, hk: 'I', from: 'infested_command_center', bio: true, cargoSize: 1,
     gw: W(500, 'explosive', 0.3, 1, { suicide: true, splash: [1, 1.5, 2], upgKey: null }), abil: ['burrow'], upgA: 'carapace' });
+
+  // ---------------------------------------------------------------------------------------------
+  // M12 wave four: the Zerg ten. Each one had to earn a place beside zergling, hydralisk, lurker,
+  // mutalisk, scourge, queen, guardian, devourer, ultralisk and defiler, and where the obvious SC2
+  // shape would have been a near-clone of one of those the ROLE was changed rather than the name.
+  // The reasoning is per def below; the two that changed most are the Baneling and the Overseer.
+  //
+  // TWO LINEAGES, NOT ONE FLAT LIST. Everything here hangs off something that already exists:
+  // roach -> ravager (break a siege line) and roach -> swarm host (be one), mutalisk -> viper beside
+  // guardian and devourer, zergling -> baneling, overlord -> overseer. That is deliberate. A larva
+  // card with fifteen entries is a menu; a card with eleven and four aspects is a set of decisions
+  // about units you already own -- and it is also the only way this fits, because UI.paginate gives
+  // the larva card twelve flowed slots and Set Rally takes one of them.
+  //
+  // The Roach is the armoured line, and the point of it is that it is NOT a hydralisk. A hydralisk
+  // is 80 hit points for one supply, shoots air, does explosive damage (so it is bad into small) and
+  // its whole future is the Lurker. The Roach is 145 hit points for two, cannot shoot air at all,
+  // does NORMAL damage (so it is the one Zerg ranged unit that is not punished for shooting
+  // marines and zealots), and its future is a choice between two morphs. Hydralisks are what Zerg
+  // shoots WITH; roaches are what Zerg stands BEHIND.
+  U('roach', { name: 'Roach', race: 'Z', hp: 145, armor: 1, size: 'medium', min: 75, gas: 25, sup: 2, time: 480, speed: 4.2, sight: 8, r: 11, hk: 'C', from: 'larva', req: ['roach_warren'], bio: true, cargoSize: 2,
+    gw: W(16, 'normal', 4, 22, { upgKey: 'missW', upgDmg: 2 }), abil: ['burrow', 'ravager_aspect', 'swarm_host_aspect'], upgA: 'carapace', speedTech: ['glial_reconstitution', 5.4] });
+  // The Ravager exists because Zerg has no answer to a thing that does not move. A siege line, a row
+  // of sunken colonies, a bunker, a wall: everything Zerg owns has to walk into range of it first.
+  // Corrosive Bile is the only Zerg ability that attacks a PLACE -- it lands after a visible delay, so
+  // it is dodgeable by anything with legs and undodgeable by anything without them, and it goes
+  // through Combat.splash, which means it also breaks the destructible map features a defender is
+  // hiding behind. It is not a Guardian: a guardian is an air unit with a long auto-attack that dies
+  // to any anti-air, and it never opens a hole in terrain.
+  U('ravager', { name: 'Ravager', race: 'Z', hp: 190, armor: 1, size: 'large', min: 25, gas: 75, sup: 3, time: 540, speed: 4.2, sight: 9, r: 14, hk: 'R', from: 'roach', req: ['ravager_aspect'], morphFrom: 'roach', bio: true, cargoSize: 4, energy: 100,
+    gw: W(18, 'normal', 6, 30, { upgKey: 'missW', upgDmg: 2 }), abil: ['burrow', 'corrosive_bile'], upgA: 'carapace' });
+  // THE BANELING IS NOT A `suicide: true` WEAPON, AND THAT IS THE DESIGN, NOT A COMPROMISE.
+  //
+  // Scourge and Infested Terran both carry `suicide: true` and both are fire-and-forget: you point
+  // them at something and the unit spends itself the instant it arrives, on whatever it arrived at.
+  // A third unit built the same way would be a third of the same unit. What a Baneling is FOR is the
+  // moment of detonation -- rolling one into a clump and choosing when it goes off is the whole
+  // decision -- so the blast is an ability the player presses (`volatile_burst`) and the walking-around
+  // state is a real, cheap, repeatable acid spit. Concussive, so it is good into small things and
+  // poor into large ones, which is exactly the shape of what banelings are meant to eat.
+  //
+  // There is a second, load-bearing reason and it is worth writing down rather than discovering:
+  // test/rates.js measures EVERY weapon in DATA.units in both order paths and asserts at least three
+  // shots. A `suicide` weapon fires once and kills its owner, which is why `NO_RATE` in that file
+  // lists spider_mine, scourge and infested_terran by id. A fourth suicide weapon would have to be
+  // added to that list, and test/rates.js is not this change's to edit.
+  U('baneling', { name: 'Baneling', race: 'Z', hp: 35, armor: 0, size: 'small', min: 25, gas: 25, sup: 0.5, time: 300, speed: 5.49, sight: 5, r: 8, hk: 'B', from: 'zergling', req: ['volatile_bile'], morphFrom: 'zergling', bio: true, cargoSize: 1,
+    gw: W(8, 'concussive', 1.5, 26, { upgKey: 'meleeW' }), abil: ['burrow', 'volatile_burst'], upgA: 'carapace', speedTech: ['metabolic', 6.58] });
+  // The Swarm Host has no weapon of its own, on purpose: it is a siege engine that pays in TIME
+  // rather than in supply. Locusts are free, arrive in waves, and expire whether or not they killed
+  // anything, so a swarm host trades map presence for attrition against a position -- the pressure a
+  // Zerg army cannot otherwise apply without walking into it. Not a Lurker: a lurker holds ground it
+  // is standing on, a swarm host attacks ground it is nowhere near.
+  U('swarm_host', { name: 'Swarm Host', race: 'Z', hp: 160, armor: 1, size: 'medium', min: 50, gas: 100, sup: 3, time: 600, speed: 3.4, sight: 9, r: 13, hk: 'W', from: 'roach', req: ['infestation_pit'], morphFrom: 'roach', bio: true, cargoSize: 4, energy: 200,
+    abil: ['burrow', 'spawn_locusts'], upgA: 'carapace' });
+  // Free, short-lived, and upgraded by nothing (`upgKey: null` and no `upgA`) so that a swarm host
+  // parked behind three carapace upgrades is not quietly a better swarm host. min/gas/sup spelled out
+  // because a locust never passes through a cost calculation and `undefined * n` is NaN -- the exact
+  // shape of the spider-mine repair bug this repository already paid for once.
+  U('locust', { name: 'Locust', race: 'Z', hp: 50, armor: 0, size: 'small', min: 0, gas: 0, sup: 0, speed: 5.6, sight: 5, r: 7, bio: true, lifetime: 480,
+    gw: W(10, 'normal', 3, 18, { upgKey: null }) });
+  // The Viper is the only unit in this game that moves an enemy. Ensnare slows, Maelstrom freezes,
+  // Stasis removes, Dark Swarm blinds -- every existing control spell acts on a unit where it stands.
+  // Abduct takes a siege tank out of its line, a high templar out of its army, a reaver off its
+  // shuttle, and puts it where you are. That is why it morphs off a mutalisk rather than a larva: the
+  // spire lineage is guardian (hit ground), devourer (hit air) and viper (decide who is in the fight).
+  U('viper', { name: 'Viper', race: 'Z', hp: 150, armor: 1, size: 'large', min: 100, gas: 200, sup: 3, time: 750, speed: 5.4, sight: 10, r: 14, hk: 'B', from: 'mutalisk', req: ['infestation_pit', 'hive'], morphFrom: 'mutalisk', bio: true, fly: true, energy: 200,
+    abil: ['abduct', 'consume_essence'], upgA: 'flyA' });
+  // Defiler versus Infestor, because they are the two that could most easily have been one unit. The
+  // defiler PROTECTS and ATTRITS: dark swarm makes your army unshootable, plague takes a bar down and
+  // leaves it. The infestor DENIES and REPLACES: fungal growth stops a fight happening at all for four
+  // seconds, and spawn infested puts bodies on ground you do not hold. It also carries `infest`, which
+  // is a better home for that ability than the Queen -- see the Queen's `abil` list for why it moved.
+  U('infestor', { name: 'Infestor', race: 'Z', hp: 90, armor: 1, size: 'medium', min: 100, gas: 125, sup: 2, time: 600, speed: 4, sight: 9, r: 12, hk: 'I', from: 'larva', req: ['infestation_pit'], bio: true, cargoSize: 2, energy: 200,
+    abil: ['fungal_growth', 'spawn_infested', 'infest', 'burrow'], upgA: 'carapace' });
+  // AN OVERSEER IN THIS GAME CANNOT BE "THE OVERLORD THAT DETECTS", BECAUSE THIS GAME'S OVERLORD
+  // ALREADY DETECTS. So it is the swarm's saboteur instead. Contaminate shuts a building down --
+  // no production, no research, no larva, no creep growth -- without killing it, which is a thing no
+  // other unit of any race can do, and it is the reason to fly one INTO a base rather than over it.
+  // The price is real and is the point: `supGive` is absent, so morphing an overlord costs eight
+  // supply. You are spending your food to blind and gag somebody else's.
+  U('overseer', { name: 'Overseer', race: 'Z', hp: 200, armor: 1, size: 'large', min: 50, gas: 50, sup: 0, time: 300, speed: 3.2, sight: 11, r: 18, hk: 'O', from: 'overlord', req: ['lair'], morphFrom: 'overlord', bio: true, fly: true, det: true, energy: 200,
+    abil: ['contaminate'], upgA: 'flyA' });
+  // The ground morph egg. G.morphUnit picks `lurker_egg` for a Lurker and the FLYING `cocoon` for
+  // everything else, which was right while every other morph was a mutalisk; a baneling in a cocoon
+  // would drift off the ground and take anti-air fire. Abilities.morph swaps this in for a morph whose
+  // product walks. It is not `lurker_egg` because the selection panel prints the def's name and
+  // "Lurker Egg" over a morphing roach is a small lie told forever.
+  U('brood_cocoon', { name: 'Brood Cocoon', race: 'Z', hp: 200, armor: 10, size: 'medium', min: 0, gas: 0, speed: 0, sight: 4, r: 12, bio: true, egg: true });
 
   // ============================ PROTOSS UNITS ============================
   U('probe', { name: 'Probe', race: 'P', hp: 20, sh: 20, size: 'small', min: 50, sup: 1, time: 300, speed: 4.92, sight: 8, r: 8, hk: 'P', from: 'nexus', worker: true, mech: true, cargoSize: 1,
@@ -540,10 +637,23 @@ const DATA = (() => {
   B('lair', { name: 'Lair', race: 'Z', hp: 1800, w: 4, h: 3, min: 150, gas: 100, time: 1500, hk: 'L', tier: 'morph', req: ['spawning_pool'], sup: 1, depot: true, spawnsLarva: true, creep: 11, morphTo: 'hive', tech: ['ventral_sacs', 'antennae', 'pneumatized'], sight: 10 });
   B('hive', { name: 'Hive', race: 'Z', hp: 2500, w: 4, h: 3, min: 200, gas: 150, time: 1800, hk: 'H', tier: 'morph', req: ['queens_nest'], sup: 1, depot: true, spawnsLarva: true, creep: 11, tech: ['ventral_sacs', 'antennae', 'pneumatized'], sight: 11 });
   B('creep_colony', { name: 'Creep Colony', race: 'Z', hp: 400, w: 2, h: 2, min: 75, time: 300, hk: 'C', tier: 'basic', creep: 8, needsCreep: true, morphOptions: ['sunken_colony', 'spore_colony'] });
-  B('sunken_colony', { name: 'Sunken Colony', race: 'Z', hp: 300, armor: 2, w: 2, h: 2, min: 50, time: 300, hk: 'S', tier: 'morph', req: ['spawning_pool'], creep: 8, gw: W(40, 'explosive', 7, 32, { upgKey: null }) });
-  B('spore_colony', { name: 'Spore Colony', race: 'Z', hp: 400, w: 2, h: 2, min: 50, time: 300, hk: 'P', tier: 'morph', req: ['evolution_chamber'], creep: 8, det: true, sight: 10, aw: W(15, 'normal', 7, 15, { targets: 'air', upgKey: null }) });
+  // M12 wave four: THE CRAWLERS ARE THE EXISTING COLONIES, GIVEN LEGS. Two new defs were the other
+  // option and were rejected: a "spine crawler" beside a sunken colony is two buildings that do the
+  // same job, it doubles the Zerg static-defence tech tree for nothing, and every existing map, save,
+  // replay and AI script would then have the old one in it while the card offered the new one.
+  // Uproot/root is an ability pair on what is already there, so a sunken built in M4 can stand up.
+  //
+  // `needsCreep` is the whole safety rail and it is one word. G.landBuilding runs GameMap.canPlace
+  // before it puts anything down, and canPlace refuses `def.needsCreep` off creep -- so an uprooted
+  // crawler can WALK anywhere but can only ROOT on creep, and a walking crawler has no weapon
+  // (Unit.tickBuilding returns at `if (this.lifted)` before it reaches tickCombatBuilding). It costs
+  // nothing anywhere else: neither def is ever placed by a worker, both are morphs of a creep colony
+  // that already required creep, so the only code path this new flag reaches is landing.
+  // `crawler` marks the two defs for Abilities' creep bookkeeping; see uproot in js/abilities.js.
+  B('sunken_colony', { name: 'Sunken Colony', race: 'Z', hp: 300, armor: 2, w: 2, h: 2, min: 50, time: 300, hk: 'S', tier: 'morph', req: ['spawning_pool'], creep: 8, needsCreep: true, crawler: true, abil: ['uproot'], gw: W(40, 'explosive', 7, 32, { upgKey: null }) });
+  B('spore_colony', { name: 'Spore Colony', race: 'Z', hp: 400, w: 2, h: 2, min: 50, time: 300, hk: 'P', tier: 'morph', req: ['evolution_chamber'], creep: 8, needsCreep: true, crawler: true, abil: ['uproot'], det: true, sight: 10, aw: W(15, 'normal', 7, 15, { targets: 'air', upgKey: null }) });
   B('extractor', { name: 'Extractor', race: 'Z', hp: 750, w: 4, h: 2, min: 50, time: 600, hk: 'E', tier: 'basic', onGeyser: true, creep: 3 });
-  B('spawning_pool', { name: 'Spawning Pool', race: 'Z', hp: 750, w: 3, h: 2, min: 200, time: 1200, hk: 'S', tier: 'basic', req: ['hatchery'], needsCreep: true, tech: ['metabolic', 'adrenal'] });
+  B('spawning_pool', { name: 'Spawning Pool', race: 'Z', hp: 750, w: 3, h: 2, min: 200, time: 1200, hk: 'S', tier: 'basic', req: ['hatchery'], needsCreep: true, tech: ['metabolic', 'adrenal', 'volatile_bile'] });
   B('evolution_chamber', { name: 'Evolution Chamber', race: 'Z', hp: 750, w: 3, h: 2, min: 75, time: 600, hk: 'V', tier: 'basic', req: ['hatchery'], needsCreep: true, upg: ['meleeW', 'missW', 'carapace'] });
   B('hydralisk_den', { name: 'Hydralisk Den', race: 'Z', hp: 850, w: 3, h: 2, min: 100, gas: 50, time: 600, hk: 'D', tier: 'basic', req: ['spawning_pool'], needsCreep: true, tech: ['muscular', 'grooved', 'lurker_aspect', 'suppress_hyd'] });
   B('spire', { name: 'Spire', race: 'Z', hp: 600, w: 2, h: 2, min: 200, gas: 150, time: 1800, hk: 'S', tier: 'adv', req: ['lair'], needsCreep: true, upg: ['flyW', 'flyA'], morphTo: 'greater_spire', tech: ['suppress_air'] });
@@ -553,7 +663,7 @@ const DATA = (() => {
   // Lair, not Hive: in Brood War the Defiler Mound is a Lair-tech building, and having it behind the
   // Hive put Zerg's only answer to healed bio four minutes past the end of an average AI game.
   B('defiler_mound', { name: 'Defiler Mound', race: 'Z', hp: 850, w: 4, h: 2, min: 100, gas: 100, time: 900, hk: 'D', tier: 'adv', req: ['lair'], needsCreep: true, tech: ['plague_tech', 'consume_tech', 'metasynaptic'] });
-  B('nydus_canal', { name: 'Nydus Canal', race: 'Z', hp: 250, w: 2, h: 2, min: 150, time: 600, hk: 'N', tier: 'adv', req: ['hive'], needsCreep: true, nydus: true, abil: ['nydus_exit'] });
+  B('nydus_canal', { name: 'Nydus Canal', race: 'Z', hp: 250, w: 2, h: 2, min: 150, time: 600, hk: 'N', tier: 'adv', req: ['hive'], needsCreep: true, nydus: true, abil: ['nydus_exit', 'nydus_worm'] });
   B('infested_command_center', { name: 'Infested Command Center', race: 'Z', hp: 1500, w: 4, h: 3, time: 1, tier: 'none', produces: ['infested_terran'], sight: 10 });
   // Zerg's three. All three need creep, like every other Zerg structure, which is the natural limit on
   // where a Zerg player may wall or mend: on ground the swarm already holds. The ridge goes on the Basic
@@ -563,6 +673,53 @@ const DATA = (() => {
   B('miasma_gland', { name: 'Miasma Gland', race: 'Z', hp: 500, w: 2, h: 2, min: 100, gas: 75, time: 750, hk: 'J', tier: 'adv', req: ['lair'], needsCreep: true, sight: 9,
     aura: { kind: 'blind', r: 10, affects: 'enemy', sight: 0.6, stacks: false } });
   B('carapace_ridge', { name: 'Carapace Ridge', race: 'Z', hp: 700, armor: 2, w: 2, h: 2, min: 25, time: 300, hk: 'W', tier: 'basic', req: ['spawning_pool'], needsCreep: true, sight: 3, wall: true });
+  // M12 wave four. Exactly TWO new buildings a drone can put down, and that is a ceiling rather than
+  // a preference: DATA.buildMenu holds eight per page (slot 8 is Cancel in a three-by-three card),
+  // Zerg was at seven and seven, and test/newbuildings.js asserts both halves of that. Zerg's build
+  // pages are now FULL. Anything added to this race after today has to be a morph, an add-on, or
+  // placed by an ability the way the Creep Tumour and the Nydus Worm below are.
+  B('roach_warren', { name: 'Roach Warren', race: 'Z', hp: 800, w: 3, h: 2, min: 100, gas: 0, time: 900, hk: 'R', tier: 'basic', req: ['spawning_pool'], needsCreep: true, tech: ['glial_reconstitution', 'ravager_aspect'] });
+  B('infestation_pit', { name: 'Infestation Pit', race: 'Z', hp: 850, w: 3, h: 2, min: 100, gas: 100, time: 900, hk: 'I', tier: 'adv', req: ['lair'], needsCreep: true, tech: ['pathogen_glands', 'pressurised_glands'] });
+  // ---------------------------------------------------------------------------------------------
+  // M12 ITEM 13: THE CREEP TUMOUR, AND THE PROMISE THAT IT IS ADDITIVE.
+  //
+  // Read GameMap.recomputeCreep before changing anything here. Creep is the union of ellipses around
+  // every living, finished unit carrying `def.creep`, at radius min(def.creep, u.creepR), and
+  // Unit.tickBuilding grows creepR from CREEP_SEED to def.creep over about a minute. A tumour is
+  // therefore NOT a new creep system. It is one more entry in the union that already exists, and it
+  // needed no change at all to that function: the hatchery, the lair, the hive, the creep colony, the
+  // extractor and every other `def.creep` source behave on frame 40,000 of an existing save exactly as
+  // they did before this commit. test/zerg12.js asserts that directly on a tumour-free map, because
+  // "it should be additive" is a claim and a claim is not a test.
+  //
+  // What makes it a MECHANIC rather than a seventh emitter is who places it. An Overlord seeds one on
+  // creep it is floating over (`plant_tumour`), and a finished tumour may seed exactly ONE child
+  // (`spawn_tumour`), anywhere within nine tiles that is already creep. So the swarm walks its own
+  // ground forward: plant at the edge, wait for the radius to grow, seed the next one at the new edge.
+  // Creep is something a player drives, and the thing they are driving it towards is the Nydus Worm
+  // below, which can only surface on creep. That interlock is the whole point of doing both at once.
+  //
+  // One child, not many, and it is why `tumoured` is a flag on the unit rather than a counter: a
+  // tumour that could seed repeatedly is a tumour that covers the map on its own while the player does
+  // something else, and the mechanic is supposed to cost attention.
+  //
+  // 1x1 because a 2x2 free structure every ten seconds is a wall kit. `armor: 0` because B() defaults
+  // it to 1 and 50 hit points behind 1 armour is annoyingly durable against the small-arms fire that
+  // ought to clear it. `min`/`gas` spelled out on both of these: Abilities charges def.min directly.
+  B('creep_tumour', { name: 'Creep Tumour', race: 'Z', hp: 50, armor: 0, w: 1, h: 1, min: 25, gas: 0, time: 240, hk: 'T', tier: 'none', creep: 7, needsCreep: true, sight: 5, tumour: true, abil: ['spawn_tumour'] });
+  // The far end of a Nydus network. `nydus_canal` already existed and already had ONE exit; a network
+  // is more than two ends, and the answer to "is that worth it" is yes for exactly one reason: with
+  // tumours in the game, creep is now something that reaches places, and a mouth that can surface on
+  // any creep you own is the payoff for having driven it there.
+  //
+  // The topology is a HUB, and it is shaped by what js/sim.js already does rather than by taste. The
+  // 'nydus' order reads `c.nydusLink` -- one link per mouth -- so: every worm links home to the canal,
+  // and the canal links to the most recently surfaced worm. Enter any mouth and you come out at the
+  // hub; enter the hub and you come out at the newest mouth, which is the one you just dug where you
+  // wanted the reinforcements. When that worm dies the canal falls back to the next newest, which is
+  // the redundancy that makes it a network rather than two ends with extra steps. Abilities keeps
+  // `canal.nydusNet` in order; nothing in js/sim.js had to change.
+  B('nydus_worm', { name: 'Nydus Worm', race: 'Z', hp: 300, armor: 1, w: 2, h: 2, min: 75, gas: 0, time: 360, hk: 'W', tier: 'none', needsCreep: true, nydus: true, sight: 7 });
 
   // ============================ PROTOSS BUILDINGS ============================
   B('nexus', { name: 'Nexus', race: 'P', hp: 750, sh: 750, w: 4, h: 3, min: 400, time: 1800, hk: 'N', tier: 'basic', produces: ['probe'], sup: 10, depot: true, sight: 11 });
@@ -799,6 +956,18 @@ const DATA = (() => {
   T('gamete', 'Gamete Meiosis', 'Z', 'queens_nest', 'G', 150, 150, 2500, { energy: 'queen' });
   T('anabolic', 'Anabolic Synthesis', 'Z', 'ultralisk_cavern', 'A', 200, 200, 2000);
   T('chitinous', 'Chitinous Plating', 'Z', 'ultralisk_cavern', 'C', 150, 150, 2000);
+  // M12 wave four. Four of these five gate something real rather than describing it: `volatile_bile`
+  // and `ravager_aspect` are named in a unit's `req`, `pathogen_glands` is named in an ability's
+  // `tech` (Abilities.available reads it), and `glial_reconstitution` is the second half of the
+  // Roach's `speedTech` pair. `pressurised_glands` is read by spawn_locusts in js/abilities.js.
+  // Nothing here carries an `energy:` or `effect:` key -- both of those are inert in this engine
+  // (grep: nothing reads them; the two upgrades that claim to raise max energy do not), and a tech
+  // that documents a behaviour nobody implements is worse than no tech at all.
+  T('volatile_bile', 'Volatile Bile', 'Z', 'spawning_pool', 'V', 150, 150, 1500);
+  T('glial_reconstitution', 'Glial Reconstitution', 'Z', 'roach_warren', 'G', 150, 150, 1500);
+  T('ravager_aspect', 'Ravager Aspect', 'Z', 'roach_warren', 'R', 200, 200, 1800, { req: ['lair'] });
+  T('pathogen_glands', 'Pathogen Glands', 'Z', 'infestation_pit', 'P', 150, 150, 1500);
+  T('pressurised_glands', 'Pressurised Glands', 'Z', 'infestation_pit', 'G', 150, 150, 2000);
   T('plague_tech', 'Plague', 'Z', 'defiler_mound', 'P', 200, 200, 1500);
   T('consume_tech', 'Consume', 'Z', 'defiler_mound', 'C', 100, 100, 1500);
   T('metasynaptic', 'Metasynaptic Node', 'Z', 'defiler_mound', 'M', 150, 150, 2500, { energy: 'defiler' });
@@ -881,6 +1050,39 @@ const DATA = (() => {
   A('consume', 'Consume', 'C', 'unit', { energy: 0, tech: 'consume_tech', range: 1 });
   A('nydus_exit', 'Build Nydus Exit', 'N', 'point');
   A('infest', 'Infest Command Center', 'I', 'unit', { range: 1 });
+  // ---- M12 wave four: the Zerg additions -------------------------------------------------------
+  // Hotkeys avoid M, S, A, P and H: UI.buildCard pins Move/Stop/Attack/Patrol/Hold to those on every
+  // mobile card and the dispatcher takes the FIRST button with a matching key, so an ability on one
+  // of them is a key that silently does the wrong thing.
+  //
+  // ITEM 11, LARVA INJECT. `delay` is what makes it a decision instead of a button: ten seconds pass
+  // between the cast and the larvae, so injecting is a bet that you will still want them. `cap` is the
+  // same 3 that Unit.tickBuilding enforces on natural larva production -- inject FILLS a hatchery, it
+  // does not raise its ceiling. Raising the ceiling was the other option and it is a different game:
+  // banked larvae past three turn every hall into a burst of eight units and rewrite what Zerg's
+  // production curve looks like, which is not what item 11 asked for.
+  A('larva_inject', 'Spawn Larva', 'L', 'unit', { energy: 25, range: 4, delay: 240, cap: 3 });
+  A('plant_tumour', 'Creep Tumour', 'C', 'point', { range: 3 });
+  A('spawn_tumour', 'Spread Creep', 'C', 'point', { range: 9 });
+  // 'instant', not 'toggle', and the reason is UI.buildCard: on a BUILDING it fires only the `instant`
+  // kind directly and sends everything else to targeting mode, which would ask a spine crawler where
+  // it would like to stand up. The rooting half of the pair is the Land button the card already grows
+  // for anything `lifted`, and it goes through G.landBuilding, which is where the creep check lives.
+  A('uproot', 'Uproot', 'U', 'instant');
+  A('volatile_burst', 'Volatile Burst', 'B', 'instant', { dmg: 40, r: 1.6, bldMult: 2 });
+  A('corrosive_bile', 'Corrosive Bile', 'C', 'point', { energy: 25, range: 8, delay: 40, r: 1.5, dmg: 70 });
+  A('spawn_locusts', 'Spawn Locusts', 'L', 'instant', { energy: 40 });
+  A('fungal_growth', 'Fungal Growth', 'F', 'point', { energy: 75, range: 9, r: 2, t: 96 });
+  A('spawn_infested', 'Spawn Infested', 'N', 'point', { energy: 100, range: 6, tech: 'pathogen_glands' });
+  A('abduct', 'Abduct', 'B', 'unit', { energy: 75, range: 10 });
+  A('consume_essence', 'Consume Essence', 'C', 'unit', { energy: 0, range: 1 });
+  A('contaminate', 'Contaminate', 'C', 'unit', { energy: 75, range: 8 });
+  A('nydus_worm', 'Nydus Worm', 'W', 'point', { range: 999 });
+  A('baneling_aspect', 'Baneling Aspect', 'B', 'morph', { unit: 'baneling' });
+  A('ravager_aspect', 'Ravager Aspect', 'R', 'morph', { unit: 'ravager' });
+  A('swarm_host_aspect', 'Swarm Host Aspect', 'W', 'morph', { unit: 'swarm_host' });
+  A('viper_aspect', 'Viper Aspect', 'B', 'morph', { unit: 'viper' });
+  A('overseer_aspect', 'Overseer Aspect', 'O', 'morph', { unit: 'overseer' });
   A('psi_storm', 'Psionic Storm', 'T', 'point', { energy: 75, tech: 'psi_storm_tech', range: 9 });
   A('hallucination', 'Hallucination', 'L', 'unit', { energy: 100, tech: 'hallucination_tech', range: 9 });
   A('summon_archon', 'Summon Archon', 'W', 'merge', { unit: 'archon' });
@@ -906,10 +1108,18 @@ const DATA = (() => {
   // or "Build Advanced" on the strength of `tier === 'adv'`.
   const buildMenu = {
     T: { basic: ['command_center', 'supply_depot', 'refinery', 'barracks', 'engineering_bay', 'missile_turret', 'academy', 'bunker'], adv: ['factory', 'starport', 'science_facility', 'armory', 'aid_station', 'scrambler_mast', 'blast_barricade', 'sensor_tower'] },
-    Z: { basic: ['hatchery', 'creep_colony', 'extractor', 'spawning_pool', 'evolution_chamber', 'hydralisk_den', 'carapace_ridge'], adv: ['spire', 'queens_nest', 'nydus_canal', 'ultralisk_cavern', 'defiler_mound', 'mending_pool', 'miasma_gland'] },
+    Z: { basic: ['hatchery', 'creep_colony', 'extractor', 'spawning_pool', 'evolution_chamber', 'hydralisk_den', 'carapace_ridge', 'roach_warren'], adv: ['spire', 'queens_nest', 'nydus_canal', 'ultralisk_cavern', 'defiler_mound', 'mending_pool', 'miasma_gland', 'infestation_pit'] },
     P: { basic: ['nexus', 'pylon', 'assimilator', 'gateway', 'forge', 'photon_cannon', 'cybernetics_core', 'shield_battery'], adv: ['robotics_facility', 'stargate', 'citadel_of_adun', 'robotics_support_bay', 'fleet_beacon', 'templar_archives', 'observatory', 'arbiter_tribunal'] },
   };
-  const larvaMorphs = ['drone', 'overlord', 'zergling', 'hydralisk', 'mutalisk', 'scourge', 'queen', 'ultralisk', 'defiler'];
+  // ELEVEN, AND THAT IS THE CEILING. The larva card is these plus Set Rally, flowed by UI.paginate,
+  // which gives twelve slots when nothing on the card is pinned -- and the larva card pins nothing.
+  // At thirteen flowed buttons paginate would grow a "More" turn and put it on the same slot as the
+  // twelfth entry, because `per` is CARD_SLOTS when there are no pins and the page turn then lands on
+  // `last` alongside it. That is a latent bug in UI.paginate, not a rule; it is simply not this
+  // change's file to fix, so M12's four new larva-tier units are two here and two as aspects off a
+  // roach and a mutalisk. APPENDED rather than sorted: every existing entry keeps the slot a Zerg
+  // player's hands already know.
+  const larvaMorphs = ['drone', 'overlord', 'zergling', 'hydralisk', 'mutalisk', 'scourge', 'queen', 'ultralisk', 'defiler', 'roach', 'infestor'];
 
   // ============================ THE BURIED TELL ============================
   // What marks the ground above a buried creature. This is the feature, not a garnish on it: the

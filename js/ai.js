@@ -27,7 +27,13 @@ const AI_SCRIPTS = {
   //     the natural. That is where a Fortress belongs and it is arrived at rather than special-cased.
   //   sensor_tower@52 -- late, cheap, and needs the engineering bay from 25.
   T: [[9, 'supply_depot'], [11, 'barracks'], [12, 'refinery'], [15, 'supply_depot'], [16, 'factory'], [19, 'supply_depot'], [20, 'machine_shop'], [22, 'academy'], [23, 'bunker'], [24, 'command_center'], [25, 'engineering_bay'], [26, 'supply_depot'], [27, 'blast_barricade'], [28, 'factory'], [30, 'comsat_station'], [31, 'orbital_command'], [32, 'armory'], [33, 'scrambler_mast'], [34, 'supply_depot'], [36, 'starport'], [38, 'science_facility'], [39, 'aid_station'], [40, 'machine_shop'], [42, 'control_tower'], [44, 'barracks'], [45, 'reactor'], [46, 'command_center'], [48, 'planetary_fortress'], [50, 'factory'], [52, 'sensor_tower'], [56, 'missile_turret'], [60, 'physics_lab'], [62, 'science_facility'], [64, 'starport'], [66, 'covert_ops'], [68, 'nuclear_silo'], [70, 'barracks'], [80, 'factory']],
-  Z: [[11, 'spawning_pool'], [12, 'hatchery'], [13, 'extractor'], [16, 'hydralisk_den'], [18, 'creep_colony'], [19, 'sunken_colony'], [20, 'lair'], [21, 'carapace_ridge'], [22, 'extractor'], [24, 'hatchery'], [26, 'spire'], [28, 'evolution_chamber'], [29, 'miasma_gland'], [30, 'creep_colony'], [31, 'spore_colony'], [32, 'defiler_mound'], [34, 'hatchery'], [36, 'mending_pool'], [38, 'creep_colony'], [44, 'queens_nest'], [48, 'extractor'], [52, 'hive'], [56, 'creep_colony'], [60, 'ultralisk_cavern'], [64, 'hatchery'], [68, 'nydus_canal'], [70, 'greater_spire'], [80, 'hatchery']],
+  Z: [[11, 'spawning_pool'], [12, 'hatchery'], [13, 'extractor'], [16, 'hydralisk_den'], [17, 'roach_warren'], [18, 'creep_colony'], [19, 'sunken_colony'], [20, 'lair'], [21, 'carapace_ridge'], [22, 'extractor'], [24, 'hatchery'], [26, 'spire'], [28, 'evolution_chamber'], [29, 'miasma_gland'], [30, 'creep_colony'], [31, 'spore_colony'], [32, 'defiler_mound'], [34, 'hatchery'], [36, 'mending_pool'], [38, 'creep_colony'], [42, 'infestation_pit'], [44, 'queens_nest'], [48, 'extractor'], [52, 'hive'], [56, 'creep_colony'], [60, 'ultralisk_cavern'], [64, 'hatchery'], [68, 'nydus_canal'], [70, 'greater_spire'], [80, 'hatchery']],
+  // M12 wave four adds two steps and no more: the Roach Warren at 17, between the den and the first
+  // creep colony, because the Roach is a tier-one unit and AI_COMP.Z now spends four of its weight on
+  // one; and the Infestation Pit at 42, ahead of the Queen's Nest, because everything behind it
+  // (infestor, swarm host, viper) is lair-tier or later and Zerg reaching lair tech at all is the
+  // thing this AI has historically been worst at. Both inserted in ascending order -- test/aiscripts.js
+  // exists because ONE inverted pair once hid Protoss's whole tech tree.
   P: [[8, 'pylon'], [10, 'gateway'], [12, 'assimilator'], [14, 'cybernetics_core'], [15, 'pylon'], [18, 'gateway'], [20, 'nexus'], [22, 'pylon'], [24, 'citadel_of_adun'], [26, 'forge'], [27, 'pylon'], [28, 'robotics_facility'], [29, 'shield_battery'], [30, 'observatory'], [31, 'shield_battery'], [32, 'templar_archives'], [33, 'rejuvenation_shrine'], [34, 'gateway'], [35, 'shield_battery'], [36, 'pylon'], [37, 'null_obelisk'], [38, 'photon_cannon'], [39, 'shield_battery'], [40, 'gateway'], [41, 'warded_bastion'], [42, 'stargate'], [44, 'nexus'], [46, 'arbiter_tribunal'], [48, 'pylon'], [50, 'robotics_support_bay'], [52, 'fleet_beacon'], [56, 'gateway'], [66, 'gateway'], [72, 'stargate'], [80, 'nexus']],
 };
 const gasBuildings = ai => ai.mine(u => u.def.onGeyser).length + 1;
@@ -51,7 +57,13 @@ const AI_COMP = {
   // in prose above the table, or the test will patch the comment, the stamp will not move, and the
   // failure will look like a bug in the build stamp rather than in a sentence. (It did.)
   T: [['marine', 6], ['medic', 2], ['firebat', 1], ['marauder', 2], ['reaper', 1], ['ghost', 1], ['vulture', 2], ['hellion', 2], ['siege_tank', 4], ['goliath', 2], ['cyclone', 2], ['widow_mine', 1], ['thor', 2], ['science_vessel', 1], ['raven', 1], ['wraith', 1], ['banshee', 1], ['viking', 1], ['liberator', 1], ['valkyrie', 1], ['dropship', 1], ['medivac', 1], ['battlecruiser', 2]],
-  Z: [['zergling', 4], ['hydralisk', 6], ['mutalisk', 4], ['scourge', 1], ['ultralisk', 3], ['defiler', 1], ['queen', 1]],
+  Z: [['zergling', 4], ['hydralisk', 6], ['mutalisk', 4], ['scourge', 1], ['ultralisk', 3], ['defiler', 1], ['queen', 1], ['roach', 4], ['infestor', 1]],
+  // M12 wave four. Only the FOUR larva-tier additions are weighted here; baneling, ravager, swarm
+  // host, viper and overseer are morphs off something already in this list and are bought in
+  // production() beside the lurker, guardian and devourer clauses that have always worked that way.
+  // Weights are a share of army supply, so anything added here dilutes everything else -- the Roach
+  // is given real weight because it is meant to be a core unit, and the three casters are given one
+  // apiece, which is what the defiler and the queen already get.
   // Terran had no per-matchup composition at all, so it built the same mech-heavy army into everyone --
   // and test/duel.js prices that army against Protoss at 0 wins in 8, a mean supply margin of -14.5.
   // The same test has Terran BIO beating the same Protoss army 5 of 8. Terran was building precisely the
@@ -62,14 +74,23 @@ const AI_COMP = {
   // which are `large`, and until now the only explosive thing in a bio ball was a siege tank that has
   // to sit down. The medivac is doubled over the base comp for the same reason the medic is.
   TvP: [['marine', 8], ['medic', 3], ['firebat', 2], ['marauder', 4], ['reaper', 1], ['ghost', 1], ['vulture', 1], ['hellion', 1], ['siege_tank', 3], ['goliath', 2], ['cyclone', 1], ['widow_mine', 1], ['thor', 1], ['science_vessel', 1], ['raven', 1], ['wraith', 1], ['banshee', 1], ['viking', 1], ['liberator', 1], ['valkyrie', 1], ['dropship', 1], ['medivac', 2], ['battlecruiser', 1]],
-  ZvT: [['zergling', 3], ['hydralisk', 5], ['mutalisk', 5], ['scourge', 1], ['ultralisk', 4], ['defiler', 2], ['queen', 1]],
+  ZvT: [['zergling', 3], ['hydralisk', 5], ['mutalisk', 5], ['scourge', 1], ['ultralisk', 4], ['defiler', 2], ['queen', 1], ['roach', 5], ['infestor', 1]],
+  // Roaches heavier into Terran than into Protoss: normal damage and 145 hit points is what holds a
+  // line against marines and does very little against a zealot's shields, and Terran is the matchup
+  // where Zerg spends the game being shot at from range.
   PvZ: [['zealot', 2], ['dragoon', 8], ['high_templar', 3], ['dark_templar', 1], ['reaver', 1], ['shuttle', 1], ['observer', 3], ['corsair', 2], ['scout', 1], ['carrier', 1], ['arbiter', 1]],
-  ZvP: [['zergling', 3], ['hydralisk', 6], ['mutalisk', 3], ['scourge', 1], ['ultralisk', 3], ['defiler', 1], ['queen', 1]],
+  ZvP: [['zergling', 3], ['hydralisk', 6], ['roach', 3], ['mutalisk', 3], ['scourge', 1], ['ultralisk', 3], ['defiler', 1], ['queen', 1], ['infestor', 1]],
   P: [['zealot', 4], ['dragoon', 5], ['high_templar', 2], ['dark_templar', 1], ['reaver', 1], ['shuttle', 1], ['observer', 1], ['corsair', 1], ['scout', 1], ['carrier', 2], ['arbiter', 1]],
 };
 const AI_RESEARCH = {
   T: ['stim', 'siege_tech', 'u238', 'infW', 'infA', 'ion_thrusters', 'spider_mines_tech', 'vehW', 'charon', 'vehA', 'irradiate_tech', 'emp_tech', 'personnel_cloaking', 'lockdown_tech', 'yamato_tech', 'shipW', 'shipA', 'cloaking_field', 'suppress_inf', 'suppress_veh', 'restoration_tech', 'optical_flare_tech', 'caduceus', 'moebius', 'ocular', 'apollo', 'titan', 'colossus'],
-  Z: ['metabolic', 'flyW', 'lurker_aspect', 'carapace', 'meleeW', 'grooved', 'muscular', 'missW', 'flyA', 'burrow_tech', 'pneumatized', 'anabolic', 'chitinous', 'adrenal', 'consume_tech', 'plague_tech', 'suppress_hyd', 'suppress_air', 'spawn_broodling_tech', 'ensnare_tech', 'ventral_sacs', 'antennae', 'gamete', 'metasynaptic'],
+  // M12's five Zerg researches, placed by what they unlock rather than appended. `volatile_bile` and
+  // `ravager_aspect` gate whole units and sit with lurker_aspect near the front; `glial_reconstitution`
+  // is a speed upgrade and sits with the other two; the two Infestation Pit techs go late, next to the
+  // other lair-and-beyond spell techs, because Zerg reaching that building at all is the open question.
+  // Order here is priority only -- research() skips anything whose building does not exist yet -- and
+  // HANDOFF.md records that reordering this list has never moved a measured outcome.
+  Z: ['metabolic', 'flyW', 'lurker_aspect', 'volatile_bile', 'carapace', 'meleeW', 'ravager_aspect', 'grooved', 'muscular', 'glial_reconstitution', 'missW', 'flyA', 'burrow_tech', 'pneumatized', 'anabolic', 'chitinous', 'adrenal', 'consume_tech', 'plague_tech', 'pathogen_glands', 'suppress_hyd', 'suppress_air', 'spawn_broodling_tech', 'ensnare_tech', 'pressurised_glands', 'ventral_sacs', 'antennae', 'gamete', 'metasynaptic'],
   P: ['singularity', 'gW', 'leg_enhancements', 'gA', 'psi_storm_tech', 'shields', 'scarab_damage', 'gravitic_drive', 'airW', 'carrier_capacity', 'stasis_tech', 'khaydarin_amulet', 'airA', 'recall_tech', 'suppress_gate', 'suppress_bay', 'maelstrom_tech', 'mind_control_tech', 'hallucination_tech', 'disruption_web_tech', 'reaver_capacity', 'gravitic_boosters', 'sensor_array', 'apial_sensors', 'gravitic_thrusters', 'argus_talisman', 'argus_jewel', 'khaydarin_core'],
 };
 // Derived style tables, built once on first use from the deltas in AI.styleDeltas() and never edited
@@ -485,7 +506,33 @@ class AI {
         if (t) Abilities.issue(cn, 'nydus_exit', null, (t[0] + 0.5) * TILE, (t[1] + 0.5) * TILE);
         break;                                              // one a turn; it costs minerals
       }
+      // M12 wave four: the network past the second end. A worm may only surface on creep, so this is
+      // the AI's half of the tumour interlock -- the mouths follow the creep, and the creep follows
+      // whatever the tumour chain has crawled over. Capped at three mouths and gated on 200 spare
+      // minerals so a Nydus network never competes with an expansion or with army production.
+      for (const cn of this.mine(u => u.def.id === 'nydus_canal' && u.done && u.nydusLink)) {
+        const net = cn.nydusNet || [];
+        if (net.length >= 3 || p.minerals < DATA.buildings.nydus_worm.min + 200) break;
+        const halls = this.halls().filter(h => h.done && !h.lifted); const h = halls[halls.length - 1];
+        if (!h || net.some(w => distPt(w.x, w.y, h.x, h.y) < 10 * TILE)) break;
+        const t = G.map.findFreeTile(h.tx, h.ty + h.def.h + 1, 8, (x, y) => G.map.hasCreep(x, y));
+        if (t) Abilities.issue(cn, 'nydus_worm', null, (t[0] + 0.5) * TILE, (t[1] + 0.5) * TILE);
+        break;
+      }
     }
+    // M12 wave four: the five Zerg morphs. Each sits after the lurker/guardian/devourer clauses above
+    // and each returns, so a think spends itself on at most one morph and the composition weights in
+    // AI_COMP still decide everything that comes off a larva. All five are gated on a count relative
+    // to the unit they consume, because a morph that eats its own source unconditionally converts the
+    // whole army -- which is the mistake the Protoss archon clause below was written to stop.
+    if (this.race === 'Z' && p.hasTech('volatile_bile') && (counts.baneling || 0) < 6 && (counts.zergling || 0) > 6 && p.minerals >= 25 && p.gas >= 25) { const z = this.mine(u => u.def.id === 'zergling' && u.order.type !== 'attack'); if (z.length) { Abilities.morph(z[0], 'baneling'); return; } }
+    if (this.race === 'Z' && p.hasTech('ravager_aspect') && (counts.ravager || 0) < (counts.roach || 0) / 2 && p.minerals >= 25 && p.gas >= 75) { const r = this.mine(u => u.def.id === 'roach' && u.order.type !== 'attack'); if (r.length) { Abilities.morph(r[0], 'ravager'); return; } }
+    if (this.race === 'Z' && p.hasBuilding('infestation_pit') && (counts.swarm_host || 0) < 3 && (counts.roach || 0) > 4 && p.minerals >= 50 && p.gas >= 100) { const r = this.mine(u => u.def.id === 'roach' && u.order.type !== 'attack'); if (r.length) { Abilities.morph(r[0], 'swarm_host'); return; } }
+    if (this.race === 'Z' && p.hasBuilding('infestation_pit') && p.hasBuilding('hive') && (counts.viper || 0) < 2 && p.minerals >= 100 && p.gas >= 200) { const m = this.mine(u => u.def.id === 'mutalisk'); if (m.length > 4) { Abilities.morph(m[0], 'viper'); return; } }
+    // An Overseer costs eight SUPPLY as well as its minerals, because it gives up the overlord's
+    // `supGive`. Exactly one, and only with room to lose it: an AI that morphs at 198/200 has supply
+    // blocked itself to buy detection it already had, since every overlord in this game detects.
+    if (this.race === 'Z' && p.hasBuilding('lair') && (counts.overseer || 0) < 1 && p.supMax - p.supUsed >= 12 && p.minerals >= 50 && p.gas >= 50) { const o = this.mine(u => u.def.id === 'overlord'); if (o.length > 2) { Abilities.morph(o[0], 'overseer'); return; } }
     // Zerg morphs: hydras -> lurkers, mutas -> guardians
     if (this.race === 'Z' && p.hasTech('lurker_aspect') && (counts.lurker || 0) < (counts.hydralisk || 0) / 1.5 && p.minerals >= 50 && p.gas >= 100) { const h = this.mine(u => u.def.id === 'hydralisk' && u.order.type !== 'attack' && u.done); if (h.length) { Abilities.morph(h[0], 'lurker'); return; } }
     if (this.race === 'Z' && p.hasBuilding('greater_spire') && (counts.guardian || 0) < 4 && p.minerals >= 50 && p.gas >= 100) { const m = this.mine(u => u.def.id === 'mutalisk'); if (m.length > 4) { Abilities.morph(m[0], 'guardian'); return; } }
@@ -627,7 +674,10 @@ class AI {
   nearResources(tx, ty, w, h) { for (const r of G.map.resources) { if (tx < r.x + r.w + 3 && tx + w > r.x - 3 && ty < r.y + r.h + 3 && ty + h > r.y - 3) return true; } return false; }
   // ---------------- army ----------------
   armyUnits() { return this.mine(u => !u.isBuilding && !u.def.worker && !u.def.larva && !u.def.egg && u.hasWeapon() && !u.inside && !u.def.notUnit && u.def.id !== 'spider_mine' && !(u.def.id === 'lurker' && false)); }
-  supportUnits() { return this.mine(u => ['medic', 'science_vessel', 'observer', 'high_templar', 'defiler', 'arbiter', 'dark_archon', 'queen'].includes(u.def.id) && !u.inside); }
+  // The four M12 Zerg additions with no weapon at all. armyUnits() is gated on hasWeapon(), so without
+  // this an infestor, viper, swarm host or overseer would be trained and then stand at the hatchery
+  // for the rest of the game -- the exact shape of "the AI casts 7 of 28 spells" in HANDOFF.md.
+  supportUnits() { return this.mine(u => ['medic', 'science_vessel', 'observer', 'high_templar', 'defiler', 'arbiter', 'dark_archon', 'queen', 'infestor', 'viper', 'swarm_host', 'overseer'].includes(u.def.id) && !u.inside); }
   rallyPoint() {
     const halls = this.halls().filter(h => h.done); const p = this.p;
     const nat = halls.length > 1 ? halls[1] : halls[0]; if (!nat) return { x: p.startX, y: p.startY };
@@ -770,8 +820,93 @@ class AI {
   // Count guaranteed micro ticks instead of raw frames: every id lands on one, and the stagger still
   // spreads the work across ticks. n is the old period in units of 12 frames.
   turn(id, n) { return (((G.frame / 12) | 0) + id) % n === 0; }
+  // ---- M12 wave four: the Zerg structures micro() cannot reach ------------------------------------
+  // micro()'s loop skips buildings outright, and three of this milestone's Zerg mechanics live on
+  // buildings: the tumour chain, the Nydus network's far ends, and the crawlers that can now walk.
+  // Creep is something a player DRIVES now, so an AI that never planted a tumour would not be playing
+  // the race a human is playing.
+  zergCreep() {
+    const p = this.p;
+    // Chain the tumours: one child a think, from a finished tumour that has not seeded yet.
+    //
+    // BOTH GATES ARE LOAD-BEARING AND THE FIRST VERSION HAD NEITHER. A tumour seeds a tumour and that
+    // one seeds another, so the chain is unbounded BY DESIGN -- that is the mechanic. Measured with no
+    // bound on it, at eight minutes against a passive opponent the Zerg AI held 176 creep tumours,
+    // twenty-one drones, no spawning pool, no den, no lair and an army of zero: 4,400 minerals of
+    // creep and nothing to walk on it. `tumoured` stops one tumour paving the map on its own; it does
+    // nothing about eight of them doing it in relay. So the bound is a hard count and real floating
+    // money, and 300 is chosen to sit above the AI's own "am I floating" triggers rather than below
+    // them -- creep is bought with the minerals a Zerg had nothing else to do with.
+    if (this.tumourBudget()) for (const t of this.mine(u => u.def.tumour && u.done && !u.tumoured)) {
+      const s = this.creepEdge(t.x, t.y, DATA.abilities.spawn_tumour.range);
+      if (s) { Abilities.issue(t, 'spawn_tumour', null, s[0], s[1]); break; }
+    }
+    if (!this.turn(p.id, 8)) return;
+    // Crawlers. TWO clauses and the order matters: recover first, then advance. An uprooted crawler
+    // that cannot find anywhere to root is a defensive building the AI has disabled for the rest of
+    // the game, so anything idle and standing up gets sat down where it is -- and if that spot is not
+    // creep, it is sent to a legal one near a hall instead of retrying the same illegal tile forever.
+    const halls = this.halls().filter(b => b.done && !b.lifted);
+    for (const c of this.mine(u => u.def.crawler && u.lifted && u.order.type === 'idle')) {
+      const tx = Math.round(c.x / TILE - c.def.w / 2), ty = Math.round(c.y / TILE - c.def.h / 2);
+      if (!G.map.canPlace(c.def, tx, ty, p, G.units, c)) { Abilities.instant(c, 'uproot'); break; }   // canPlace returns a REASON on failure, null when legal
+      const h = halls[0]; if (!h) break;
+      const s = this.findSpot(c.def, h.tx, h.ty);
+      c.setOrder(s ? { type: 'land', tx: s[0], ty: s[1] } : { type: 'move', x: h.x, y: h.y });
+      break;
+    }
+    // ...and advance. Only towards a base that has no crawler at all, only from one that is not being
+    // shot at, and only once a legal rooting tile has been found FIRST -- uprooting on spec is how a
+    // crawler ends up walking around for twenty minutes.
+    const nat = halls[halls.length - 1];
+    if (!nat || halls.length < 2) return;
+    if (this.mine(u => u.def.crawler && distPt(u.x, u.y, nat.x, nat.y) < 14 * TILE).length) return;
+    const spare = this.mine(u => u.def.crawler && !u.lifted && u.done && distPt(u.x, u.y, nat.x, nat.y) > 20 * TILE
+      && !G.near(u.x, u.y, 14 * TILE).some(o => o.alive && !G.allied(o.owner, p.id) && o.hasWeapon()))[0];
+    if (!spare) return;
+    const s = this.findSpot(spare.def, nat.tx, nat.ty);
+    if (s && Abilities.instant(spare, 'uproot')) spare.setOrder({ type: 'land', tx: s[0], ty: s[1] });
+  }
+  // May this player spend on creep at all right now? One place, because the Overlord that starts a
+  // chain and the tumour that continues it have to answer to the same budget or the cheaper of the two
+  // simply spends everything the other one saved.
+  tumourBudget() { return this.p.minerals >= 300 && this.count('creep_tumour') < 8; }
+  // The nearest hatchery this Queen could usefully inject: one of ours, finished, short of larvae, and
+  // without an inject already booked against it in G.fields. Null when there is nothing worth casting
+  // on, which is what lets the Queen's other spells have the tick.
+  injectHall(u) {
+    const cap = DATA.abilities.larva_inject.cap;
+    let best = null, bd = 26 * TILE;
+    for (const o of G.units) {
+      if (!o.alive || o.owner !== u.owner || !o.isBuilding || !o.done || !o.def.spawnsLarva) continue;
+      if (o.larvae.length >= cap) continue;
+      const dd = distPt(o.x, o.y, u.x, u.y); if (dd >= bd) continue;
+      if (G.fields.some(f => f.kind === 'inject' && f.hall === o)) continue;
+      bd = dd; best = o;
+    }
+    return best;
+  }
+  // The outermost creep tile within `range` of a point, leaning towards the enemy. A tumour planted in
+  // the middle of creep you already own is a tumour that did nothing, so this walks rings from the far
+  // edge inwards and takes the first legal tile -- which is what makes the chain travel.
+  creepEdge(fx, fy, range) {
+    const p = this.p, m = G.map, en = this.enemies()[0];
+    const tox = en && en.startX != null ? en.startX : m.w * TILE / 2, toy = en && en.startY != null ? en.startY : m.h * TILE / 2;
+    const base = Math.atan2(toy - fy, tox - fx), cx = Math.floor(fx / TILE), cy = Math.floor(fy / TILE);
+    for (let r = Math.floor(range); r >= 2; r--) {
+      for (let k = 0; k < 11; k++) {
+        const a = base + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.45;
+        const tx = Math.round(cx + Math.cos(a) * r), ty = Math.round(cy + Math.sin(a) * r * 0.8);
+        if (!m.hasCreep(tx, ty)) continue;
+        if (m.canPlace(DATA.buildings.creep_tumour, tx, ty, p, G.units, null)) continue;
+        return [(tx + 0.5) * TILE, (ty + 0.5) * TILE];
+      }
+    }
+    return null;
+  }
   micro() {
     const p = this.p;
+    if (p.race === 'Z') this.zergCreep();
     // Terran: scan where our units are being hit by something we cannot see (burrowed lurkers, cloaked units)
     if (p.race === 'T' && this.turn(p.id, 4)) { const cs = this.mine(u => u.def.id === 'comsat_station' && u.done && u.energy >= 50)[0]; if (cs) { const hit = this.mine(u => !u.isBuilding && G.frame - u.lastHit < 24 && u.lastHitBy && u.lastHitBy.alive && u.lastHitBy.isCloaked && !G.detected(u.lastHitBy, p.id))[0];
       if (hit) Abilities.issue(cs, 'scanner_sweep', null, hit.lastHitBy.x, hit.lastHitBy.y);
@@ -862,6 +997,15 @@ class AI {
       // Zerg AI, which spends most of a losing game in `defend`, never cast it when it needed it most.
       else if (d === 'defiler' && u.energy >= 100 && this.turn(u.id, 1)) { const c = this.cluster(u, 9, 3, o => o.owner === p.id && !o.fly && !o.isBuilding && o.hasWeapon() && G.frame - o.lastHit < 48); if (c && !Abilities.inField(c.x, c.y, 'swarm')) Abilities.issue(u, 'dark_swarm', null, c.x, c.y); else if (p.hasTech('plague_tech') && u.energy >= 150) { const e = this.cluster(u, 9, 4, o => o.owner !== p.id); if (e) Abilities.issue(u, 'plague', null, e.x, e.y); } }
       else if (d === 'science_vessel' && u.energy >= 75 && p.hasTech('irradiate_tech') && this.turn(u.id, 2)) { const t = G.near(u.x, u.y, 9 * TILE).find(o => o.owner !== p.id && o.def.bio && !o.isBuilding && !o.fx.irradiate && o.maxHp >= 80); if (t) Abilities.issue(u, 'irradiate', t); }
+      // M12 item 11. FIRST among the Queen's clauses, because inject is what a Queen is for: it is the
+      // only ability in the game that produces anything, and at 25 energy against Spawn Broodling's
+      // 150 it almost never costs a cast that would otherwise have happened. Offered only on a hall
+      // with room for larvae and no inject already in flight, so a saturated hatchery falls straight
+      // through to the clauses below instead of eating the energy for nothing.
+      // It is tested in the condition AND used in the body on purpose: this is an else-if chain, so a
+      // clause that matches on `d === 'queen'` and then finds nothing to do would swallow the Queen's
+      // three older clauses for that tick.
+      else if (d === 'queen' && u.energy >= DATA.abilities.larva_inject.energy && this.turn(u.id, 2) && this.injectHall(u)) Abilities.issue(u, 'larva_inject', this.injectHall(u));
       else if (d === 'queen' && u.energy >= 150 && p.hasTech('spawn_broodling_tech') && this.turn(u.id, 2)) { const t = G.near(u.x, u.y, 9 * TILE).find(o => o.owner !== p.id && !o.fly && !o.isBuilding && !NO_BROODLING.has(o.def.id) && o.def.sup >= 2); if (t) Abilities.issue(u, 'spawn_broodling', t); }
       else if (d === 'medic' && u.order.type === 'idle' && this.rally && distPt(u.x, u.y, this.rally.x, this.rally.y) > 8 * TILE) { const a = this.armyUnits()[0]; if (a) u.setOrder({ type: 'follow', target: a }); }
       else if (d === 'vulture' && u.mines > 0 && p.hasTech('spider_mines_tech') && u.order.type === 'idle' && this.turn(u.id, 4)) { Abilities.issue(u, 'spider_mine', null, u.x + (G.rand() - .5) * 64, u.y + (G.rand() - .5) * 64); }
@@ -927,6 +1071,65 @@ class AI {
         if (stranded >= 6) Abilities.issue(u, 'recall', null, u.x, u.y);
       }
       else if (d === 'ghost' && p.nukes > 0 && u.energy > 50 && this.turn(u.id, 4) && u.order.type !== 'ability') { const t = this.target; if (t && t.alive) { if (p.hasTech('personnel_cloaking') && !u.cloaked) Abilities.instant(u, 'cloak_ghost'); Abilities.issue(u, 'nuke', null, t.x, t.y); } }
+      // ---- M12 wave four: the seven Zerg additions with something to press --------------------
+      // An idle Overlord is a supply crate that happens to fly. Planting from one is how the tumour
+      // chain STARTS -- a tumour can only be seeded on creep, so something has to walk to the edge of
+      // it first, and the overlord is the only Zerg unit that is already everywhere and already idle.
+      // Capped at eight tumours and gated on 100 spare minerals so creep never competes with an army.
+      else if (d === 'overlord' && u.order.type === 'idle' && this.turn(u.id, 8) && this.tumourBudget()) {
+        const s = this.creepEdge(u.x, u.y, DATA.abilities.plant_tumour.range);
+        if (s) Abilities.issue(u, 'plant_tumour', null, s[0], s[1]);
+      }
+      // A Baneling is worth its gas the moment it is standing in three of something, or touching a
+      // building -- its blast is doubled against structures, and popping one on a bunker or a wall is
+      // the job. Both tests are "is it worth the unit", which is the decision the ability exists for.
+      else if (d === 'baneling' && this.turn(u.id, 1)) {
+        const ab = DATA.abilities.volatile_burst;
+        let n = 0, bld = false;
+        for (const o of G.near(u.x, u.y, ab.r * TILE)) { if (!o.alive || o.fly || G.allied(o.owner, p.id)) continue; if (o.isBuilding) { if (o.done) bld = true; } else if (o.hasWeapon() || o.def.worker) n++; }
+        if (n >= 3 || (bld && n === 0 && this.state === 'attack')) Abilities.instant(u, 'volatile_burst');
+      }
+      // Bile at what cannot walk out of it: a sieged tank, a lurker, a bunker, a colony, a wall. The
+      // delay is the whole balance of the ability and firing it at moving infantry throws it away.
+      else if (d === 'ravager' && u.energy >= DATA.abilities.corrosive_bile.energy && this.turn(u.id, 2)) {
+        const r = DATA.abilities.corrosive_bile.range * TILE;
+        const t = G.near(u.x, u.y, r).find(o => o.alive && !G.allied(o.owner, p.id) && !o.fly
+          && ((o.isBuilding && o.done && (o.def.gw || o.def.aw || o.def.wall)) || o.sieged || o.burrowed));
+        if (t) Abilities.issue(u, 'corrosive_bile', null, t.x, t.y);
+      }
+      // Locusts expire whether or not they were used, so spend the energy the moment there is anything
+      // to spend it on rather than banking it for a better moment that never arrives.
+      else if (d === 'swarm_host' && u.energy >= DATA.abilities.spawn_locusts.energy && this.turn(u.id, 2)
+               && G.near(u.x, u.y, 14 * TILE).some(o => o.alive && !G.allied(o.owner, p.id) && (o.isBuilding ? o.done : o.hasWeapon()))) Abilities.instant(u, 'spawn_locusts');
+      // Fungal first, infested second, and the order is the point: the cloud is worth more than the
+      // bodies, and 100 energy spent on infested terrans is a fungal that did not happen.
+      else if (d === 'infestor' && this.turn(u.id, 1)) {
+        if (u.energy >= DATA.abilities.fungal_growth.energy) { const c = this.cluster(u, 9, 3, o => !G.allied(o.owner, p.id) && !o.isBuilding && !o.fly); if (c && !Abilities.inField(c.x, c.y, 'fungal')) { Abilities.issue(u, 'fungal_growth', null, c.x, c.y); continue; } }
+        if (u.energy >= DATA.abilities.spawn_infested.energy && p.hasTech('pathogen_glands') && this.state === 'attack' && this.target && this.target.alive
+            && distPt(u.x, u.y, this.target.x, this.target.y) < DATA.abilities.spawn_infested.range * TILE) Abilities.issue(u, 'spawn_infested', null, this.target.x, this.target.y);
+      }
+      // Pull the most expensive thing in reach. Preferring supply cost rather than hit points is what
+      // makes it take the siege tank and the high templar instead of the nearest marine.
+      else if (d === 'viper' && u.energy >= DATA.abilities.abduct.energy && this.turn(u.id, 2)) {
+        let best = null, bs = 2;
+        for (const o of G.near(u.x, u.y, DATA.abilities.abduct.range * TILE)) { if (!o.alive || G.allied(o.owner, p.id) || o.isBuilding || o.def.worker || o.def.larva || o.def.egg || o.def.notUnit) continue; const s = (o.def.sup || 0) + (o.sieged || o.maxEnergy ? 2 : 0); if (s > bs) { bs = s; best = o; } }
+        if (best) Abilities.issue(u, 'abduct', best);
+      }
+      // A Viper short of energy eats a building rather than waiting. Only a big, healthy one, so it
+      // never finishes off a structure that was already in trouble -- and only a Zerg one regenerates
+      // the hundred hit points back, which is why this is a Zerg ability and not a general one.
+      else if (d === 'viper' && this.turn(u.id, 4)) {
+        const b = this.mine(o => o.isBuilding && o.done && o.hp - 100 > o.maxHp * 0.6 && o.hp > 400 && distPt(o.x, o.y, u.x, u.y) < 9 * TILE)[0];
+        if (b) Abilities.issue(u, 'consume_essence', b);
+      }
+      // Contaminate what MAKES things, not what shoots them: turning off a factory for thirty seconds
+      // is worth more than turning off a turret, and it is the only reason to fly an Overseer into a
+      // base rather than over it.
+      else if (d === 'overseer' && u.energy >= DATA.abilities.contaminate.energy && this.turn(u.id, 4)) {
+        const t = G.near(u.x, u.y, DATA.abilities.contaminate.range * TILE).find(o => o.alive && !G.allied(o.owner, p.id) && o.isBuilding && o.done
+          && (o.def.produces.length || o.def.spawnsLarva || (o.def.tech || []).length) && !(o.fx.maelstrom > 0));
+        if (t) Abilities.issue(u, 'contaminate', t);
+      }
     }
   }
   scout() {
