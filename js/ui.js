@@ -306,17 +306,80 @@ const UI = {
     else if (this.drag) { const t = this.unitAt(m.wx, m.wy); const now = performance.now(); if (t) { if (now - this.lastClick < 350 && this.lastClickUnit === t && t.owner === G.human && !t.isBuilding) { const same = G.units.filter(u => u.alive && u.owner === G.human && u.def.id === t.def.id && !u.inside && u.x > Render.camX && u.x < Render.camX + Render.viewWorldW() && u.y > Render.camY && u.y < Render.camY + Render.viewWorldH()); this.select(same, e.shiftKey); } else if (e.shiftKey && this.selection.includes(t)) { this.selection = this.selection.filter(u => u !== t); } else if (e.ctrlKey) { const same = G.units.filter(u => u.alive && u.owner === t.owner && u.def.id === t.def.id && !u.inside && u.x > Render.camX && u.x < Render.camX + Render.viewWorldW() && u.y > Render.camY && u.y < Render.camY + Render.viewWorldH()); this.select(same, e.shiftKey); } else this.select([t], e.shiftKey && t.owner === G.human); this.lastClick = now; this.lastClickUnit = t; } else if (!e.shiftKey) { this.selection = []; this.cardMenu = null; } }
     this.drag = null; this.dragging = false;
   },
+  // ==========================================================================
+  // KEY BINDINGS -- M12 item 10, the half that did not exist in any form.
+  // ==========================================================================
+  // Every global action the player can take now has a NAME, a default key and a place in a table, so
+  // the Controls screen can list them and rebind them. Command-card letters are deliberately NOT here:
+  // those come from the unit and building defs and are governed by the existing Brood War / Grid
+  // layout switch, which is a different question (what letter builds a Barracks) from this one (what
+  // key centres the camera).
+  //
+  // `bindings()` resolves the table against whatever the player has saved, once, and caches it. Every
+  // read goes through UI.key(action) so there is exactly one place that knows a key can be remapped --
+  // the alternative, sprinkling lookups through onKey, is how half the actions end up unrebindable and
+  // nobody notices until someone tries.
+  //
+  // Stored per action rather than per key so a saved binding survives a default changing underneath it,
+  // and so an unbound action is expressible (empty string) rather than being confused with a default.
+  BIND_DEFAULTS: {
+    idleWorker: { key: ',', label: 'Select idle worker', group: 'Selection' },
+    selectArmy: { key: 'ctrl+a', label: 'Select all army', group: 'Selection' },
+    cycleSubgroup: { key: 'Tab', label: 'Cycle subgroup', group: 'Selection' },
+    centerSel: { key: 'Backspace', label: 'Centre on selection', group: 'Camera' },
+    lastAlert: { key: ' ', label: 'Jump to last alert', group: 'Camera' },
+    zoomIn: { key: '=', label: 'Zoom in', group: 'Camera' },
+    zoomOut: { key: '-', label: 'Zoom out', group: 'Camera' },
+    help: { key: 'F1', label: 'Toggle help overlay', group: 'Interface' },
+    codex: { key: 'F3', label: 'Open the codex', group: 'Interface' },
+    pause: { key: 'F10', label: 'Pause menu', group: 'Interface' },
+    save: { key: 'F5', label: 'Save game', group: 'Interface' },
+    chat: { key: 'Enter', label: 'Chat', group: 'Interface' },
+    speedUp: { key: '+', label: 'Game speed up', group: 'Interface' },
+    speedDown: { key: '_', label: 'Game speed down', group: 'Interface' },
+  },
+  bindings() {
+    if (this._binds) return this._binds;
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem('bw_binds') || '{}') || {}; } catch (e) { saved = {}; }
+    const out = {};
+    for (const id of Object.keys(this.BIND_DEFAULTS)) {
+      out[id] = Object.assign({}, this.BIND_DEFAULTS[id]);
+      if (typeof saved[id] === 'string') out[id].key = saved[id];
+    }
+    return this._binds = out;
+  },
+  key(action) { const b = this.bindings()[action]; return b ? b.key : ''; },
+  // Does this keydown match the binding? `ctrl+` is the only modifier prefix, which covers everything
+  // the game binds today; a general modifier parser would be more code than the feature has uses.
+  hit(action, e, k) {
+    const want = this.key(action); if (!want) return false;
+    if (want.startsWith('ctrl+')) return !!e.ctrlKey && k.toLowerCase() === want.slice(5);
+    if (e.ctrlKey) return false;
+    return k === want || (want.length === 1 && k.toLowerCase() === want.toLowerCase());
+  },
+  setBinding(action, key) {
+    const b = this.bindings(); if (!b[action]) return false;
+    // A key already in use is TAKEN OFF the other action rather than silently duplicated. Two actions
+    // on one key is a state the player cannot see and cannot debug.
+    if (key) for (const id of Object.keys(b)) if (id !== action && b[id].key === key) b[id].key = '';
+    b[action].key = key;
+    const save = {}; for (const id of Object.keys(b)) if (b[id].key !== this.BIND_DEFAULTS[id].key) save[id] = b[id].key;
+    try { localStorage.setItem('bw_binds', JSON.stringify(save)); } catch (e) { }
+    return true;
+  },
+  resetBindings() { this._binds = null; try { localStorage.removeItem('bw_binds'); } catch (e) { } return this.bindings(); },
   onKey(e) {
     this.keys[e.key] = true; const k = e.key;
     // The codex is modal: while it is open it eats the keyboard so nothing leaks through to the game.
     if (typeof Codex !== 'undefined' && Codex.isOpen()) { if (Codex.key(k)) { e.preventDefault(); return; } }
-    if (k === 'F3') { e.preventDefault(); if (typeof Codex !== 'undefined') Codex.toggle(); return; }
+    if (this.hit('codex', e, k)) { e.preventDefault(); if (typeof Codex !== 'undefined') Codex.toggle(); return; }
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'F10', 'F1'].includes(k)) e.preventDefault();
     if (this.menu) { if (k === 'Escape' || k === 'F10') { if (this.menu === 'settings') this.menu = 'pause'; else if (this.menu === 'pause') this.menu = null; } return; }
-    if (k === 'F10') { this.menu = 'pause'; return; }
+    if (this.hit('pause', e, k)) { this.menu = 'pause'; return; }
     if (this.chat !== null) { e.preventDefault(); if (k === 'Enter') { const line = this.chat.trim(); this.chat = null; if (line) { if (this.net) Net.chat(line); else if (!G.cheat(line)) G.players[G.human].msg(line, 'info'); } } else if (k === 'Escape') this.chat = null; else if (k === 'Backspace') this.chat = this.chat.slice(0, -1); else if (k.length === 1 && this.chat.length < 60) this.chat += k; return; }
-    if (k === 'Enter' && this.mode === 'play') { this.chat = ''; e.preventDefault(); return; }
-    if (k === 'F5') { e.preventDefault(); Replay.save(true); return; }
+    if (this.hit('chat', e, k) && this.mode === 'play') { this.chat = ''; e.preventDefault(); return; }
+    if (this.hit('save', e, k)) { e.preventDefault(); Replay.save(true); return; }
     if (k === 'F8') { e.preventDefault(); if (Replay.hasAutosave()) Replay.loadAutosave(); return; }
     if ((k === 'm' || k === 'M') && e.ctrlKey) { Sound.setMuted(!Sound.muted); e.preventDefault(); const hp = G.players[G.human]; if (hp) hp.msg(Sound.muted ? 'Sound muted.' : 'Sound on.', 'info'); return; }   // plain M is the Move command
     if ((k === 'v' || k === 'V') && e.ctrlKey && this.mode === 'replay') { this.viewAll = !this.viewAll; e.preventDefault(); return; }
@@ -329,15 +392,21 @@ const UI = {
       if (k === 'ArrowRight' && e.shiftKey) { e.preventDefault(); this.seekTo(G.frame + TPS * 30); return; }
       if (k === 'Home') { e.preventDefault(); this.seekTo(0); return; }
     }
-    if (k === 'Tab') { e.preventDefault(); this.cycleSubgroup(e.shiftKey ? -1 : 1); return; }   // Brood War cycles the card through the kinds in a mixed selection
-    if (k === ',') { this.idleWorker(); return; }
-    if (k === 'Backspace') { e.preventDefault(); this.centerOnSelection(); return; }
-    if ((k === 'a' || k === 'A') && e.ctrlKey) { e.preventDefault(); this.selectArmy(); return; }
-    if (k === 'F1') { this.showHelp = !this.showHelp; return; }
+    if (this.hit('cycleSubgroup', e, k)) { e.preventDefault(); this.cycleSubgroup(e.shiftKey ? -1 : 1); return; }   // Brood War cycles the card through the kinds in a mixed selection
+    if (this.hit('idleWorker', e, k)) { this.idleWorker(); return; }
+    if (this.hit('centerSel', e, k)) { e.preventDefault(); this.centerOnSelection(); return; }
+    if (this.hit('selectArmy', e, k)) { e.preventDefault(); this.selectArmy(); return; }
+    if (this.hit('help', e, k)) { this.showHelp = !this.showHelp; return; }
     if (k === 'Escape') { if (this.placing || this.pending || this.cardMenu) { this.placing = null; this.pending = null; this.cardMenu = null; } else if (this.selection.length === 1 && this.selection[0].isBuilding && !this.selection[0].done && this.selection[0].owner === G.human) G.cancelBuilding(this.selection[0]); else if (this.selection.length === 1 && this.selection[0].prod.length && this.selection[0].owner === G.human) G.cancelProd(this.selection[0], this.selection[0].prod.length - 1); return; }
     if (k === 'F9' || k === 'Pause') { if (!this.net) G.paused = !G.paused; return; }
-    if (k === '+' || k === '=') { this.speedIdx = Math.min(this.maxSpeedIdx(), this.speedIdx + 1); return; } if (k === '-') { this.speedIdx = Math.max(0, this.speedIdx - 1); return; }
-    if (k === ' ') { if (this.lastAlertPos) this.centerOn(this.lastAlertPos.x, this.lastAlertPos.y); return; }
+    // Speed and zoom share the +/- row, so zoom takes SHIFT and speed takes the bare key. The
+    // strategic zoom shipped with no keyboard access at all -- only the wheel -- which left it
+    // unusable to anyone playing with a trackpad that swallows wheel events.
+    if (e.shiftKey && this.hit('zoomIn', e, k)) { Render.setZoom(Render.zoom * 1.25); this.clampCam(); return; }
+    if (e.shiftKey && this.hit('zoomOut', e, k)) { Render.setZoom(Render.zoom / 1.25); this.clampCam(); return; }
+    if (this.hit('speedUp', e, k) || k === '=') { this.speedIdx = Math.min(this.maxSpeedIdx(), this.speedIdx + 1); return; }
+    if (this.hit('speedDown', e, k) || k === '-') { this.speedIdx = Math.max(0, this.speedIdx - 1); return; }
+    if (this.hit('lastAlert', e, k)) { if (this.lastAlertPos) this.centerOn(this.lastAlertPos.x, this.lastAlertPos.y); return; }
     if (/^[0-9]$/.test(k)) { if (e.ctrlKey) { this.groups[k] = this.selection.slice(); e.preventDefault(); } else if (e.shiftKey) { this.groups[k] = (this.groups[k] || []).concat(this.selection.filter(u => !(this.groups[k] || []).includes(u))); } else if (this.groups[k] && this.groups[k].length) { const g = this.groups[k].filter(u => u.alive); if (this.lastGroupKey === k && performance.now() - this.lastGroupT < 400) this.centerOn(g[0].x, g[0].y); this.selection = g; this.pending = null; this.placing = null; this.cardMenu = null; this.lastGroupKey = k; this.lastGroupT = performance.now(); } return; }
     if (/^F[2-8]$/.test(k)) { if (e.shiftKey) this.camSaves[k] = { x: Render.camX, y: Render.camY, z: Render.zoom }; else if (this.camSaves[k]) { if (this.camSaves[k].z) Render.setZoom(this.camSaves[k].z); Render.camX = this.camSaves[k].x; Render.camY = this.camSaves[k].y; this.clampCam(); } return; }
     const up = k.length === 1 ? k.toUpperCase() : k;
@@ -1407,6 +1476,54 @@ window.addEventListener('DOMContentLoaded', () => {
   };
   const sb = $('settingsBtn'); if (sb) sb.addEventListener('click', () => UI.showPanel('settingsPanel'));
   const sbk = $('settingsBack'); if (sbk) sbk.addEventListener('click', () => UI.showPanel('mainPanel'));
+  // ---- Controls screen (M12 item 10) -------------------------------------------------------------
+  // Built from UI.bindings() rather than from markup, so adding an action to BIND_DEFAULTS puts it on
+  // this screen with no HTML change and no chance of the two lists disagreeing.
+  //
+  // Rebinding captures the NEXT keydown at the window, in the capture phase, so it beats UI.onKey --
+  // otherwise pressing F10 to bind it would open the pause menu instead. That listener is installed
+  // for exactly one keypress and removes itself, which matters: a stuck capture listener would eat
+  // the whole keyboard and the only way out would be a reload.
+  const bindRow = (id, b, redraw) => {
+    const row = document.createElement('div'); row.className = 'row';
+    const lab = document.createElement('label'); lab.textContent = b.label; lab.style.flex = '1';
+    const btn = document.createElement('button'); btn.className = 'small'; btn.style.width = '150px';
+    const pretty = k => !k ? '(unbound)' : k === ' ' ? 'Space' : k.startsWith('ctrl+') ? 'Ctrl+' + k.slice(5).toUpperCase() : k.length === 1 ? k.toUpperCase() : k;
+    btn.textContent = pretty(b.key);
+    btn.addEventListener('click', () => {
+      btn.textContent = 'press a key...';
+      const grab = ev => {
+        ev.preventDefault(); ev.stopPropagation();
+        window.removeEventListener('keydown', grab, true);
+        if (ev.key === 'Escape') { redraw(); return; }
+        if (ev.key === 'Delete') { UI.setBinding(id, ''); redraw(); return; }
+        if (['Control', 'Shift', 'Alt', 'Meta'].includes(ev.key)) { redraw(); return; }   // a modifier alone is not a binding
+        UI.setBinding(id, ev.ctrlKey ? 'ctrl+' + ev.key.toLowerCase() : ev.key);
+        redraw();
+      };
+      window.addEventListener('keydown', grab, true);
+    });
+    row.appendChild(lab); row.appendChild(btn);
+    return row;
+  };
+  UI.drawBindings = () => {
+    const host = $('bindList'); if (!host) return;
+    host.innerHTML = '';
+    const b = UI.bindings();
+    let lastGroup = null;
+    for (const id of Object.keys(b)) {
+      if (b[id].group !== lastGroup) {
+        lastGroup = b[id].group;
+        const h = document.createElement('div'); h.className = 'sub'; h.style.marginTop = '10px'; h.textContent = lastGroup;
+        host.appendChild(h);
+      }
+      host.appendChild(bindRow(id, b[id], UI.drawBindings));
+    }
+  };
+  const cbtn = $('controlsBtn'); if (cbtn) cbtn.addEventListener('click', () => { UI.drawBindings(); UI.showPanel('controlsPanel'); });
+  const cback = $('controlsBack'); if (cback) cback.addEventListener('click', () => UI.showPanel('settingsPanel'));
+  const creset = $('bindReset'); if (creset) creset.addEventListener('click', () => { UI.resetBindings(); UI.drawBindings(); });
+
 
   // ---- the skirmish form --------------------------------------------------
   const oppRows = $('opps');

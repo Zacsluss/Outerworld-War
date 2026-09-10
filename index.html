@@ -62,7 +62,22 @@
     <div class="row"><label>Hotkeys</label><select id="hotkeys"><option value="bw">Brood War</option><option value="grid">Grid (QWE / ASD / ZXC)</option></select></div>
     <div class="help">In game: Ctrl+M mutes, F10 opens the pause menu, and Settings there changes the same options.<br>
       Tab cycles the selected kind, comma finds an idle worker, Ctrl+A selects the army, Backspace centres on the selection.</div>
+    <button id="controlsBtn" class="small">CONTROLS</button>
     <button id="settingsBack" class="small">BACK</button>
+  </div>
+  <!-- ==================================================================================
+       Controls (M12 item 10). The screen this milestone existed to add: every global action
+       listed, every one rebindable, and a reset. Command-card letters are NOT here -- those
+       come from the unit defs and are governed by the Brood War / Grid switch on Settings,
+       which answers a different question (what letter builds a Barracks) from this one
+       (what key centres the camera). Mixing the two into one list would make neither
+       legible.
+       =================================================================================== -->
+  <div class="panel" id="controlsPanel" style="display:none">
+    <h1>CONTROLS</h1>
+    <div class="sub">Click a key to rebind it, then press the key you want. Escape cancels; Delete unbinds.</div>
+    <div id="bindList"></div>
+    <div class="row2"><button id="bindReset" class="small">RESET TO DEFAULTS</button><button id="controlsBack" class="small">BACK</button></div>
   </div>
   <!-- ==================================================================================
        Skirmish setup (M11 wave two, item 22). The surface for everything the sim already

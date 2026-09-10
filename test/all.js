@@ -77,6 +77,7 @@ const TESTS = [
   { name: 'daynight', args: ['daynight.js'], what: 'the cycle a player can see: the dial, the countdown, and the air half of idea 19' },
   { name: 'qol', args: ['qol.js'], what: 'M12 wave one: no selection cap, shared production, auto-mine, smart cast, autocast, signals' },
   { name: 'push', args: ['push.js'], what: 'a moving unit flows past a standing ally; enemies still block' },
+  { name: 'controls', args: ['controls.js'], what: 'every global action is named, listed, rebindable and actually consulted' },
   { name: 'baked', args: ['baked.js'], what: 'every unit and building has a 3D model and a baked sheet, not the flat fallback' },
   { name: 'campaign', args: ['campaign.js'], what: 'weighted choices resolve both ways, the record persists, narrowing cannot strand you' },
   { name: 'zoom', args: ['zoom.js'], what: 'strategic zoom clamps, anchors and swaps to icons; night runs without G.daylight' },
