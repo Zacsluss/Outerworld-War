@@ -467,15 +467,16 @@ const Render = {
     ctx.restore();
   },
   // ---------------- weather ----------------
-  // The sandstorm. js/map.js has had a fully tested hazard for a milestone and nothing drew it, so the
-  // one map that has one played as an invisible force that removed hit points -- which is the worst
-  // possible version of a hazard, because a player cannot answer what they cannot see.
+  // The sandstorm. js/map.js had a fully tested hazard for a milestone and nothing drew it, so the one
+  // map that has one played as an invisible force that removed hit points -- the worst possible version
+  // of a hazard, because a player cannot answer what they cannot see. This pass is what made it
+  // visible; FIXLIST-M14 A2 then removed the damage entirely, so what is drawn here IS the hazard now.
   //
   // Everything here is derived from `GameMap.hazardState(G.frame)`, which is a pure function of the
   // frame number and is READ ONLY. That is not politeness: the whole reason the hazard survives a
   // replay seek or a rejoin is that it stores nothing, and a renderer that wrote to it would put
-  // render-side state into the simulation's answer. The renderer asks the same question the damage
-  // pass asks -- including hazardSafe, so the sheltered ground around a main visibly clears.
+  // render-side state into the simulation's answer. (There is no damage pass any more; `hazard.safe`
+  // outlived it as a render radius, so the settled ground around a main still visibly clears.)
   //
   // The pass composes into a half-resolution layer for the same two reasons the shadow pool does.
   // Cost: the whole storm is about a dozen draw calls whatever it covers, because a gradient or a
@@ -632,9 +633,9 @@ const Render = {
     c.beginPath();
     for (let i = 0; i <= N; i++) { const [a, b] = crest(i), [x, y] = P(a, b); if (i) c.lineTo(x, y); else c.moveTo(x, y); }
     c.strokeStyle = this.dustRGB(col, 0.5, 1.3); c.lineWidth = 8; c.lineJoin = 'round'; c.stroke();
-    // The settled ground around a start base takes no damage (GameMap.hazardSafe), so it takes no dust
-    // either. Drawing the same answer the damage pass gives is the difference between weather a player
-    // can plan around and weather that merely happens to them.
+    // The dust is erased over the settled ground around a start base. It was drawn this way because
+    // that ground took no damage; it stays drawn this way because a storm that visually buries a
+    // mineral line nobody can move reads as the game being broken rather than as weather.
     const r = (G.map.hazard.safe || 0) * TILE;
     if (r > 0 && c.globalCompositeOperation !== undefined) {
       c.globalCompositeOperation = 'destination-out';

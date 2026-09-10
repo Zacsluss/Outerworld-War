@@ -146,27 +146,32 @@ const MAP_SIZES = {
 // One cycle is: `warn` frames of nothing but a warning, `sweep` frames of the front crossing, then
 // `calm` frames of quiet. The direction alternates every cycle, so it does not always arrive from the
 // same side. Speed is a constant 0.1333 tiles a frame on every size -- what scales with the map is how
-// DEEP the front is, so a bigger map means longer spent inside it and more damage taken crossing:
-// 90 frames and ~11 damage on small, 240 frames and ~30 on huge.
+// DEEP the front is, so a bigger map means longer spent inside it.
 //
-// What it does NOT touch, and why:
-//   * buildings          -- weather that erodes bases is a chore, not a decision
-//   * anything loaded    -- a dropship is shelter
-//   * burrowed units     -- ground is shelter, which is a genuinely Zerg answer to it
-//   * larvae, eggs, and sub-units (interceptors, scarabs, nukes) -- none of them chose to be there
-//   * within `safe` tiles of a starting base -- the storm is about the field, not about grinding down
-//     mineral lines that neither player can move
-// Damage IGNORES SHIELDS AND ARMOUR and goes straight to hit points, the way js/sim.js's plague does.
-// Through G.damageRaw it would drain shields first, and a dragoon regenerates 1.08 shields a second
-// against a 3-a-second storm, so Protoss armies would simply have been immune to the weather.
-const HAZARD_PULSE = 12;   // damage lands twice a second rather than every frame; 12 divides every period below
+// THE STORM DOES NO DAMAGE. FIXLIST-M14 A2, and the player's words were "the dust storm shouldn't hurt
+// units, just be a visual thing". It used to deal 3 damage a second straight to hit points, ignoring
+// shields and armour, twice a second, to everything in the front that was not burrowed, loaded, a
+// building, or within `safe` tiles of a start. All of that is gone -- the field, the pulse constant,
+// the loop and the two queries that existed to answer "am I in it": there is now no code path from the
+// weather to a hit point, which is a stronger guarantee than a zero in a table.
+//
+// Everything else is unchanged and deliberately so. The warning still goes out at the top of every
+// cycle, the front still crosses at the same speed, on the same period, alternating direction, and the
+// renderer still draws it -- so the map still LOOKS like the Dust Bowl, it simply no longer taxes you
+// for standing in the field. `safe` survives because js/render.js reads it: the dust is erased over
+// the settled ground around a start so the storm does not visually bury a mineral line nobody can move.
+//
+// The consequence worth knowing about: a hazard map is now simulation-identical to the same map
+// without one. `test/mapmodes.js` asserts exactly that, and it is the negative control -- put `dps`
+// back and the two state hashes separate.
 const HAZARD_SAYS = { sandstorm: 'A sandstorm is closing in.' };
 const HAZARDS = {
   // span is the map's extent along the sweep axis, in tiles.
-  sandstorm(span, dps = 3) {
+  sandstorm(span) {
     const band = Math.max(12, Math.round(span / 8));
     const sweep = (span + 2 * band) * 15 / 2;   // 0.1333 tiles a frame, whatever the size
-    return { kind: 'sandstorm', axis: 'x', band, warn: 240, sweep, calm: sweep, dps, safe: 16 };
+    // `safe` is a RENDER radius now, not a damage exemption -- see the note above.
+    return { kind: 'sandstorm', axis: 'x', band, warn: 240, sweep, calm: sweep, safe: 16 };
   },
 };
 
@@ -1600,9 +1605,10 @@ class GameMap {
   //     this.map.tickHazard(this.frame, this.units);
   //
   // It is a no-op on every layout without a `hazard` key -- which is all of them except `dustbowl` --
-  // and on the eleven frames in twelve that are not a damage pulse, so it costs nothing to call
-  // unconditionally. Nothing else needs changing: the state is derived from the frame number, so
-  // snapshots, replay seeks and rejoins all reproduce it without knowing it exists.
+  // and since A2 removed the damage it does nothing on a hazard map either except say the warning once
+  // a cycle, so it costs nothing to call unconditionally. Nothing else needs changing: the state is
+  // derived from the frame number, so snapshots, replay seeks and rejoins all reproduce it without
+  // knowing it exists.
   //
   // The renderer wants hazardState(G.frame) once a frame: `.active` says whether to draw anything,
   // `.t0`/`.t1` are the front's near and far edges in TILES along `.axis`, and `.warning` is the ten
@@ -1624,48 +1630,20 @@ class GameMap {
     if (dir < 0) { const a = span - t1; t1 = span - t0; t0 = a; }
     return { kind: h.kind, axis: h.axis, span, band: h.band, active, warning: ph < h.warn, phase: ph, period, cycle, dir, t, t0, t1 };
   }
-  // Is this pixel in the storm right now? Sheltered ground reads as clear, so this is the same question
-  // tickHazard asks of a unit's centre.
-  hazardAt(frame, px, py) {
-    const s = this.hazardState(frame);
-    if (!s || !s.active) return false;
-    const a = (s.axis === 'y' ? py : px) / TILE;
-    return a >= s.t0 && a < s.t1 && !this.hazardSafe(px, py);
-  }
-  // The settled ground around a starting base. Without it the storm grinds down mineral lines that
-  // neither player is able to move, every cycle, for the whole game -- symmetric, unanswerable, and
-  // therefore not a decision.
-  hazardSafe(px, py) {
-    const r = (this.hazard && this.hazard.safe || 0) * TILE;
-    if (r <= 0) return false;
-    for (const b of this.starts) { const dx = b.cx - px, dy = b.cy - py; if (dx * dx + dy * dy < r * r) return true; }
-    return false;
-  }
-  // One frame of the hazard. Returns how many units it touched, which is what the tests measure.
+  // One frame of the hazard. Returns 0 always -- see below.
   tickHazard(frame, units) {
     // The map's one per-frame entry point from G.tick, so the dynamic features ride on it rather than
-    // asking js/game.js for a second line. The return value is still the hazard's own count, because
-    // that is what test/mapmodes.js measures.
+    // asking js/game.js for a second line. That is now the larger half of what this does.
     if (this.features.length) this.tickFeatures(frame, units);
     const h = this.hazard; if (!h || typeof G === 'undefined') return 0;
     const period = h.warn + h.sweep + h.calm;
     if (frame % period === 0) for (const p of G.players) p.msg(HAZARD_SAYS[h.kind] || 'An environmental hazard is closing in.', 'attack');
-    if (frame % HAZARD_PULSE !== 0) return 0;
-    const s = this.hazardState(frame); if (!s.active) return 0;
-    const amt = h.dps * HAZARD_PULSE / 24;
-    let hit = 0;
-    for (const u of (units || G.units)) {
-      if (!u.alive || u.isBuilding || u.inside || u.burrowed) continue;
-      const d = u.def; if (!d || d.larva || d.egg || d.notUnit) continue;
-      const a = (s.axis === 'y' ? u.y : u.x) / TILE;
-      if (a < s.t0 || a >= s.t1) continue;
-      if (this.hazardSafe(u.x, u.y)) continue;
-      hit++;
-      // Straight to hit points: no armour, no shields, no facing. See the HAZARDS comment.
-      u.hp -= amt; G.scar(u, amt);
-      if (u.hp <= 0) G.kill(u, null);
-    }
-    return hit;
+    // The damage pass used to live here: a pulse every twelfth frame, every unit in the front losing
+    // hit points straight off, plus hazardAt/hazardSafe to answer "is this point in it". FIXLIST-M14 A2
+    // deleted all of it rather than setting a rate to zero, so there is no path at all from the weather
+    // to a hit point. The return value stays a number because test/mapmodes.js asserts a hazard-free
+    // layout ticks to 0, and that check is what proves this whole function is inert without one.
+    return 0;
   }
 }
 

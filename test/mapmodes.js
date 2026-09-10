@@ -168,8 +168,20 @@ ok('the whole front crosses: off one edge at the start, off the other at the end
 ok('a layout with no hazard has none, and ticking it does nothing', hz.plainNull && hz.plainTick === 0);
 
 // ============================================================================
-// 4. The hazard removes hit points, from the right things and no others
+// 4. The hazard removes NO hit points, from anything -- FIXLIST-M14 A2
 // ============================================================================
+// The player's report was "the dust storm shouldn't hurt units, just be a visual thing". It used to
+// deal 3 damage a second straight to hit points, and this section used to assert exactly that: a
+// marine in the open lost 22.5 over one sweep, the wound scarred, and a wounded one died of the
+// weather. Every one of those assertions is now inverted.
+//
+// THE TRAP IN A TEST LIKE THIS IS VACUITY. "Nothing lost hit points" also passes if the storm never
+// went anywhere near the unit, or if the units were never spawned, or if tickHazard threw. So the
+// first thing measured is `wouldHave`: how many damage pulses the OLD rule would have landed on the
+// marine in the open, computed here from hazardState rather than from the deleted code. It was 15
+// before, and it must still be 15 -- the storm passes over the unit exactly as it always did. Only
+// then does "and it lost nothing" mean anything.
+//
 // Driven a frame at a time with nothing else running, so every number below is the storm's alone.
 const dmg = R(bare, `
   G.init({ players: [{ race: 'T', human: false, name: 'A' }, { race: 'T', human: false, name: 'B' }], seed: 3, layout: 'dustbowl' });
@@ -185,22 +197,37 @@ const dmg = R(bare, `
   const doomed = at('marine', 96, 94); doomed.hp = 4;
   const depot = G.placeBuilding(DATA.buildings.supply_depot, 94, 104, 0); depot.done = true; depot.hp = depot.maxHp;
   const hp0 = new Map(G.units.map(u => [u.id, u.hp]));
-  let touched = 0, pulses = 0;
-  for (let f = 0; f <= m.hazard.warn + m.hazard.sweep; f++) { const n = m.tickHazard(f, G.units); if (n) { touched += n; pulses++; } }
+  // The old rule, restated here and applied to nothing: a pulse every twelfth frame, on every twelfth
+  // frame the front covered the unit's centre. This is the measurement that keeps the section honest.
+  let wouldHave = 0, ticked = 0;
+  for (let f = 0; f <= m.hazard.warn + m.hazard.sweep; f++) {
+    ticked += (m.tickHazard(f, G.units) === 0) ? 1 : 0;
+    if (f % 12) continue;
+    const s = m.hazardState(f); if (!s.active) continue;
+    const a = (s.axis === 'y' ? open.y : open.x) / T;
+    if (a >= s.t0 && a < s.t1) wouldHave++;
+  }
   const lost = u => hp0.get(u.id) - u.hp;
   return { openLost: lost(open), burrowedLost: lost(burrowed), riderLost: lost(rider), ferryLost: lost(ferry),
     homeLost: lost(home), depotLost: lost(depot), doomedAlive: doomed.alive, lostStat: G.players[0].stats.unitsLost,
-    pulses, touched, dps: m.hazard.dps, openScarred: open.maxHp < open.def.hp };
+    wouldHave, ticked, frames: m.hazard.warn + m.hazard.sweep + 1, alive: G.units.filter(u => u.alive).length,
+    dps: m.hazard.dps, safe: m.hazard.safe, openScarred: open.maxHp < open.def.hp };
 `);
-// 15 pulses of 1.5 across a 24-tile front at 0.1333 tiles a frame: 22.5, and the arithmetic is exact.
-ok('a unit standing in the open loses hit points to the storm (' + dmg.openLost + ')', dmg.openLost === 22.5, String(dmg.openLost));
-ok('and the damage is exactly dps x time in the front', dmg.openLost === dmg.pulses * dmg.dps * 12 / 24, dmg.pulses + ' pulses');
-ok('the wound scars, like every other wound', dmg.openScarred);
-ok('a burrowed unit is sheltered', dmg.burrowedLost === 0, String(dmg.burrowedLost));
-ok('a passenger is sheltered and its transport is not', dmg.riderLost === 0 && dmg.ferryLost > 0, dmg.riderLost + ' / ' + dmg.ferryLost);
-ok('a unit in the settled ground around a start is sheltered', dmg.homeLost === 0, String(dmg.homeLost));
-ok('buildings are never touched', dmg.depotLost === 0, String(dmg.depotLost));
-ok('the storm can kill, and the loss is recorded', !dmg.doomedAlive && dmg.lostStat === 1, 'alive ' + dmg.doomedAlive + ', lost ' + dmg.lostStat);
+ok('the storm really does sweep over the unit in the open -- ' + dmg.wouldHave + ' pulses would have landed under the old rule', dmg.wouldHave === 15, String(dmg.wouldHave));
+ok('a unit standing in the open through a whole sweep loses NOTHING', dmg.openLost === 0, String(dmg.openLost));
+ok('and it is not scarred either -- there was no wound to remember', !dmg.openScarred);
+ok('nothing else loses hit points either: burrowed, passenger, transport, home, building', dmg.burrowedLost === 0 && dmg.riderLost === 0 && dmg.ferryLost === 0 && dmg.homeLost === 0 && dmg.depotLost === 0,
+  [dmg.burrowedLost, dmg.riderLost, dmg.ferryLost, dmg.homeLost, dmg.depotLost].join(' / '));
+ok('the storm cannot kill: a marine on 4 hit points walks out of it', dmg.doomedAlive && dmg.lostStat === 0, 'alive ' + dmg.doomedAlive + ', lost ' + dmg.lostStat);
+ok('every one of the six units that went in came out, and so did the depot', dmg.alive === 7, String(dmg.alive));
+ok('tickHazard is inert on every frame of a sweep, not merely on most of them', dmg.ticked === dmg.frames, dmg.ticked + ' of ' + dmg.frames);
+ok('the `dps` field is GONE rather than set to zero', dmg.dps === undefined, String(dmg.dps));
+ok('`safe` survives, because js/render.js reads it to clear dust over a start', dmg.safe === 16, String(dmg.safe));
+// The negative control in file form. Restoring the damage means reading a rate off the hazard and
+// asking whether a point is inside it, and there are exactly three ways to spell those. `dps` appears
+// once in js/map.js, inside the comment that explains this item, and never with a dot in front of it.
+{ const src = fs.readFileSync(path.join(root, 'js', 'map.js'), 'utf8');
+  ok('js/map.js reads no damage rate off the hazard -- there is no path from the weather to a hit point', !/\.dps\b/.test(src) && !/this\.hazard(Safe|At)\(/.test(src)); }
 
 // ============================================================================
 // 5. The hazard inside a real game: deterministic, and it changes the game
@@ -214,12 +241,19 @@ const wiredStorm = play(wired, 'dustbowl', FR), wiredStorm2 = play(wired, 'dustb
 const wiredCalm = play(wired, 'large', FR);
 const bareStorm = play(bare, 'dustbowl', FR);
 ok('a game on a hazard map re-runs bit-identically', wiredStorm.hash === wiredStorm2.hash, wiredStorm.hash + ' vs ' + wiredStorm2.hash);
-ok('the hazard changes the game it is in', wiredStorm.hash !== wiredCalm.hash, 'storm ' + wiredStorm.hash + ' calm ' + wiredCalm.hash);
-// Two halves of the same fact. Strip the call and a hazard map is indistinguishable from the same map
-// without one -- which proves the hazard, and not some incidental layout difference, is what changes the
-// game. And the shipped file really does make the call, which is the part that would rot silently: the
-// feature would go quiet and every other check here would still pass.
-ok('with the hazard call removed, a hazard map plays exactly as the same map without one', bareStorm.hash === wiredCalm.hash, bareStorm.hash + ' vs ' + wiredCalm.hash);
+// THIS ASSERTION USED TO SAY THE OPPOSITE, and the inversion is the whole of FIXLIST-M14 A2. It read
+// "the hazard changes the game it is in", and it passed because the storm was quietly taking hit
+// points off both armies for twenty minutes. Now the storm is weather: it is announced, it crosses,
+// it is drawn, and the simulation underneath it is the same simulation it would have been on a map
+// with no weather at all. Twelve thousand frames of a real two-AI game, hashed.
+//
+// It is also the negative control for the whole item, and the cheapest one in the file: put `dps: 3`
+// and the damage loop back into js/map.js and these two hashes separate immediately.
+ok('THE STORM IS WEATHER, NOT A WEAPON: a hazard map plays bit-identically to the same map without one', wiredStorm.hash === wiredCalm.hash, 'storm ' + wiredStorm.hash + ' calm ' + wiredCalm.hash);
+ok('and removing the tickHazard call cannot change that, because there is nothing left in it to remove', bareStorm.hash === wiredStorm.hash, bareStorm.hash + ' vs ' + wiredStorm.hash);
+// The shipped file really does make the call, which is the part that would rot silently: the warning
+// message and every dynamic map feature ride on it, and both would go quiet with every other check
+// here still passing.
 ok('and js/game.js actually makes that call', fs.readFileSync(path.join(root, 'js', 'game.js'), 'utf8').split(WIRE_CALL).length - 1 === 1, 'expected exactly one ' + WIRE_CALL);
 
 // A snapshot knows nothing about the hazard and does not need to: restoring one and carrying on has to
