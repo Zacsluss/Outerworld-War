@@ -96,6 +96,18 @@ const Snapshot = {
         return out;
       })(),
       creep: Array.from(G.map.creep), blocked: Array.from(G.map.blocked), walk: Array.from(G.map.walk),
+      // HEIGHT IS CAPTURED. It deliberately was not, on the reasoning that syncFeature and syncWrecks
+      // re-derive it -- and that reasoning is wrong, because both of them only paint tiles they still
+      // OWN. A wreck that skips a tile a building has since taken (paintWreck refuses to clobber
+      // another owner, correctly) leaves that tile's height raised in the live game and flat in a
+      // restored one, and nothing ever puts it back. Height then feeds Unit.heightLevel, the
+      // high-ground sight and damage bonuses and G.updateVision, so the two diverge a few frames later
+      // through vision rather than through anything that looks like terrain. It cost an afternoon to
+      // find as "a lurker fired in one process and not the other".
+      //
+      // It is one more 16 KB typed array beside three that were already there, which is the price of
+      // not having to prove that every future writer of height re-derives itself perfectly.
+      height: Array.from(G.map.height),
       // Craters and hulks. `scar` goes as SPARSE (index, value) pairs, not as a fourth dense 16k array
       // beside the three above: craters are sparse by nature and a checkpoint is taken often. `wrecks`
       // goes whole -- it is a short list -- and `syncWrecks` on the other side puts `height` back,
@@ -140,6 +152,7 @@ const Snapshot = {
     for (const su of (s.gone || [])) { const u = Object.create(Unit.prototype); u.id = su.id; G.byId.set(u.id, u); }
     // 2. map arrays and resources, because unit references point at resources
     G.map.creep.set(s.creep); G.map.blocked.set(s.blocked); G.map.walk.set(s.walk);
+    if (s.height) G.map.height.set(s.height);   // before syncFeature/syncWrecks, which repaint their own tiles idempotently on top
     G.map.loadScar(s.scar);
     // Wrecks are rebuilt from the snapshot and then repainted, because `height` is not in the snapshot
     // and a hulk is the one thing besides a feature that moves it. syncWrecks is idempotent and reads

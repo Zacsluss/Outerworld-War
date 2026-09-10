@@ -377,6 +377,139 @@ const UNITS = {
       b.children.push(P('cone', [0.20 - k * 0.02, 0.62 - k * 0.07, 0.20], [0.25 - k * 0.42, 0.52, 0], m([0.55, 0.49, 0.36]), { rot: [0, 0, 0.30 + k * 0.06] }));
     return r;
   },
+  // ---- M12 wave four: Terran ---------------------------------------------------------------------
+  // Thirteen unit models (eleven new units, plus the Viking's second mode and the MULE). The rule they
+  // are built under is M8's and M9's and it has not changed: at 40 px, under fog, with a team tint, the
+  // only things that survive are ROUND against SQUARE, TALL against FLAT, and anything that hangs past
+  // the footprint. Colour is the first thing lost, so none of these is distinguished by paint.
+  //
+  // The pressure here is much higher than it was for the original roster, because Terran now has six
+  // things in the factory and ten in the starport and half of them are grey boxes with a gun. So each
+  // one below carries ONE oversized feature, and the features are chosen to be different from each
+  // other rather than merely appropriate: the marauder is the wide one, the reaper is the one with
+  // something on its back, the hellion is the low wedge, the cyclone is the one with a raised drum, the
+  // thor is the one that is simply enormous, the widow mine is a disc with legs.
+
+  // Wide and squat where the marine is narrow: two slab pauldrons that overhang the body on both sides,
+  // and a single fat grenade tube instead of the marine's thin rifle. Reads as a doorway with legs.
+  marauder: () => { const r = RIG.biped({ suit: [0.44, 0.48, 0.52], torsoW: 1.35, torsoD: 1.0, torsoH: 0.85, headR: 0.36, legW: 0.28, stride: 0.35, recoil: 0.2, pads: false }); const t = r.children[2];
+    for (const s of [-1, 1]) t.children.push(P('box', [0.62, 0.34, 0.5], [-0.02, 0.42, s * 0.82], m([0.36, 0.40, 0.45], { spec: 0.4 })), P('box', [0.66, 0.10, 0.54], [-0.02, 0.60, s * 0.82], TEAM));
+    t.children.push(cylX(1.1, 0.26, [0.62, -0.10, 0.34], m(C.gun), { anim: recoil(0.28) }), P('cyl', [0.34, 0.16, 0.34], [1.20, -0.10, 0.34], m(C.metalD), { rot: [0, 0, -Math.PI / 2] }));
+    t.children.push(P('box', [0.34, 0.5, 0.8], [-0.55, 0.05, 0], m([0.28, 0.31, 0.35])));
+    return r; },
+  // A backpack that is bigger than the torso, with two downward nozzles that stand proud of the
+  // silhouette from above. Nothing else Terran has anything hanging below the shoulder line.
+  reaper: () => { const r = RIG.biped({ suit: [0.50, 0.44, 0.36], torsoW: 0.78, torsoD: 0.7, headR: 0.40, legLen: 0.5, stride: 0.85, pack: false, visor: [1, 0.62, 0.25], gun: { len: 0.75, w: 0.1 } }); const t = r.children[2];
+    t.children.push(P('box', [0.52, 0.72, 0.9], [-0.52, 0.05, 0], m([0.33, 0.30, 0.26], { spec: 0.45 })));
+    for (const s of [-1, 1]) t.children.push(P('cyl', [0.24, 0.42, 0.24], [-0.62, -0.18, s * 0.42], m(C.metalD), { rot: [0, 0, 0.35] }), P('sphere', [0.16, 0.16, 0.16], [-0.74, -0.42, s * 0.46], GLOW([0.5, 0.8, 1])));
+    t.children.push(P('box', [0.44, 0.1, 0.34], [-0.5, 0.44, 0], TEAM), cylX(0.7, 0.09, [0.5, -0.05, -0.4], m(C.gun)));
+    return r; },
+  // A flat wedge on four exposed wheels with one long flame tube down the centre line. The only
+  // ground vehicle in the game whose body is a wedge rather than a box, and the lowest thing Terran
+  // fields -- next to a tank it reads as half the height at the same width.
+  hellion: () => { const r = N([0, 0, 0]);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) r.children.push(P('cyl', [0.42, 0.26, 0.42], [sx * 0.72, 0.21, sz * 0.62], m(C.tread), { rot: [Math.PI / 2, 0, 0] }));
+    r.children.push(P('wedge', [2.1, 0.42, 1.15], [0.1, 0.42, 0], m([0.52, 0.45, 0.33], { spec: 0.45 })), P('box', [0.7, 0.16, 0.9], [-0.5, 0.62, 0], TEAM), P('sphere', [0.4, 0.2, 0.32], [0.05, 0.6, 0], GLOW(C.visor)));
+    r.children.push(cylX(1.5, 0.15, [1.1, 0.46, 0], m(C.gun), { anim: recoil(0.12) }), P('sphere', [0.3, 0.24, 0.24], [1.85, 0.46, 0], GLOW(C.orange), { anim: st => ({ size: [1 + AK(st) * 2, 1 + AK(st) * 2, 1 + AK(st) * 2] }) }));
+    for (const s of [-1, 1]) r.children.push(P('cyl', [0.2, 0.55, 0.2], [-0.85, 0.62, s * 0.35], m([0.4, 0.2, 0.15])));
+    return r; },
+  // A hull-down chassis with a rotating missile drum standing straight up out of it. The drum is the
+  // feature: a cylinder taller than it is wide, on a vehicle, is a shape nothing else here makes.
+  cyclone: () => { const r = N([0, 0, 0]);
+    for (const s of [-1, 1]) { r.children.push(P('box', [1.7, 0.34, 0.36], [0, 0.18, s * 0.62], m(C.tread))); for (let k = 0; k < 5; k++) r.children.push(P('box', [0.08, 0.38, 0.38], [-0.65 + k * 0.33, 0.18, s * 0.62], m(C.metalD))); }
+    r.children.push(P('box', [1.55, 0.4, 1.0], [0, 0.5, 0], m([0.48, 0.53, 0.58], { spec: 0.5 })), P('box', [0.5, 0.06, 0.7], [-0.5, 0.71, 0], TEAM), P('wedge', [0.6, 0.24, 1.0], [0.95, 0.5, 0], m(C.metalD)));
+    const drum = N([-0.05, 0.72, 0], { anim: recoil(0.1) });
+    drum.children.push(P('cyl', [0.66, 0.95, 0.66], [0, 0.47, 0], m([0.36, 0.40, 0.46], { spec: 0.55 })), P('cyl', [0.74, 0.12, 0.74], [0, 0.98, 0], m(C.metalD)));
+    for (let k = 0; k < 6; k++) { const a = k * 1.047; drum.children.push(P('cyl', [0.11, 0.9, 0.11], [Math.cos(a) * 0.42, 0.5, Math.sin(a) * 0.42], m(C.red))); }
+    drum.children.push(P('sphere', [0.18, 0.18, 0.18], [0, 1.12, 0], GLOW([1, 0.5, 0.2])));
+    r.children.push(drum);
+    return r; },
+  // A disc on three folded legs with a single sensor stalk. Deliberately close to nothing else: it
+  // spends most of its life underground, so what has to read is the moment it is UP and walking, and
+  // a wide flat disc travelling on stubby legs is the clearest way to say "that is a mine, on the move".
+  widow_mine: () => { const r = N([0, 0, 0]);
+    for (let k = 0; k < 3; k++) { const a = k * 2.094 + 0.4; const leg = N([Math.cos(a) * 0.5, 0.34, Math.sin(a) * 0.5], { anim: yaw(0.25, k * 2.1, 1) });
+      leg.children.push(P('cyl', [0.11, 0.4, 0.11], [Math.cos(a) * 0.2, -0.18, Math.sin(a) * 0.2], m(C.metalD), { rot: [Math.sin(a) * 0.7, 0, -Math.cos(a) * 0.7] })); r.children.push(leg); }
+    r.children.push(P('cyl', [1.5, 0.34, 1.5], [0, 0.5, 0], m([0.42, 0.44, 0.40], { spec: 0.4 })), P('cyl', [1.1, 0.1, 1.1], [0, 0.68, 0], TEAM), P('dome', [0.9, 0.4, 0.9], [0, 0.66, 0], m(C.metalD)));
+    r.children.push(P('cyl', [0.08, 0.7, 0.08], [-0.15, 1.05, 0], m(C.metalD)), P('sphere', [0.2, 0.2, 0.2], [-0.15, 1.42, 0], GLOW(C.red), { anim: st => ({ size: [1 + AK(st) * 1.5, 1 + AK(st) * 1.5, 1 + AK(st) * 1.5] }) }));
+    return r; },
+  // Enormous, and that is the whole silhouette: the tallest ground unit in the game, twice a goliath in
+  // both directions, with two shoulder cannons that overhang the legs. It is meant to be identifiable
+  // by SIZE alone at any zoom, which is the one cue nothing else in the Terran roster is using.
+  thor: () => { const root = N([0, 0, 0]);
+    for (const s of [-1, 1]) { const leg = N([-0.15, 1.15, s * 0.78], { anim: swing(0.32, 0, s) });
+      leg.children.push(P('cyl', [0.42, 0.72, 0.42], [-0.06, -0.36, 0], m([0.34, 0.37, 0.42]), { rot: [0, 0, 0.32] }));
+      const shin = N([-0.32, -0.72, 0], { rot: [0, 0, -0.5] });
+      shin.children.push(P('cyl', [0.36, 0.78, 0.36], [0, -0.39, 0], m([0.30, 0.33, 0.38])), P('box', [0.9, 0.22, 0.66], [0.1, -0.8, 0], m(C.metalD)));
+      leg.children.push(shin); root.children.push(leg); }
+    const body = N([0, 1.75, 0], { anim: recoil(0.16) }); root.children.push(body);
+    body.children.push(P('box', [1.7, 1.05, 1.6], [0, 0, 0], m([0.50, 0.54, 0.60], { spec: 0.5 })), P('box', [0.8, 0.14, 0.95], [-0.3, 0.6, 0], TEAM),
+      P('dome', [1.2, 0.7, 1.2], [0.15, 0.5, 0], m([0.38, 0.42, 0.48], { spec: 0.55 })), P('box', [0.3, 0.4, 0.66], [0.88, 0.1, 0], GLOW(C.visor)));
+    for (const s of [-1, 1]) { const arm = N([0.15, 0.34, s * 1.0], { anim: recoil(0.3) });
+      arm.children.push(P('box', [0.85, 0.55, 0.55], [0, 0, 0], m(C.metalD)), cylX(1.7, 0.24, [1.15, 0, 0], m(C.gun)), P('cyl', [0.36, 0.18, 0.36], [1.95, 0, 0], m(C.metalD), { rot: [0, 0, -Math.PI / 2] })); body.children.push(arm); }
+    for (const s of [-1, 1]) body.children.push(P('box', [0.5, 0.55, 0.34], [-0.6, 0.55, s * 0.66], m(C.red)));
+    return root; },
+  // Wraith-shaped hull turned upside down: the rotors hang BELOW the body on two outriggers, so from
+  // above it is a fuselage with two discs beside it -- the only Terran flyer with anything circular.
+  banshee: () => RIG.ship({ bodySize: [2.0, 0.5, 0.7], color: [0.32, 0.35, 0.40], cockpit: [0.9, 0.5, 0.2], engines: [[-1.0, 0, 0]], engineColor: [1, 0.6, 0.25],
+    extra: r => { const out = []; for (const s of [-1, 1]) { out.push(P('box', [0.34, 0.16, 0.9], [0.1, -0.05, s * 0.55], m(C.metalD)));
+      out.push(P('cyl', [1.15, 0.07, 1.15], [0.1, -0.22, s * 1.0], m([0.24, 0.26, 0.30], { spec: 0.3 }), { anim: st => ({ rot: [0, (st.walk == null ? (st.idle || 0) : st.walk) * 12.6, 0] }) }));
+      out.push(P('cyl', [0.2, 0.3, 0.2], [0.1, -0.18, s * 1.0], m(C.metalD)));
+      out.push(cylX(0.8, 0.11, [0.85, -0.12, s * 0.45], m(C.gun), { anim: recoil(0.14) })); }
+      out.push(P('box', [0.7, 0.1, 0.4], [-0.45, 0.28, 0], TEAM)); return out; } }),
+  // A flying gun platform: a wide flat ring with the barrel hanging through the middle of it, pointing
+  // down. Nothing else in the air here is a disc, and the barrel below the hull is what says "this
+  // shoots the ground and nothing else".
+  liberator: () => RIG.ship({ alt: 0.3, body: 'box', bodySize: [1.5, 0.5, 1.3], color: [0.46, 0.50, 0.55], cockpit: false, engines: [[-0.85, 0, -0.5], [-0.85, 0, 0.5]],
+    extra: r => [P('cyl', [2.5, 0.18, 2.4], [0, -0.12, 0], m([0.34, 0.37, 0.42], { spec: 0.45 })), P('cyl', [1.7, 0.1, 1.65], [0, 0.02, 0], m(C.metalD)),
+      P('cyl', [0.6, 0.7, 0.6], [0.1, -0.45, 0], m(C.gun), { anim: recoil(0.3) }), P('cyl', [0.8, 0.14, 0.8], [0.1, -0.82, 0], m(C.metalD)),
+      P('box', [0.8, 0.1, 0.45], [-0.35, 0.3, 0], TEAM), P('sphere', [0.22, 0.18, 0.22], [0.75, 0.25, 0], GLOW(C.visor)),
+      ...[-1, 1].map(s => P('box', [0.3, 0.5, 0.24], [-0.2, 0.35, s * 0.95], m(C.metalD)))] }),
+  // The two Viking modes, and the thing that makes them read as ONE unit in two states rather than as
+  // two units: both are built from the same fuselage and the same twin nacelles, and only the wings
+  // and the legs change. In the air the nacelles are swept back and there are no legs; on the ground
+  // the nacelles have rotated upright into shoulders and four legs have come down out of them. A
+  // player who has seen one transform once can read the other at a glance.
+  viking: () => RIG.ship({ bodySize: [2.2, 0.5, 0.8], color: [0.50, 0.54, 0.58], cockpit: C.visor, wings: { len: 1.2, span: 1.25, sweep: 0.85, x: -0.35 }, engines: [[-1.1, 0, -0.55], [-1.1, 0, 0.55]],
+    extra: r => { const out = []; for (const s of [-1, 1]) { out.push(cylX(1.5, 0.28, [-0.15, -0.05, s * 0.78], m([0.38, 0.42, 0.47], { spec: 0.5 })));
+      out.push(cylX(0.9, 0.1, [1.0, -0.05, s * 0.78], m(C.gun), { anim: recoil(0.18) })); } out.push(P('box', [0.7, 0.1, 0.4], [-0.5, 0.3, 0], TEAM)); return out; } }),
+  viking_a: () => { const root = N([0, 0, 0]);
+    // Four short legs folded out of the nacelles. Splayed wide so the footprint is square from above,
+    // which is the fastest way to say "landed" next to the fighter's long thin arrowhead.
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const leg = N([sx * 0.45, 0.72, sz * 0.72], { anim: swing(0.22, sx > 0 ? 0 : Math.PI, sz) });
+      leg.children.push(P('cyl', [0.15, 0.5, 0.15], [sx * 0.12, -0.25, sz * 0.1], m(C.metalD), { rot: [-sz * 0.3, 0, -sx * 0.3] }), P('box', [0.34, 0.12, 0.28], [sx * 0.25, -0.5, sz * 0.2], m(C.metalD))); root.children.push(leg); }
+    const body = N([0, 1.0, 0], { anim: recoil(0.14) }); root.children.push(body);
+    body.children.push(P('sphere', [1.7, 0.5, 0.8], [0, 0, 0], m([0.50, 0.54, 0.58], { spec: 0.5 })), P('sphere', [0.5, 0.25, 0.4], [0.6, 0.2, 0], GLOW(C.visor)), P('box', [0.6, 0.1, 0.4], [-0.4, 0.28, 0], TEAM));
+    // the nacelles, now standing upright as shoulders with the guns pointing forward over them
+    for (const s of [-1, 1]) { const sh = N([-0.1, 0.15, s * 0.72], { anim: recoil(0.24) });
+      sh.children.push(P('cyl', [0.44, 1.1, 0.44], [0, 0.35, 0], m([0.38, 0.42, 0.47], { spec: 0.5 })), cylX(1.3, 0.13, [0.75, 0.75, 0], m(C.gun)), P('sphere', [0.14, 0.14, 0.14], [0, 0.95, 0], GLOW([1, 0.55, 0.2]))); body.children.push(sh); }
+    return root; },
+  // A dropship with a lit medical bay. It has to be told apart from the dropship it is descended from
+  // at a glance, so: the same twin-engine hull, a full-length glowing window strip down both flanks,
+  // and a raised white cross housing on the roof. Lit-and-white against the dropship's flat grey.
+  medivac: () => RIG.ship({ bodySize: [2.1, 0.8, 1.35], color: [0.72, 0.74, 0.76], cockpit: C.visor, engines: [[-0.7, 0.1, -0.9], [-0.7, 0.1, 0.9]],
+    extra: r => { const out = [P('box', [1.0, 0.35, 0.4], [-0.3, 0, -0.95], m(C.metalD)), P('box', [1.0, 0.35, 0.4], [-0.3, 0, 0.95], m(C.metalD)),
+      P('box', [0.9, 0.4, 0.75], [-0.1, 0.5, 0], m(C.white, { spec: 0.35 })), P('box', [0.62, 0.1, 0.16], [-0.1, 0.72, 0], GLOW(C.red)), P('box', [0.18, 0.1, 0.5], [-0.1, 0.72, 0], GLOW(C.red))];
+      for (const s of [-1, 1]) out.push(P('box', [1.5, 0.16, 0.06], [0.1, 0.05, s * 0.68], GLOW([0.55, 0.9, 1])));
+      out.push(P('box', [0.55, 0.1, 0.34], [-0.95, 0.42, 0], TEAM)); return out; } }),
+  // Not a second science vessel, and it must not look like one. The vessel is a saucer; the raven is a
+  // narrow spine hung with four sensor booms that stick out past the hull in a cross. Spidery where the
+  // vessel is solid.
+  raven: () => RIG.ship({ alt: 0.35, bodySize: [1.5, 0.6, 0.55], color: [0.36, 0.40, 0.46], cockpit: [0.6, 1, 0.8], engines: [[-0.8, 0, 0]], engineColor: [0.5, 1, 0.75],
+    extra: r => { const out = []; for (let k = 0; k < 4; k++) { const a = k * 1.5708 + 0.785;
+      out.push(cylX(1.5, 0.06, [Math.cos(a) * 0.75, 0.05, Math.sin(a) * 0.75], m(C.metalL, { spec: 0.5 }), { rot: [0, -a, -Math.PI / 2] }));
+      out.push(P('sphere', [0.16, 0.16, 0.16], [Math.cos(a) * 1.45, 0.05, Math.sin(a) * 1.45], GLOW([0.45, 1, 0.7]))); }
+      out.push(P('box', [0.55, 0.1, 0.34], [-0.35, 0.34, 0], TEAM), P('cyl', [0.34, 0.5, 0.34], [-0.15, 0.42, 0], m(C.metalD)), P('sphere', [0.22, 0.22, 0.22], [-0.15, 0.72, 0], GLOW([0.45, 1, 0.7]))); return out; } }),
+  // The MULE. Deliberately a machine rather than a man: it is an SCV silhouette with the cab removed
+  // and a hopper bolted on, so it reads as "an SCV that is not an SCV" -- which is exactly what it is
+  // for seventy-five seconds. Team-coloured, because a MULE on a shared mineral line has to be
+  // attributable at a glance.
+  mule: () => { const r = N([0, 0, 0]);
+    for (const s of [-1, 1]) r.children.push(P('cyl', [0.5, 0.3, 0.5], [-0.2, 0.25, s * 0.5], m(C.tread), { rot: [Math.PI / 2, 0, 0] }));
+    r.children.push(P('box', [1.3, 0.5, 0.9], [0, 0.55, 0], m([0.55, 0.5, 0.35], { spec: 0.4 })), P('wedge', [0.7, 0.5, 0.85], [-0.75, 0.6, 0], m([0.4, 0.36, 0.26])), P('box', [0.5, 0.1, 0.6], [-0.15, 0.82, 0], TEAM));
+    for (const s of [-1, 1]) { const arm = N([0.55, 0.5, s * 0.42], { anim: lunge(0.2) }); arm.children.push(cylX(0.85, 0.13, [0.4, 0, 0], m(C.metalD)), P('box', [0.3, 0.22, 0.26], [0.85, -0.05, 0], m(C.metalL))); r.children.push(arm); }
+    r.children.push(P('sphere', [0.22, 0.2, 0.22], [0.55, 0.85, 0], GLOW([1, 0.75, 0.3])));
+    return r; },
 };
 
 // ---------------- buildings (tile units; footprint centred at origin) ----------------
@@ -804,5 +937,69 @@ const BUILDINGS = {
     r.children.push(P('box', [0.7, 0.05, 0.12], [0, 2.38, 0.42], TEAM));
     return r;
   },
+
+  // ---- M12 wave four: Terran structures ----------------------------------------------------------
+  // Four of them, and three have a harder legibility problem than any building in the game so far,
+  // because they must be told apart from a building the player ALREADY has on the same ground:
+  //   * the Orbital Command and the Planetary Fortress are both a Command Center a second ago, and a
+  //     player has to know which one an enemy expansion is before deciding to run at it
+  //   * the Sensor Tower is 2x2 and sits next to a Scrambler Mast, which is also 2x2 and also a mast
+  //   * the Reactor is a 2x2 add-on among four other 2x2 add-ons
+  // So each is separated by SHAPE from the specific thing it will be confused with, not in general.
+
+  // Command Center plus a parabolic dish the width of the building, tilted at the sky on a gimbal. It
+  // keeps the CC's towers so the family reads, and the dish is the one part that is round and tilted --
+  // which is what distinguishes it from the Fortress below, whose addition is square and flat.
+  orbital_command: (w, h) => { const r = B.terranBase(w, h, { height: 0.8 });
+    r.children.push(B.tower(-1.4, 0, 0.7, 0.5, 0.8), B.tower(1.4, 0, 0.7, 0.5, 0.8));
+    r.children.push(P('cyl', [1.0, 0.5, 1.0], [0.1, 1.0, -0.1], m(C.metalD)), P('cyl', [0.16, 0.9, 0.16], [0.1, 1.6, -0.1], m(C.metalL, { spec: 0.5 })));
+    r.children.push(P('dome', [2.6, 1.0, 2.4], [0.25, 2.05, -0.1], m([0.72, 0.76, 0.80], { spec: 0.7 }), { rot: [0, 0, 0.55] }),
+      P('cyl', [0.12, 0.7, 0.12], [0.65, 2.15, -0.1], m(C.metalD), { rot: [0, 0, -0.55] }), P('sphere', [0.18, 0.18, 0.18], [0.95, 2.45, -0.1], GLOW([0.5, 0.9, 1])));
+    r.children.push(P('box', [0.6, 0.06, 0.3], [-1.4, 1.35, 0], TEAM), beacon(-1.4, 0, 1.42, [0.4, 1, 0.6], 0.12));
+    return r; },
+  // The same Command Center, armoured instead. A sloped blast skirt that overhangs the footprint on
+  // every side, four corner casemates and one heavy twin turret on the roof: all square, all low, and
+  // the widest thing on the map at 4x3 -- so it is a squat block where the Orbital is a block with a
+  // dish, and neither can be mistaken for a plain Command Center at any zoom.
+  planetary_fortress: (w, h) => { const r = B.terranBase(w, h, { height: 0.7 });
+    r.children.push(P('wedge', [w + 0.5, 0.4, h + 0.5], [0, 0.2, 0], m([0.34, 0.36, 0.33], { spec: 0.3 })));
+    for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) r.children.push(P('box', [0.75, 0.85, 0.75], [dx * (w / 2 - 0.5), 0.5, dz * (h / 2 - 0.42)], m([0.40, 0.42, 0.39], { spec: 0.35 })), P('box', [0.5, 0.16, 0.5], [dx * (w / 2 - 0.5), 0.98, dz * (h / 2 - 0.42)], m(C.metalD)));
+    r.children.push(P('cyl', [1.5, 0.42, 1.5], [0, 0.95, 0], m([0.32, 0.35, 0.32])));
+    const tur = N([0, 1.2, 0], { anim: recoil(0.2) }); r.children.push(tur);
+    tur.children.push(P('box', [1.15, 0.55, 1.3], [0, 0.2, 0], m([0.44, 0.47, 0.44], { spec: 0.45 })), P('box', [0.7, 0.1, 0.5], [-0.35, 0.5, 0], TEAM));
+    for (const s of [-1, 1]) tur.children.push(cylX(1.5, 0.17, [0.95, 0.2, s * 0.34], m(C.gun)), P('cyl', [0.26, 0.14, 0.26], [1.68, 0.2, s * 0.34], m(C.metalD), { rot: [0, 0, -Math.PI / 2] }));
+    r.children.push(beacon(-w / 2 + 0.45, -h / 2 + 0.45, 1.1, [1, 0.25, 0.18], 0.12));
+    return r; },
+  // Against the Scrambler Mast, which is the building this must not be confused with. The mast is a
+  // lattice with a DISH on top -- round, tilted, static. This is a lattice with a long horizontal
+  // SEARCH BAR on top: a hard straight line crossing the whole 2x2 footprint and hanging past it on
+  // both sides, spinning. Round versus straight, at the same height, on the same shaped tower.
+  sensor_tower: (w, h) => { const r = B.terranBase(w, h, { height: 0.4 });
+    const y0 = 0.45;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) r.children.push(P('cyl', [0.06, 1.9, 0.06], [sx * 0.26, y0 + 0.95, sz * 0.26], m(C.metalD), { rot: [sz * 0.05, 0, -sx * 0.05] }));
+    for (let k = 0; k < 5; k++) { const y = y0 + 0.3 + k * 0.38;
+      r.children.push(P('box', [0.56, 0.045, 0.045], [0, y, -0.24], m(C.metal), { rot: [0, 0, k % 2 ? 0.55 : -0.55] }));
+      r.children.push(P('box', [0.56, 0.045, 0.045], [0, y, 0.24], m(C.metal), { rot: [0, 0, k % 2 ? -0.55 : 0.55] })); }
+    // the search bar, turning. `idle` runs 0..1 round the loop, so one full revolution per idle cycle.
+    const head = N([0, y0 + 2.0, 0], { anim: st => ({ rot: [0, (st.idle || 0) * 6.283, 0] }) });
+    head.children.push(P('cyl', [0.3, 0.22, 0.3], [0, 0, 0], m(C.metalD)),
+      P('box', [0.16, 0.1, 3.0], [0, 0.18, 0], m(C.metalL, { spec: 0.6 })),
+      P('box', [0.34, 0.16, 0.6], [0, 0.3, 1.1], m(C.metalD)), P('box', [0.34, 0.16, 0.6], [0, 0.3, -1.1], m(C.metalD)),
+      P('sphere', [0.13, 0.13, 0.13], [0, 0.42, 1.35], GLOW([0.4, 1, 0.6])), P('sphere', [0.13, 0.13, 0.13], [0, 0.42, -1.35], GLOW([0.4, 1, 0.6])));
+    r.children.push(head);
+    r.children.push(P('box', [0.45, 0.06, 0.3], [-0.3, 0.52, h / 2 - 0.3], TEAM));
+    return r; },
+  // Against the other four 2x2 add-ons: the Machine Shop is two small cylinders, the Control Tower is
+  // a tall box, the Physics Lab is a lit dome, the Comsat is a flat dish, the Nuclear Silo is a dark
+  // dome. None of them is a lit RING, so that is what this is -- a glowing torus over an open core,
+  // flanked by two cooling stacks that vent.
+  reactor: (w, h) => { const r = B.terranBase(w, h, { height: 0.45 });
+    r.children.push(P('cyl', [1.3, 0.16, 1.3], [0, 0.55, 0], m([0.30, 0.33, 0.38])));
+    r.children.push(P('cyl', [1.15, 0.14, 1.15], [0, 0.66, 0], GLOW([0.35, 0.95, 1])));
+    r.children.push(P('cyl', [0.7, 0.2, 0.7], [0, 0.7, 0], m(C.metalD)));
+    r.children.push(P('sphere', [0.3, 0.3, 0.3], [0, 0.86, 0], GLOW([0.6, 1, 1]), { anim: st => ({ size: [1 + 0.12 * IDLE(st), 1 + 0.12 * IDLE(st), 1 + 0.12 * IDLE(st)] }) }));
+    for (const s of [-1, 1]) r.children.push(P('cyl', [0.26, 0.85, 0.26], [-0.6, 0.9, s * 0.55], m([0.34, 0.36, 0.40], { spec: 0.4 })), P('cyl', [0.34, 0.1, 0.34], [-0.6, 1.35, s * 0.55], m(C.metalD)));
+    r.children.push(P('box', [0.5, 0.06, 0.18], [0.55, 0.5, -h / 2 + 0.28], TEAM));
+    return r; },
 };
 module.exports = { UNITS, BUILDINGS, C, deathWrap };

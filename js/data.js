@@ -84,6 +84,164 @@ const DATA = (() => {
     gw: W(125, 'explosive', 0.5, 1, { splash: [1.5, 1.5, 1.5], suicide: true, upgKey: null }) });
   U('nuke', { name: 'Nuclear Missile', race: 'T', hp: 100, size: 'large', min: 200, gas: 200, sup: 8, time: 1800, hk: 'N', from: 'nuclear_silo', r: 8, notUnit: true, sight: 0 });
 
+  // ======================= TERRAN, M12 WAVE FOUR (item 15) =======================
+  // Fifteen new Terran entries. The rule for every one of them, taken from DESIGN-M12: take the
+  // ergonomics wholesale, take the mechanics only where they add a DECISION, and where an SC2 unit
+  // would duplicate something this game already has, change its ROLE rather than shipping a near-clone.
+  // Each def below says which existing unit it was in danger of duplicating and what was changed.
+  //
+  // Every one carries `min` and `gas` explicitly even when zero. That is not style: Abilities.repairTick
+  // computes `t.def.min * 0.25 * frac`, `undefined * 0.25` is NaN, and NaN hit points spread through
+  // every comparison they touch. This repository lost an afternoon to exactly that, on a spider mine.
+
+  // ---- the bio line ------------------------------------------------------------------------------
+  // Terran infantry was marine / firebat / medic / ghost, and the only thing in it that was good into
+  // armour was... nothing. Firebat is concussive (0.65 into large) and marine is 6 normal damage. So a
+  // bio ball's answer to a dragoon, an ultralisk or a siege line was "bring tanks", which is why
+  // AI_COMP.T is mech-heavy in every matchup that is not TvP. These two finish the triangle.
+  //
+  // MARAUDER -- the anti-large leg. Explosive, long-ish reach for infantry, slow rate of fire, and
+  // `size: 'large'` itself, so it is the bio unit that a firebat cannot chew through. Not a marine
+  // upgrade: it is worse than a marine into zerglings by design (explosive is 0.65 into small), and it
+  // cannot shoot air at all, so a marauder ball loses to mutalisks that marines beat.
+  U('marauder', { name: 'Marauder', race: 'T', hp: 125, armor: 1, size: 'large', min: 100, gas: 25, sup: 2, time: 480, speed: 3.7, sight: 8, r: 10, hk: 'D', from: 'barracks', req: ['academy'], bio: true, cargoSize: 2,
+    gw: W(10, 'explosive', 6, 30, { upgKey: 'infW', upgDmg: 2 }), abil: ['stim'], upgA: 'infA' });
+  // REAPER -- the anti-small leg, and the fastest ground unit in the game at 8.6 px/frame, ahead of a
+  // metabolic-boost zergling (6.58) and an ion-thruster vulture (8.53) by a whisker.
+  //
+  // NOT A VULTURE. The vulture is mech: an SCV repairs it, it rides the vehicle upgrades, it lays
+  // spider mines and it shoots 5 tiles of concussive. The reaper is BIO: a medic heals it, an aid
+  // station mends it, it stims, it fits a bunker and it costs one cargo slot in a dropship instead of
+  // two. Its weapon is normal damage at range 3, so it beats workers and zerglings and loses to
+  // anything with armour -- the opposite end of the harass problem from the vulture's mines.
+  // It is in HOVER (js/abilities.js) with the vulture, because jump jets over a minefield is the whole
+  // fantasy of the unit and that Set is already the mechanism.
+  //
+  // `req: ['academy']` and NOT a bare Barracks, for two measured reasons rather than for flavour.
+  // (1) Off a bare Barracks it competes with the Refinery's first hundred gas -- the Terran AI spent
+  // it on reapers, held production waiting for 25 more, and reached frame 19,200 on seed 1 with no
+  // Factory at all. (2) The Academy is already the infantry unlock -- firebat, medic, ghost -- and one
+  // unit hanging off nothing was the odd one out. It is still early: the AI's own script puts the
+  // Academy at supply 22.
+  U('reaper', { name: 'Reaper', race: 'T', hp: 60, size: 'small', min: 50, gas: 25, sup: 1, time: 400, speed: 8.6, sight: 8, r: 8, hk: 'E', from: 'barracks', req: ['academy'], bio: true, cargoSize: 1, hover: true,
+    gw: W(7, 'normal', 3, 15, { hits: 2, upgKey: 'infW' }), abil: ['stim'], upgA: 'infA' });
+
+  // ---- the factory line --------------------------------------------------------------------------
+  // HELLION -- the only weapon in the Terran table that hits a LINE. `line: true` already exists for the
+  // Lurker and it is the one attack shape Terran did not have: everything in front of it, at once, out
+  // to six tiles, ground only. That is a different thing from the firebat (two hits of splash at melee
+  // range) and from the vulture (one target, five tiles), and it is what makes a hellion good into a
+  // worker line and bad into four spaced-out goliaths. No gas, so it is the mineral dump the factory
+  // never had.
+  U('hellion', { name: 'Hellion', race: 'T', hp: 90, size: 'medium', min: 100, gas: 0, sup: 2, time: 420, speed: 7.2, sight: 8, r: 12, hk: 'H', from: 'factory', mech: true, cargoSize: 2, hover: true,
+    gw: W(9, 'concussive', 5, 30, { line: true, upgKey: 'vehW', upgDmg: 2 }), upgA: 'vehA' });
+  // CYCLONE -- one weapon that hits ground AND air, on the fastest chassis in the factory. The goliath
+  // already exists and is the tanky escort with two separate guns and Charon Boosters; the cyclone is
+  // the opposite trade -- half the armour, twice the speed, one gun for both targets, and it is the
+  // only mech unit that can chase a mutalisk pack across the map rather than waiting for it to come
+  // back. Requires the Machine Shop, so it sits on the tank branch rather than the armory branch and
+  // does not simply replace the goliath in a build.
+  U('cyclone', { name: 'Cyclone', race: 'T', hp: 110, armor: 1, size: 'large', min: 125, gas: 50, sup: 3, time: 540, speed: 7.0, sight: 9, r: 13, hk: 'Y', from: 'factory', req: ['machine_shop'], mech: true, cargoSize: 4,
+    gw: W(14, 'explosive', 6, 22, { targets: 'both', upgKey: 'vehW', upgDmg: 2 }), upgA: 'vehA' });
+  // WIDOW MINE -- and the reason it is not a spider mine, since that was the brief's own question.
+  // A spider mine is a MUNITION: three of them come free with a vulture, they cost no supply, they are
+  // fire-and-forget, they hit ground only, and they die on the shot. A widow mine is a UNIT you train:
+  // it costs supply, it SURVIVES its own shot and reloads on a 90-frame timer, it hits AIR as well as
+  // ground, and it can be dug up and moved somewhere else. So the spider mine is a trap you spend and
+  // the widow mine is a position you hold, which is a different decision even though the silhouette
+  // under the ground is the same.
+  //
+  // It reuses the Lurker's mechanism exactly -- `burrowOnly` on the weapon, the `burrow` toggle, and
+  // the Lurker's exemption from needing burrow_tech (widened in Abilities.available) -- because that
+  // path is the one thing in this engine that is known to work for a dug-in attacker. It deliberately
+  // does NOT carry `mine: true`: that flag routes the unit into Abilities.mineTick, which is the
+  // suicide-charge behaviour and would take away everything above.
+  U('widow_mine', { name: 'Widow Mine', race: 'T', hp: 90, size: 'small', min: 75, gas: 25, sup: 2, time: 420, speed: 4.4, sight: 7, r: 9, hk: 'W', from: 'factory', req: ['machine_shop'], mech: true, cargoSize: 2,
+    gw: W(40, 'explosive', 5, 90, { burrowOnly: true, targets: 'both', splash: [0.7, 1.2, 1.8], upgKey: 'vehW', upgDmg: 3 }), abil: ['burrow'], upgA: 'vehA' });
+  // THOR -- six supply of walking artillery that shoots air. The siege tank out-ranges it and hits
+  // harder, and cannot move or defend itself while it does; the goliath is a quarter of the price. The
+  // Thor's reason to exist is that it is the only Terran unit whose GROUND attack splashes while it is
+  // still mobile, so a mech army finally has something that punishes a clump without being told to sit
+  // down first. Slow enough (3.2) that it decides where a fight happens long before the fight.
+  U('thor', { name: 'Thor', race: 'T', hp: 400, armor: 2, size: 'large', min: 300, gas: 200, sup: 6, time: 1200, speed: 3.2, sight: 10, r: 20, hk: 'O', from: 'factory', req: ['armory', 'machine_shop'], mech: true,
+    gw: W(30, 'explosive', 7, 45, { splash: [0.6, 1.0, 1.4], upgKey: 'vehW', upgDmg: 3 }),
+    aw: W(12, 'explosive', 7, 22, { hits: 2, targets: 'air', splash: [0.4, 0.8, 1.2], upgKey: 'vehW', upgDmg: 1 }), upgA: 'vehA' });
+
+  // ---- the starport line -------------------------------------------------------------------------
+  // BANSHEE -- the wraith turned inside out. A wraith is an air-superiority fighter: 20 explosive into
+  // air, 8 normal into ground. The banshee has NO air attack at all and hits ground twice as hard as
+  // the wraith does, and it takes the same Cloaking Field from the same Control Tower -- so the
+  // cloaked-harass decision becomes "which half of the sky do I give up", instead of "is the wraith
+  // worth it". Reuses `cloak_wraith` verbatim; a second identical toggle would be a lie in the codex.
+  U('banshee', { name: 'Banshee', race: 'T', hp: 140, size: 'large', min: 150, gas: 100, sup: 3, time: 900, speed: 5.6, sight: 8, r: 14, hk: 'A', from: 'starport', req: ['control_tower'], mech: true, fly: true, energy: 200,
+    gw: W(12, 'explosive', 6, 15, { hits: 2, upgKey: 'shipW', upgDmg: 1 }), abil: ['cloak_wraith'], upgA: 'shipA' });
+  // LIBERATOR -- air artillery, and the first weapon in the game with a MINIMUM range. `w.minRange` is
+  // already honoured by Unit.inRange and nothing used it. Ten tiles of splash into ground, nothing
+  // within three, and no air attack: it is a siege tank that can cross a cliff and cannot defend
+  // itself at all. That is the whole unit -- it needs an escort, it decides sieges, and it is helpless
+  // the moment a scourge or a corsair reaches it.
+  U('liberator', { name: 'Liberator', race: 'T', hp: 180, armor: 1, size: 'large', min: 150, gas: 125, sup: 3, time: 960, speed: 4.6, sight: 11, r: 16, hk: 'I', from: 'starport', req: ['control_tower'], mech: true, fly: true,
+    gw: W(45, 'explosive', 10, 60, { minRange: 3, splash: [0.5, 0.9, 1.3], upgKey: 'shipW', upgDmg: 3 }), upgA: 'shipA' });
+  // VIKING -- two modes, two sprite sets, on the siege_tank / siege_tank_s precedent. It is TWO DEFS
+  // rather than one def with a flag, and that is forced rather than chosen: Unit.weaponFor dispatches
+  // on `this.def`, and the only way for one unit to have an air weapon in one mode and a ground weapon
+  // in the other, with different movement, is for the def to change. The transform lives in
+  // Abilities.instant ('viking_mode') and swaps def/maxHp/fly/r in place, exactly as siege_mode swaps
+  // `sieged`, with the same `transT` lockout so it cannot be spammed.
+  //
+  // Fighter mode is what the Starport builds and is air-to-air only; assault mode walks and is
+  // ground-only. Neither can do the other's job, which is the point: a Viking wing that has landed to
+  // kill a tank line cannot answer a mutalisk flock until it takes off again. `sup` is 2 in both
+  // modes -- G.recomputeSupply sums `def.sup` over the units, so a transform that changed it would
+  // supply-block a player for pressing a button.
+  U('viking', { name: 'Viking', race: 'T', hp: 125, armor: 0, size: 'large', min: 150, gas: 75, sup: 2, time: 660, speed: 6.4, sight: 10, r: 14, hk: 'K', from: 'starport', req: ['control_tower', 'armory'], mech: true, fly: true,
+    aw: W(14, 'explosive', 7, 30, { hits: 2, targets: 'air', upgKey: 'shipW', upgDmg: 1 }), abil: ['viking_mode'], upgA: 'shipA' });
+  // The landed half. `min`/`gas`/`time` are zero because it is a MODE and not a purchase -- the cost
+  // was paid at the Starport -- and zero is spelled out rather than left undefined for the NaN reason
+  // above. It keeps `upgA: 'shipA'` and `upgKey: 'shipW'`: it is the same airframe with its wings
+  // folded, so it must not quietly change which upgrade line pays for it halfway through a battle.
+  U('viking_a', { name: 'Viking (Assault)', race: 'T', hp: 125, armor: 0, size: 'large', min: 0, gas: 0, sup: 2, time: 0, speed: 4.4, sight: 9, r: 14, hk: 'K', from: 'viking', morphFrom: 'viking', req: ['control_tower', 'armory'], mech: true, cargoSize: 4,
+    gw: W(18, 'normal', 6, 30, { upgKey: 'shipW', upgDmg: 2 }), abil: ['viking_mode'], upgA: 'shipA' });
+  // MEDIVAC -- the dropship and the medic in one hull, and both halves are the EXISTING code paths
+  // rather than new ones: `cargo: 8` is the dropship's, `heal` is the medic's ability, and the
+  // autocast is Abilities.medicAuto, dispatched for the medivac from Abilities.tickTerran because
+  // js/sim.js dispatches it by the literal id 'medic' and this branch does not own js/sim.js.
+  //
+  // It does NOT make the dropship obsolete: a dropship is 100/100 for eight slots off a bare Control
+  // Tower, the medivac is 100/100 off a Control Tower AND an Academy, is slower, and spends its energy
+  // healing rather than existing. The decision is whether the drop is bio (heal on arrival) or mech
+  // (nothing to heal, so pay less tech for the same eight slots).
+  U('medivac', { name: 'Medivac', race: 'T', hp: 150, armor: 1, size: 'large', min: 100, gas: 100, sup: 2, time: 800, speed: 5.0, sight: 9, r: 16, hk: 'M', from: 'starport', req: ['control_tower', 'academy'], mech: true, fly: true, cargo: 8, energy: 200,
+    abil: ['unload', 'heal'], upgA: 'shipA' });
+  // RAVEN -- an electronic-warfare aircraft, NOT a second science vessel. The vessel keeps everything
+  // it had (irradiate, EMP, defensive matrix) and stays the 100/225 late-game caster; the raven is
+  // cheaper, arrives earlier, detects, and casts exactly one thing: Jamming Field.
+  //
+  // The field is a mobile, temporary Scrambler Mast -- it blinds and un-detects everything hostile
+  // inside it. That is what makes it the escort for the cloak line this milestone just doubled
+  // (banshee, wraith, ghost): a turret and a spore colony still SHOOT inside the field, they just
+  // cannot see a cloaked unit while they are in it. See Abilities.tickFields for the reader.
+  U('raven', { name: 'Raven', race: 'T', hp: 140, armor: 1, size: 'large', min: 100, gas: 150, sup: 2, time: 900, speed: 5.4, sight: 11, r: 14, hk: 'E', from: 'starport', req: ['control_tower', 'science_facility'], mech: true, fly: true, det: true, energy: 200,
+    abil: ['jam_field'], upgA: 'shipA' });
+
+  // ---- the MULE (M12 item 11: the Terran macro mechanic) -----------------------------------------
+  // A temporary worker dropped by an Orbital Command. It is a real unit with a real lifetime rather
+  // than a lump of minerals, because the whole point of a macro mechanic is that it rewards ATTENTION:
+  // a MULE dropped on a saturated patch does less than one dropped on a fresh expansion, and one
+  // dropped and forgotten while its patch runs dry does nothing at all.
+  //
+  // WHAT MAKES IT FAST is `Abilities.tickTerran`, not this table: it takes MULE_HAUL extra minerals out
+  // of the patch on the same trip and carries them home, so it mines about four times an SCV's rate
+  // AND strips the patch four times as fast. That second half is deliberate and is the interesting
+  // part under M11's attrition economy -- a MULE is income borrowed from the end of the game.
+  //
+  // `worker: true` is required and is not cosmetic: Unit.tickGather, Unit.tickReturn, G.nearestDepot
+  // and UI.smartCommand's right-click-a-patch branch all key on it. `lifetime` is read by Unit.tick,
+  // which kills the unit when it reaches zero, so expiry needs no code of its own -- and cannot be
+  // switched off, which is the property the test pins.
+  U('mule', { name: 'MULE', race: 'T', hp: 60, size: 'small', min: 0, gas: 0, sup: 0, time: 0, speed: 6.5, sight: 8, r: 9, mech: true, worker: true, mule: true, lifetime: 1800, cargoSize: 1,
+    abil: ['gather'] });
+
   // ============================ ZERG UNITS ============================
   U('larva', { name: 'Larva', race: 'Z', hp: 25, armor: 10, size: 'small', speed: 0.3, sight: 4, r: 6, bio: true, larva: true, abil: ['morph_menu'] });
   U('egg', { name: 'Egg', race: 'Z', hp: 200, armor: 10, size: 'medium', speed: 0, sight: 4, r: 10, bio: true, egg: true });
@@ -286,20 +444,25 @@ const DATA = (() => {
   // Walls carry no aura and instead carry `wall: true`, which is the flag to select them by: they are
   // cheap, high-hp, produce nothing, research nothing, and exist to stand in the way.
   // ============================ TERRAN BUILDINGS ============================
-  B('command_center', { name: 'Command Center', race: 'T', hp: 1500, w: 4, h: 3, min: 400, time: 1800, hk: 'C', tier: 'basic', produces: ['scv'], sup: 10, depot: true, canLift: true, addons: ['comsat_station', 'nuclear_silo'], sight: 10 });
+  // `morphOptions` is the Shield Battery's mechanism, used here for the reason it was used there: a
+  // morph needs no build-page slot, and the Terran Basic page has been full at eight since M11. The two
+  // options are mutually exclusive BY CONSTRUCTION and not by a rule -- G.morphBuilding swaps `def` in
+  // place, and neither orbital_command nor planetary_fortress carries a morphOptions of its own, so the
+  // buttons simply stop existing the moment one of them is taken. Nothing has to check.
+  B('command_center', { name: 'Command Center', race: 'T', hp: 1500, w: 4, h: 3, min: 400, time: 1800, hk: 'C', tier: 'basic', produces: ['scv'], sup: 10, depot: true, canLift: true, addons: ['comsat_station', 'nuclear_silo'], morphOptions: ['orbital_command', 'planetary_fortress'], sight: 10 });
   B('comsat_station', { name: 'Comsat Station', race: 'T', hp: 500, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'C', tier: 'addon', parent: 'command_center', req: ['academy'], energy: 200, abil: ['scanner_sweep'] });
   B('nuclear_silo', { name: 'Nuclear Silo', race: 'T', hp: 600, w: 2, h: 2, min: 100, gas: 100, time: 1200, hk: 'N', tier: 'addon', parent: 'command_center', req: ['covert_ops'], produces: ['nuke'] });
   B('supply_depot', { name: 'Supply Depot', race: 'T', hp: 500, w: 3, h: 2, min: 100, time: 600, hk: 'S', tier: 'basic', sup: 8 });
   B('refinery', { name: 'Refinery', race: 'T', hp: 750, w: 4, h: 2, min: 100, time: 600, hk: 'R', tier: 'basic', onGeyser: true });
-  B('barracks', { name: 'Barracks', race: 'T', hp: 1000, w: 4, h: 3, min: 150, time: 1200, hk: 'B', tier: 'basic', req: ['command_center'], produces: ['marine', 'firebat', 'medic', 'ghost'], canLift: true, tech: ['suppress_inf'] });
+  B('barracks', { name: 'Barracks', race: 'T', hp: 1000, w: 4, h: 3, min: 150, time: 1200, hk: 'B', tier: 'basic', req: ['command_center'], produces: ['marine', 'firebat', 'medic', 'ghost', 'marauder', 'reaper'], canLift: true, tech: ['suppress_inf'], addons: ['reactor'] });
   B('engineering_bay', { name: 'Engineering Bay', race: 'T', hp: 850, w: 4, h: 3, min: 125, time: 900, hk: 'E', tier: 'basic', req: ['command_center'], upg: ['infW', 'infA'], canLift: true });
   B('academy', { name: 'Academy', race: 'T', hp: 600, w: 3, h: 2, min: 150, time: 1200, hk: 'A', tier: 'basic', req: ['barracks'], tech: ['stim', 'u238', 'restoration_tech', 'optical_flare_tech', 'caduceus'] });
   B('missile_turret', { name: 'Missile Turret', race: 'T', hp: 200, armor: 0, w: 2, h: 2, min: 75, time: 450, hk: 'T', tier: 'basic', req: ['engineering_bay'], det: true, sight: 11,
     aw: W(20, 'explosive', 7, 15, { targets: 'air', upgKey: null }) });
   B('bunker', { name: 'Bunker', race: 'T', hp: 350, w: 3, h: 2, min: 100, time: 450, hk: 'U', tier: 'basic', req: ['barracks'], cargo: 4, bunker: true, abil: ['unload'] });
-  B('factory', { name: 'Factory', race: 'T', hp: 1250, w: 4, h: 3, min: 200, gas: 100, time: 1200, hk: 'F', tier: 'adv', req: ['barracks'], produces: ['vulture', 'siege_tank', 'goliath'], addons: ['machine_shop'], canLift: true, tech: ['suppress_veh'] });
+  B('factory', { name: 'Factory', race: 'T', hp: 1250, w: 4, h: 3, min: 200, gas: 100, time: 1200, hk: 'F', tier: 'adv', req: ['barracks'], produces: ['vulture', 'siege_tank', 'goliath', 'hellion', 'cyclone', 'widow_mine', 'thor'], addons: ['machine_shop'], canLift: true, tech: ['suppress_veh'] });
   B('machine_shop', { name: 'Machine Shop', race: 'T', hp: 750, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'M', tier: 'addon', parent: 'factory', tech: ['ion_thrusters', 'spider_mines_tech', 'siege_tech', 'charon'] });
-  B('starport', { name: 'Starport', race: 'T', hp: 1300, w: 4, h: 3, min: 150, gas: 100, time: 1050, hk: 'S', tier: 'adv', req: ['factory'], produces: ['wraith', 'dropship', 'science_vessel', 'battlecruiser', 'valkyrie'], addons: ['control_tower'], canLift: true });
+  B('starport', { name: 'Starport', race: 'T', hp: 1300, w: 4, h: 3, min: 150, gas: 100, time: 1050, hk: 'S', tier: 'adv', req: ['factory'], produces: ['wraith', 'dropship', 'science_vessel', 'battlecruiser', 'valkyrie', 'banshee', 'liberator', 'viking', 'medivac', 'raven'], addons: ['control_tower'], canLift: true });
   B('control_tower', { name: 'Control Tower', race: 'T', hp: 500, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'C', tier: 'addon', parent: 'starport', tech: ['cloaking_field', 'apollo'] });
   B('science_facility', { name: 'Science Facility', race: 'T', hp: 850, w: 4, h: 3, min: 100, gas: 150, time: 900, hk: 'I', tier: 'adv', req: ['starport'], addons: ['physics_lab', 'covert_ops'], tech: ['emp_tech', 'irradiate_tech', 'titan'], canLift: true });
   B('physics_lab', { name: 'Physics Lab', race: 'T', hp: 600, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'P', tier: 'addon', parent: 'science_facility', tech: ['yamato_tech', 'colossus'] });
@@ -314,6 +477,63 @@ const DATA = (() => {
   B('scrambler_mast', { name: 'Scrambler Mast', race: 'T', hp: 450, armor: 0, w: 2, h: 2, min: 100, gas: 75, time: 750, hk: 'J', tier: 'adv', req: ['engineering_bay'], sight: 9,
     aura: { kind: 'blind', r: 8, affects: 'enemy', sight: 0.5, detect: true, stacks: false } });
   B('blast_barricade', { name: 'Blast Barricade', race: 'T', hp: 800, armor: 2, w: 2, h: 2, min: 75, time: 300, hk: 'W', tier: 'adv', req: ['barracks'], sight: 3, wall: true });
+
+  // ===================== TERRAN STRUCTURES, M12 WAVE FOUR =====================
+  // Four entries and exactly ONE new build-page slot between them, which is not a coincidence: the
+  // Terran Basic page has been full at eight since M11 and Advanced had one free. So the Sensor Tower
+  // takes the last slot, the Reactor is an add-on (add-ons live on their parent's card and need no
+  // slot), and the two hall upgrades are morphs (morphs live on the source's card and need no slot).
+  //
+  // The two morphs are 4x3 because the Command Center is 4x3. G.morphBuilding swaps the def in place
+  // and never re-blocks the collision grid, so a morph that changed its footprint would leave the map
+  // describing the building it used to be -- the same constraint every Zerg morph and all three
+  // Protoss attunements are written under.
+
+  // ORBITAL COMMAND -- the MULE platform (M12 item 11), and deliberately NOT a Comsat replacement.
+  // It would have been trivial to give it Scanner Sweep as well, and that would have made the Comsat
+  // strictly worse than a morph -- one of the two would then be dead data. Instead the Orbital carries
+  // ONLY the MULE, keeps the Command Center's add-on slot, and can therefore have a Comsat bolted to
+  // it: the decision is "economy, vision, or 100 more minerals for both", which is a decision, where
+  // "the strictly better Command Center" is not.
+  //
+  // Energy is the whole cost model. 200 maximum, 50 a MULE, and a MULE that is dropped badly is gone --
+  // so the mechanic rewards looking at your bases, which is what a macro mechanic is for.
+  B('orbital_command', { name: 'Orbital Command', race: 'T', hp: 1500, w: 4, h: 3, min: 150, gas: 0, time: 900, hk: 'O', tier: 'morph', req: ['academy'], produces: ['scv'], sup: 10, depot: true, canLift: true, addons: ['comsat_station', 'nuclear_silo'], energy: 200, abil: ['mule'], sight: 11 });
+  // PLANETARY FORTRESS -- the other half of the same choice, and it gives something up rather than
+  // only adding: no `canLift`, so a Fortress that is losing cannot fly away, which is the one thing a
+  // Command Center has always been able to do. Ground only, so it is not an answer to a mutalisk
+  // flock; it is an answer to a runby, and it is why an expansion can be left without an army on it.
+  // Armour 3 rather than a huge hit-point bar, because armour is what makes it hard for the SMALL fast
+  // things it exists to stop while leaving a siege line perfectly able to crack it.
+  B('planetary_fortress', { name: 'Planetary Fortress', race: 'T', hp: 1750, armor: 3, w: 4, h: 3, min: 150, gas: 150, time: 1050, hk: 'P', tier: 'morph', req: ['engineering_bay'], produces: ['scv'], sup: 10, depot: true, addons: ['comsat_station', 'nuclear_silo'], sight: 10,
+    gw: W(40, 'normal', 6, 22, { upgKey: null }) });
+  // SENSOR TOWER -- sixteen tiles of sight for 125/100 and no weapon at all.
+  //
+  // SC2's version shows enemy positions as blips beyond vision range. That needs a hook in the vision
+  // pass and a second render layer, both in files this branch does not own, and a half-built version of
+  // it would be worse than none. What it is instead is the honest version of the same idea in the
+  // machinery that already exists: raw sight radius, running through the same fog, the same night
+  // penalty and the same jamming auras as everything else. It is the mirror of the Scrambler Mast --
+  // one Terran mast takes sight away from the enemy, the other gives it to you -- and under M11's
+  // fog-that-lies it is worth more than the number suggests, because ground you can currently see is
+  // the only ground that is telling you the truth.
+  //
+  // NOT a detector, on purpose. A 16-tile detector for 125 minerals would answer every cloak in the
+  // game from the safety of your own base.
+  B('sensor_tower', { name: 'Sensor Tower', race: 'T', hp: 300, armor: 0, w: 2, h: 2, min: 125, gas: 100, time: 600, hk: 'T', tier: 'adv', req: ['engineering_bay'], sight: 16 });
+  // REACTOR -- the Barracks' first add-on, ever, in this game or in Brood War.
+  //
+  // Which parent it hangs off is the entire design. The Factory and the Starport already have add-ons
+  // that gate their whole unit lists -- no Machine Shop, no siege tank; no Control Tower, no dropship,
+  // vessel, battlecruiser or valkyrie -- and a building holds exactly one add-on, so a Reactor there
+  // would not be a choice between two things, it would be a choice between a unit line and a
+  // throughput bonus, which nobody would ever take twice. The Barracks had nothing to give up. Now it
+  // has one thing to choose to build, and the choice is legible: a Reactor doubles marine output, and
+  // it is the slot Suppressing Fire's Barracks would otherwise have used for nothing.
+  //
+  // `reactor: true` is the flag the simulation reads (Abilities.tickTerran), not the id, so a second
+  // parent later is a one-word change to `addons` and nothing else.
+  B('reactor', { name: 'Reactor', race: 'T', hp: 600, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'X', tier: 'addon', parent: 'barracks', reactor: true });
 
   // ============================ ZERG BUILDINGS ============================
   B('hatchery', { name: 'Hatchery', race: 'Z', hp: 1250, w: 4, h: 3, min: 300, time: 1800, hk: 'H', tier: 'basic', sup: 1, depot: true, spawnsLarva: true, creep: 11, morphTo: 'lair', sight: 9 });
@@ -535,8 +755,12 @@ const DATA = (() => {
   // Each names the units it unlocks for. Not derived from the building's `produces` list, because Zerg
   // trains everything off larva -- a hydralisk's `from` is 'larva', which is not a building and has no
   // tech list -- so the only wiring that works for all three races is an explicit set on the tech.
-  T('suppress_inf', 'Suppressing Fire', 'T', 'barracks', 'U', 100, 100, 1200, { suppress: ['marine', 'firebat', 'ghost'] });
-  T('suppress_veh', 'Sustained Barrage', 'T', 'factory', 'U', 150, 150, 1500, { suppress: ['vulture', 'siege_tank', 'goliath'] });
+  // M12 added six armed units to these two production lines. They are listed here rather than left out
+  // because the contract above says "one research per building, unlocking it for EVERYTHING that
+  // building makes" -- a Barracks that pins with a marine and not with a marauder would be the tech
+  // quietly becoming per-unit again, which is the shape this deliberately is not.
+  T('suppress_inf', 'Suppressing Fire', 'T', 'barracks', 'U', 100, 100, 1200, { suppress: ['marine', 'firebat', 'ghost', 'marauder', 'reaper'] });
+  T('suppress_veh', 'Sustained Barrage', 'T', 'factory', 'U', 150, 150, 1500, { suppress: ['vulture', 'siege_tank', 'goliath', 'hellion', 'cyclone', 'widow_mine', 'thor'] });
   T('suppress_hyd', 'Barbed Spines', 'Z', 'hydralisk_den', 'U', 100, 100, 1200, { suppress: ['hydralisk', 'lurker'] });
   T('suppress_air', 'Harrying Flight', 'Z', 'spire', 'U', 150, 150, 1500, { suppress: ['mutalisk', 'devourer'] });
   T('suppress_gate', 'Disruption Cadence', 'P', 'gateway', 'U', 100, 100, 1200, { suppress: ['dragoon'] });
@@ -632,6 +856,19 @@ const DATA = (() => {
   A('irradiate', 'Irradiate', 'I', 'unit', { energy: 75, tech: 'irradiate_tech', range: 9 });
   A('yamato', 'Yamato Gun', 'Y', 'unit', { energy: 150, tech: 'yamato_tech', range: 10 });
   A('scanner_sweep', 'Scanner Sweep', 'S', 'point', { energy: 50, range: 999 });
+  // ---- M12 wave four, Terran ----------------------------------------------------------------------
+  // Calling Down the MULE. `range: 999` matches Scanner Sweep because both are cast from a building and
+  // Abilities.issue's building branch does not consult range at all -- writing a small number here
+  // would be a lie the reader would have to un-learn. The real limit is distance: a MULE dropped across
+  // the map spends most of its 75 seconds walking home, so where you put it is the decision.
+  A('mule', 'Call Down MULE', 'M', 'point', { energy: 50, range: 999, unit: 'mule' });
+  // The Viking's transform. 'toggle' rather than 'morph': a morph goes through Abilities.morph and
+  // G.morphUnit, which builds a Zerg EGG (`toId === 'lurker' ? 'lurker_egg' : 'cocoon'`) and would turn
+  // a Terran fighter into a chrysalis. This is the siege_mode shape instead -- an instant swap with a
+  // transT lockout -- and the swap itself is in Abilities.instant.
+  A('viking_mode', 'Transform', 'O', 'toggle', {});
+  // The Raven's one spell. See the raven def for why it is the only one.
+  A('jam_field', 'Jamming Field', 'J', 'point', { energy: 75, range: 9 });
   A('burrow', 'Burrow', 'U', 'toggle', { tech: 'burrow_tech' });
   A('lurker_aspect', 'Lurker Aspect', 'L', 'morph', { unit: 'lurker' });
   A('guardian_aspect', 'Guardian Aspect', 'G', 'morph', { unit: 'guardian' });
@@ -668,7 +905,7 @@ const DATA = (() => {
   // A building's `tier` must agree with the page it is listed on: test/playtest_bot.js presses "Build"
   // or "Build Advanced" on the strength of `tier === 'adv'`.
   const buildMenu = {
-    T: { basic: ['command_center', 'supply_depot', 'refinery', 'barracks', 'engineering_bay', 'missile_turret', 'academy', 'bunker'], adv: ['factory', 'starport', 'science_facility', 'armory', 'aid_station', 'scrambler_mast', 'blast_barricade'] },
+    T: { basic: ['command_center', 'supply_depot', 'refinery', 'barracks', 'engineering_bay', 'missile_turret', 'academy', 'bunker'], adv: ['factory', 'starport', 'science_facility', 'armory', 'aid_station', 'scrambler_mast', 'blast_barricade', 'sensor_tower'] },
     Z: { basic: ['hatchery', 'creep_colony', 'extractor', 'spawning_pool', 'evolution_chamber', 'hydralisk_den', 'carapace_ridge'], adv: ['spire', 'queens_nest', 'nydus_canal', 'ultralisk_cavern', 'defiler_mound', 'mending_pool', 'miasma_gland'] },
     P: { basic: ['nexus', 'pylon', 'assimilator', 'gateway', 'forge', 'photon_cannon', 'cybernetics_core', 'shield_battery'], adv: ['robotics_facility', 'stargate', 'citadel_of_adun', 'robotics_support_bay', 'fleet_beacon', 'templar_archives', 'observatory', 'arbiter_tribunal'] },
   };

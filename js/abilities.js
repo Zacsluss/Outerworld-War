@@ -2,13 +2,51 @@
 // ============================================================================
 // Abilities & spells, status fields, auto-cast behaviours.
 // ============================================================================
-const HOVER = new Set(['vulture', 'probe', 'archon', 'dark_archon']);
+// Things a spider mine will not trigger on. The reaper's jump jets and the hellion's air cushion are
+// the same argument the vulture already makes: nothing that never touches the ground sets off a
+// pressure mine. (M12 wave four.)
+const HOVER = new Set(['vulture', 'probe', 'archon', 'dark_archon', 'reaper', 'hellion']);
 const NO_BROODLING = new Set(['probe', 'reaver', 'dragoon', 'archon', 'dark_archon', 'ultralisk', 'scv']);
+
+// ---------------------------------------------------------------------------------------------
+// M12 wave four, and the one line of this milestone that belongs in another file.
+//
+// EQUIV (js/sim.js) is the table that says "a Lair still counts as a Hatchery". Player.hasBuilding
+// reads it, Player.hasReq reads it through that, test/techtree.js reads it, and js/missions.js reads it
+// for objectives. Its `command_center` entry is an EMPTY array, written when nothing morphed off a
+// Command Center -- and now two things do. Without this, morphing your only Command Center makes
+// `hasBuilding('command_center')` false, and a Barracks or an Engineering Bay can no longer be built:
+// a player who pressed the Orbital button would silently lose half a tech tree.
+//
+// The correct fix is one line in js/sim.js:
+//     command_center: ['orbital_command', 'planetary_fortress']
+// This branch does not own js/sim.js, and three race branches are editing in parallel, so the entry is
+// EXTENDED IN PLACE here instead -- js/abilities.js loads after js/sim.js in index.html and in every
+// test harness, `const EQUIV` binds the object and not its contents, and pushing is additive, so the
+// Zerg and Protoss branches can do the same to their own keys without touching this one. It is
+// idempotent and it runs once at load, so it is deterministic and invisible to snapshots.
+// REPLACE THIS with the sim.js line the moment those branches are merged.
+if (typeof EQUIV !== 'undefined' && Array.isArray(EQUIV.command_center)) {
+  for (const id of ['orbital_command', 'planetary_fortress']) if (!EQUIV.command_center.includes(id)) EQUIV.command_center.push(id);
+}
+// How much a MULE takes out of a patch ON TOP of the eight a worker takes, on the same trip, and
+// carries home with it. Three times a worker's haul on a round trip that is also faster, which is
+// roughly four SCVs for seventy-five seconds.
+//
+// IT COMES OUT OF THE PATCH. That is the whole design of the thing under M11's attrition economy: a
+// MULE is not free minerals, it is minerals borrowed from the end of the game, and a base that has had
+// MULEs dropped on it all match runs dry visibly sooner. The alternative -- crediting the player
+// without debiting the field -- would have been three characters shorter and would have quietly made
+// the one economy mechanic in the game the one thing that does not obey it.
+const MULE_HAUL = 16;
 const Abilities = {
   // Is ability usable/visible for this unit right now?
   available(u, id) {
     const ab = DATA.abilities[id]; if (!ab) return false; const p = u.player;
-    if (ab.tech && !p.hasTech(ab.tech) && !(id === 'burrow' && u.def.id === 'lurker')) return false;
+    // The burrow exemption. A Lurker cannot fight at all without digging in, so it has never needed the
+    // Zerg research; a Widow Mine is the same shape for the same reason (`burrowOnly` weapon), and it
+    // is Terran, so requiring a Zerg tech would make it unusable rather than merely gated.
+    if (ab.tech && !p.hasTech(ab.tech) && !(id === 'burrow' && (u.def.id === 'lurker' || u.def.id === 'widow_mine'))) return false;
     if (id === 'nuke' && p.nukes <= 0) return false;
     if (id === 'spider_mine' && u.mines <= 0) return false;
     if (id === 'unload' && !u.cargo.length) return false;
@@ -16,7 +54,7 @@ const Abilities = {
     if ((id === 'guardian_aspect' || id === 'devourer_aspect') && !p.hasBuilding('greater_spire')) return false;
     return true;
   },
-  label(u, id) { const ab = DATA.abilities[id]; if (id === 'siege_mode') return u.sieged ? 'Tank Mode' : 'Siege Mode'; if (id === 'burrow') return u.burrowed ? 'Unburrow' : 'Burrow'; if (id === 'cloak_ghost' || id === 'cloak_wraith') return u.cloaked ? 'Decloak' : ab.name; return ab.name; },
+  label(u, id) { const ab = DATA.abilities[id]; if (id === 'siege_mode') return u.sieged ? 'Tank Mode' : 'Siege Mode'; if (id === 'burrow') return u.burrowed ? 'Unburrow' : 'Burrow'; if (id === 'viking_mode') return u.def.id === 'viking' ? 'Assault Mode' : 'Fighter Mode'; if (id === 'cloak_ghost' || id === 'cloak_wraith') return u.cloaked ? 'Decloak' : ab.name; return ab.name; },
   needsTarget(id) { const k = DATA.abilities[id].kind; return k === 'unit' || k === 'point'; },
   // Entry point from UI/AI. For unit/point kinds target/x/y must be supplied.
   issue(u, id, target, x, y, shift) {
@@ -40,6 +78,29 @@ const Abilities = {
       case 'burrow': if (u.transT > 0) return false; u.burrowed = !u.burrowed; u.transT = 24; u.path = null; u.order = { type: u.burrowed ? 'hold' : 'idle' }; u.queue = []; return true;
       case 'cloak_ghost': case 'cloak_wraith': if (u.cloaked) { u.cloaked = false; return true; } if (u.energy < 25) { p.msg('Not enough energy.', 'error'); return false; } u.energy -= 25; u.cloaked = true; return true;
       case 'unload': G.unloadAll(u); return true;
+      // The Viking transform. Modelled on 'siege_mode' directly above it -- same transT lockout, same
+      // "clear the order and the path so nothing carries across the change" -- but it swaps the DEF
+      // rather than a boolean, because Unit.weaponFor dispatches on `this.def` and the two modes need
+      // different weapons, different movement and different sprites. See the viking defs in js/data.js.
+      //
+      // Supply is unchanged by construction (both defs say sup 2), so G.recomputeSupply here is
+      // belt-and-braces rather than load-bearing: it is called so that a future asymmetry cannot leave
+      // the supply counter describing the mode the unit used to be in.
+      case 'viking_mode': {
+        if (u.transT > 0 || u.disabled) return false;
+        const to = u.def.id === 'viking' ? 'viking_a' : 'viking';
+        // Landing needs somewhere to land. A fighter over a cliff, over water or over a building
+        // footprint would fold its wings into terrain it cannot stand on and be wedged there for good,
+        // and Unit.moveTo would never get it out -- the pathfinder starts from where you already are.
+        if (to === 'viking_a' && !G.passable(u.x, u.y, u)) { p.msg('Cannot land here.', 'error'); return false; }
+        const nd = DATA.units[to], ratio = u.hp / u.maxHp;
+        u.def = nd; u.maxHp = nd.hp; u.hp = Math.max(1, Math.min(nd.hp, nd.hp * ratio));
+        u.fly = !!nd.fly; u.r = nd.r; u.transT = 40; u.path = null; u.target = null;
+        u.order = { type: 'idle' }; u.queue = [];
+        G.effects.push({ kind: 'ring', x: u.x, y: u.y, r: 20, t: 10, color: '#9cf' });
+        G.recomputeSupply();
+        return true;
+      }
     }
     return false;
   },
@@ -169,6 +230,29 @@ const Abilities = {
       case 'emp': for (const o of G.near(x, y, 3 * TILE)) { o.energy = 0; o.sh = 0; } ring(3, '#adf'); break;
       case 'irradiate': t.fx.irradiate = 720; ring(0.5, '#8f4'); break;
       case 'scanner_sweep': G.fields.push({ kind: 'scan', x, y, r: 10, t: 288, owner: u.owner }); break;
+      // ---- M12 wave four, Terran -------------------------------------------------------------------
+      // CALL DOWN MULE. The unit carries its own expiry (`lifetime` on the def, counted down by
+      // Unit.tick), so nothing here has to remember it exists; the ability's whole job is to put it on
+      // the ground and point it at a rock.
+      //
+      // It is aimed at the nearest patch to the DROP POINT rather than to the Orbital, which is what
+      // makes "where you drop it" the decision: drop it on a far expansion and it works that
+      // expansion. If there is no mineral field left anywhere it still spawns and stands there, which
+      // is correct -- 50 energy spent badly is the punishment, not a refund.
+      case 'mule': {
+        const mu = G.spawnUnit('mule', u.owner, x, y);
+        const near = G.findNearestResource(mu, 'mineral');
+        if (near) mu.applyOrder({ type: 'gather', target: near, phase: 'goto' });
+        G.effects.push({ kind: 'ring', x, y, r: 20, t: 14, color: '#8cf' });
+        break;
+      }
+      // JAMMING FIELD. A mobile, temporary Scrambler Mast: everything hostile inside it is blinded to
+      // two tiles and stops counting as a detector, for as long as it stays inside. The refresh idiom
+      // is Disruption Web's -- set the status to 3 frames every tick from tickFields, so leaving the
+      // field clears it two frames later with no bookkeeping and no per-unit list to keep in a
+      // snapshot. Both effects fall out of `fx.blind`, which Unit.get sight and Unit.get isDetector
+      // already read; this adds no new status.
+      case 'jam_field': G.fields.push({ kind: 'jam', x, y, r: 4, t: 480, owner: u.owner }); ring(4, '#7ae'); break;
       case 'parasite': t.fx.parasite = u.owner; ring(0.5, '#f8f'); break;
       case 'ensnare': for (const o of G.near(x, y, 2 * TILE)) if (!o.isBuilding) o.fx.ensnare = 576; ring(2, '#8f8'); break;
       case 'spawn_broodling': if (t.fly || t.isBuilding || NO_BROODLING.has(t.def.id) || t.def.race === 'P' && t.def.mech) { p.msg('Invalid target.', 'error'); u.energy += 150; break; } G.kill(t, u); for (let i = 0; i < 2; i++) { const b = G.spawnUnit('broodling', u.owner, t.x + (i ? 10 : -10), t.y); b.lifetime = 1800; } break;
@@ -188,12 +272,96 @@ const Abilities = {
   },
   changeOwner(t, pid) { if (t.order.type === 'gather' && t.order.target && t.order.target.miner === t) t.order.target.miner = null; if (t.order.type === 'gather' && t.order.phase === 'inside' && t.order.target) { t.order.target.occupant = null; t.inside = null; } if (t.order.type === 'construct' && t.order.target && t.order.target.builder === t) t.order.target.builder = null; t.owner = pid; t.order = { type: 'idle' }; t.queue = []; t.path = null; t.target = null; t.carrying = null; t.wave = 0; if (typeof UI !== 'undefined' && UI.onUnitDied) UI.onUnitDied(t); G.recomputeSupply(); if (t.player.human) t.player.msg('Unit mind controlled.'); },
   nukeImpact(p) { },
+  // ================= M12 wave four: the Terran per-frame pass =================
+  // Three things that have no other home in the files this branch owns, in ONE walk of G.units.
+  //
+  // WHERE THIS BELONGS, so the next person does not have to work it out. All three of these are
+  // per-unit simulation and their natural home is js/sim.js -- the MULE's haul beside Unit.tickGather,
+  // the Reactor beside Unit.tickProduction, the Medivac beside the line that dispatches
+  // Abilities.medicAuto for the literal id 'medic'. This branch does not own js/sim.js and three race
+  // branches are editing in parallel, so they are gathered here and called from tickFields, which
+  // G.tick already runs unconditionally once a frame. The exact hooks are listed in the handoff.
+  //
+  // COST. One property read and one branch per living unit per frame. The tick is dominated by unit
+  // separation at ~0.9 ms of ~3 ms at 500 units; this is a flag test in the same order of magnitude as
+  // the reap filter that already runs once a second. Nothing here allocates.
+  //
+  // DETERMINISM. G.units in order, no G.rand, no wall clock, no Set or Map iteration.
+  tickTerran() {
+    for (const u of G.units) {
+      if (!u.alive) continue;
+      const d = u.def;
+      if (d.mule) { this.muleHaul(u); continue; }
+      // The Medivac's heal autocast. js/sim.js runs this for `d.id === 'medic'` on the same
+      // (frame + id) % 8 stagger, and the stagger matters for more than cost: M9 found that every
+      // `(G.frame + id) % N` gate in micro() was only ever true for a fraction of the ids, so the
+      // residues are kept identical to the medic's rather than invented here.
+      if (d.id === 'medivac' && u.done && !u.disabled && u.order.type !== 'ability' && (G.frame + u.id) % 8 === 0) this.medicAuto(u);
+      if (d.reactor && u.done && u.parent) this.reactorTick(u.parent);
+    }
+  },
+  // A MULE takes MULE_HAUL extra minerals out of the patch it just worked and carries them home on the
+  // same trip. See MULE_HAUL at the top of the file for why it debits the patch rather than crediting
+  // the player out of nothing.
+  //
+  // The hook is the frame the payload appears: Unit.tickGather sets `carrying` and hands the unit a
+  // 'return' order in one step, so a `carrying` without our tag is a pickup that has not been topped up
+  // yet. The tag goes on unconditionally, before any of the reasons this might do nothing, so a MULE
+  // standing on a patch that ran dry cannot be topped up twice on the way home.
+  //
+  // `lastRes` rather than `order.then`: Unit.tickGather sets `lastRes` on every gather tick and it
+  // survives whatever the order queue does next, whereas `then` is only there if the return order is
+  // still the current one.
+  muleHaul(u) {
+    const c = u.carrying;
+    if (!c || c.type !== 'mineral' || c.hauled) return;
+    c.hauled = true;
+    const res = u.lastRes;
+    if (!res || res.type !== 'mineral' || res.amount <= 0) return;   // the patch died on this very trip
+    const extra = Math.min(res.amount, MULE_HAUL);
+    res.amount -= extra; c.amt += extra;
+    if (res.amount <= 0) G.removeResource(res);
+  },
+  // The Reactor: a second unit built in parallel with the first.
+  //
+  // Unit.tickProduction only ever advances `prod[0]`, so this advances `prod[1]` under exactly the same
+  // rules -- the same supply gate, the same `it.started` latch, the same cwal cheat multiplier, the
+  // same finishProduction on completion. Duplicating those four lines rather than generalising them is
+  // deliberate: the alternative is a change to Unit.tickProduction, which this branch does not own.
+  //
+  // BOTH SLOTS MUST BE UNITS. A Barracks can research Suppressing Fire, and a reactor that let a
+  // marine slide out from behind a research would make the add-on a research-cancel button as well as
+  // a throughput bonus. One thing, legibly.
+  reactorTick(b) {
+    if (!b.alive || !b.done || b.lifted || b.prod.length < 2) return;
+    if (b.prod[0].kind !== 'unit' || b.prod[1].kind !== 'unit') return;
+    const it = b.prod[1], p = b.player, ud = DATA.units[it.id];
+    if (!it.started) {
+      if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax && !it.reserved && !(G.cheats.food && p.human)) return;
+      it.started = true;
+    }
+    it.progress += (G.cheats.cwal && p.human) ? 10 : 1;
+    if (it.progress >= it.total) { b.prod.splice(1, 1); G.finishProduction(b, it); }
+  },
   tickFields() {
+    this.tickTerran();
     const fs = G.fields;
     for (let i = fs.length - 1; i >= 0; i--) {
       const f = fs[i]; f.t--;
       if (f.kind === 'storm') { if (++f.tickT % 8 === 0) for (const o of G.near(f.x, f.y, f.r * TILE)) if (!o.isBuilding) G.damageRaw(o, 14, null); }
       else if (f.kind === 'dweb') { for (const o of G.near(f.x, f.y, f.r * TILE)) if (!o.fly) o.fx.dweb = 3; }
+      // The Raven's Jamming Field. Buildings are included on purpose and are most of the point: the
+      // things a cloaked Terran army actually has to get past are a Missile Turret, a Spore Colony and
+      // a Photon Cannon, and every one of those is a building whose `isDetector` reads `fx.blind`.
+      // A jammed detector still SHOOTS -- it just cannot see anything cloaked while it is jammed.
+      //
+      // The ring is pushed from here rather than drawn by js/fx.js, which this branch does not own. It
+      // is frame-gated and not random, so it reproduces in a replay; see the handoff for the one-line
+      // FX.drawField branch that would replace it.
+      else if (f.kind === 'jam') {
+        for (const o of G.near(f.x, f.y, f.r * TILE)) if (!G.allied(o.owner, f.owner)) o.fx.blind = 3;
+        if (f.t % 12 === 0) G.effects.push({ kind: 'ring', x: f.x, y: f.y, r: f.r * TILE, t: 12, color: '#7ae' });
+      }
       else if (f.kind === 'recall' && f.t <= 0) { const src = f.src; if (src && src.alive) for (const o of G.near(f.x, f.y, f.r * TILE)) if (o.owner === f.owner && !o.isBuilding && !o.inside) { const tl = G.map.findFreeTile(Math.floor(src.x / TILE), Math.floor(src.y / TILE), 5); if (tl) { o.x = (tl[0] + .5) * TILE; o.y = (tl[1] + .5) * TILE; o.px = o.x; o.py = o.y; o.path = null; G.effects.push({ kind: 'ring', x: o.x, y: o.y, r: 16, t: 10, color: '#8cf' }); } } }
       else if (f.kind === 'nuke_target' && f.t <= 0 && !f.cancel) {
         G.effects.push({ kind: 'nuke', x: f.x, y: f.y, t: 60, r: 4 * TILE });

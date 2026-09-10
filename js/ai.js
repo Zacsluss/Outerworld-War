@@ -14,20 +14,54 @@
 // templar archives reached at 17 minutes and never finished, and no templar, dark archon or arbiter in
 // six games. test/aiscripts.js asserts the ordering now.
 const AI_SCRIPTS = {
-  T: [[9, 'supply_depot'], [11, 'barracks'], [12, 'refinery'], [15, 'supply_depot'], [16, 'factory'], [19, 'supply_depot'], [20, 'machine_shop'], [22, 'academy'], [23, 'bunker'], [24, 'command_center'], [25, 'engineering_bay'], [26, 'supply_depot'], [27, 'blast_barricade'], [28, 'factory'], [30, 'comsat_station'], [32, 'armory'], [33, 'scrambler_mast'], [34, 'supply_depot'], [36, 'starport'], [38, 'science_facility'], [39, 'aid_station'], [40, 'machine_shop'], [42, 'control_tower'], [44, 'barracks'], [46, 'command_center'], [50, 'factory'], [56, 'missile_turret'], [60, 'physics_lab'], [62, 'science_facility'], [64, 'starport'], [66, 'covert_ops'], [68, 'nuclear_silo'], [70, 'barracks'], [80, 'factory']],
+  // M12 wave four adds four Terran structures to this order, and WHERE each one sits is the only part
+  // of it that is a judgement rather than a constraint:
+  //   comsat_station@30 then orbital_command@31 -- in that order deliberately. AI.addon() finds a
+  //     parent by `u.def.id === ad.parent`, and after the morph the def is 'orbital_command', so a
+  //     Comsat that is not bolted on before the morph can never be bolted on after it. Morphing keeps
+  //     an add-on it already has (G.morphBuilding does not touch b.addon), so this order gets both.
+  //   reactor@45, right behind the third barracks@44 -- AI.addon() picks a parent with no add-on and
+  //     nothing in its queue, so it lands on whichever Barracks is free rather than stalling the first.
+  //   planetary_fortress@48, behind the second command_center@46 -- AI.morph takes the FIRST plain
+  //     Command Center it owns, and by 46 the main one is already an Orbital, so the Fortress lands on
+  //     the natural. That is where a Fortress belongs and it is arrived at rather than special-cased.
+  //   sensor_tower@52 -- late, cheap, and needs the engineering bay from 25.
+  T: [[9, 'supply_depot'], [11, 'barracks'], [12, 'refinery'], [15, 'supply_depot'], [16, 'factory'], [19, 'supply_depot'], [20, 'machine_shop'], [22, 'academy'], [23, 'bunker'], [24, 'command_center'], [25, 'engineering_bay'], [26, 'supply_depot'], [27, 'blast_barricade'], [28, 'factory'], [30, 'comsat_station'], [31, 'orbital_command'], [32, 'armory'], [33, 'scrambler_mast'], [34, 'supply_depot'], [36, 'starport'], [38, 'science_facility'], [39, 'aid_station'], [40, 'machine_shop'], [42, 'control_tower'], [44, 'barracks'], [45, 'reactor'], [46, 'command_center'], [48, 'planetary_fortress'], [50, 'factory'], [52, 'sensor_tower'], [56, 'missile_turret'], [60, 'physics_lab'], [62, 'science_facility'], [64, 'starport'], [66, 'covert_ops'], [68, 'nuclear_silo'], [70, 'barracks'], [80, 'factory']],
   Z: [[11, 'spawning_pool'], [12, 'hatchery'], [13, 'extractor'], [16, 'hydralisk_den'], [18, 'creep_colony'], [19, 'sunken_colony'], [20, 'lair'], [21, 'carapace_ridge'], [22, 'extractor'], [24, 'hatchery'], [26, 'spire'], [28, 'evolution_chamber'], [29, 'miasma_gland'], [30, 'creep_colony'], [31, 'spore_colony'], [32, 'defiler_mound'], [34, 'hatchery'], [36, 'mending_pool'], [38, 'creep_colony'], [44, 'queens_nest'], [48, 'extractor'], [52, 'hive'], [56, 'creep_colony'], [60, 'ultralisk_cavern'], [64, 'hatchery'], [68, 'nydus_canal'], [70, 'greater_spire'], [80, 'hatchery']],
   P: [[8, 'pylon'], [10, 'gateway'], [12, 'assimilator'], [14, 'cybernetics_core'], [15, 'pylon'], [18, 'gateway'], [20, 'nexus'], [22, 'pylon'], [24, 'citadel_of_adun'], [26, 'forge'], [27, 'pylon'], [28, 'robotics_facility'], [29, 'shield_battery'], [30, 'observatory'], [31, 'shield_battery'], [32, 'templar_archives'], [33, 'rejuvenation_shrine'], [34, 'gateway'], [35, 'shield_battery'], [36, 'pylon'], [37, 'null_obelisk'], [38, 'photon_cannon'], [39, 'shield_battery'], [40, 'gateway'], [41, 'warded_bastion'], [42, 'stargate'], [44, 'nexus'], [46, 'arbiter_tribunal'], [48, 'pylon'], [50, 'robotics_support_bay'], [52, 'fleet_beacon'], [56, 'gateway'], [66, 'gateway'], [72, 'stargate'], [80, 'nexus']],
 };
 const gasBuildings = ai => ai.mine(u => u.def.onGeyser).length + 1;
 const AI_COMP = {
-  T: [['marine', 6], ['medic', 2], ['firebat', 1], ['ghost', 1], ['vulture', 2], ['siege_tank', 4], ['goliath', 2], ['science_vessel', 1], ['wraith', 1], ['valkyrie', 1], ['dropship', 1], ['battlecruiser', 2]],
+  // M12 wave four puts eleven more Terran units in reach, and all eleven are here rather than in a
+  // "late game" list, because production() already filters on `p.hasReq` AND on owning a building that
+  // makes the thing -- a Thor at weight 2 with no Armory is not a wasted slot, it is simply not a
+  // candidate that think. The weights keep the character the table already had (mech-leaning for T,
+  // bio-leaning for TvP) rather than resetting it: the new units take share from their own line, so
+  // marines pay for marauders and vultures pay for hellions.
+  //
+  // `viking_a` and `mule` are deliberately ABSENT. Neither is trained: the assault Viking is a mode the
+  // micro switches into, and the MULE comes out of an Orbital's energy. A weight on either would be a
+  // permanent zero-count top pick that production() re-scores every think and can never satisfy.
+  // Every pre-existing weight is left exactly as it was, deliberately: they are the numbers every
+  // balance figure in HANDOFF.md was measured against, and the new units already dilute all of them.
+  // Dropping the marine's weight as well would be two moves inside one measurement -- and it would
+  // also quietly break test/version.js, which reaches into this table by SOURCE TEXT to prove that an
+  // edit to js/ai.js moves the build stamp. Note for anyone editing the comments here: that test does
+  // a plain string replace, so the first occurrence in the file wins. Do not repeat one of these pairs
+  // in prose above the table, or the test will patch the comment, the stamp will not move, and the
+  // failure will look like a bug in the build stamp rather than in a sentence. (It did.)
+  T: [['marine', 6], ['medic', 2], ['firebat', 1], ['marauder', 2], ['reaper', 1], ['ghost', 1], ['vulture', 2], ['hellion', 2], ['siege_tank', 4], ['goliath', 2], ['cyclone', 2], ['widow_mine', 1], ['thor', 2], ['science_vessel', 1], ['raven', 1], ['wraith', 1], ['banshee', 1], ['viking', 1], ['liberator', 1], ['valkyrie', 1], ['dropship', 1], ['medivac', 1], ['battlecruiser', 2]],
   Z: [['zergling', 4], ['hydralisk', 6], ['mutalisk', 4], ['scourge', 1], ['ultralisk', 3], ['defiler', 1], ['queen', 1]],
   // Terran had no per-matchup composition at all, so it built the same mech-heavy army into everyone --
   // and test/duel.js prices that army against Protoss at 0 wins in 8, a mean supply margin of -14.5.
   // The same test has Terran BIO beating the same Protoss army 5 of 8. Terran was building precisely the
   // thing Protoss is best against, in the one matchup this project has measured formally outside 60/40
   // (P 66% [61-71]). Bio-heavy here, with tanks kept for the siege line rather than as the core.
-  TvP: [['marine', 8], ['medic', 3], ['firebat', 2], ['ghost', 1], ['vulture', 1], ['siege_tank', 3], ['goliath', 2], ['science_vessel', 1], ['wraith', 1], ['valkyrie', 1], ['dropship', 1], ['battlecruiser', 1]],
+  // ...and the marauder is the single largest change to this list, because it is the unit TvP was
+  // missing: the reason Terran's mech army loses to Protoss here is dragoons and zealots, both of
+  // which are `large`, and until now the only explosive thing in a bio ball was a siege tank that has
+  // to sit down. The medivac is doubled over the base comp for the same reason the medic is.
+  TvP: [['marine', 8], ['medic', 3], ['firebat', 2], ['marauder', 4], ['reaper', 1], ['ghost', 1], ['vulture', 1], ['hellion', 1], ['siege_tank', 3], ['goliath', 2], ['cyclone', 1], ['widow_mine', 1], ['thor', 1], ['science_vessel', 1], ['raven', 1], ['wraith', 1], ['banshee', 1], ['viking', 1], ['liberator', 1], ['valkyrie', 1], ['dropship', 1], ['medivac', 2], ['battlecruiser', 1]],
   ZvT: [['zergling', 3], ['hydralisk', 5], ['mutalisk', 5], ['scourge', 1], ['ultralisk', 4], ['defiler', 2], ['queen', 1]],
   PvZ: [['zealot', 2], ['dragoon', 8], ['high_templar', 3], ['dark_templar', 1], ['reaver', 1], ['shuttle', 1], ['observer', 3], ['corsair', 2], ['scout', 1], ['carrier', 1], ['arbiter', 1]],
   ZvP: [['zergling', 3], ['hydralisk', 6], ['mutalisk', 3], ['scourge', 1], ['ultralisk', 3], ['defiler', 1], ['queen', 1]],
@@ -213,7 +247,16 @@ class AI {
   // ---------------- economy ----------------
   economy() {
     const p = this.p, halls = this.halls();
-    const workers = this.mine(u => u.def.worker);
+    // `!u.def.mule` everywhere a worker is COUNTED. A MULE is a worker in every way the simulation
+    // cares about -- it gathers, it returns cargo, it walks to a depot -- and in none of the ways this
+    // function cares about: it expires in 75 seconds, it cannot be trained, and counting it here would
+    // make an Orbital Command SUPPRESS SCV production for as long as its MULEs live, so the macro
+    // mechanic would pay for itself out of the economy it exists to grow. Excluding it from the whole
+    // pass rather than only from the count is deliberate too: the gas-balancing loop below would
+    // otherwise send MULEs into a refinery, and a MULE mining gas is worth exactly one SCV. It needs no
+    // shepherding -- Abilities.cast aims it at a patch when it lands and Unit.tickGather re-aims it at
+    // another when that one runs out.
+    const workers = this.mine(u => u.def.worker && !u.def.mule);
     // idle workers -> mine
     for (const w of workers) if (w.order.type === 'idle' && !w.carrying) { const m = G.findNearestResource(w, 'mineral'); if (m) w.applyOrder({ type: 'gather', target: m, phase: 'goto' }); }
     // gas balancing: 3 per gas building
@@ -269,7 +312,11 @@ class AI {
   // how many buildings are being built or walked to right now (a human never starts five things at once)
   underway() { return this.mine(u => (u.isBuilding && !u.done && u.def.tier !== 'addon') || (u.def.worker && u.order.type === 'build' && u.order.def)).length; }
   // how many of a scripted building we already own; a morph counts as the thing it grew out of
-  scriptHave(cnt, id) { return (cnt[id] || 0) + (id === 'hatchery' ? (cnt.lair || 0) + (cnt.hive || 0) : id === 'lair' ? (cnt.hive || 0) : id === 'spire' ? (cnt.greater_spire || 0) : id === 'creep_colony' ? (cnt.sunken_colony || 0) + (cnt.spore_colony || 0) : 0); }
+  // ...and 'command_center' joined that list in M12: an Orbital Command and a Planetary Fortress are
+  // both still Command Centers for the purpose of "do we owe another one". Without this clause the two
+  // scripted `command_center` steps become permanently unmet the moment either morph happens, and the
+  // build order stalls on an expansion it already has for the whole 200 s give-up timer.
+  scriptHave(cnt, id) { return (cnt[id] || 0) + (id === 'hatchery' ? (cnt.lair || 0) + (cnt.hive || 0) : id === 'lair' ? (cnt.hive || 0) : id === 'spire' ? (cnt.greater_spire || 0) : id === 'creep_colony' ? (cnt.sunken_colony || 0) + (cnt.spore_colony || 0) : id === 'command_center' ? (cnt.orbital_command || 0) + (cnt.planetary_fortress || 0) : 0); }
   // A build order is not a queue. It used to be run strictly at the head: one step that could not be
   // started froze everything behind it until a 200-second timer threw the step away for good, and the
   // steps that needed it were then thrown away in turn on `req`. Over nine games that abandoned 29 steps
@@ -356,7 +403,7 @@ class AI {
   macro() {
     const p = this.p, r = this.race; const halls = this.halls();
     // expansion when floating minerals or saturated
-    const workers = this.mine(u => u.def.worker).length;
+    const workers = this.mine(u => u.def.worker && !u.def.mule).length;   // a MULE is temporary; counting it here would trigger an expansion the economy cannot hold once it expires
     // Expanding only on floating minerals rewards whoever spends worst: Zerg banks between larvae and takes
     // a third base, while Protoss and Terran spend every mineral and sit on two forever. Keep a base-count
     // floor that grows with the clock so every race keeps taking ground.
@@ -385,7 +432,20 @@ class AI {
     // Zerg: morph creep colonies into sunkens
     if (r === 'Z') { const enemyAir = this.enemies().some(q => G.units.some(u => u.alive && u.owner === q.id && u.fly && (u.hasWeapon() || u.def.cargo))); const spores = this.mine(u => u.def.id === 'spore_colony').length, sunkens = this.mine(u => u.def.id === 'sunken_colony').length; for (const c of this.mine(u => u.def.id === 'creep_colony' && u.done && !u.prod.length)) G.queueMorph(c, p.hasBuilding('evolution_chamber') && (enemyAir ? spores < sunkens : spores < Math.floor(sunkens / 3)) ? 'spore_colony' : 'sunken_colony'); }
     // Terran addons
-    if (r === 'T') { for (const b of this.mine(u => u.isBuilding && u.done && !u.addon && !u.prod.length && u.def.addons.length)) { const aid = b.def.addons[0]; if (aid === 'comsat_station' && !p.hasBuilding('academy')) continue; if (aid === 'machine_shop' || aid === 'control_tower' || aid === 'comsat_station') { if (p.minerals > 150 && p.gas > 100) G.queueAddon(b, aid); } else if (aid === 'physics_lab' && p.minerals > 300) G.queueAddon(b, aid); } }
+    // 'reactor' is new in M12 and it gets its OWN gate rather than joining the cheap group, which is a
+    // correction and not a preference. Dropped into the cheap group it fired at supply 13 on the only
+    // Barracks the AI owned, and Unit.tickBuilding halts a parent's production for the whole time an
+    // add-on is going up (`if (this.addon && !this.addon.done) return;`) -- so the Terran AI stopped
+    // making infantry for 600 frames, sat at supply 13 for 1,800, spent the 100 gas its Factory was
+    // saving for, and never reached step 4 of its own build order in a twenty-thousand-frame game.
+    // Measured, seed 1, TvZ temple: 0 factories and 9 barracks at frame 19,200 against 1 factory, an
+    // academy, an armory and a siege line on the same seed without it.
+    //
+    // So: never the last production building, and only out of a bank that can afford to lose it.
+    // A throughput add-on is a thing you buy when you are already ahead.
+    if (r === 'T') { for (const b of this.mine(u => u.isBuilding && u.done && !u.addon && !u.prod.length && u.def.addons.length)) { const aid = b.def.addons[0]; if (aid === 'comsat_station' && !p.hasBuilding('academy')) continue;
+      if (aid === 'reactor') { if (this.mine(x => x.isBuilding && x.done && x.def.id === 'barracks').length >= 2 && p.minerals > 400 && p.gas > 200) G.queueAddon(b, aid); }
+      else if (aid === 'machine_shop' || aid === 'control_tower' || aid === 'comsat_station') { if (p.minerals > 150 && p.gas > 100) G.queueAddon(b, aid); } else if (aid === 'physics_lab' && p.minerals > 300) G.queueAddon(b, aid); } }
     // Protoss: pylons when running low on power spots
     if (r === 'P' && p.minerals > 200 && this.afford(100, 0) && this.count('pylon') < 3 + this.mine(u => u.isBuilding && !u.def.psi && !u.def.depot).length / 2) this.build('pylon');
     // Zerg: lair/hive/greater spire upgrades are in script; hatchery tech at 2 hatch
@@ -531,7 +591,10 @@ class AI {
     const w = this.pickWorker((tx + def.w / 2) * TILE, (ty + def.h / 2) * TILE); if (!w) return false;
     w.setOrder({ type: 'build', def, tx, ty }); this.pending[id] = G.frame; this.reserve(def); return true; // the walk to the site must not be spent
   }
-  pickWorker(x, y) { const ws = this.mine(u => u.def.worker && !u.inside && u.stuck < 60 && (u.order.type === 'gather' || u.order.type === 'idle' || u.order.type === 'return') && !(u.order.type === 'gather' && u.order.target && u.order.target.type === 'gas')); if (!ws.length) return null; ws.sort((a, b) => distPt(a.x, a.y, x, y) + (a.carrying ? 200 : 0) - distPt(b.x, b.y, x, y) - (b.carrying ? 200 : 0)); return ws[0]; }
+  // A MULE must never be picked to put up a building: it expires, and a Terran building whose builder
+  // is gone stops advancing (Unit.tickBuilding requires the builder to be standing on it), so the site
+  // would sit at whatever fraction it reached when the MULE ran out.
+  pickWorker(x, y) { const ws = this.mine(u => u.def.worker && !u.def.mule && !u.inside && u.stuck < 60 && (u.order.type === 'gather' || u.order.type === 'idle' || u.order.type === 'return') && !(u.order.type === 'gather' && u.order.target && u.order.target.type === 'gas')); if (!ws.length) return null; ws.sort((a, b) => distPt(a.x, a.y, x, y) + (a.carrying ? 200 : 0) - distPt(b.x, b.y, x, y) - (b.carrying ? 200 : 0)); return ws[0]; }
   pickExpansion() {
     const p = this.p; let best = null, bd = 1e9; const halls = this.halls();
     for (const b of G.map.bases) {
@@ -716,13 +779,83 @@ class AI {
       // unspent energy in the audit. Once the bar is nearly full the regeneration is wasted anyway, so
       // buy vision on what we are about to walk into.
       else if (cs.energy >= 180 && this.state === 'attack' && this.target && this.target.alive && !G.visibleAt(p.id, this.target.x, this.target.y)) Abilities.issue(cs, 'scanner_sweep', null, this.target.x, this.target.y); } }
+    // M12 item 11: the Orbital Command spends its energy on MULEs.
+    //
+    // It is HERE and not in the per-unit loop below for a structural reason -- that loop skips
+    // `u.isBuilding` -- and it is keyed on `this.turn(p.id, ...)` for the reason the comsat above is:
+    // one cast per player per few ticks, not one per building per tick.
+    //
+    // WHERE it drops is the whole mechanic, so it is chosen rather than dumped at the caster: the
+    // hall with the fewest workers already on it, which in practice is the newest expansion. A MULE on
+    // a saturated main is worth a fraction of a MULE on a base with two SCVs, because Brood War caps a
+    // patch at two miners and a third just queues (MINERS_PER_PATCH in js/sim.js).
+    //
+    // The 100-energy floor rather than 50 leaves headroom so an Orbital that also grew a Comsat can
+    // still afford a scan; dropping at exactly 50 would starve the vision that keeps the army alive.
+    if (p.race === 'T' && this.turn(p.id, 3)) {
+      const oc = this.mine(u => u.def.id === 'orbital_command' && u.done && !u.lifted && u.energy >= 100)[0];
+      if (oc) {
+        let best = null, bw = 1e9;
+        for (const h of this.halls()) {
+          if (!h.done) continue;
+          const near = this.mine(w => w.def.worker && !w.def.mule && distPt(w.x, w.y, h.x, h.y) < 12 * TILE).length;
+          if (near < bw) { bw = near; best = h; }
+        }
+        if (best) {
+          // Aim at a real patch near that hall rather than at the hall itself, so the MULE lands on the
+          // mineral line instead of on the roof and does not spend a tenth of its life walking there.
+          let px = best.x, py = best.y, bd = 1e9;
+          for (const rr of G.map.resources) { if (rr.type !== 'mineral' || rr.amount <= 0) continue; const dd = distPt(rr.cx, rr.cy, best.x, best.y); if (dd < bd && dd < 12 * TILE) { bd = dd; px = rr.cx; py = rr.cy; } }
+          Abilities.issue(oc, 'mule', null, px, py);
+        }
+      }
+    }
     for (const u of G.units) {
       if (!u.alive || u.owner !== p.id || u.isBuilding || u.inside) continue;
       const d = u.def.id;
       if (d === 'siege_tank' && p.hasTech('siege_tech') && u.transT <= 0) { const near = G.near(u.x, u.y, 11 * TILE).some(o => o.owner !== p.id && !o.fly && o.alive && (o.hasWeapon() || o.isBuilding)); const veryNear = G.near(u.x, u.y, 2 * TILE).some(o => o.owner !== p.id && !o.fly && o.alive && o.hasWeapon()); if (near && !u.sieged && !veryNear && this.turn(u.id, 2)) Abilities.instant(u, 'siege_mode'); else if (u.sieged && !near && this.turn(u.id, 8)) Abilities.instant(u, 'siege_mode'); }
       else if ((d === 'vulture' || d === 'mutalisk' || d === 'dragoon') && u.order.type === 'attack' && this.turn(u.id, 1)) this.kite(u);
-      else if ((d === 'marine' || d === 'firebat') && p.hasTech('stim') && u.stim <= 0 && u.hp > 25 && u.order.type === 'attack' && u.order.target && dist(u, u.order.target) < 6 * TILE) Abilities.instant(u, 'stim');
+      // Stim: the marauder and the reaper are bio and carry it, so they use it. The hp floor is raised
+      // for them in proportion to what stim costs -- a flat 10 hp off a 60-hp reaper is a sixth of it.
+      else if ((d === 'marine' || d === 'firebat' || d === 'marauder' || d === 'reaper') && p.hasTech('stim') && u.stim <= 0 && u.hp > (d === 'reaper' ? 30 : 25) && u.order.type === 'attack' && u.order.target && dist(u, u.order.target) < 6 * TILE) Abilities.instant(u, 'stim');
       else if (d === 'lurker' && u.transT <= 0) { const near = G.near(u.x, u.y, 7 * TILE).some(o => o.owner !== p.id && !o.fly && o.alive && !o.def.larva); if (near && !u.burrowed && this.turn(u.id, 1)) Abilities.instant(u, 'burrow'); else if (u.burrowed && !near && this.turn(u.id, 6) && this.state !== 'gather') Abilities.instant(u, 'burrow'); }
+      // ---- M12 wave four ---------------------------------------------------------------------------
+      // A Widow Mine buried is a weapon and a Widow Mine walking is a 90-hit-point paperweight -- its
+      // gun is `burrowOnly`, so Unit.weaponFor hands it nothing at all while it is up. Same shape as
+      // the Lurker clause directly above, with one difference that matters: the mine hits AIR too, so
+      // the "is there anything here" test must not filter on `!o.fly` the way the Lurker's does.
+      else if (d === 'widow_mine' && u.transT <= 0) {
+        const near = G.near(u.x, u.y, 6 * TILE).some(o => o.owner !== p.id && o.alive && !o.def.larva && !o.isBuilding);
+        if (near && !u.burrowed && this.turn(u.id, 1)) Abilities.instant(u, 'burrow');
+        else if (u.burrowed && !near && this.turn(u.id, 8) && this.state !== 'gather') Abilities.instant(u, 'burrow');
+      }
+      // The Viking picks a sky. Fighter mode can only shoot air and assault mode can only shoot ground,
+      // so a wing that never transforms is half a unit whichever half it is -- this is the line that
+      // makes `viking_a` reachable at all for a computer opponent, since nothing trains it.
+      //
+      // Air wins ties on purpose. Landing takes 40 frames of transT and there is no way back inside
+      // that window, so a Viking that folds up in front of a mutalisk flock is dead; one that stays up
+      // while there is anything flying has merely not helped yet.
+      else if (d === 'viking' && u.transT <= 0 && this.turn(u.id, 4)) {
+        const air = G.near(u.x, u.y, 12 * TILE).some(o => o.owner !== p.id && o.alive && o.fly && !o.def.larva);
+        const ground = G.near(u.x, u.y, 8 * TILE).some(o => o.owner !== p.id && o.alive && !o.fly && (o.hasWeapon() || o.isBuilding));
+        if (!air && ground) Abilities.instant(u, 'viking_mode');
+      }
+      else if (d === 'viking_a' && u.transT <= 0 && this.turn(u.id, 2)) {
+        const air = G.near(u.x, u.y, 14 * TILE).some(o => o.owner !== p.id && o.alive && o.fly && !o.def.larva);
+        if (air) Abilities.instant(u, 'viking_mode');
+      }
+      // The Raven blinds a defended position. The cluster test is the enemy's, not ours: what the field
+      // is worth is proportional to how many of their eyes are inside it, and dropping it on our own
+      // army would blind nothing (Abilities.tickFields skips anyone allied with the owner).
+      else if (d === 'raven' && u.energy >= 75 && this.turn(u.id, 2)) {
+        const c = this.cluster(u, 9, 3, o => o.owner !== p.id && !o.def.larva);
+        if (c && !Abilities.inField(c.x, c.y, 'jam')) Abilities.issue(u, 'jam_field', null, c.x, c.y);
+      }
+      // The Banshee cloaks for the same reason and off the same research as the Wraith. It is a
+      // separate clause rather than an extra `||` on the wraith one below because the wraith clause is
+      // far down the else-if chain, behind several that a banshee would never match anyway.
+      else if (d === 'banshee' && !u.cloaked && u.energy >= 50 && p.hasTech('cloaking_field') && this.turn(u.id, 4) && G.near(u.x, u.y, 8 * TILE).some(o => o.owner !== p.id && o.hasWeapon())) Abilities.instant(u, 'cloak_wraith');
       else if (d === 'high_templar' && u.energy >= 75 && p.hasTech('psi_storm_tech') && this.turn(u.id, 1)) { const c = this.cluster(u, 9, 3, o => o.owner !== p.id && !o.isBuilding); if (c) Abilities.issue(u, 'psi_storm', null, c.x, c.y); }
       // Dark Swarm is as much a defensive spell as an offensive one, and the cluster test below already
       // says "our ground units are being shot at". Gating it on the army being on the attack meant the

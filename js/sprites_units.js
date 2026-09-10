@@ -39,12 +39,17 @@ const NCOL = {
 };
 // Which units animate how
 const ANIM_KIND = {
-  biped: new Set(['scv', 'marine', 'firebat', 'medic', 'ghost', 'zealot', 'high_templar', 'dark_templar', 'infested_terran']),
+  biped: new Set(['scv', 'marine', 'firebat', 'medic', 'ghost', 'zealot', 'high_templar', 'dark_templar', 'infested_terran', 'marauder', 'reaper']),
   legged: new Set(['zergling', 'hydralisk', 'lurker', 'ultralisk', 'defiler', 'broodling', 'dragoon', 'goliath', 'drone', 'larva', 'reaver',
-    'carrion_grub', 'carrion_maw', 'sentinel']),   // race 'N': two walkers and a tripod. The tells are not units and are not listed.
-  treads: new Set(['siege_tank']),
+    'carrion_grub', 'carrion_maw', 'sentinel',   // race 'N': two walkers and a tripod. The tells are not units and are not listed.
+    'thor', 'widow_mine', 'viking_a']),          // M12: a walker, a tripod-on-a-disc, and a Viking with its legs down
+  treads: new Set(['siege_tank', 'cyclone']),
   winged: new Set(['mutalisk', 'guardian', 'devourer', 'scourge', 'queen', 'overlord', 'cocoon']),
-  engine: new Set(['wraith', 'valkyrie', 'dropship', 'science_vessel', 'battlecruiser', 'vulture', 'probe', 'shuttle', 'observer', 'scout', 'corsair', 'carrier', 'arbiter', 'interceptor']),
+  // `engine` is the one of these five that Render.animOf actually reads, and what it means is "this
+  // never stops moving, so run its walk cycle whether or not it is going anywhere". Every M12 flyer is
+  // here, and so are the hellion and the MULE: a wheeled vehicle idling still has its wheels turning.
+  engine: new Set(['wraith', 'valkyrie', 'dropship', 'science_vessel', 'battlecruiser', 'vulture', 'probe', 'shuttle', 'observer', 'scout', 'corsair', 'carrier', 'arbiter', 'interceptor',
+    'banshee', 'liberator', 'viking', 'medivac', 'raven', 'hellion', 'mule']),
 };
 const UNIT_PAINTERS = {
   scv(h, r, TC, TCd, st) { const { M, Md, Ml, visor, gun } = TCOL; const { sw, ak } = ANIM(st); h.feet(-r * .3, r * .62, r * .34, Md, sw); h.R(-r * 1.15, -r * .35, r * .35, r * .7, 2, Md); h.R(-r * .85, -r * .75, r * 1.6, r * 1.5, 3, M); h.R(-r * .6, -r * .55, r * .9, r * .5, 2, TC, OUT, 1); h.E(r * .45, 0, r * .35, r * .45, visor); const ex = ak * r * .25; h.L(r * .2, -r * .65, r * 1.15 + ex, -r * .55, gun, 3); h.L(r * 1.05 + ex, -r * .7, r * 1.25 + ex, -r * .45, Ml, 3); h.L(r * .2, r * .65, r * 1.15 + ex, r * .55, gun, 3); h.L(r * 1.05 + ex, r * .7, r * 1.25 + ex, r * .45, Ml, 3); h.G(-r * 1.2, 0, r * .4, '#7fd0ff'); },
@@ -153,6 +158,142 @@ const UNIT_PAINTERS = {
     h.L(r * 1.05 - rb, -r * .15, r * 1.4 - rb, -r * .15, steelL, 1.4);
     h.L(r * 1.05 - rb, r * .15, r * 1.4 - rb, r * .15, steelL, 1.4);
     h.C(bx + r * .12, 0, r * .16, amber, null);                                        // one eye
+  },
+  // ---- M12 wave four: Terran ---------------------------------------------------------------
+  // These are the FALLBACK painters, and in this branch they are what the game actually draws --
+  // tools/bake.js has not been run for these units yet, so js/sprites.js finds no atlas entry and
+  // comes here (see the comment at the top of test/baked.js). They therefore have to carry the same
+  // silhouettes the 3D models do, or a unit changes shape the day somebody bakes.
+  //
+  // Same rule as the M8 infantry pass: one oversized outline-breaking feature each, and never colour.
+  marauder(h, r, TC, TCd, st) { const { M, Md, Ml, visor, gun } = TCOL; const { sw, rec } = ANIM(st); const bx = -rec * r * .2;
+    h.feet(-r * .2, r * .55, r * .34, Md, sw);
+    h.R(-r * .95 + bx, -r * .45, r * .45, r * .9, 2, Md);
+    h.R(-r * .3 + bx, -r * 1.05, r * .8, r * .45, 3, '#5a636d');                        // the slab pauldrons,
+    h.R(-r * .3 + bx, r * .6, r * .8, r * .45, 3, '#5a636d');                           // overhanging both sides
+    h.R(-r * .25 + bx, -r * 1.0, r * .7, r * .16, 1, TC, null);
+    h.R(-r * .25 + bx, r * .84, r * .7, r * .16, 1, TC, null);
+    h.C(bx, 0, r * .6, M); h.E(r * .22 + bx, 0, r * .26, r * .34, visor, OUT, 1);
+    h.L(r * .1 + bx, r * .3, r * 1.25 + bx, r * .26, gun, 6);                           // one fat grenade tube
+    h.C(r * 1.28 + bx, r * .26, r * .17, Ml, OUT, 1);
+  },
+  reaper(h, r, TC, TCd, st) { const { Md, Ml, gun } = TCOL; const { sw, rec } = ANIM(st); const bx = -rec * r * .15;
+    h.feet(-r * .1, r * .45, r * .26, Md, sw);
+    h.R(-r * 1.25 + bx, -r * .55, r * .6, r * 1.1, 3, '#54483a');                       // the oversized pack
+    h.C(-r * 1.35 + bx, -r * .5, r * .22, Md); h.C(-r * 1.35 + bx, r * .5, r * .22, Md);
+    h.G(-r * 1.5 + bx, -r * .5, r * .34, '#7fd0ff'); h.G(-r * 1.5 + bx, r * .5, r * .34, '#7fd0ff');
+    h.E(-r * .1 + bx, -r * .62, r * .3, r * .22, TC); h.E(-r * .1 + bx, r * .62, r * .3, r * .22, TC);
+    h.C(bx, 0, r * .5, '#7f7161'); h.E(r * .2 + bx, 0, r * .24, r * .28, '#ff9f40', OUT, 1);
+    h.L(r * .05 + bx, -r * .3, r * .8 + bx, -r * .26, gun, 2.5); h.L(r * .05 + bx, r * .3, r * .8 + bx, r * .26, gun, 2.5);
+    h.L(r * .6 + bx, -r * .26, r * .85 + bx, -r * .26, Ml, 1.2);
+  },
+  hellion(h, r, TC, TCd, st) { const { M, Md, Ml, gun } = TCOL; const { sw2, ak } = ANIM(st);
+    for (const s of [-1, 1]) { h.C(-r * .55, s * r * .62, r * .26, '#2b3036'); h.C(r * .55, s * r * .62, r * .26, '#2b3036'); }
+    h.P([[r * 1.15, 0], [r * .1, -r * .6], [-r * 1.0, -r * .5], [-r * 1.0, r * .5], [r * .1, r * .6]], '#8a7a55');   // the wedge
+    h.R(-r * .7, -r * .3, r * .55, r * .6, 2, TC, OUT, 1);
+    h.E(-r * .05, 0, r * .26, r * .3, TCOL.visor, OUT, 1);
+    h.L(r * .2, 0, r * 1.5, 0, gun, 4); h.C(r * 1.55, 0, r * .16 + ak * r * .3, '#ffb03c', null);   // the flame tube
+    h.R(-r * 1.05, -r * .5, r * .2, r * 1.0, 2, '#6b3226');
+    h.G(-r * 1.1, 0, r * (.34 + sw2 * .08), '#ff9a50');
+    h.L(r * .55, -r * .55, r * .95, -r * .3, Ml, 1.5);
+  },
+  cyclone(h, r, TC, TCd, st) { const { M, Md, Ml } = TCOL; const { rec } = ANIM(st); const off = st && st.walk != null ? (st.walk % 1) * r * .3 : 0;
+    h.R(-r * .85, -r * .9, r * 1.7, r * .3, 3, '#3a3f45'); h.R(-r * .85, r * .6, r * 1.7, r * .3, 3, '#3a3f45');
+    for (let k = 0; k < 5; k++) { const x = -r * .8 + ((k * r * .34 + off) % (r * 1.7)); h.L(x, -r * .88, x, -r * .64, '#5a6068', 1.4); h.L(x, r * .64, x, r * .88, '#5a6068', 1.4); }
+    h.R(-r * .8, -r * .6, r * 1.6, r * 1.2, 4, M);
+    h.P([[r * .8, -r * .45], [r * 1.2, 0], [r * .8, r * .45]], Md);
+    h.R(-r * .7, -r * .3, r * .4, r * .6, 2, TC, OUT, 1);
+    h.C(-r * .05, 0, r * .55 - rec * r * .05, '#4d555f');                              // the raised drum, seen end-on
+    h.C(-r * .05, 0, r * .4, '#333a42', null);
+    for (let k = 0; k < 6; k++) { const a = k * 1.047; h.C(-r * .05 + Math.cos(a) * r * .26, Math.sin(a) * r * .26, r * .1, '#c04030', null); }
+    h.C(-r * .05, 0, r * .12, '#ff8040', null);
+  },
+  widow_mine(h, r, TC, TCd, st) { const { Md, Ml } = TCOL; const { sw, ak } = ANIM(st);
+    for (let k = 0; k < 3; k++) { const a = k * 2.094 + .4 + sw * .18; h.L(Math.cos(a) * r * .5, Math.sin(a) * r * .5, Math.cos(a) * r * 1.15, Math.sin(a) * r * 1.15, Md, 3.5); h.C(Math.cos(a) * r * 1.15, Math.sin(a) * r * 1.15, r * .12, Md, null); }
+    h.C(0, 0, r * .78, '#6b6f66');                                                     // the disc
+    h.C(0, 0, r * .55, TC, OUT, 1);
+    h.C(0, 0, r * .3, '#3c4148', null);
+    h.C(-r * .1, 0, r * .13 + ak * r * .2, '#ff4030', null);                           // the eye, opening on the shot
+  },
+  thor(h, r, TC, TCd, st) { const { M, Md, Ml, visor, gun } = TCOL; const { sw, rec } = ANIM(st); const bx = -rec * r * .12;
+    h.feet(-r * .25, r * .68, r * .4, '#2d3238', sw);
+    h.R(-r * .9 + bx, -r * .78, r * 1.7, r * 1.56, 5, M);                              // simply enormous
+    h.R(-r * .95 + bx, -r * .35, r * .5, r * .7, 2, TC, OUT, 1);
+    h.E(r * .55 + bx, 0, r * .34, r * .42, visor, OUT, 1);
+    h.C(r * .05 + bx, 0, r * .5, '#4a525c', null);
+    for (const s of [-1, 1]) { h.R(bx - r * .05, s * r * .75 - r * .22, r * .55, r * .44, 3, Md);
+      h.L(bx + r * .4, s * r * .75, r * 1.55 + bx - rec * r * .25, s * r * .75, gun, 6);
+      h.L(bx + r * 1.25 - rec * r * .25, s * r * .75, r * 1.6 + bx - rec * r * .25, s * r * .75, Ml, 2.4); }
+    h.C(-r * .55 + bx, 0, r * .16, '#ff4030', null);
+  },
+  banshee(h, r, TC, TCd, st) { const { M, Md, Ml, gun } = TCOL; const { sw2, rec } = ANIM(st);
+    for (const s of [-1, 1]) { h.R(-r * .1, s * r * .35, r * .34, r * .32, 1, Md);
+      h.E(-r * .05, s * r * .85, r * .78, r * .16, 'rgba(190,200,215,0.55)', 'rgba(0,0,0,0.25)', 1);   // the rotor discs
+      h.E(-r * .05, s * r * .85, r * .14, r * .1, Md, null);
+      h.L(r * .3, s * r * .5, r * 1.0 - rec * r * .15, s * r * .45, gun, 3); }
+    h.P([[r * 1.25, 0], [r * .4, -r * .4], [-r * .95, -r * .35], [-r * 1.05, 0], [-r * .95, r * .35], [r * .4, r * .4]], '#4a5058');
+    h.R(-r * .55, -r * .22, r * .5, r * .44, 2, TC, OUT, 1);
+    h.E(r * .5, 0, r * .26, r * .2, '#ffa040', OUT, 1);
+    h.G(-r * 1.05, 0, r * (.34 + sw2 * .08), '#ff9040');
+  },
+  liberator(h, r, TC, TCd, st) { const { M, Md, Ml } = TCOL; const { rec } = ANIM(st);
+    h.E(0, 0, r * 1.3, r * 1.15, '#40474f');                                           // the ring, wider than the hull
+    h.E(0, 0, r * .95, r * .82, '#565f69', null);
+    h.R(-r * .75, -r * .55, r * 1.5, r * 1.1, 4, M);
+    h.R(-r * .55, -r * .2, r * .45, r * .4, 2, TC, OUT, 1);
+    h.C(r * .05, 0, r * .38 - rec * r * .06, '#262b30');                               // the barrel, through the middle
+    h.C(r * .05, 0, r * .2, '#12151a', null);
+    h.E(r * .8, 0, r * .2, r * .16, TCOL.visor, OUT, 1);
+    for (const s of [-1, 1]) { h.G(-r * .8, s * r * .5, r * .3, '#7fc8ff'); h.R(-r * .35, s * r * .9, r * .3, r * .22, 1, Md); }
+  },
+  viking(h, r, TC, TCd, st) { const { M, Md, Ml, visor, gun } = TCOL; const { sw2, rec } = ANIM(st);
+    for (const s of [-1, 1]) { h.P([[-r * .2, s * r * .3], [-r * .95, s * r * 1.05], [-r * 1.05, s * r * .55], [-r * .45, s * r * .2]], '#454c54');   // swept wings
+      h.R(-r * .8, s * r * .5 - r * .16, r * 1.3, r * .32, 3, '#5b636d');              // the nacelles, lying flat
+      h.L(r * .5, s * r * .5, r * 1.15 - rec * r * .15, s * r * .5, gun, 2.6);
+      h.G(-r * .95, s * r * .5, r * (.26 + sw2 * .06), '#7fc8ff'); }
+    h.P([[r * 1.3, 0], [r * .3, -r * .34], [-r * .95, -r * .28], [-r * .95, r * .28], [r * .3, r * .34]], M);
+    h.R(-r * .6, -r * .18, r * .45, r * .36, 2, TC, OUT, 1);
+    h.E(r * .5, 0, r * .24, r * .2, visor, OUT, 1);
+  },
+  viking_a(h, r, TC, TCd, st) { const { M, Md, Ml, visor, gun } = TCOL; const { sw, rec } = ANIM(st);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const px = sx * r * .5 + sx * sz * sw * r * .1;
+      h.L(px, sz * r * .55, px + sx * r * .22, sz * r * .95, Md, 3); h.C(px + sx * r * .22, sz * r * .95, r * .1, Md, null); }
+    h.E(0, 0, r * .95, r * .5, M);                                                     // the same fuselage, wings folded
+    h.E(r * .42, 0, r * .26, r * .2, visor, OUT, 1);
+    h.R(-r * .55, -r * .16, r * .4, r * .32, 2, TC, OUT, 1);
+    for (const s of [-1, 1]) { h.C(-r * .05, s * r * .55, r * .3, '#5b636d');          // nacelles now upright: two drums
+      h.L(r * .15, s * r * .55, r * 1.05 - rec * r * .18, s * r * .5, gun, 3);
+      h.C(-r * .05, s * r * .55, r * .11, '#ff9040', null); }
+  },
+  medivac(h, r, TC, TCd, st) { const { Md, Ml, visor } = TCOL; const { sw2 } = ANIM(st);
+    h.P([[r * 1.15, 0], [r * .5, -r * .55], [-r * .8, -r * .62], [-r * 1.0, 0], [-r * .8, r * .62], [r * .5, r * .55]], '#b9bec2');
+    for (const s of [-1, 1]) { h.R(-r * .55, s * r * .5, r * 1.0, r * .12, 1, '#8ce8ff', null);   // the lit window strips
+      h.R(-r * .5, s * r * .78, r * .5, r * .22, 2, Md); h.G(-r * .35, s * r * .95, r * (.3 + sw2 * .06), '#7fc8ff'); }
+    h.R(-r * .35, -r * .3, r * .55, r * .6, 3, '#eef2f4', OUT, 1);                     // the cross housing
+    h.R(-r * .14, -r * .22, r * .13, r * .44, 1, '#e03030', null);
+    h.R(-r * .3, -r * .07, r * .45, r * .14, 1, '#e03030', null);
+    h.E(r * .62, 0, r * .24, r * .2, visor, OUT, 1);
+    h.R(-r * .95, -r * .16, r * .25, r * .32, 1, TC, null);
+  },
+  raven(h, r, TC, TCd, st) { const { Md, Ml } = TCOL; const { sw2 } = ANIM(st);
+    for (let k = 0; k < 4; k++) { const a = k * 1.5708 + .785;                          // four booms in a cross
+      h.L(Math.cos(a) * r * .3, Math.sin(a) * r * .3, Math.cos(a) * r * 1.25, Math.sin(a) * r * 1.25, '#9aa4ae', 2);
+      h.C(Math.cos(a) * r * 1.25, Math.sin(a) * r * 1.25, r * .12, '#66ffb0', null); }
+    h.E(0, 0, r * .7, r * .34, '#3f4750');
+    h.E(r * .35, 0, r * .2, r * .15, '#8effd0', OUT, 1);
+    h.R(-r * .5, -r * .13, r * .35, r * .26, 1, TC, null);
+    h.C(-r * .1, 0, r * .18, '#2b3036'); h.C(-r * .1, 0, r * .1, '#66ffb0', null);
+    h.G(-r * .8, 0, r * (.26 + sw2 * .06), '#7fffcc');
+  },
+  mule(h, r, TC, TCd, st) { const { M, Md, Ml } = TCOL; const { sw2, ak } = ANIM(st);
+    for (const s of [-1, 1]) h.C(-r * .2, s * r * .52, r * .24, '#2b3036');
+    h.R(-r * .65, -r * .45, r * 1.3, r * .9, 3, '#8c7f57');                             // hopper-and-arms, not a cab
+    h.P([[-r * .65, -r * .45], [-r * 1.1, -r * .3], [-r * 1.1, r * .3], [-r * .65, r * .45]], '#6a6144');
+    h.R(-r * .4, -r * .2, r * .55, r * .4, 2, TC, OUT, 1);
+    const ex = ak * r * .2;
+    h.L(r * .3, -r * .4, r * 1.0 + ex, -r * .3, Md, 3); h.L(r * .3, r * .4, r * 1.0 + ex, r * .3, Md, 3);
+    h.C(r * 1.05 + ex, -r * .3, r * .12, Ml, null); h.C(r * 1.05 + ex, r * .3, r * .12, Ml, null);
+    h.C(r * .35, 0, r * .16, '#ffbf50', null);
   },
   // ---- the tells ---------------------------------------------------------------------------
   // `r` is the radius of the disturbed patch in pixels (DATA.buriedTells[k].r * TILE). No outline,

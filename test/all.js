@@ -80,6 +80,7 @@ const TESTS = [
   { name: 'campaign', args: ['campaign.js'], what: 'weighted choices resolve both ways, the record persists, narrowing cannot strand you' },
   { name: 'zoom', args: ['zoom.js'], what: 'strategic zoom clamps, anchors and swaps to icons; night runs without G.daylight' },
   { name: 'skirmish', args: ['skirmish.js'], what: 'the setup screen: every setting reaches G.init, and the default is still today\'s game' },
+  { name: 'terran12', args: ['terran12.js'], what: 'M12 Terran: the MULE expires, the Reactor doubles, the Viking has two sets of teeth' },
 ];
 
 const argv = process.argv.slice(2);

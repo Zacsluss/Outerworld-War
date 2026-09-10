@@ -126,6 +126,49 @@ const BUILDING_PAINTERS = {
   aid_station(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 10 }); h.R(W / 2 - 15, 10, 30, 26, 3, '#e6ebf0', OUT, 1); h.R(W / 2 - 3, 14, 6, 18, 1, '#d03030', null); h.R(W / 2 - 10, 20, 20, 6, 1, '#d03030', null); h.R(11, 14, 20, 22, 3, TCOL.Md); h.C(21, 25, 5, TCOL.visor, OUT, 1); h.R(W - 31, 14, 20, 22, 3, TCOL.Md); h.C(W - 21, 25, 4, '#4ad06a', null); for (let k = 0; k < 3; k++) h.R(12 + k * 26, H - 20, 16, 5, 1, '#1e2226', null); },
   scrambler_mast(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 8, inset: 3 }); const mx = W / 2; h.L(mx - 7, H - 18, mx - 2, 10, TCOL.Md, 3); h.L(mx + 7, H - 18, mx + 2, 10, TCOL.Md, 3); for (let k = 0; k < 4; k++) { const y = H - 20 - k * 8; h.L(mx - 6 + k * 1.2, y, mx + 6 - k * 1.2, y - 6, TCOL.M, 1.5); h.L(mx + 6 - k * 1.2, y, mx - 6 + k * 1.2, y - 6, TCOL.M, 1.5); } h.E(mx, 9, 11, 5, TCOL.Ml, OUT, 1); h.C(mx, 6, 3, '#ff5050', null); h.R(8, H - 26, 14, 10, 2, TCOL.Md); },
   blast_barricade(h, c, W, H, TC) { h.R(2, 12, W - 4, H - 18, 3, '#3a4046', OUT, 1.5); h.R(2, 5, W - 4, 15, 4, '#6b737c', OUT, 1.5); c.strokeStyle = 'rgba(0,0,0,0.3)'; c.lineWidth = 1; for (let k = 1; k < 3; k++) { c.beginPath(); c.moveTo(2 + k * (W - 4) / 3, 20); c.lineTo(2 + k * (W - 4) / 3, H - 8); c.stroke(); } for (let k = 0; k < 4; k++) h.P([[6 + k * 15, 18], [12 + k * 15, 7], [18 + k * 15, 7], [12 + k * 15, 18]], k % 2 ? '#e0b429' : '#20252a', null); h.R(4, H - 10, W - 8, 5, 2, TC, null); h.C(8, 12, 3, TCOL.Md); h.C(W - 8, 12, 3, TCOL.Md); },
+  // ---- M12 wave four: Terran ------------------------------------------------------------------
+  // The fallback painters for the four new Terran structures. In this branch they are what is actually
+  // drawn: tools/bake.js has not been run for them, so js/sprites.js finds no atlas entry and lands
+  // here. Each is separated by SHAPE from the specific building it will be confused with -- the
+  // Orbital and the Fortress from a plain Command Center and from each other, the Sensor Tower from
+  // the Scrambler Mast, the Reactor from the four other 2x2 add-ons -- exactly as the 3D models are.
+  orbital_command(h, c, W, H, TC) { BUILDING_PAINTERS.command_center(h, c, W, H, TC);
+    // a dish half the width of the building, tilted, on a mast: round where the Fortress is square
+    h.L(W / 2 + 4, H / 2 - 6, W / 2 + 14, H / 2 - 26, TCOL.Md, 4);
+    h.E(W / 2 + 16, H / 2 - 30, 30, 15, '#b6bec6', OUT, 1.5);
+    h.E(W / 2 + 12, H / 2 - 32, 20, 9, '#dbe2e8', null);
+    h.C(W / 2 + 16, H / 2 - 30, 4, TCOL.Md); h.C(W / 2 + 34, H / 2 - 26, 3, '#7fd0ff', null);
+    h.R(10, H - 24, 18, 6, 2, TC, null);
+  },
+  planetary_fortress(h, c, W, H, TC) { BUILDING_PAINTERS.command_center(h, c, W, H, TC);
+    // a blast skirt past the footprint on all four sides, four casemates, one twin turret
+    h.R(-2, -2, W + 4, H + 4, 6, null, '#2a2f33', 5);
+    for (const [x, y] of [[12, 14], [W - 12, 14], [12, H - 16], [W - 12, H - 16]]) { h.C(x, y, 10, '#5e666a'); h.C(x, y, 5, '#2f3438', null); }
+    h.C(W / 2, H / 2 - 4, 20, '#454c50');
+    h.R(W / 2 - 4, H / 2 - 12, 34, 7, 2, '#33383a', OUT, 1); h.R(W / 2 - 4, H / 2 + 5, 34, 7, 2, '#33383a', OUT, 1);
+    h.R(W / 2 - 16, H / 2 - 8, 14, 16, 2, TC, OUT, 1);
+    h.C(14, H - 14, 3, '#ff5040', null);
+  },
+  sensor_tower(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 7, inset: 3 }); const mx = W / 2;
+    // a lattice, like the Scrambler Mast -- and then a long horizontal search BAR instead of its dish,
+    // hanging past both edges of the footprint. Straight against round, at the same height.
+    h.L(mx - 6, H - 16, mx - 2, 14, TCOL.Md, 2.5); h.L(mx + 6, H - 16, mx + 2, 14, TCOL.Md, 2.5);
+    for (let k = 0; k < 5; k++) { const y = H - 18 - k * 7; h.L(mx - 5 + k, y, mx + 5 - k, y - 5, TCOL.M, 1.2); }
+    h.C(mx, 13, 5, TCOL.Md);
+    h.L(mx - 26, 11, mx + 26, 11, '#c3cbd3', 3);
+    h.R(mx - 30, 8, 8, 7, 1, TCOL.Md); h.R(mx + 22, 8, 8, 7, 1, TCOL.Md);
+    h.C(mx - 30, 11, 2.5, '#66ff9a', null); h.C(mx + 30, 11, 2.5, '#66ff9a', null);
+    h.R(6, H - 22, 12, 8, 2, TCOL.Md);
+  },
+  reactor(h, c, W, H, TC) { BP.tBase(h, c, W, H, TC, { depth: 8, inset: 3 });
+    // a lit RING over an open core, which no other add-on is
+    h.C(W / 2, H / 2 - 2, 19, '#3d444c');
+    h.C(W / 2, H / 2 - 2, 15, '#4fd6ff', null);
+    h.C(W / 2, H / 2 - 2, 9, TCOL.Md, null);
+    h.C(W / 2, H / 2 - 2, 5, '#bff2ff', null);
+    for (const dx of [-1, 1]) { h.C(W / 2 + dx * 20, H - 16, 6, TCOL.Md); h.C(W / 2 + dx * 20, H - 16, 3, '#20252a', null); }
+    h.R(W - 20, 6, 12, 5, 2, TC, null);
+  },
   mending_pool(h, c, W, H, TC) { BP.zBase(h, c, W, H, TC); h.E(W / 2, H / 2 + 2, W * .3, H * .28, '#3f5a7a', OUT, 1.5); h.E(W / 2 - 5, H / 2 - 1, W * .16, H * .13, '#7fc8b0', null); for (const dx of [-30, 30]) { h.E(W / 2 + dx, H / 2 - 2, 9, 7, '#6b4a58', OUT, 1); h.Q(W / 2 + dx, H / 2 - 2, W / 2 + dx * .5, H / 2 - 12, W / 2, H / 2 - 4, '#8a6a70', 3); } h.C(W / 2, H / 2 - 14, 4, '#b8f0d0', null); },
   miasma_gland(h, c, W, H, TC) { BP.zBase(h, c, W, H, TC); h.E(W / 2, H / 2 + 2, 15, 13, '#5a4a68', OUT, 1.5); h.E(W / 2 - 4, H / 2 - 2, 7, 6, '#9a7ab0', null); for (let k = 0; k < 5; k++) { const a = k * 1.26 + .4; h.Q(W / 2 + Math.cos(a) * 12, H / 2 + Math.sin(a) * 10, W / 2 + Math.cos(a) * 20, H / 2 + Math.sin(a) * 16 - 4, W / 2 + Math.cos(a) * 24, H / 2 + Math.sin(a) * 20 - 10, '#6a5a78', 2.5); } h.C(W / 2, H / 2 - 12, 3.5, '#c8a0e0', null); },
   carapace_ridge(h, c, W, H, TC) { h.R(3, H * .28, W - 6, H * .6, 7, '#402833', OUT, 1.5); for (let k = 0; k < 3; k++) h.E(11 + k * (W - 22) / 2, H * .56, 13, 15, k % 2 ? '#7a5a5e' : '#694a54', OUT, 1.2); for (let k = 0; k < 4; k++) { const x = 8 + k * (W - 16) / 3; h.P([[x - 4, H * .34], [x + 1, H * .05], [x + 5, H * .34]], TCOL.bone, OUT, 1); } h.E(W / 2, H * .5, 7, 5, TC, 'rgba(0,0,0,0.5)', 1); },
@@ -215,6 +258,12 @@ const BUILDING_ANIM = {
   // the sim change that gives the radius meaning, and with whoever owns js/render.js.
   aid_station(ctx, u, x0, y0, W, H, f) { const cx = x0 + W / 2, cy = y0 + 22; const a = 0.35 + Math.sin(f * 0.09) * 0.3; ctx.fillStyle = `rgba(120,255,170,${a})`; ctx.fillRect(cx - 2, cy - 7, 4, 14); ctx.fillRect(cx - 7, cy - 2, 14, 4); },
   scrambler_mast(ctx, u, x0, y0, W, H, f) { const cx = x0 + W / 2, cy = y0 + 9; for (let k = 0; k < 2; k++) { const t = ((f / 34) + k / 2) % 1; ctx.strokeStyle = `rgba(120,200,255,${0.45 * (1 - t)})`; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(cx, cy, 6 + t * 24, 3 + t * 12, 0, 0, 7); ctx.stroke(); } },
+  // M12 wave four. Three of the four say what they are by MOVING, which is the cheapest way to
+  // separate a new 2x2 from the four 2x2s beside it: strokes and small fills only, no per-instance
+  // gradient (M8 measured one of those at 0.8 ms a frame).
+  orbital_command(ctx, u, x0, y0, W, H, f) { const cx = x0 + W / 2 + 16, cy = y0 + H / 2 - 30; for (let k = 0; k < 2; k++) { const t = ((f / 52) + k / 2) % 1; ctx.strokeStyle = `rgba(140,215,255,${0.4 * (1 - t)})`; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(cx, cy, 8 + t * 30, 4 + t * 15, 0, 0, 7); ctx.stroke(); } },
+  sensor_tower(ctx, u, x0, y0, W, H, f) { const cx = x0 + W / 2, cy = y0 + 11; const a = f * 0.04; const dx = Math.cos(a) * 26, dy = Math.sin(a) * 9; ctx.strokeStyle = '#c8d2da'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(cx - dx, cy - dy); ctx.lineTo(cx + dx, cy + dy); ctx.stroke(); ctx.fillStyle = `rgba(110,255,160,${0.5 + Math.sin(f * 0.12) * 0.35})`; ctx.beginPath(); ctx.arc(cx + dx, cy + dy, 2.5, 0, 7); ctx.fill(); },
+  reactor(ctx, u, x0, y0, W, H, f) { const cx = x0 + W / 2, cy = y0 + H / 2 - 2; const a = 0.35 + Math.sin(f * 0.08) * 0.25; ctx.strokeStyle = `rgba(120,235,255,${a})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, 15, 0, 7); ctx.stroke(); ctx.fillStyle = `rgba(200,245,255,${a})`; ctx.beginPath(); ctx.arc(cx, cy, 4 + Math.sin(f * 0.08) * 1.5, 0, 7); ctx.fill(); },
   mending_pool(ctx, u, x0, y0, W, H, f) { const cx = x0 + W / 2, cy = y0 + H / 2 + 2; ctx.fillStyle = 'rgba(150,240,200,0.35)'; for (let k = 0; k < 3; k++) { const t = ((f / 44) + k / 3) % 1; ctx.beginPath(); ctx.arc(cx + Math.cos(k * 2.1) * 12, cy + Math.sin(k * 2.1) * 6 - t * 10, 1.5 + t * 4, 0, 7); ctx.fill(); } },
   miasma_gland(ctx, u, x0, y0, W, H, f) { const cx = x0 + W / 2, cy = y0 + H / 2; for (let k = 0; k < 3; k++) { const t = ((f / 56) + k / 3) % 1; ctx.fillStyle = `rgba(170,120,200,${0.3 * (1 - t)})`; ctx.beginPath(); ctx.ellipse(cx + Math.cos(k * 2.1 + t * 1.2) * (6 + t * 18), cy + Math.sin(k * 2.1) * 5 - t * 6, 4 + t * 7, 3 + t * 5, 0, 0, 7); ctx.fill(); } },
   rejuvenation_shrine(ctx, u, x0, y0, W, H, f) { if (u.unpowered) return; const cx = x0 + W / 2, cy = y0 + H / 2 - 8; const t = (f / 60) % 1; ctx.strokeStyle = `rgba(126,255,208,${0.5 * (1 - t)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(cx, cy, 8 + t * 22, 5 + t * 13, 0, 0, 7); ctx.stroke(); },
