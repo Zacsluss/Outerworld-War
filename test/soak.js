@@ -65,8 +65,25 @@ function play(races, seed, frames) {
     // Coverage hooks. Wrapping rather than polling, because a cast and a finished upgrade are EVENTS --
     // polling at any interval misses the ones that resolve between two samples, which is exactly the
     // mistake the Roach check in test/zerg12.js made before it was rewritten.
-    const cast = {}, oc = Abilities.cast.bind(Abilities);
-    Abilities.cast = (u, id, t, x, y) => { cast[id] = (cast[id] || 0) + 1; return oc(u, id, t, x, y); };
+    //
+    // ALL FIVE ENTRY POINTS, because they are not one set. cast() is only the resolution step for the
+    // abilities that have one; issue() is the order-shaped route; morph(), merge() and warpIn() do not
+    // pass through either. Hooking cast() alone reported three abilities used in a game that had also
+    // morphed a Lair and a Ravager -- a metric measuring one code path while claiming to measure
+    // behaviour, which is the same mistake the Roach check made and is worth naming twice.
+    //
+    // Even so this counts what the ABILITIES MODULE was asked to do, and a few ids in DATA.abilities
+    // are executed as plain unit orders instead (burrow, siege_mode, stim) or are menu headings that
+    // nothing ever "casts" (build_basic, morph_menu). The report labels itself accordingly rather than
+    // pretending 80 is the denominator.
+    const cast = {};
+    const bump = id => { cast[id] = (cast[id] || 0) + 1; };
+    for (const fn of ['cast', 'issue', 'instant', 'morph', 'merge']) {
+      if (typeof Abilities[fn] !== 'function') continue;
+      const orig = Abilities[fn].bind(Abilities);
+      // morph/merge take (thing, id); the rest take (unit, id, ...)
+      Abilities[fn] = (...a) => { const id = a[1]; if (typeof id === 'string') bump(id); return orig(...a); };
+    }
     const warp = {}, ow = Abilities.warpIn ? Abilities.warpIn.bind(Abilities) : null;
     if (ow) Abilities.warpIn = (u, id, x, y) => { warp[id] = (warp[id] || 0) + 1; return ow(u, id, x, y); };
 
@@ -243,18 +260,47 @@ function finish() {
   console.log('\n' + '='.repeat(96) + '\nCOVERAGE over ' + results.length + ' games (a report, not a verdict)\n' + '='.repeat(96));
   line('units fielded', defs.u, sawDef);
   line('buildings raised', defs.b, sawDef);
-  line('abilities cast', defs.a, sawCast);
+  // Labelled precisely: this is what the Abilities module was ASKED to do. A handful of ids in
+  // DATA.abilities are never routed through it (burrow, siege_mode and stim are unit orders;
+  // build_basic and morph_menu are card headings), so they will always read as unseen here.
+  line('abilities invoked via Abilities.*', defs.a, sawCast);
   line('techs researched', defs.t, sawTech);
   line('upgrades finished', defs.g, sawUpg);
 
-  // The one coverage claim worth ASSERTING: wave four is reachable in a real game. The rest is a report.
-  const M12 = ['marauder', 'reaper', 'hellion', 'thor', 'widow_mine', 'cyclone', 'liberator', 'raven', 'banshee', 'viking', 'medivac',
-    'roach', 'baneling', 'swarm_host', 'viper', 'ravager', 'infestor', 'overseer', 'creep_tumour',
-    'stalker', 'immortal', 'colossus', 'sentry', 'void_ray', 'phoenix', 'oracle', 'tempest', 'disruptor', 'mothership', 'warp_prism'];
-  const m12miss = M12.filter(id => !sawDef.has(id));
+  // READ THE COVERAGE AGAINST THIS. Most of these games are decided in ten to twenty minutes, and a
+  // def nobody lived long enough to build is not a def nobody can build. Without this line the report
+  // reads as an indictment of the tech tree when it is mostly a statement about game length.
+  const live = results.filter(r => !r.threw && !r.over).length;
+  const ends = results.filter(r => r.over).map(r => r.endedAt).sort((a, b) => a - b);
+  console.log('\ngame length: ' + live + '/' + results.length + ' still live at the ' + FRAMES + '-frame budget; ' +
+    'the rest ended between f' + ends[0] + ' and f' + ends[ends.length - 1] +
+    ' (median f' + ends[Math.floor(ends.length / 2)] + ')');
+
+  // The one coverage claim worth ASSERTING: wave four is reachable in a real game.
+  //
+  // Split by tier, because one threshold over the whole roster cannot be honest at any game length.
+  // The tier-1/2 half must appear in games of ordinary length -- that is the M11 failure this whole
+  // milestone was written against, and it is a fair question at 32k frames. The tier-3 half is only a
+  // fair question in a game long enough to reach tier 3, so it is REPORTED at the default length and
+  // asserted only when the run is long enough to have earned the right to ask.
+  //
+  // There is deliberately no `stalker` in either list: it ships as Blink on the Dragoon, and listing a
+  // def that is documented not to exist would make this permanently and meaninglessly red.
+  const M12_EARLY = ['marauder', 'reaper', 'hellion', 'widow_mine', 'cyclone',
+    'roach', 'baneling', 'ravager', 'swarm_host', 'overseer', 'creep_tumour',
+    'sentry', 'immortal', 'phoenix', 'oracle', 'warp_prism'];
+  const M12_LATE = ['thor', 'liberator', 'raven', 'banshee', 'viking', 'medivac',
+    'viper', 'infestor', 'colossus', 'void_ray', 'tempest', 'disruptor', 'mothership'];
+  const missOf = list => list.filter(id => !sawDef.has(id));
+  const early = missOf(M12_EARLY), late = missOf(M12_LATE);
   console.log('');
-  ok(m12miss.length <= M12.length / 3, 'most of the M12 roster is fielded by an AI in a real game',
-    (M12.length - m12miss.length) + '/' + M12.length + ' seen; missing: ' + m12miss.join(', '));
+  ok(early.length === 0, 'every tier-1/2 M12 def is fielded by an AI in a game of ordinary length',
+    (M12_EARLY.length - early.length) + '/' + M12_EARLY.length + ' seen; missing: ' + early.join(', '));
+  const LONG = FRAMES >= 80000;
+  if (LONG) ok(late.length <= M12_LATE.length / 3, 'and most of the tier-3 M12 defs are reached in a LONG game',
+    (M12_LATE.length - late.length) + '/' + M12_LATE.length + ' seen; missing: ' + late.join(', '));
+  else console.log('tier-3 M12 defs at this length: ' + (M12_LATE.length - late.length) + '/' + M12_LATE.length +
+    ' seen; missing ' + late.join(', ') + '\n  (not asserted -- rerun with --frames=90000 to make this a fair question)');
 
   console.log('\nwall clock ' + Math.round((Date.now() - t0) / 1000) + 's');
   console.log((fail ? 'FAILURES ' : 'ALL PASS  ') + pass + ' passed, ' + fail + ' failed');

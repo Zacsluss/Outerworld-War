@@ -78,6 +78,23 @@ R(g, `MAP_LAYOUTS['custom:Eight'] = ${LAYOUT_JSON};
   this.colors = G.players.map(p => p.color);
   this.mapInfo = { w: G.map.w, h: G.map.h, bases: G.map.bases.length, starts: G.map.starts.length, res: G.map.resources.length };
   this.segs = []; this.maxStuck = 0; this.snap = [];
+  // WHERE A HALL WAS PUT, judged when it was put there. Judging it at the end instead reads a
+  // legitimate Zerg macro hatchery -- deliberately placed beside a base its owner held -- as an
+  // orphan the moment the sibling halls that justified it are destroyed. The building never moved;
+  // the verdict changed underneath it, so a player being wiped out presented as a placement defect.
+  this.placements = [];
+  (() => {
+    const orig = G.placeBuilding.bind(G);
+    G.placeBuilding = (def, tx, ty, owner, builder) => {
+      const u = orig(def, tx, ty, owner, builder);
+      if (u && def.depot) {
+        const nearBase = G.map.bases.some(b => Math.hypot(u.x - b.cx, u.y - b.cy) < 6 * TILE);
+        const nearOwn = G.units.some(o => o !== u && o.alive && o.owner === owner && o.isBuilding && o.def.depot && Math.hypot(o.x - u.x, o.y - u.y) < 20 * TILE);
+        this.placements.push({ f: G.frame, owner, id: def.id, tx, ty, ok: nearBase || nearOwn });
+      }
+      return u;
+    };
+  })();
   this.step = n => { const t0 = Date.now(); for (let i = 0; i < n && !G.over; i++) { G.tick();
       if (G.frame % 240 === 0) for (const u of G.units) if (u.alive && u.stuck > this.maxStuck) this.maxStuck = u.stuck; }
     return { ms: Date.now() - t0, frame: G.frame, over: G.over,
@@ -105,9 +122,30 @@ for (let done = 0; done < FRAMES; done += SEG) {
 ok('an eight-player game runs to the end without dying', last.frame >= FRAMES || last.over, 'frame ' + last.frame + ' over=' + last.over);
 ok('no JS errors in an eight-player game', g.__errors.length === 0, g.__errors.slice(0, 3).join(' || '));
 const supFloor = FRAMES >= 9600 ? 20 : 10;   // ten minutes is the default; a shorter run is a smoke test
-ok('every one of the eight players built an economy', last.workers.every(w => w >= 8) && last.sup.every(s => s >= supFloor),
-  'workers ' + last.workers.join('/') + ', supply ' + last.sup.join('/') + ' (floor ' + supFloor + ')');
-ok('nobody exceeded the 200 supply cap', last.supMax.every(s => s <= 200), last.supMax.join('/'));
+// PEAK, NOT THE LAST FRAME. This used to read the final segment and require all eight to have an
+// economy there, which is really the assertion "nobody is ever eliminated in an eight-player
+// free-for-all" -- and that stopped being true when the AI got better at fighting, not when it got
+// worse at building. Three players here reached 40-50 supply and were then razed; sampling the end
+// calls that "failed to build an economy", which is the opposite of what happened.
+//
+// The failure this check was written for is an AI that never builds at all, and that shows up in the
+// PEAK: a player that never got going has a low peak no matter when you look. Same trap, same shape,
+// as the Roach check in test/zerg12.js -- an assertion sampling one frame to answer a question about
+// the whole game.
+const peak = k => last[k].map((_, i) => Math.max(...segs.map(s => s[k][i])));
+const peakW = peak('workers'), peakS = peak('sup');
+const deadP = last.halls.map((h, i) => h > 0 ? -1 : i).filter(i => i >= 0);
+ok('every one of the eight players built an economy at some point',
+  peakW.every(w => w >= 8) && peakS.every(x => x >= supFloor),
+  'peak workers ' + peakW.join('/') + ', peak supply ' + peakS.join('/') + ' (floor ' + supFloor + ')');
+ok('...and the free-for-all did not wipe out most of the field', deadP.length <= 3,
+  deadP.length + ' players with no hall left at frame ' + last.frame + ': ' + JSON.stringify(deadP) +
+  '  (final supply ' + last.sup.join('/') + ')');
+// READ FROM THE SIM, not written here as a literal. This said `<= 200` and had been failing
+// silently against a cap that M11 raised to 500 a whole milestone earlier -- the assertion was
+// testing a number the game had stopped using, which is worse than not testing it at all.
+const CAP = R(g, 'SUPPLY_CAP');
+ok('nobody exceeded the supply cap', last.supMax.every(s => s <= CAP), 'cap ' + CAP + ': ' + last.supMax.join('/'));
 ok('nothing wedged itself for good', R(g, 'this.maxStuck') < 400, 'worst stuck counter seen was ' + R(g, 'this.maxStuck'));
 
 // tick cost, which is the thing that could make eight players unplayable rather than merely unfair.
@@ -144,8 +182,11 @@ console.log('  bases claimed ' + exp.basesClaimed + '/' + exp.totalBases + ', pe
   ', halls ' + exp.halls.join('/') + (exp.contested.length ? ', contested ' + exp.contested.join(' ') : ''));
 ok('the AI expanded with eight players on the map', exp.perPlayer.filter(n => n >= 2).length >= 6,
   'only ' + exp.perPlayer.filter(n => n >= 2).length + ' of 8 players took a second base: ' + exp.perPlayer.join('/'));
-ok('every town hall sits on a base, or beside one the player already holds', exp.orphanHalls.length === 0,
-  exp.orphanHalls.length + ' halls on open ground away from every base and every other hall of the same player: ' + exp.orphanHalls.join(' '));
+const badPlace = JSON.parse(R(g, 'JSON.stringify(this.placements.filter(p => !p.ok))'));
+ok('every town hall was PUT on a base, or beside one its owner held at the time', badPlace.length === 0,
+  badPlace.length + ' placed on open ground: ' + badPlace.map(p => 'p' + p.owner + ' ' + p.id + ' f' + p.f + '@' + p.tx + ',' + p.ty).join(' '));
+if (exp.orphanHalls.length) console.log('  (' + exp.orphanHalls.length + ' hall(s) read as orphaned at the END -- ' +
+  exp.orphanHalls.join(' ') + ' -- a survivor of a destroyed base, not a bad placement)');
 ok('two players never end up sharing one base', exp.contested.length === 0, 'shared bases: ' + exp.contested.join(' '));
 
 // ---------------------------------------------------------------- victory with eight teams

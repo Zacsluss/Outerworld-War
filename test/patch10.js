@@ -1,3 +1,16 @@
+// NOT A TEST. This is a one-off codemod from M10: it REWRITES FILES IN js/ and was applied once,
+// years of milestones ago. It lives in test/ only because that is where it was written.
+//
+// Running it today does damage. Its anchors no longer match, so it throws part-way -- and `edit()`
+// writes each file as it finishes it, so the files it got through before the throw are already
+// modified. It appended a second `CMD.install()` to js/commands.js before failing on js/map.js, which
+// is a duplicate that parses, runs, and would have been committed by anything that did not diff first.
+//
+// Kept for the record rather than deleted, behind a flag, so that `for f in test/*.js` is safe.
+if (!process.argv.includes('--i-know-this-rewrites-source')) {
+  console.log(__filename.split(/[\/]/).pop() + ': a one-off codemod, already applied. Not a test; refusing to run.');
+  process.exit(0);
+}
 const fs = require('fs');
 function edit(p, pairs) { let s = fs.readFileSync(p, 'utf8'); for (const [a, b, all] of pairs) { if (!s.includes(a)) throw new Error('missing in ' + p + ': ' + a.slice(0, 80)); s = all ? s.split(a).join(b) : s.replace(a, b); } fs.writeFileSync(p, s); }
 
