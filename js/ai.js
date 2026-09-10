@@ -345,8 +345,12 @@ class AI {
   // the measured behaviour in the normal case, where a step is briefly unaffordable and production
   // should not stall, and drops it in the pathological one, where nothing is going to change on its
   // own. It is a deadlock breaker, not a new spending policy.
-  afford(min, gas) {
-    const m = this.p.minerals, g = this.p.gas, hard = this.techStarved();
+  // `soft` opts out of the starvation mode below. Research uses it: a Zerg is tech-starved most of
+  // the time, so the hard reserve was permanently on for it and upgrades stopped completely -- three
+  // seeds finished a game with one upgrade between them. Research should not outrank a build step; it
+  // should also not be switched off by one.
+  afford(min, gas, soft) {
+    const m = this.p.minerals, g = this.p.gas, hard = !soft && this.techStarved();
     if (min && this.reserveMin && (hard || m >= this.reserveMin * 0.4) && m - this.reserveMin < min) return false;
     if (gas && this.reserveGas && (hard || g >= this.reserveGas * 0.4) && g - this.reserveGas < gas) return false;
     return m >= min && g >= gas;
@@ -795,7 +799,29 @@ class AI {
   // alone, which is the form M6's handoff called "a real lever if approached from the Zerg side only":
   // it was worth +5 points to Terran over 360 paired seeds. Zerg buys upgrades it does not live to use.
   research() {
+    // Research read the bank directly and so walked past the reserve the build order saves with --
+    // the same bug as the morph clauses in production(). It matters: over a solo 20-minute game this
+    // AI mines ~9,100 gas and upgrades are the largest single claim on it, so an upgrade bought one
+    // think before a Stargate is affordable delays the Stargate by minutes. Holding the gas back took
+    // Protoss from 315 to 500 supply and from one heavy unit to Dark Templar, Reavers and Archons.
+    //
+    // GAS ONLY, not afford(). Running it through afford() switched Zerg's research off completely --
+    // three seeds finished a whole game with one upgrade between them -- because Zerg is MINERAL-bound
+    // and near-permanently tech-starved, so the reserve was always engaged against it. Gas is the
+    // contended resource here and the only one worth protecting from upgrades.
     const p = this.p; if (p.minerals < 200 || p.gas < 150) return;
+    // ...and do not outbid a build step that is ABOUT to be affordable. Only then, though: gating this
+    // on afford() unconditionally switched Zerg's research off completely -- three seeds finished a
+    // whole game with one upgrade between them -- because Zerg is mineral-bound and near-permanently
+    // tech-starved, so the reserve was always engaged against it. When the order is hopelessly stuck,
+    // holding income back from upgrades as well buys nothing and idles it. Worth it: over a solo
+    // 20-minute game this AI mines ~9,100 gas and upgrades are the largest single claim on it.
+    // NOT FOR ZERG. Zerg reserves for its head step UNCONDITIONALLY (the M7 lever a dozen lines into
+    // script(), kept because it is worth 15 points in TvZ), so its reserve is engaged essentially all
+    // game and any reserve-based brake silences its research entirely -- measured as three seeds
+    // finishing a whole game with one upgrade between them. The brake is meaningful only where the
+    // reserve is intermittent, which is Terran and Protoss.
+    if (this.race !== 'Z' && !this.techStarved() && (p.minerals < 200 + (this.reserveMin || 0) * 0.5 || p.gas < 150 + (this.reserveGas || 0) * 0.5)) return;
     for (const id of this.styleResearch(this.race, this.style)) {
       if (DATA.techs[id]) { if (p.tech.has(id) || p.researching.has(id)) continue; const td = DATA.techs[id]; const b = this.mine(u => u.isBuilding && u.done && u.def.id === td.bld && !u.prod.length && !u.lifted)[0]; if (!b) continue; if (G.queueTech(b, id)) return; }
       else if (DATA.upgrades[id]) { const ud = DATA.upgrades[id]; const lvl = p.upgLevel(id); if (lvl >= 3 || p.researching.has(id)) continue; if (this.diff === 'easy' && lvl >= 1) continue; const b = this.mine(u => u.isBuilding && u.done && (u.def.id === ud.bld || (ud.bld === 'spire' && u.def.id === 'greater_spire')) && !u.prod.length)[0]; if (!b) continue; if (G.queueUpgrade(b, id)) return; }
