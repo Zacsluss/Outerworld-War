@@ -50,17 +50,17 @@ done as one. **Every reported number appears in this table exactly once.**
 | 8 | game over screen with menu / restart | **B4** | ⚠ screen exists, **Restart** does not |
 | 9 | cannot build in undiscovered blackness | **C1** | ☐ |
 | 10 | dust storm has hard edges | **B6** | ☐ |
-| 11 | dust storm should not hurt units | **A2** | ☐ it deals 3 dps today |
+| 11 | dust storm should not hurt units | **A2** | ✅ done |
 | 12 | sensor tower shows movement as dots | **C2** | ☐ it is plain vision today |
-| 13 | Reactor gives no prerequisite error | **A4** | ☐ it has no `req` at all |
+| 13 | Reactor gives no prerequisite error | **A4** | ✅ done |
 | 14 | hover ring on minerals and gas | **B1** | ☐ |
 | 15 | Starport shows add-on tech, dead page button | **B5** | ☐ |
 | 16 | freehand formation shapes | **C7** | ☐ |
-| 17 | every building needs a description | **A1** | ☐ **nothing** has one |
+| 17 | every building needs a description | **A1** | ✅ done |
 | 18 | Thor walks onto buildings | **C6** | ☐ |
 | 19 | Cyclone should fire while moving | **C4** | ☐ |
 | 20 | Hellion beam hits everything in its path | **C5** | ⚠ it does — it is **drawn as Lurker spines** |
-| 21 | Widow Mine burrow time should match SC2 | **A3** | ☐ |
+| 21 | Widow Mine burrow time should match SC2 | **A3** | ✅ done |
 
 ---
 
@@ -69,7 +69,7 @@ done as one. **Every reported number appears in this table exactly once.**
 Four changes that cannot break each other. Independent, fast, and they build the habit of the test
 gate before anything risky starts.
 
-### ☐ A1 · (item 17) Every building and unit needs a short description
+### ✅ A1 · (item 17) Every building and unit needs a short description
 
 **Asked for:** the healing and jammer buildings have no descriptions; check *all* buildings — they
 should all have one.
@@ -95,7 +95,7 @@ still testing what it thinks it is.
 
 ---
 
-### ☐ A2 · (item 11) The dust storm must not damage units
+### ✅ A2 · (item 11) The dust storm must not damage units
 
 **Asked for:** the dust storm should be visual only.
 
@@ -119,7 +119,7 @@ change.
 
 ---
 
-### ☐ A3 · (item 21) Widow Mine burrow, arming and unburrow timing to match StarCraft II
+### ✅ A3 · (item 21) Widow Mine burrow, arming and unburrow timing to match StarCraft II
 
 **Asked for:** pre- and post-upgrade burrow times matching SC2. **Decision: model the arming delay too.**
 
@@ -148,7 +148,7 @@ slow to shoot, explosive.
 
 ---
 
-### ☐ A4 · (item 13) The Reactor gives no error when its prerequisites are unmet
+### ✅ A4 · (item 13) The Reactor gives no error when its prerequisites are unmet
 
 **Asked for:** an error when you try to build a Reactor too early.
 
