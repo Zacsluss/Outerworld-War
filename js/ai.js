@@ -136,7 +136,7 @@ const AI_COMP = {
   P: [['zealot', 4], ['dragoon', 5], ['sentry', 2], ['high_templar', 2], ['dark_templar', 2], ['immortal', 3], ['colossus', 5], ['disruptor', 2], ['reaver', 3], ['shuttle', 1], ['warp_prism', 1], ['observer', 1], ['corsair', 2], ['phoenix', 2], ['oracle', 2], ['void_ray', 3], ['scout', 2], ['carrier', 5], ['tempest', 3], ['arbiter', 3]],
 };
 const AI_RESEARCH = {
-  T: ['stim', 'siege_tech', 'u238', 'infW', 'infA', 'ion_thrusters', 'spider_mines_tech', 'vehW', 'charon', 'vehA', 'irradiate_tech', 'emp_tech', 'personnel_cloaking', 'lockdown_tech', 'yamato_tech', 'shipW', 'shipA', 'cloaking_field', 'suppress_inf', 'suppress_veh', 'restoration_tech', 'optical_flare_tech', 'caduceus', 'moebius', 'ocular', 'apollo', 'titan', 'colossus'],
+  T: ['stim', 'siege_tech', 'u238', 'infW', 'infA', 'ion_thrusters', 'spider_mines_tech', 'vehW', 'charon', 'vehA', 'irradiate_tech', 'emp_tech', 'personnel_cloaking', 'lockdown_tech', 'yamato_tech', 'shipW', 'shipA', 'cloaking_field', 'suppress_inf', 'suppress_veh', 'restoration_tech', 'optical_flare_tech', 'caduceus', 'moebius', 'ocular', 'apollo', 'titan', 'colossus', 'drilling_claws'],
   // M12's five Zerg researches, placed by what they unlock rather than appended. `volatile_bile` and
   // `ravager_aspect` gate whole units and sit with lurker_aspect near the front; `glial_reconstitution`
   // is a speed upgrade and sits with the other two; the two Infestation Pit techs go late, next to the
@@ -1506,7 +1506,10 @@ class AI {
       else if (d === 'widow_mine' && u.transT <= 0) {
         const near = G.near(u.x, u.y, 6 * TILE).some(o => o.owner !== p.id && o.alive && !o.def.larva && !o.isBuilding);
         if (near && !u.burrowed && this.turn(u.id, 1)) Abilities.instant(u, 'burrow');
-        else if (u.burrowed && !near && this.turn(u.id, 8) && this.state !== 'gather') Abilities.instant(u, 'burrow');
+        // Do not dig up a mine that is still arming. FIXLIST-M14 A3 put an arming delay between burrowing
+        // and being able to fire, and `transT` only covers the going-down half of it -- so without this
+        // the AI could cancel its own mine partway through arming, over and over, and never once shoot.
+        else if (u.burrowed && !near && Abilities.digArmed(u) && this.turn(u.id, 8) && this.state !== 'gather') Abilities.instant(u, 'burrow');
       }
       // The Viking picks a sky. Fighter mode can only shoot air and assault mode can only shoot ground,
       // so a wing that never transforms is half a unit whichever half it is -- this is the line that

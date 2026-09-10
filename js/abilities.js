@@ -76,6 +76,17 @@ const Abilities = {
   },
   label(u, id) { const ab = DATA.abilities[id]; if (id === 'siege_mode') return u.sieged ? 'Tank Mode' : 'Siege Mode'; if (id === 'burrow') return u.burrowed ? 'Unburrow' : 'Burrow'; if (id === 'viking_mode') return u.def.id === 'viking' ? 'Assault Mode' : 'Fighter Mode'; if (id === 'cloak_ghost' || id === 'cloak_wraith') return u.cloaked ? 'Decloak' : ab.name; return ab.name; },
   needsTarget(id) { const k = DATA.abilities[id].kind; return k === 'unit' || k === 'point'; },
+  // The burrow, arming and unburrow durations for a unit that has its own -- today only the Widow Mine.
+  // Null for everything else, which is what keeps the generic 24-frame burrow the generic 24-frame
+  // burrow. Reads the def, so the numbers have exactly one home (js/data.js) and every caller, the AI
+  // and the tests included, gets them from here rather than writing 26 somewhere.
+  digTimes(u) {
+    const d = u.def && u.def.dig; if (!d) return null;
+    return (d.tech && u.player && u.player.hasTech(d.tech)) ? d.fast : d;
+  },
+  // Is a dug-in unit's weapon live yet? False while it is still going down or still arming. Unit.tick
+  // counts `digT` to zero; Unit.weaponFor refuses to hand out a weapon until it gets there.
+  digArmed(u) { return !(u.digT > 0); },
   // Entry point from UI/AI. For unit/point kinds target/x/y must be supplied.
   issue(u, id, target, x, y, shift) {
     const ab = DATA.abilities[id], p = u.player; if (!u.alive || !this.available(u, id)) return false;
@@ -95,7 +106,22 @@ const Abilities = {
     switch (id) {
       case 'stim': if (u.hp <= 10 || u.stim > 200) return false; u.hp -= 10; u.stim = 300; return true;
       case 'siege_mode': if (u.transT > 0) return false; u.sieged = !u.sieged; u.transT = 40; u.path = null; if (u.sieged) u.order = { type: 'hold' }; else u.order = { type: 'idle' }; return true;
-      case 'burrow': if (u.transT > 0) return false; u.burrowed = !u.burrowed; u.transT = 24; u.path = null; u.order = { type: u.burrowed ? 'hold' : 'idle' }; u.queue = []; return true;
+      // BURROW. 24 frames for everything that digs in, EXCEPT a def carrying `dig` -- see the Widow
+      // Mine in js/data.js, which has its own going-down, arming and coming-up durations because the
+      // player reported that its burrow time did not match StarCraft II's and it in fact had none.
+      //
+      // `digT` is a countdown of frames until the weapon is live, and it is set on the way DOWN only:
+      // burrow plus arm. It is deliberately NOT `armT`, which is a different field with the opposite
+      // sense -- Abilities.mineTick counts armT UP for a spider mine, and one shared decrement in
+      // Unit.tick would have held it at zero and quietly stopped every spider mine in the game arming.
+      case 'burrow': {
+        if (u.transT > 0) return false;
+        const t = this.digTimes(u);
+        u.burrowed = !u.burrowed;
+        u.transT = t ? (u.burrowed ? t.burrow : t.unburrow) : 24;
+        u.digT = (t && u.burrowed) ? t.burrow + t.arm : 0;
+        u.path = null; u.order = { type: u.burrowed ? 'hold' : 'idle' }; u.queue = []; return true;
+      }
       case 'cloak_ghost': case 'cloak_wraith': if (u.cloaked) { u.cloaked = false; return true; } if (u.energy < 25) { p.msg('Not enough energy.', 'error'); return false; } u.energy -= 25; u.cloaked = true; return true;
       case 'unload': G.unloadAll(u); return true;
       // The Viking transform. Modelled on 'siege_mode' directly above it -- same transT lockout, same

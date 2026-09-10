@@ -160,7 +160,35 @@ const DATA = (() => {
   // path is the one thing in this engine that is known to work for a dug-in attacker. It deliberately
   // does NOT carry `mine: true`: that flag routes the unit into Abilities.mineTick, which is the
   // suicide-charge behaviour and would take away everything above.
+  //
+  // ---- TIMINGS (FIXLIST-M14 A3) -------------------------------------------------------------------
+  // Reported as "the widow mine burrow time should match StarCraft II", and until now it had NO timing
+  // of its own at all: it shared the generic 24-frame burrow lockout with every Zerg unit and it could
+  // fire the instant it went down. A mine that arms immediately is not a mine, it is a turret you can
+  // pick up -- the whole decision the unit is meant to create is "did I get it planted in time".
+  //
+  // Three separate durations, and the middle one is the one that was missing:
+  //   burrow    the animation going down. It cannot move and cannot fire.
+  //   arm       dug in, still cannot fire. THIS is the window an opponent can walk a unit through and
+  //             live, and it is what makes planting a mine a commitment rather than a reflex.
+  //   unburrow  coming back up. It cannot fire and cannot move until it is out.
+  //
+  // Frames, at 24 a second ("Fastest"), rounded to the nearest whole frame from the StarCraft II
+  // figure noted beside each. Drilling Claws shortens all three, which is the user's decision recorded
+  // in FIXLIST-M14: "model the full SC2 arming delay as well as burrow and unburrow times, WITH THE
+  // UPGRADE THAT SHORTENS IT". (SC2 has moved this upgrade's exact wording between expansions -- in
+  // Heart of the Swarm it cut the arming time, in Legacy of the Void it is written as the unburrow
+  // time. Shortening all three is the reading that matches the decision as it was given.)
+  //
+  // These are named constants and every test reads THEM, never the numbers. Attaching them to the def
+  // rather than leaving them as bare module-level consts is deliberate: js/build.js hashes DATA but
+  // not arbitrary globals, so a value that lived only in a `const` could be changed without moving the
+  // build stamp, and two builds that disagree about how long a mine takes to arm would desync.
+  const WM_BURROW = 26, WM_ARM = 26, WM_UNBURROW = 34;                //  1.07 s,  1.07 s,  1.43 s
+  const WM_BURROW_D = 17, WM_ARM_D = 17, WM_UNBURROW_D = 17;          //  0.71 s each, with Drilling Claws
   U('widow_mine', { name: 'Widow Mine', race: 'T', hp: 90, size: 'small', min: 75, gas: 25, sup: 2, time: 420, speed: 4.4, sight: 7, r: 9, hk: 'W', from: 'factory', req: ['machine_shop'], mech: true, cargoSize: 2,
+    dig: { burrow: WM_BURROW, arm: WM_ARM, unburrow: WM_UNBURROW, tech: 'drilling_claws',
+      fast: { burrow: WM_BURROW_D, arm: WM_ARM_D, unburrow: WM_UNBURROW_D } },
     gw: W(40, 'explosive', 5, 90, { burrowOnly: true, targets: 'both', splash: [0.7, 1.2, 1.8], upgKey: 'vehW', upgDmg: 3 }), abil: ['burrow'], upgA: 'vehA' });
   // THOR -- six supply of walking artillery that shoots air. The siege tank out-ranges it and hits
   // harder, and cannot move or defend itself while it does; the goliath is a quarter of the price. The
@@ -677,7 +705,7 @@ const DATA = (() => {
     aw: W(20, 'explosive', 7, 15, { targets: 'air', upgKey: null }) });
   B('bunker', { name: 'Bunker', race: 'T', hp: 350, w: 3, h: 2, min: 100, time: 450, hk: 'U', tier: 'basic', req: ['barracks'], cargo: 4, bunker: true, abil: ['unload'] });
   B('factory', { name: 'Factory', race: 'T', hp: 1250, w: 4, h: 3, min: 200, gas: 100, time: 1200, hk: 'F', tier: 'adv', req: ['barracks'], produces: ['vulture', 'siege_tank', 'goliath', 'hellion', 'cyclone', 'widow_mine', 'thor'], addons: ['machine_shop'], canLift: true, tech: ['suppress_veh'] });
-  B('machine_shop', { name: 'Machine Shop', race: 'T', hp: 750, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'M', tier: 'addon', parent: 'factory', tech: ['ion_thrusters', 'spider_mines_tech', 'siege_tech', 'charon'] });
+  B('machine_shop', { name: 'Machine Shop', race: 'T', hp: 750, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'M', tier: 'addon', parent: 'factory', tech: ['ion_thrusters', 'spider_mines_tech', 'siege_tech', 'charon', 'drilling_claws'] });
   B('starport', { name: 'Starport', race: 'T', hp: 1300, w: 4, h: 3, min: 150, gas: 100, time: 1050, hk: 'S', tier: 'adv', req: ['factory'], produces: ['wraith', 'dropship', 'science_vessel', 'battlecruiser', 'valkyrie', 'banshee', 'liberator', 'viking', 'medivac', 'raven'], addons: ['control_tower'], canLift: true });
   B('control_tower', { name: 'Control Tower', race: 'T', hp: 500, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'C', tier: 'addon', parent: 'starport', tech: ['cloaking_field', 'apollo'] });
   B('science_facility', { name: 'Science Facility', race: 'T', hp: 850, w: 4, h: 3, min: 100, gas: 150, time: 900, hk: 'I', tier: 'adv', req: ['starport'], addons: ['physics_lab', 'covert_ops'], tech: ['emp_tech', 'irradiate_tech', 'titan'], canLift: true });
@@ -1083,6 +1111,10 @@ const DATA = (() => {
   T('spider_mines_tech', 'Spider Mines', 'T', 'machine_shop', 'M', 100, 100, 1200);
   T('siege_tech', 'Siege Tech', 'T', 'machine_shop', 'S', 150, 150, 1200);
   T('charon', 'Charon Boosters', 'T', 'machine_shop', 'C', 100, 100, 2000);
+  // StarCraft II's Drilling Claws, researched where SC2 researches it: the Factory's lab, which here is
+  // the Machine Shop. It shortens all three of the Widow Mine's timings -- see the `dig` block on the
+  // widow_mine def for the figures and for why the numbers live there rather than here.
+  T('drilling_claws', 'Drilling Claws', 'T', 'machine_shop', 'D', 75, 75, 1300);
   T('cloaking_field', 'Cloaking Field', 'T', 'control_tower', 'C', 150, 150, 1500);
   T('apollo', 'Apollo Reactor', 'T', 'control_tower', 'A', 200, 200, 2500, { energy: 'wraith' });
   T('emp_tech', 'EMP Shockwave', 'T', 'science_facility', 'E', 200, 200, 1800);

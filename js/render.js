@@ -1073,7 +1073,16 @@ const Render = {
       return;
     }
     ctx.save(); ctx.globalAlpha = u._alpha * (u.fx.stasis > 0 ? 0.6 : 1);
-    if (u.burrowed && !u.def.mine) { ctx.fillStyle = 'rgba(60,30,70,0.7)'; ctx.beginPath(); ctx.ellipse(x, y, u.r, u.r * .55, 0, 0, 7); ctx.fill(); ctx.fillStyle = G.players[u.owner].color; ctx.fillRect(x - 3, y - 2, 6, 4); ctx.restore(); return; }
+    if (u.burrowed && !u.def.mine) {
+      ctx.fillStyle = 'rgba(60,30,70,0.7)'; ctx.beginPath(); ctx.ellipse(x, y, u.r, u.r * .55, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = G.players[u.owner].color; ctx.fillRect(x - 3, y - 2, 6, 4);
+      // ARMING versus ARMED, for any def with its own dig timings -- today the Widow Mine. Without this
+      // the arming delay FIXLIST-M14 A3 adds would be a rule the player cannot see: a mine still digging
+      // in looked exactly like one ready to fire. Amber and blinking fast while it arms, steady red once
+      // the weapon is live, which is the language the spider mine's own light already speaks.
+      if (u.def.dig) { const armed = !(u.digT > 0); ctx.fillStyle = armed ? '#ff3030' : (G.frame % 8 < 4 ? '#ffb020' : '#6a4a10'); ctx.beginPath(); ctx.arc(x, y - u.r * .55 - 3, 2.2, 0, 7); ctx.fill(); }
+      ctx.restore(); return;
+    }
     if (u.def.mine) { ctx.globalAlpha *= u.burrowed ? 0.5 : 1; ctx.fillStyle = '#4a5058'; ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill(); ctx.fillStyle = (G.frame % 20 < 10) ? '#ff3030' : '#802020'; ctx.fillRect(x - 1.5, y - 1.5, 3, 3); ctx.restore(); return; }
     const s = Sprites.unit(u, Sprites.dirOf(u.facing, u), this.animOf(u));
     let bob = 0, sc = 1; if (u.moving && !u.fly && u.def.bio) bob = Math.sin(G.frame * 0.7 + u.id) * 1.2; if (u.fly) bob = Math.sin(G.frame * 0.08 + u.id) * 2; if (u.def.id === 'zergling' && u.moving) sc = 1 + Math.sin(G.frame * 0.9 + u.id) * 0.06;

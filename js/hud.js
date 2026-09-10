@@ -887,6 +887,10 @@ Object.assign(UI, {
     if (u.owner === G.human) {
       const st = { idle: 'Idle', move: 'Moving', attack: 'Attacking', attackmove: 'Attack-moving', gather: u.order.phase === 'mine' ? 'Mining' : u.order.phase === 'inside' ? 'Harvesting gas' : 'Moving to resource', return: 'Returning cargo', build: 'Moving to build', construct: 'Constructing', hold: 'Holding position', patrol: 'Patrolling', ability: 'Casting ' + (u.order.abil ? DATA.abilities[u.order.abil].name : ''), repair: 'Repairing', follow: 'Following', load: 'Boarding', unload: 'Unloading', merge: 'Merging', land: 'Landing' }[u.order.type] || u.order.type;
       if (!u.isBuilding) line(st + (u.mines ? `   Mines ${u.mines}` : '') + (u.def.scarabs !== undefined ? `   Scarabs ${u.scarabs}` : '') + (u.def.interceptors !== undefined ? `   Interceptors ${u.interceptors}` : ''), '#9aa4b0');
+      // The second half of making the arming delay visible (FIXLIST-M14 A3); the first is the light on
+      // the mound in js/render.js. Own units only -- knowing whether an ENEMY mine has finished arming
+      // is exactly the information the delay exists to withhold.
+      if (u.def.dig && u.burrowed) line(u.digT > 0 ? `Arming   ${(u.digT / TPS).toFixed(1)}s` : 'Armed', u.digT > 0 ? '#ffb020' : '#ff6a5a');
       if (u.isBuilding && u.def.spawnsLarva) line(`Larvae ${u.larvae.length}`, '#9aa4b0');
       if (u.isBuilding && !u.done) line(`Constructing ${Math.floor(100 * u.progress / u.def.time)}%` + (u.def.race === 'T' && !(u.builder && u.builder.alive && u.builder.order.target === u) ? '  (no SCV)' : ''), '#ffe45a');
       if (u.isBuilding && u.addon) line(`Add-on: ${u.addon.def.name}${u.addon.done ? '' : ' (building)'}`, '#9aa4b0');

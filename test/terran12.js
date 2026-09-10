@@ -435,6 +435,99 @@ ok(excl.def === 'orbital_command', 'taking one completes');
 ok(!excl.after.includes('Planetary Fortress') && !excl.after.includes('Orbital Command'), 'and the other button no longer exists -- the exclusivity is the absence of a button, not a rule', excl.after.join(','));
 ok(excl.optsAfter === null, '...because the morphed def carries no morphOptions of its own');
 
+console.log('\n--- 10b. the Widow Mine digs in, arms, and only then can fire (FIXLIST-M14 A3) ---');
+// Reported as "the widow mine burrow time should match StarCraft II". It had no timing at all: it took
+// the generic 24-frame burrow lockout every Zerg unit takes and could fire the instant it went down.
+//
+// EVERY NUMBER BELOW IS READ OFF THE DEF. Not one literal frame count appears in this section, which is
+// the rule this repository has been bitten by twice -- a test that hard-codes 26 keeps passing after
+// somebody changes the constant to 30, and then it is testing history.
+const DIG = json('DATA.units.widow_mine.dig');
+ok(DIG && DIG.burrow > 0 && DIG.arm > 0 && DIG.unburrow > 0, 'the Widow Mine has its own burrow, arming and unburrow durations', JSON.stringify(DIG));
+ok(DIG.fast && DIG.fast.burrow < DIG.burrow && DIG.fast.arm < DIG.arm && DIG.fast.unburrow < DIG.unburrow,
+  'and the upgrade shortens all three, measurably', JSON.stringify([DIG, DIG.fast]));
+ok(json('DATA.techs.' + DIG.tech) && json('DATA.buildings.machine_shop.tech').includes(DIG.tech),
+  'Drilling Claws is a real research on a real building (the Machine Shop, where SC2 puts it)', DIG.tech);
+// The Widow Mine's combat profile is EXPLICITLY out of scope for A3 -- the user confirmed the current
+// one is right: large radius, slow to shoot, explosive. This is the check that says a timing change did
+// not quietly become a damage change.
+ok(D.u.widow_mine.gw.dmg === 40 && D.u.widow_mine.gw.cd === 90 && JSON.stringify(D.u.widow_mine.gw.splash) === JSON.stringify([0.7, 1.2, 1.8]),
+  'damage, cooldown and splash are untouched -- A3 is a timing change and nothing else', JSON.stringify([D.u.widow_mine.gw.dmg, D.u.widow_mine.gw.cd, D.u.widow_mine.gw.splash]));
+
+// Played out for real. One mine, one marine standing on top of it, and the frame the shot lands is
+// recorded -- so "it cannot fire while arming" is measured from the victim's hit points rather than
+// asserted about a flag.
+const mine = json(`(() => {
+  G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'T', human: false, difficulty: 'easy', name: 'B' }], seed: 5, layout: 'temple' });
+  for (const p of G.players) p.ai = null;
+  const dig = DATA.units.widow_mine.dig;
+  const trial = fast => {
+    for (const u of [...G.units]) if (u.def.id === 'widow_mine' || u.def.id === 'marine') G.kill(u, null, true);
+    G.units = G.units.filter(u => u.alive);
+    const p = G.players[0];
+    if (fast) p.tech.add(dig.tech); else p.tech.delete(dig.tech);
+    const st = G.map.starts[0];
+    const m = G.spawnUnit('widow_mine', 0, st.cx + 260, st.cy + 260);
+    const victim = G.spawnUnit('marine', 1, m.x + 8, m.y + 8);
+    const hp0 = victim.hp;
+    const t = Abilities.digTimes(m);
+    const ok0 = Abilities.instant(m, 'burrow');
+    const window = t.burrow + t.arm;
+    // The burrow order is issued between ticks, so tick 1 is the first frame of digging in and tick
+    // number burrow+arm is the first on which the weapon can be live. Everything is sampled AFTER
+    // G.tick(), so the numbers below are ticks elapsed since the order -- what a player would count.
+    let firstHit = -1, armedAt = -1, hadWeaponEarly = false, hpBeforeWindow = null;
+    for (let f = 1; f <= window + 200; f++) {
+      G.tick();
+      const w = m.alive ? m.weaponFor(victim) : null;
+      if (w && f < window) hadWeaponEarly = true;
+      if (w && armedAt < 0) armedAt = f;
+      if (firstHit < 0 && (!victim.alive || victim.hp < hp0)) firstHit = f;
+      if (f === window - 1) hpBeforeWindow = victim.alive ? victim.hp : 0;
+    }
+    return { ok0, burrow: t.burrow, arm: t.arm, unburrow: t.unburrow, firstHit, armedAt, hadWeaponEarly,
+      hp0, hpBeforeWindow, window };
+  };
+  const base = trial(false), drilled = trial(true);
+  // And the unburrow duration, measured as the transT lockout the toggle sets coming back up.
+  const p = G.players[0]; p.tech.delete(dig.tech);
+  const st = G.map.starts[0];
+  const m2 = G.spawnUnit('widow_mine', 0, st.cx + 300, st.cy + 300);
+  Abilities.instant(m2, 'burrow'); const downT = m2.transT;
+  for (let f = 0; f < dig.burrow + dig.arm + 2; f++) G.tick();
+  Abilities.instant(m2, 'burrow'); const upT = m2.transT;
+  // A mine that has not burrowed at all still has no weapon, which is the pre-existing burrowOnly rule
+  // and must not have been broken by any of this.
+  const standing = m2.weaponFor(m2) === null && !m2.burrowed;
+  return { base, drilled, downT, upT, standing };
+})()`);
+ok(mine.base.ok0 && mine.drilled.ok0, 'the mine accepts the burrow order');
+ok(mine.base.hadWeaponEarly === false, 'IT CANNOT FIRE WHILE ARMING: weaponFor hands it nothing for the whole burrow+arm window', JSON.stringify(mine.base));
+ok(mine.base.armedAt === mine.base.window, 'and it arms on exactly the frame the def says: burrow + arm', mine.base.armedAt + ' vs ' + mine.base.window);
+ok(mine.base.hpBeforeWindow === mine.base.hp0 && mine.base.firstHit >= mine.base.window,
+  'a shot fired inside the arming window does not land -- the marine standing on top of it is untouched right up to the last frame of it',
+  'hp ' + mine.base.hpBeforeWindow + '/' + mine.base.hp0 + ', first hit ' + mine.base.firstHit + ', window ' + mine.base.window);
+ok(mine.drilled.armedAt === mine.drilled.window && mine.drilled.window < mine.base.window,
+  'with Drilling Claws it arms sooner, and again on exactly the frame the def says', mine.drilled.armedAt + '/' + mine.drilled.window + ' vs ' + mine.base.window);
+ok(mine.drilled.firstHit < mine.base.firstHit, 'so the upgraded mine actually shoots earlier -- the upgrade is measurable, not decorative', mine.drilled.firstHit + ' vs ' + mine.base.firstHit);
+ok(mine.downT === DIG.burrow, 'burrowing locks the unit out for the burrow duration', mine.downT + ' vs ' + DIG.burrow);
+ok(mine.upT === DIG.unburrow, 'and unburrowing for the unburrow duration, which is the longer of the two', mine.upT + ' vs ' + DIG.unburrow);
+ok(mine.standing, 'CONTROL: a mine standing up still has no weapon at all -- burrowOnly is untouched');
+// Nothing else in the game grew a dig timing by accident.
+ok(json('Object.keys(DATA.units).filter(k => DATA.units[k].dig)').join(',') === 'widow_mine',
+  'the Widow Mine is the only def with its own dig timings', json('Object.keys(DATA.units).filter(k => DATA.units[k].dig)').join(','));
+// The generic burrow is untouched: a Zergling still takes the 24 frames it always took.
+const zl = json(`(() => {
+  G.init({ players: [{ race: 'Z', human: true, name: 'A' }, { race: 'T', human: false, difficulty: 'easy', name: 'B' }], seed: 5, layout: 'temple' });
+  for (const p of G.players) p.ai = null;
+  G.players[0].tech.add('burrow_tech');
+  const st = G.map.starts[0];
+  const z = G.spawnUnit('zergling', 0, st.cx + 200, st.cy + 200);
+  Abilities.instant(z, 'burrow');
+  return { t: z.transT, digT: z.digT, times: Abilities.digTimes(z) };
+})()`);
+ok(zl.t === 24 && zl.digT === 0 && zl.times === null, 'CONTROL: a Zergling still burrows in the generic 24 frames and has no arming delay at all', JSON.stringify(zl));
+
 console.log('\n--- 11. determinism and the shared tables ---');
 ok(!/Math\.random|Date\.now|performance\./.test(run('String(Abilities.tickTerran) + String(Abilities.muleHaul) + String(Abilities.reactorTick) + String(Abilities.cast) + String(Abilities.instant)')),
   'no Math.random, Date or performance in the new ability code');

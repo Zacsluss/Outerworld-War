@@ -55,6 +55,10 @@ class Unit {
     this.order = { type: 'idle' }; this.queue = []; this.path = null; this.pathI = 0; this.stuck = 0; this.repathT = 0;
     this.cooldown = 0; this.cargo = []; this.inside = null; this.carrying = null; this.lastRes = null; this.heldOrder = false;
     this.prod = []; this.rally = null; this.addon = null; this.parent = null; this.sieged = false; this.transT = 0;
+    // Frames until a dug-in weapon is live. Only a def with `dig` ever sets it (the Widow Mine); it is
+    // zero for everything else, so `digT > 0` is false and weaponFor is unaffected. A mine that spawns
+    // already burrowed starts unarmed, which is the same rule as one that burrows by hand.
+    this.digT = (def.dig && def.burrowed) ? def.dig.burrow + def.dig.arm : 0;
     this.cloaked = !!def.cloaked; this.burrowed = !!def.burrowed; this.stim = 0; this.fx = {}; this.kills = 0; this.detBy = {};
     this.lifetime = def.lifetime || 0; this.mines = def.mines || 0; this.scarabs = def.scarabs || 0; this.interceptors = def.interceptors || 0;
     this.creepR = 0;
@@ -111,6 +115,10 @@ class Unit {
     if (d.id === 'siege_tank' && this.sieged) return t.fly ? null : SIEGE_W;
     if (d.id === 'siege_tank' && this.transT > 0) return null;
     if (d.gw && d.gw.burrowOnly && !this.burrowed) return null;
+    // Still digging in, or dug in and not yet armed. One chokepoint for the whole game: everything that
+    // fires goes through weaponFor, so a mine mid-arm is invisible to the targeting pass, to Combat and
+    // to the AI's "does this thing have a gun" question alike. See the `dig` block in js/data.js.
+    if (d.dig && this.digT > 0) return null;
     if (t.fly) { if (d.aw) return d.aw; if (d.gw && d.gw.targets === 'both') return d.gw; return null; }
     if (d.gw && d.gw.targets !== 'air') return d.gw;
     return null;
@@ -185,6 +193,7 @@ class Unit {
     if (this.stim > 0) this.stim--;
     if (this.cooldown > 0) this.cooldown--;
     if (this.transT > 0) this.transT--;
+    if (this.digT > 0) this.digT--;   // a Widow Mine digging in and arming; see Abilities.digTimes
     if (this.morphT > 0) { this.morphT--; return; }
     // status effects
     const fx = this.fx;
@@ -265,13 +274,19 @@ class Unit {
     if (this.wx !== undefined) { const dx = this.wx - this.x, dy = this.wy - this.y, dd = Math.hypot(dx, dy); if (dd > 2) { this.x += dx / dd * 0.3; this.y += dy / dd * 0.3; } }
   }
 
+  // Come up, out of turn. Three orders force it -- one that means "go somewhere", a hold with nothing
+  // in range, and an attack whose target walked out -- and all three used to write `transT = 20` by
+  // hand. A def with its own dig timings (the Widow Mine, FIXLIST-M14 A3) spends its unburrow duration
+  // instead, so that number is stated once in js/data.js rather than three times here. Callers keep
+  // their own `path = null`, because one of the three deliberately does not clear it.
+  surface() { const t = Abilities.digTimes(this); this.burrowed = false; this.transT = t ? t.unburrow : 20; }
   // ---------------- unit order state machine ----------------
   tickOrder() {
     const o = this.order, d = this.def;
     this.moving = false;
     // Surface for anything that means "go somewhere". moveTo refuses to move a burrowed unit, so an order
     // missing from this list can never complete and the unit sits on it forever (load was the one that bit).
-    if (this.burrowed && !d.mine && BURROW_SURFACES.has(o.type)) { this.burrowed = false; this.transT = 20; this.path = null; }
+    if (this.burrowed && !d.mine && BURROW_SURFACES.has(o.type)) { this.surface(); this.path = null; }
     if (this.sieged && (o.type === 'move' || o.type === 'attackmove' || o.type === 'patrol')) { /* sieged tanks can't move; ignore */ this.nextOrder(); return; }
     if (d.mine) { Abilities.mineTick(this); return; }
     switch (o.type) {
@@ -308,7 +323,7 @@ class Unit {
           const t = this.autoTarget(true); if (t) { if (this.cooldown <= 0) this.fireAt(t); break; }
           // Nothing in range. A Lurker's weapon is burrowOnly so staying down is the whole point, but any
           // other burrowed unit cannot shoot at all and was just sitting on the order forever: surface.
-          if (this.burrowed && !d.mine && !((d.gw && d.gw.burrowOnly) || (d.aw && d.aw.burrowOnly))) { this.burrowed = false; this.transT = 20; this.path = null; }
+          if (this.burrowed && !d.mine && !((d.gw && d.gw.burrowOnly) || (d.aw && d.aw.burrowOnly))) { this.surface(); this.path = null; }
           break;
         }
         this.engage(o.target); if (this.moveFailed) this.nextOrder(); break;
@@ -425,7 +440,7 @@ class Unit {
       if (this.cooldown <= 0) this.fireAt(t);
       this.path = null;
     } else if (this.canMove && !this.sieged && !(this.burrowed && !this.def.mine)) {
-      if (this.burrowed) { this.burrowed = false; this.transT = 20; return; }
+      if (this.burrowed) { this.surface(); return; }
       this.moveTo(t.x, t.y, t);
     }
   }
