@@ -64,6 +64,7 @@ const TESTS = [
   { name: 'gated', args: ['gated.js'], what: 'nothing is gated by convention: every command refuses what it should, out loud' },
   { name: 'clicking', args: ['clicking.js'], what: 'the hit area matches the drawn sprite, buildings double-click, resources are clickable' },
   { name: 'defeat', args: ['defeat.js'], what: 'the result screen actually appears when you lose, and Restart replays the same game' },
+  { name: 'addons', args: ['addons.js'], what: 'an add-on keeps its own card, and the page turn has a slot nothing else is on' },
   { name: 'fognight', args: ['fognight.js'], what: 'explored ground remembers, and night shortens sight on maps that have one' },
   { name: 'formation', args: ['formation.js'], what: 'a right-drag spreads the selection evenly along the line' },
   { name: 'mapmodes', args: ['mapmodes.js'], what: 'the four map sizes are different rules, and the sandstorm is deterministic' },

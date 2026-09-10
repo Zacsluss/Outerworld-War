@@ -116,6 +116,13 @@ run(`(() => {
     return JSON.stringify({
       pending: UI.pending ? UI.pending.kind + ':' + (UI.pending.abil || '') : null,
       placing: UI.placing ? UI.placing.def.id + (UI.placing.land ? ':land' : '') : null,
+      // cardPage is here because of FIXLIST-M14 B5, and the story is worth the line. The page turn
+      // used to be pushed onto a slot a flowed button already occupied, and pressSlot looks a button
+      // up with find(x => x.slot === slot) -- which returned the FLOWED one. So this harness had
+      // never once pressed a page button, for exactly the reason a player could not: it was underneath
+      // something else. With the collision fixed the press lands, and without this field the only thing
+      // it changes is invisible here and it reads as a dead key.
+      cardPage: UI.cardPage,
       cardMenu: UI.cardMenu, msgs: p.msgs.length,
       min: Math.round(p.minerals), gas: Math.round(p.gas), res: [...p.researching].sort().join(','),
       units: own.map(u => u.def.id + '/' + u.prod.length + '/' + u.order.type + (u.lifted ? '/lift' : '') + (u.burrowed ? '/burr' : '') + (u.addon ? '/+' + u.addon.def.id : '')).sort().join(' '),
@@ -125,7 +132,7 @@ run(`(() => {
   // Cheap undo. Anything it cannot undo is reported, and the caller rebuilds the scenario instead.
   this.restore = () => {
     const p = this.p;
-    UI.pending = null; UI.placing = null; UI.cardMenu = this.scn.cardMenu || null;
+    UI.pending = null; UI.placing = null; UI.cardMenu = this.scn.cardMenu || null; UI.cardPage = 0;
     p.minerals = 20000; p.gas = 20000; p.msgs = []; p.lastAlert = {};
     p.tech = new Set(this.scn.techs || []); p.researching = new Set(this.scn.researching || []); p.upg = {};
     for (const u of G.units.slice()) if (u.alive && u.owner === 0 && !this.keep.has(u.id)) G.kill(u, null, true);

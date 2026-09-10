@@ -750,8 +750,22 @@ const UI = {
     // exact class of bug this whole change exists to remove.
     const pinned = btns.filter(b => b.pin);
     const flow = btns.filter(b => !b.pin);
-    const per = pinned.length ? last : last + 1;
-    const pages = Math.max(1, Math.ceil(flow.length / per));
+    // THE PAGE TURN NEEDS A SLOT OF ITS OWN -- FIXLIST-M14 B5 (item 15), and this is the whole of the
+    // "the more 1/2 button does nothing" report.
+    //
+    // `per` used to be the FULL remaining capacity, so a card of exactly one page's worth plus a bit
+    // filled every slot and the More button was then pushed on top of the last one. Measured on the
+    // Starport with a Control Tower: fourteen flowed buttons, twelve slots, so page one held slots
+    // 0..11 AND a "More 1/2" also at slot 11. UI.consoleClick returns on the first button whose rect
+    // contains the click and the flowed one comes first in the array, so pressing "More 1/2" actually
+    // pressed Apollo Reactor. The page could never turn, and the tooltip under the cursor named the
+    // wrong thing -- which is the second half of the same report, from the same cause.
+    //
+    // Two passes because it is circular: whether a page button is needed depends on how many pages
+    // there are, which depends on whether a page button is taking a slot.
+    const cap = pinned.length ? last : last + 1;
+    let per = cap, pages = Math.max(1, Math.ceil(flow.length / per));
+    if (pages > 1) { per = cap - 1; pages = Math.max(1, Math.ceil(flow.length / per)); }
     if (this.cardPage >= pages) this.cardPage = 0;
     const page = flow.slice(this.cardPage * per, this.cardPage * per + per).map((b, i) => Object.assign({}, b, { slot: i }));
     for (const b of pinned) page.push(Object.assign({}, b, { slot: last }));
@@ -835,7 +849,20 @@ const UI = {
       if (d.id === 'reaver' || d.id === 'carrier') { }
       for (const id of d.upg) { const ud = DATA.upgrades[id]; const lvl = p.upgLevel(id); if (lvl >= 3) continue; const rq = ud.req[lvl]; const ok = !rq || p.hasBuilding(rq); B(i++, ud.name + ' L' + (lvl + 1), ud.hk, () => G.queueUpgrade(u, id), { cost: { min: ud.min[lvl], gas: ud.gas[lvl], time: ud.time[lvl] }, enabled: ok && !p.researching.has(id), dim: !ok || p.researching.has(id), why: !ok && rq ? 'Requires ' + DATA.buildings[rq].name : p.researching.has(id) ? 'Already researching.' : null }); }
       for (const id of d.tech) { const td = DATA.techs[id]; if (p.tech.has(id)) continue; const ok = !td.req || p.hasReq(td); B(i++, td.name, td.hk, () => G.queueTech(u, id), { cost: td, enabled: ok && !p.researching.has(id), dim: !ok || p.researching.has(id), why: !ok ? why(td) : p.researching.has(id) ? 'Already researching.' : null }); }
-      if (u.addon && u.addon.done) { for (const id of (u.addon.def.tech || [])) { const td = DATA.techs[id]; if (p.tech.has(id)) continue; B(i++, td.name, td.hk, () => G.queueTech(u.addon, id), { cost: td, enabled: !p.researching.has(id), why: p.researching.has(id) ? 'Already researching.' : null }); } if (u.addon.def.abil) for (const id of u.addon.def.abil) { const ab = DATA.abilities[id]; const addon = u.addon; const taken = btns.some(b => b.hk === ab.hk); B(i++, ab.name, taken ? '' : ab.hk, () => { this.pending = { kind: 'ability', abil: id, caster: addon }; }, { energy: ab.energy }); } if (u.addon.def.produces.length) for (const id of u.addon.def.produces) { const ud = DATA.units[id]; B(i++, ud.name, ud.hk, () => G.queueUnit(u.addon, id), { cost: ud, enabled: !u.addon.hasNuke, why: u.addon.hasNuke ? 'A nuclear missile is already armed.' : null }); } }
+      // AN ADD-ON KEEPS ITS OWN CARD -- FIXLIST-M14 B5 (item 15). This block used to copy the add-on's
+      // tech, abilities and production onto its PARENT, which is what put "Apollo Reactor" on a
+      // Starport and Scanner Sweep on a Command Center. Measured across all seven Terran parent/add-on
+      // pairs: six of the seven leaked, and the Starport and Factory leaked enough to push their cards
+      // past twelve slots and into the paging bug directly above.
+      //
+      // It is deleted rather than moved, because there is nowhere to move it TO: an add-on is a real
+      // building with its own footprint, so it is already clickable and buildCard already gives it its
+      // own card from its own `tech`, `abil` and `produces`. Select the Control Tower and Apollo
+      // Reactor is there; select the Comsat and Scanner Sweep is there. The parent still names what is
+      // attached to it, on the unit panel: "Add-on: Control Tower".
+      //
+      // The one thing this changes for a player: Scanner Sweep and building a nuke are now done from
+      // the add-on, which is where Brood War does them.
       if (!u.addon) for (const id of d.addons) { const ad = DATA.buildings[id]; const ok = p.hasReq(ad); B(i++, ad.name, ad.hk, () => G.queueAddon(u, id), { cost: ad, enabled: ok, dim: !ok, why: why(ad) }); }
       if (d.morphTo) { const nd = DATA.buildings[d.morphTo]; const ok = p.hasReq(nd); B(i++, nd.name, nd.hk, () => G.queueMorph(u, d.morphTo), { cost: nd, enabled: ok, dim: !ok, why: why(nd) }); }
       if (d.morphOptions) for (const id of d.morphOptions) { const nd = DATA.buildings[id]; const ok = p.hasReq(nd); B(i++, nd.name, nd.hk, () => G.queueMorph(u, id), { cost: nd, enabled: ok, dim: !ok, why: why(nd) }); }
