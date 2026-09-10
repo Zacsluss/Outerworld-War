@@ -213,7 +213,25 @@ const G = {
           // snapshot exactly and there are no negative zeros, so extra position churn is exposing
           // something the snapshot does not capture. Chase it before adding a second pass for any reason.
           const push = (min - d) * 0.5;
-          const am = a.sieged ? 0 : 1, bm = b.sieged ? 0 : 1;
+          let am = a.sieged ? 0 : 1, bm = b.sieged ? 0 : 1;
+          // COLLISION PUSH (M12 item 14). The separation above is symmetric: both units yield half, so
+          // a unit walking into a standing crowd of its own army stops dead against it and the two
+          // shove each other in place. Give the MOVER right of way instead -- the one that is going
+          // somewhere yields a quarter, the one that is standing still yields the rest -- and a column
+          // flows through its own army instead of jamming behind it.
+          //
+          // SAME OWNER ONLY, which is the whole safety argument. Cross-owner push is how a blocked ramp
+          // stops blocking and how a wall of units stops being a wall, so enemies keep the symmetric
+          // rule and shove each other exactly as before. The weights sum to 2 either way, so the total
+          // separation strength is unchanged and the settling distances the comment above measures
+          // still hold.
+          // Attached munitions are exempt. An interceptor or a scarab is not an army unit crossing a
+          // crowd, it is a projectile on a leash whose orbit is tuned to a firing cadence -- giving it
+          // right of way over its own carrier changed the return path enough to put two of a Carrier's
+          // twenty-two shot gaps outside the Brood War jitter band, which test/rates.js measures.
+          if (am && bm && !a.parent && !b.parent && a.owner === b.owner && a.moving !== b.moving) {
+            if (a.moving) { am = 0.25; bm = 1.75; } else { am = 1.75; bm = 0.25; }
+          }
           const ax = a.x - ux * push * am, ay = a.y - uy * push * am, bx = b.x + ux * push * bm, by = b.y + uy * push * bm;
           // passable() reads the walk grid, which says nothing useful about a flyer -- gating on it
           // would pin overlords over cliffs and water, the places they most want to be.
