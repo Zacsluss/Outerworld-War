@@ -3,6 +3,10 @@
 Read this first in a fresh chat. It says where the build is, how it is wired, what must never break, and
 exactly what is left to do.
 
+> **2026-09-10 — START AT `HANDOFF-M13.md`.** M12 is complete and the session after it fixed ten
+> faults in the AI economy. That file carries the current state, the ordered plan, and the traps.
+> **Every balance number below this line is stale** and was already stale before those AI changes.
+
 ## Kickoff for the next chat
 
 Open a chat in `Default Project/broodwar/` and paste:
