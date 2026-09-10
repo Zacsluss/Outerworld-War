@@ -594,7 +594,7 @@ class AI {
       for (const nat of halls.slice(1)) if (nat.done) { const defId = r === 'T' ? 'missile_turret' : r === 'P' ? 'photon_cannon' : 'creep_colony'; const en = this.enemies()[0]; const tox = en && en.startX != null ? en.startX : G.map.w * TILE / 2, toy = en && en.startY != null ? en.startY : G.map.h * TILE / 2; const px = nat.x + (tox - nat.x) * 0.15, py = nat.y + (toy - nat.y) * 0.15; const isDef = u => u.isBuilding && (u.def.id === defId || u.def.id === 'sunken_colony' || u.def.id === 'spore_colony'); const near = this.mine(u => isDef(u) && (dist(u, nat) < 16 * TILE || distPt(u.x, u.y, px, py) < 16 * TILE)).length; if (near < Math.max(1, Math.round((r === 'Z' ? 4 : 2) * (st.def || 1))) && this.count(defId) <= this.mine(isDef).length && p.hasReq(DATA.buildings[defId])) { this.buildNear(defId, px, py); break; } }
     }
     // Zerg: morph creep colonies into sunkens
-    if (r === 'Z') { const enemyAir = this.enemies().some(q => G.units.some(u => u.alive && u.owner === q.id && u.fly && (u.hasWeapon() || u.def.cargo))); const spores = this.mine(u => u.def.id === 'spore_colony').length, sunkens = this.mine(u => u.def.id === 'sunken_colony').length; for (const c of this.mine(u => u.def.id === 'creep_colony' && u.done && !u.prod.length)) G.queueMorph(c, p.hasBuilding('evolution_chamber') && (enemyAir ? spores < sunkens : spores < Math.floor(sunkens / 3)) ? 'spore_colony' : 'sunken_colony'); }
+    if (r === 'Z') { const enemyAir = this.sawAir(); const spores = this.mine(u => u.def.id === 'spore_colony').length, sunkens = this.mine(u => u.def.id === 'sunken_colony').length; for (const c of this.mine(u => u.def.id === 'creep_colony' && u.done && !u.prod.length)) G.queueMorph(c, p.hasBuilding('evolution_chamber') && (enemyAir ? spores < sunkens : spores < Math.floor(sunkens / 3)) ? 'spore_colony' : 'sunken_colony'); }
     // Terran addons
     // 'reactor' is new in M12 and it gets its OWN gate rather than joining the cheap group, which is a
     // correction and not a preference. Dropped into the cheap group it fired at supply 13 on the only
@@ -617,12 +617,22 @@ class AI {
   production() {
     const p = this.p; const foe = this.enemies()[0]; const key = foe && AI_COMP[this.race + 'v' + foe.race] ? this.race + 'v' + foe.race : this.race; const comp = this.styleComp(key, this.style); const cands = []; // the style multiplies weights, so a per-matchup composition stays per-matchup
     const counts = {}; for (const u of G.units) if (u.alive && u.owner === p.id) { counts[u.def.id] = (counts[u.def.id] || 0) + 1; for (const it of u.prod) if (it.kind === 'unit') counts[it.id] = (counts[it.id] || 0) + 1; }
-    const enemyAir = this.enemies().some(q => G.units.some(u => u.alive && u.owner === q.id && u.fly && u.hasWeapon())) ;
+    // Was a raw scan of G.units with no vision test -- the AI knew about air it had never seen. It goes
+    // through the intel model now, so hiding your air tech actually hides it.
+    const enemyAir = this.sawAir(), needAA = enemyAir, needDet = this.sawCloak(), read = this.readEnemy();
     for (const [id, wgt] of comp) {
       const ud = DATA.units[id]; if (!wgt || !p.hasReq(ud)) continue;
       if (id === 'scourge' && !enemyAir) continue; if (id === 'corsair' && !enemyAir && !this.enemies().some(q => q.race === 'Z')) continue;
       if (id === 'observer' && (counts.observer || 0) >= (foe && foe.race === 'Z' ? 3 : 2)) continue;
       let w = wgt; if (this.race === 'Z' && id === 'hydralisk' && p.hasTech('lurker_aspect')) w += 2;
+      // COUNTER WHAT WE HAVE SEEN. The composition weights say what this race likes to build; these
+      // say what THIS GAME calls for, and they are multipliers on top so a matchup table still decides
+      // the shape of the army. All three read the intel model, so all three are earned by scouting.
+      if (needAA && (ud.aw || (ud.gw && ud.gw.targets === 'both'))) w *= 1.6;            // they have air, or are about to
+      if (read === 'massing' && ((ud.gw && ud.gw.splash) || (ud.aw && ud.aw.splash))) w *= 1.8; // a big cheap army dies to splash
+      if (read === 'massing' && (ud.min + ud.gas) <= 75 && !ud.worker) w *= 0.7;         // ...and trading cheap units into it is how you lose
+      if (read === 'teching' && (ud.min + ud.gas) <= 125 && !ud.worker) w *= 1.5;        // they are buying something expensive: be there before it arrives
+      if (needDet && ud.detector) w *= 2.5;                                              // something we saw needs a detector to shoot at
       if (ud.from !== 'larva' && !this.mine(b => b.isBuilding && b.done && b.def.produces.includes(id)).length) continue;
       const sup = (ud.sup || 1) * (ud.pair ? 2 : 1); cands.push([((counts[id] || 0) * sup + sup) / w, id, w, sup]); // weights are a share of army supply, so cheap units cannot crowd out the rest; w and sup ride along so the score can be recomputed after a train
     }
@@ -866,6 +876,73 @@ class AI {
     return sup;
   }
   centroid(us) { let x = 0, y = 0; for (const u of us) { x += u.x; y += u.y; } return us.length ? { x: x / us.length, y: y / us.length } : null; }
+  // ---------------- INTEL: what we have actually SEEN, and what we conclude from it ----------------
+  //
+  // This exists because the AI was cheating and it made scouting pointless. `enemyAir` -- the switch
+  // that decides whether Zerg builds Scourge and Spore Colonies and whether Protoss builds Corsairs --
+  // was a raw scan of G.units with NO vision test at all. The computer opponent knew about a Wraith
+  // the moment it hatched, from across an unexplored map, and a player who hid their air tech gained
+  // nothing by hiding it.
+  //
+  // Everything here goes through G.canSee (units, which move and can be hidden again) or G.explored
+  // (buildings, which do not, so seeing one once is knowing it forever). Sightings are REMEMBERED and
+  // never forgotten, which is the right model for a building and a generous-but-fair one for a unit:
+  // a person who saw six Wraiths does not un-know it when they fly home.
+  //
+  // Deterministic: iteration order is G.units, no G.rand, no clock.
+  observe() {
+    const I = this.intel || (this.intel = { bld: {}, unit: {}, peak: {} });
+    const pid = this.p.id, m = G.map;
+    const now = {};
+    for (const u of G.units) {
+      if (!u.alive || G.allied(u.owner, pid) || u.def.notUnit || u.def.larva || u.def.egg) continue;
+      if (G.players[u.owner] && G.players[u.owner].neutral) continue;
+      if (u.isBuilding) {
+        if (!G.explored(pid, Math.floor(u.x / TILE), Math.floor(u.y / TILE))) continue;
+        I.bld[u.def.id] = 1;
+      } else {
+        if (!G.canSee(pid, u)) continue;
+        I.unit[u.def.id] = 1;
+        now[u.def.id] = (now[u.def.id] || 0) + 1;
+      }
+    }
+    // the most of each kind ever seen at one time -- "they have a lot of zerglings" is a claim about a
+    // count, and one glimpse of one zergling is not that claim
+    for (const k of Object.keys(now)) I.peak[k] = Math.max(I.peak[k] || 0, now[k]);
+    return I;
+  }
+  // Have we SEEN anything that flies and shoots, or anything that makes one? The building half matters
+  // as much as the unit half: a Starport seen at six minutes is the warning, and the Wraith that comes
+  // out of it at eight is too late to start building anti-air.
+  sawAir() {
+    const I = this.observe();
+    for (const k of Object.keys(I.unit)) { const d = DATA.units[k]; if (d && d.fly && (d.gw || d.aw)) return true; }
+    return ['starport', 'spire', 'greater_spire', 'stargate', 'fleet_beacon'].some(b => I.bld[b]);
+  }
+  // ...and anything we would need a detector to shoot at.
+  sawCloak() {
+    const I = this.observe();
+    for (const k of Object.keys(I.unit)) { const d = DATA.units[k]; if (d && (d.cloak || d.burrow || d.permaCloak)) return true; }
+    return ['covert_ops', 'control_tower', 'templar_archives', 'hydralisk_den'].some(b => I.bld[b]);
+  }
+  // Is the enemy MASSING or TECHING? The two call for opposite answers and the whole point of scouting
+  // is to tell them apart. "Massing" is a big cheap army with a shallow tech tree; "teching" is the
+  // reverse -- an enemy with three advanced buildings and eight units is buying something expensive and
+  // is soft right now. Neutral when we have not seen enough to say, which is the honest default.
+  readEnemy() {
+    const I = this.observe();
+    const adv = Object.keys(I.bld).filter(b => DATA.buildings[b] && DATA.buildings[b].tier === 'adv').length;
+    let cheap = 0, all = 0;
+    for (const k of Object.keys(I.peak)) {
+      const d = DATA.units[k]; if (!d || d.worker) continue;
+      all += I.peak[k];
+      if ((d.min || 0) + (d.gas || 0) <= 75) cheap += I.peak[k];
+    }
+    if (!all && !adv) return 'unknown';
+    if (all >= 10 && cheap >= all * 0.6 && adv <= 1) return 'massing';
+    if (adv >= 2 && all <= 8) return 'teching';
+    return 'even';
+  }
   // biggest enemy army supply we have actually seen, decayed slowly so old sightings stop mattering
   seenEnemyArmy() {
     let sup = 0;
@@ -891,7 +968,12 @@ class AI {
     if (this.state === 'gather') {
       for (const u of army) if (u.order.type === 'idle' && !u.burrowed && distPt(u.x, u.y, rally.x, rally.y) > 5 * TILE) u.setOrder({ type: 'attackmove', x: rally.x + (G.rand() - .5) * 96, y: rally.y + (G.rand() - .5) * 96 });
       for (const u of this.supportUnits()) if (u.order.type === 'idle' && distPt(u.x, u.y, rally.x, rally.y) > 6 * TILE) u.setOrder({ type: 'move', x: rally.x, y: rally.y });
-      const threshold = Math.max(this.attackThreshold + this.waves * (st.waveGrow || 8) + (p.supUsed > 150 ? -20 : 0), this.seenEnemyArmy() * 1.25); // waveGrow is what makes a harasser come back with a small wave and a turtle come back with a bigger one
+      // WHEN TO ATTACK IS ALSO A SCOUTING DECISION. An enemy who is teching has spent their money on
+      // buildings and has a small army right now; that window is the entire reason to scout them. An
+      // enemy who is massing has the opposite, and walking into it on schedule is how an army dies.
+      const readNow = this.readEnemy();
+      const readAdj = readNow === 'teching' ? -10 : readNow === 'massing' ? 8 : 0;
+      const threshold = Math.max(this.attackThreshold + readAdj + this.waves * (st.waveGrow || 8) + (p.supUsed > 150 ? -20 : 0), this.seenEnemyArmy() * 1.25); // waveGrow is what makes a harasser come back with a small wave and a turtle come back with a bigger one
       // After a retreat, rebuild before walking back into the same fight. Without this the AI turned
       // straight round and fed the survivors in one at a time.
       if ((sup >= threshold || p.supUsed >= 190) && G.frame >= (this.regroupUntil || 0)) {
