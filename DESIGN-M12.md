@@ -157,3 +157,21 @@ Written down because all three cost hours and none is visible in a diff.
    They only paint tiles they still own, so a wreck that skipped a tile a building later took left that
    tile raised live and flat restored. It presented as a lurker firing in one process and not the
    other, three ticks after a restore, with every unit field identical. Height is captured now.
+
+## Found during M12, owed to the balance run
+
+Not fixed here, because each is a change to what an army is made of and the balance run is gated on an
+explicit instruction. Recorded so the run has a starting list rather than a blank page.
+
+1. **The cheap-unit ratchet still bites Zerg.** `AI.production()` sorts the composition by supply-share
+   score and trains the first candidate it can *afford*, so an unaffordable top pick falls through to
+   whatever is cheaper. The hold rule is meant to stop this, but it only engages once the bank reaches
+   70% of the preferred unit's cost -- and a 25-mineral zergling is always affordable, so for Zerg the
+   bank never gets there. Measured on seed 5 of `test/zerg12.js`: the Roach is the top-ranked candidate
+   in **114 of 186** production thinks and is trained in **none** of them, while 22 zerglings are bought
+   in those same thinks. Across seeds 5-9 the AI fields 0-2 roaches a game against 5-10 hydralisks,
+   where the weights (roach 4-5, hydralisk 5-6) ask for roughly one roach per two hydralisks by supply.
+   The same mechanism will be suppressing every other expensive tier-one unit.
+2. **Zerg banks gas it cannot spend.** The same games sit at ~20 minerals and ~166 gas with four
+   extractors on fourteen drones. Whatever the fix in (1) is, it is measuring against an economy that
+   is already lopsided, so the two want changing together.
