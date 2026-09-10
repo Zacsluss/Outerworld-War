@@ -61,6 +61,18 @@ const AI_SCRIPTS = {
   P: [[8, 'pylon'], [10, 'gateway'], [12, 'assimilator'], [14, 'cybernetics_core'], [15, 'pylon'], [18, 'gateway'], [19, 'robotics_facility'], [20, 'nexus'], [21, 'citadel_of_adun'], [22, 'pylon'], [23, 'stargate'], [24, 'templar_archives'], [26, 'forge'], [27, 'pylon'], [28, 'observatory'], [29, 'robotics_support_bay'], [30, 'warp_gate'], [32, 'fleet_beacon'], [33, 'gateway'], [34, 'arbiter_tribunal'], [36, 'pylon'], [37, 'shield_battery'], [38, 'photon_cannon'], [39, 'rejuvenation_shrine'], [40, 'gateway'], [41, 'null_obelisk'], [42, 'warded_bastion'], [44, 'nexus'], [46, 'shield_battery'], [48, 'pylon'], [56, 'gateway'], [66, 'gateway'], [72, 'stargate'], [80, 'nexus']],
 };
 const gasBuildings = ai => ai.mine(u => u.def.onGeyser).length + 1;
+// WEIGHTS ARE A SHARE OF ARMY SUPPLY, and the heavy end of every list was set so low that it could
+// not be reached. AI.production scores a candidate as (count * sup + sup) / weight and picks the
+// lowest, so a 6-supply Thor at weight 2 opens at 3.00 while a Marine opens at 0.17 -- the Thor is
+// eighteenth in line, and because `count` is LIVE units, attrition keeps resetting the Marine's score
+// before the queue ever gets that far. The composition never matured. Measured: across eighteen
+// AI-vs-AI games, every unit scoring 2.0 or less was fielded and almost nothing scoring 3.0 or more
+// ever was.
+//
+// Every unit that needs an advanced building or costs 100+ gas now has a weight giving it a score of
+// at most 1.25, computed from its own supply rather than chosen per unit. Tier 1 still opens far
+// cheaper (0.17-0.50) and so still forms the bulk of an army; this only makes the heavy end reachable
+// once its tech exists, which is the whole point of having built the tech.
 const AI_COMP = {
   // M12 wave four puts eleven more Terran units in reach, and all eleven are here rather than in a
   // "late game" list, because production() already filters on `p.hasReq` AND on owning a building that
@@ -80,8 +92,8 @@ const AI_COMP = {
   // a plain string replace, so the first occurrence in the file wins. Do not repeat one of these pairs
   // in prose above the table, or the test will patch the comment, the stamp will not move, and the
   // failure will look like a bug in the build stamp rather than in a sentence. (It did.)
-  T: [['marine', 6], ['medic', 2], ['firebat', 1], ['marauder', 2], ['reaper', 1], ['ghost', 1], ['vulture', 2], ['hellion', 2], ['siege_tank', 4], ['goliath', 2], ['cyclone', 2], ['widow_mine', 1], ['thor', 2], ['science_vessel', 1], ['raven', 1], ['wraith', 1], ['banshee', 1], ['viking', 1], ['liberator', 1], ['valkyrie', 1], ['dropship', 1], ['medivac', 1], ['battlecruiser', 2]],
-  Z: [['zergling', 4], ['hydralisk', 6], ['mutalisk', 4], ['scourge', 1], ['ultralisk', 3], ['defiler', 1], ['queen', 1], ['roach', 4], ['infestor', 1]],
+  T: [['marine', 6], ['medic', 2], ['firebat', 1], ['marauder', 2], ['reaper', 1], ['ghost', 1], ['vulture', 2], ['hellion', 2], ['siege_tank', 4], ['goliath', 2], ['cyclone', 2], ['widow_mine', 1], ['thor', 5], ['science_vessel', 2], ['raven', 2], ['wraith', 2], ['banshee', 2], ['viking', 2], ['liberator', 2], ['valkyrie', 2], ['dropship', 2], ['medivac', 2], ['battlecruiser', 5]],
+  Z: [['zergling', 4], ['hydralisk', 6], ['mutalisk', 4], ['scourge', 1], ['ultralisk', 3], ['defiler', 2], ['queen', 2], ['roach', 4], ['infestor', 2]],
   // M12 wave four. Only the FOUR larva-tier additions are weighted here; baneling, ravager, swarm
   // host, viper and overseer are morphs off something already in this list and are bought in
   // production() beside the lurker, guardian and devourer clauses that have always worked that way.
@@ -97,8 +109,8 @@ const AI_COMP = {
   // missing: the reason Terran's mech army loses to Protoss here is dragoons and zealots, both of
   // which are `large`, and until now the only explosive thing in a bio ball was a siege tank that has
   // to sit down. The medivac is doubled over the base comp for the same reason the medic is.
-  TvP: [['marine', 8], ['medic', 3], ['firebat', 2], ['marauder', 4], ['reaper', 1], ['ghost', 1], ['vulture', 1], ['hellion', 1], ['siege_tank', 3], ['goliath', 2], ['cyclone', 1], ['widow_mine', 1], ['thor', 1], ['science_vessel', 1], ['raven', 1], ['wraith', 1], ['banshee', 1], ['viking', 1], ['liberator', 1], ['valkyrie', 1], ['dropship', 1], ['medivac', 2], ['battlecruiser', 1]],
-  ZvT: [['zergling', 3], ['hydralisk', 5], ['mutalisk', 5], ['scourge', 1], ['ultralisk', 4], ['defiler', 2], ['queen', 1], ['roach', 5], ['infestor', 1]],
+  TvP: [['marine', 8], ['medic', 3], ['firebat', 2], ['marauder', 4], ['reaper', 1], ['ghost', 1], ['vulture', 1], ['hellion', 1], ['siege_tank', 3], ['goliath', 2], ['cyclone', 1], ['widow_mine', 1], ['thor', 5], ['science_vessel', 2], ['raven', 2], ['wraith', 2], ['banshee', 2], ['viking', 2], ['liberator', 2], ['valkyrie', 2], ['dropship', 2], ['medivac', 2], ['battlecruiser', 5]],
+  ZvT: [['zergling', 3], ['hydralisk', 5], ['mutalisk', 5], ['scourge', 1], ['ultralisk', 4], ['defiler', 2], ['queen', 2], ['roach', 5], ['infestor', 2]],
   // Roaches heavier into Terran than into Protoss: normal damage and 145 hit points is what holds a
   // line against marines and does very little against a zealot's shields, and Terran is the matchup
   // where Zerg spends the game being shot at from range.
@@ -115,9 +127,9 @@ const AI_COMP = {
   // were measured against, and thirty-seven new units already dilute all of them. Into Zerg the
   // Colossus is heavier (splash into a swarm is the reason the unit exists) and the Immortal lighter
   // (explosive is wasted on a zergling); in the generic list it is the other way round.
-  PvZ: [['zealot', 2], ['dragoon', 8], ['sentry', 2], ['high_templar', 3], ['dark_templar', 1], ['immortal', 1], ['colossus', 3], ['disruptor', 1], ['reaver', 1], ['shuttle', 1], ['warp_prism', 1], ['observer', 3], ['corsair', 2], ['phoenix', 1], ['oracle', 1], ['void_ray', 1], ['scout', 1], ['carrier', 1], ['tempest', 1], ['arbiter', 1]],
-  ZvP: [['zergling', 3], ['hydralisk', 6], ['roach', 3], ['mutalisk', 3], ['scourge', 1], ['ultralisk', 3], ['defiler', 1], ['queen', 1], ['infestor', 1]],
-  P: [['zealot', 4], ['dragoon', 5], ['sentry', 1], ['high_templar', 2], ['dark_templar', 1], ['immortal', 2], ['colossus', 2], ['disruptor', 1], ['reaver', 1], ['shuttle', 1], ['warp_prism', 1], ['observer', 1], ['corsair', 1], ['phoenix', 1], ['oracle', 1], ['void_ray', 1], ['scout', 1], ['carrier', 2], ['tempest', 1], ['arbiter', 1]],
+  PvZ: [['zealot', 2], ['dragoon', 8], ['sentry', 2], ['high_templar', 3], ['dark_templar', 2], ['immortal', 3], ['colossus', 5], ['disruptor', 2], ['reaver', 3], ['shuttle', 1], ['warp_prism', 1], ['observer', 3], ['corsair', 2], ['phoenix', 2], ['oracle', 2], ['void_ray', 3], ['scout', 2], ['carrier', 5], ['tempest', 3], ['arbiter', 3]],
+  ZvP: [['zergling', 3], ['hydralisk', 6], ['roach', 3], ['mutalisk', 3], ['scourge', 1], ['ultralisk', 3], ['defiler', 2], ['queen', 2], ['infestor', 2]],
+  P: [['zealot', 4], ['dragoon', 5], ['sentry', 2], ['high_templar', 2], ['dark_templar', 2], ['immortal', 3], ['colossus', 5], ['disruptor', 2], ['reaver', 3], ['shuttle', 1], ['warp_prism', 1], ['observer', 1], ['corsair', 2], ['phoenix', 2], ['oracle', 2], ['void_ray', 3], ['scout', 2], ['carrier', 5], ['tempest', 3], ['arbiter', 3]],
 };
 const AI_RESEARCH = {
   T: ['stim', 'siege_tech', 'u238', 'infW', 'infA', 'ion_thrusters', 'spider_mines_tech', 'vehW', 'charon', 'vehA', 'irradiate_tech', 'emp_tech', 'personnel_cloaking', 'lockdown_tech', 'yamato_tech', 'shipW', 'shipA', 'cloaking_field', 'suppress_inf', 'suppress_veh', 'restoration_tech', 'optical_flare_tech', 'caduceus', 'moebius', 'ocular', 'apollo', 'titan', 'colossus'],
