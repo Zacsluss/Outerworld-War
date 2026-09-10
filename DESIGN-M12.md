@@ -181,3 +181,56 @@ explicit instruction. Recorded so the run has a starting list rather than a blan
 2. **Zerg banks gas it cannot spend.** The same games sit at ~20 minerals and ~166 gas with four
    extractors on fourteen drones. Whatever the fix in (1) is, it is measuring against an economy that
    is already lopsided, so the two want changing together.
+
+## Wave five: what the long run actually found
+
+`node test/all.js` is 49 suites green. On top of that, the suites that are deliberately outside it:
+
+| run | result |
+|---|---|
+| `test/soak.js` — 18 games, 6 matchups x 3 seeds, 32k frames | No throws, no console errors, no NaN, every list bounded, **every mid-game snapshot re-simulated identically**, every matchup fields a real army |
+| `test/longgame.js` — 60 minutes + replay | Hour completes, replay is **bit-identical**, no leak, no slowdown, checkpoint thinning and seeking correct |
+| `test/missions.js` — eight scenarios | All pass |
+| `test/saveload.js` | 54 pass, including the new M12 morphs |
+| `test/eightplayer.js` | Passes after three stale assertions were fixed (see below) |
+
+### The thing worth knowing: the AI never reaches tier 3
+
+Fifteen of the eighteen soak games were decided between **f15168 and f30024** — ten to twenty minutes.
+Coverage over all eighteen:
+
+- **Every tier-1/2 M12 def is fielded: 16/16.** Marauder, Reaper, Hellion, Widow Mine, Cyclone, Roach,
+  Baneling, Ravager, Swarm Host, Overseer, Creep Tumour, Sentry, Immortal, Phoenix, Oracle, Warp Prism.
+- **No tier-3 def is fielded: 0/13.** Thor, Liberator, Raven, Banshee, Viking, Medivac, Viper,
+  Infestor, Colossus, Void Ray, Tempest, Disruptor, Mothership.
+
+**This is not an M12 property.** The same run never fields Ghost, Wraith, Science Vessel, Battlecruiser,
+Valkyrie, Guardian, Devourer, Ultralisk, Dark Templar, Archon, Reaver, Scout, Carrier or Arbiter either
+— the entire Brood War tier-3 roster, which predates this milestone by nine of them. The games end
+first. So more than half of everything ever built for this game has never been seen by anyone playing
+against a computer opponent at a normal length.
+
+That is a design question rather than a bug, and it is worth putting in front of a human before
+anything is done about it. The options are not equivalent: making the AI tech faster changes every
+matchup; making games longer changes what the game *is*; leaving it means tier 3 is campaign-and-human
+content only, which is a legitimate answer but should be a chosen one.
+
+### Three stale assertions, and one landmine
+
+`test/eightplayer.js` had three checks that measured something other than what they said, all found by
+running it rather than by reading it. The pattern is the one this milestone keeps hitting: **an
+assertion that samples one frame to answer a question about a whole game.**
+
+1. `<= 200` supply, against a `SUPPLY_CAP` that M11 raised to 500. Failing against a number the game
+   had stopped using.
+2. "every player built an economy", read at the final segment — which is really "nobody is ever
+   eliminated in an eight-player free-for-all". Three players reached 40-50 supply and were razed.
+   Peak across the game now.
+3. "every hall sits on a base", judged at the end — so a legitimate Zerg macro hatchery became an
+   orphan the moment the sibling halls justifying it died. Judged at placement time now: 0 bad
+   placements.
+
+And `test/patch10.js`, `patch11.js`, `patch15.js` are **not tests**: they are one-off codemods that
+rewrite files in `js/`. Running one today throws part-way on a stale anchor, *after* `edit()` has
+written the files it already got through — patch11 appended a second `CMD.install()` to
+`js/commands.js` before failing. They refuse to run without an explicit flag now.

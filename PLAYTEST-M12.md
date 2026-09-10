@@ -143,6 +143,23 @@ Flagging these because you asked for the SC2 roster by name and these three are 
 - **All eight campaign missions pass** end to end.
 - **Every matchup soaked** AI-vs-AI at `hard` with a mid-game snapshot round-trip.
 
+## One thing to know before you playtest
+
+**You will not see the tier-3 units by playing against the AI at a normal length.** Across 18 AI-vs-AI
+games (every matchup, 3 seeds, 32k frames) all sixteen tier-1/2 M12 defs were fielded and **none of the
+thirteen tier-3 ones were** — no Thor, Liberator, Raven, Banshee, Viking, Medivac, Viper, Infestor,
+Colossus, Void Ray, Tempest, Disruptor or Mothership. Fifteen of the eighteen games were decided
+between ten and twenty minutes; the AI simply never gets there.
+
+**This is not new and not an M12 thing** — the same run never fields Ghost, Wraith, Science Vessel,
+Battlecruiser, Valkyrie, Guardian, Devourer, Ultralisk, Dark Templar, Archon, Reaver, Scout, Carrier or
+Arbiter either. It is the whole tier-3 roster, and most of it predates this milestone.
+
+So to look at the new heavy units, build them yourself, or play a long game. And it is worth deciding
+what you want here — teching the AI faster changes every matchup, making games longer changes what the
+game is, and leaving it means tier 3 is human-and-campaign content. All three are defensible; none
+should happen by accident.
+
 ## Known and deliberate
 
 - **No balance run has been made, and every balance number in `HANDOFF.md` is stale.** M12 added
