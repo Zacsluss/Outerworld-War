@@ -84,7 +84,8 @@ const UI = {
     // the id in its constructor, and G.daylight looks the layout up in MAP_LAYOUTS by name on every
     // frame. A no-op for every id that is not composed. See UI.skirmishOptions for the whole argument.
     this.registerSkirmishLayout(opts.layout);
-    G.init(opts); this.applyStartingBank(opts); G.recording = this.mode === 'play'; G.log = []; G.pendingCmds = null; this.branchedFrom = null; G.mission = null; if (opts.mission && typeof Missions !== 'undefined') Missions.begin(opts.mission);
+    G.init(opts); opts.seed = G.seed;   // resolve it back onto lastOpts so Restart reproduces THIS game, not a default (FIXLIST-M14 B4)
+    this.applyStartingBank(opts); G.recording = this.mode === 'play'; G.log = []; G.pendingCmds = null; this.branchedFrom = null; G.mission = null; if (opts.mission && typeof Missions !== 'undefined') Missions.begin(opts.mission);
     Render.reset(); if (typeof Music !== 'undefined' && Music.on && !Sound.muted) Music.start(); this.net = !!opts.net; if (this.net) G.paused = false; this.selection = []; this.groups = {}; this.pending = null; this.placing = null; this.menu = null; this.markers = []; this.pings = []; this.msgLog = []; if (G.mission) this.menu = 'brief';
     const hp = G.players[G.human]; Render.camX = hp.startX - Render.viewWorldW() / 2; Render.camY = hp.startY - Render.viewWorldH() / 2 + 40; this.clampCam();
     const hall = G.units.find(u => u.owner === G.human && u.isBuilding); if (hall) this.select([hall]);
@@ -138,9 +139,40 @@ const UI = {
     this.drawConsole(); this.drawTop(); this.drawMessages();
     if (typeof Codex !== 'undefined') Codex.draw(Render.ctx);   // above the console, below the menu
     if (this.mode === 'replay') { this.drawTimeline(); if (this.prodOverlay) this.drawProdOverlay(); }
-    if (G.over && !this.menu) this.menu = 'over';
+    if ((G.over || this.humanIsOut()) && !this.menu) this.menu = 'over';
     if (this.menu) this.drawMenu();
     this.frames++; if (t - this.fpsT > 1000) { this.fps = this.frames; this.frames = 0; this.fpsT = t; }
+  },
+  // ==========================================================================
+  // WHY THE PLAYER WAS NOT SEEING THE DEFEAT SCREEN -- FIXLIST-M14 B4 (item 8)
+  // ==========================================================================
+  // The screen was built and it worked; the reason it never appeared is that `G.over` answers a
+  // DIFFERENT QUESTION from "has this player's game finished". G.checkVictory sets it only when ONE
+  // TEAM REMAINS, so in a free-for-all with three or more teams the human can be wiped out and the
+  // flag stays false for ever while the surviving AIs fight it out. Measured, before anything was
+  // changed, by wiping the human out at frame 120 and reading the flag:
+  //
+  //   2 players  human defeated: true   G.over: true    <- the only case that ever worked
+  //   3 players  human defeated: true   G.over: FALSE
+  //   4 players  human defeated: true   G.over: FALSE
+  //   2 AIs on one team vs the human    G.over: true    (one team left, so the old rule fires)
+  //
+  // That is the whole report. In a 1v1 the last team standing ends the game anyway, so the screen
+  // showed; in anything larger the player who just lost was left watching with no screen, no result,
+  // and no way out but the pause menu.
+  //
+  // THE FIX IS HERE AND NOT IN js/game.js, and that is deliberate rather than convenient: Group B may
+  // not move the build stamp, js/game.js is hashed and js/ui.js is not -- and this is genuinely an
+  // interface question. Whether one team remains is a fact about the simulation; whether to show YOU a
+  // result screen is a fact about you.
+  //
+  // Not in a replay: a replay of a game the recorded human lost would stop dead at the moment they
+  // died instead of playing out. `freePlay` is the existing escape hatch and it still works -- it is
+  // what "Keep watching" sets.
+  humanIsOut() {
+    if (this.mode === 'replay' || G.freePlay) return false;
+    const p = G.players && G.players[G.human];
+    return !!(p && p.human && p.defeated);
   },
   // ---------------- observer / replay controls ----------------
   // G.human only drives what is rendered (vision, the console, alerts) and the command wrappers are inert
@@ -1120,7 +1152,7 @@ const UI = {
     if (this.menu === 'brief' && G.mission) { const d = G.mission.def; return { title: d.title.toUpperCase(), lines: d.brief.concat(['', 'OBJECTIVE: ' + d.objective]), items: [['Begin mission', () => { this.menu = null; }]] }; }
     if (this.menu === 'waiting') return { title: 'WAITING FOR PLAYERS', lines: ['The game resumes when all players have caught up.'], items: [['Keep waiting', () => { this.menu = null; }], ['Leave game', () => { Net.disconnect(); this.toMenu(); }]] };
     if (this.net && Net.active && !Net.connected) return { title: 'CONNECTION LOST', lines: ['The relay connection dropped.', 'Reconnect from the main menu with the same name to rejoin this game.'], items: [['Keep watching', () => { this.menu = null; }], ['Return to main menu', () => this.toMenu()]] };
-    if (this.menu === 'over') { const hp = G.players[G.human]; const won = G.mission ? G.winner === G.human : (G.winTeam != null ? G.winTeam === hp.team : G.winner === G.human); const mins = Math.max(1, G.frame / TPS / 60); const apm = Math.round(G.log.filter(e => e.c.p === G.human).length / mins); const lines = [`Time ${Math.floor(G.frame / TPS / 60)}:${String(Math.floor(G.frame / TPS) % 60).padStart(2, '0')}   APM ${apm}`]; if (G.mission) { lines.push('Objective: ' + G.mission.def.objective + (G.mission.done ? (won ? '  — complete' : '  — failed') : '')); if (G.mission.summary) lines.push(G.mission.summary); } lines.push(''); for (const q of G.players) { const s = q.stats; lines.push(`${q.name} (${RACE_INFO[q.race].name})  kills ${s.unitsKilled}/${s.buildingsKilled}  lost ${s.unitsLost}/${s.buildingsLost}  minerals ${s.mined}  gas ${s.gassed}${q.defeated ? '  ELIMINATED' : ''}`); } return { title: won ? 'VICTORY' : 'DEFEAT', lines, items: [['Continue playing', () => { this.menu = null; G.over = false; G.freePlay = true; }], ['Save replay', () => { Replay.saveReplay(); }], ['Return to main menu', () => this.toMenu()]] }; }
+    if (this.menu === 'over') { const hp = G.players[G.human]; const won = G.mission ? G.winner === G.human : (G.winTeam != null ? G.winTeam === hp.team : G.winner === G.human); const mins = Math.max(1, G.frame / TPS / 60); const apm = Math.round(G.log.filter(e => e.c.p === G.human).length / mins); const lines = [`Time ${Math.floor(G.frame / TPS / 60)}:${String(Math.floor(G.frame / TPS) % 60).padStart(2, '0')}   APM ${apm}`]; if (G.mission) { lines.push('Objective: ' + G.mission.def.objective + (G.mission.done ? (won ? '  — complete' : '  — failed') : '')); if (G.mission.summary) lines.push(G.mission.summary); } lines.push(''); for (const q of G.players) { const s = q.stats; lines.push(`${q.name} (${RACE_INFO[q.race].name})  kills ${s.unitsKilled}/${s.buildingsKilled}  lost ${s.unitsLost}/${s.buildingsLost}  minerals ${s.mined}  gas ${s.gassed}${q.defeated ? '  ELIMINATED' : ''}`); } return { title: won ? 'VICTORY' : 'DEFEAT', lines, items: [[hp.defeated ? 'Keep watching' : 'Continue playing', () => { this.menu = null; G.over = false; G.freePlay = true; }], ['Restart this game', () => this.start(this.lastOpts)], ['Save replay', () => { Replay.saveReplay(); }], ['Return to main menu', () => this.toMenu()]] }; }
     if (this.mode === 'replay') return { title: 'REPLAY PAUSED', lines: ['Speed: ' + this.speedName(), 'Watching: ' + (this.viewAll ? 'everyone' : G.players[G.human].name), '', '[ and ] switch player, O production overlay', 'Shift+Left/Right skip 30 s, Home restarts, click the bar to seek'], items: [['Resume (Esc)', () => { this.menu = null; }], [(Sound.muted ? 'Sound: off' : 'Sound: on') + ' (Ctrl+M)', () => Sound.setMuted(!Sound.muted)], ['Toggle full map view (Ctrl+V)', () => { this.viewAll = !this.viewAll; this.menu = null; }], ['Next player (])', () => { this.cycleObserved(1); this.viewAll = false; this.menu = null; }], ['Toggle production overlay (O)', () => { this.prodOverlay = !this.prodOverlay; this.menu = null; }], ['Take control from here (Ctrl+B)', () => this.branchReplay()], ['Quit to menu', () => this.toMenu()]] };
     // Settings is its own screen rather than four more rows on the pause menu: the pause menu is where
     // you go to leave or to save, and mixing "quit to menu" in with "music off" made both harder to find.
