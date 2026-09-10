@@ -246,6 +246,44 @@ Marine's 0.17 -- eighteenth in line -- and because `count` is LIVE units, attrit
 Marine's score before the queue ever got there. Every unit needing an advanced building or 100+ gas
 now has a weight putting its score at 1.25 or better.
 
+### Four more, found by following the money
+
+The first five above got the tier-3 BUILDINGS up. The units still did not appear, and the reason was
+four further faults in the same system -- each one found the same way, by measuring what the AI
+actually produced and then asking its own code why not.
+
+6. **The AI stopped building supply at 200.** `AI.supply()` opened with `if (p.supMax >= 200) return;`
+   and M11 raised `SUPPLY_CAP` to 500. So it sat at its own ceiling all game, and what a capped player
+   cannot buy is everything expensive. Measured: a solo 20-minute Protoss finished **252/252 having
+   produced 77 zealots, 3 dragoons and nothing else**, with Immortal, Colossus, Reaver, Carrier,
+   Arbiter, Void Ray, Tempest, Disruptor, Oracle, Corsair, Scout and Warp Prism each reporting
+   "supply" as the reason. The same stale-constant bug as the `<= 200` assertion in
+   `test/eightplayer.js` -- a number the game stopped using a milestone ago.
+7. **Heavy units were scored eighteenth in the queue** (see above) -- weights recomputed from supply.
+8. **Gas had the same hold bar as minerals.** A geyser admits one worker at a time, so gas is a
+   trickle next to a mineral line; demanding 70% of it banked before the AI will wait means it never
+   waits. The Dragoon is the *better* pick by composition score (0.40 against the Zealot's 0.50) and
+   lost every single time, because it costs 50 gas and the Zealot costs none.
+9. **Upgrades outbid the build order.** `research()` was the last spender in the file reading the bank
+   directly instead of asking `afford()`. A 20-minute game mines ~9,100 gas and upgrades are the
+   largest single claim on it.
+
+The composition after 6-9, same seed, same twenty minutes:
+
+| | before | after |
+|---|---|---|
+| zealot | 77 | 56 |
+| dragoon | 3 | 18 |
+| everything else | **nothing** | high_templar 6, dark_templar 6, immortal 3, phoenix 3, warp_prism 3, archon 2, reaver 2, void_ray 2, dark_archon 1, disruptor 1, oracle 1, scout 1 |
+
+Eleven unit types that had never once been built now appear. That is the composition table finally
+being able to express itself.
+
+**Zerg is exempt from 9**, and the exemption is the interesting part: Zerg reserves for its head step
+*unconditionally* (the M7 lever inside `script()`, kept because it is worth 15 points in TvZ), so its
+reserve is engaged essentially all game and any reserve-based brake silences its research completely.
+`test/zerg12.js` caught that within one run.
+
 ### Scouting was decorative, and now is not
 
 `enemyAir` -- the switch deciding whether Zerg builds Scourge and Spore Colonies and whether Protoss
