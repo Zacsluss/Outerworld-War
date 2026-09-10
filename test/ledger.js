@@ -106,7 +106,7 @@ const PROBE = (race, ledgered) => `(() => {
   // ---- the refusal ledger --------------------------------------------------
   // ai.ledger is the hook in js/ai.js. Draining it once per tick keeps the array small; the
   // aggregation happens here so nothing the size of a game has to cross the vm boundary.
-  const gates = {}, unit = {}, timeline = [];
+  const gates = {}, unit = {}, timeline = [], funded = {};
   let thinks = 0, thinksReserved = 0, thinksBound = 0, rmSum = 0, rmN = 0, rgSum = 0, rgN = 0;
   const headHeld = {};
   let lastHead = null, lastHeadF = 0, lastThinkF = -1;
@@ -156,7 +156,13 @@ const PROBE = (race, ledgered) => `(() => {
 
   for (let i = 0; i < ${FRAMES}; i++) {
     G.tick();
-    if (L) drain();
+    if (L) {
+      drain();
+      // WHO ACTUALLY GETS FUNDED. The claim order is the one judgement call in budget() that cannot be
+      // derived from anything, so it has to be watched rather than argued about: armed is how often a
+      // claimant asked, full is how often it got its whole cost.
+      for (const c of ai.claims || []) { const e = funded[c.src] || (funded[c.src] = { armed: 0, full: 0, m: 0 }); e.armed++; e.m += c.min; if (c.min >= c.want && c.gas >= c.wantG) e.full++; }
+    }
     if (i % 240 === 0) {
       // UNLOCKED MEANS A PRODUCER STANDS FINISHED, not merely that hasReq passes. A Corsair's req list
       // is empty -- the Stargate it comes out of is expressed as its "from", which hasReq never looks
@@ -190,7 +196,7 @@ const PROBE = (race, ledgered) => `(() => {
   for (const u of G.units) if (u.alive && u.owner === 0) built[u.def.id] = (built[u.def.id] || 0) + 1;
 
   return { hash, spend, bought, income, gates, unit, timeline, thinks, thinksReserved, thinksBound,
-           headHeld, reqAt, srcB, compIds: [...compIds], built, errs: __err.slice(0, 3),
+           headHeld, funded, reqAt, srcB, compIds: [...compIds], built, errs: __err.slice(0, 3),
            idx: ai.scriptIdx, sup: p.supUsed, supMax: p.supMax, bank: [Math.round(p.minerals), Math.round(p.gas)],
            rmMean: rmN ? Math.round(rmSum / rmN) : 0, rgMean: rgN ? Math.round(rgSum / rgN) : 0,
            buildings: G.units.filter(u => u.alive && u.owner === 0 && u.isBuilding && u.done).length };
@@ -227,6 +233,9 @@ for (const race of RACES) {
   console.log('   engaged (something reserved): ' + r.thinksReserved + '  (' + (100 * r.thinksReserved / (r.thinks || 1)).toFixed(0) + '%)' +
     '     BINDING (refused a purchase): ' + r.thinksBound + '  (' + (100 * r.thinksBound / (r.thinks || 1)).toFixed(0) + '%)');
   console.log('   mean reserve while engaged:   ' + r.rmMean + 'm  ' + r.rgMean + 'g');
+  console.log('   claim order -- how often each of the seven asked, and how often it got its whole cost:');
+  for (const k of ['inflight', 'supply', 'worker', 'expand', 'head', 'research', 'top']) { const e = r.funded[k]; if (!e) continue;
+    console.log('      ' + pad(k, 10) + 'armed ' + num(e.armed, 5) + '   funded in full ' + num(e.full, 5) + '  (' + (100 * e.full / e.armed).toFixed(0) + '%)   mean minerals held ' + Math.round(e.m / e.armed)); }
   const hh = Object.entries(r.headHeld).sort((a, b) => b[1] - a[1]).slice(0, 6);
   console.log('   the build order head, longest-held first:');
   for (const [id, f] of hh) console.log('      ' + pad(id, 26) + num(mmss(f), 7) + '  of the game at the front of the order');

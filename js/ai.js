@@ -371,7 +371,8 @@ class AI {
     // instead of funding, the composition's top pick spent from the bank on every think regardless,
     // production took 88% of all gas, and the Templar Archives sat at the head of the build order for
     // 6:08 of a 20-minute game.
-    const claim = d => { if (!d) return; const m0 = cm, g0 = cg; cm = Math.min(p.minerals, cm + d.min); cg = Math.min(p.gas, cg + d.gas); claims.push({ id: d.id, min: cm - m0, gas: cg - g0 }); };
+    let src = 'inflight';   // which of the seven asked; carried on the claim so test/ledger.js can report who actually got funded
+    const claim = d => { if (!d) return; const m0 = cm, g0 = cg; cm = Math.min(p.minerals, cm + d.min); cg = Math.min(p.gas, cg + d.gas); claims.push({ src, id: d.id, min: cm - m0, gas: cg - g0, want: d.min, wantG: d.gas }); };
 
     // 1. BUILDINGS A WORKER IS ALREADY WALKING TO. The site payment is not optional: a worker that
     //    arrives at a site the AI can no longer pay for cancels, and the walk was wasted.
@@ -379,7 +380,7 @@ class AI {
 
     // 2. SUPPLY, WHEN IT IS ABOUT TO BLOCK. A claim rather than the exemption it replaces, because an
     //    AI that supply-blocks itself stops doing everything else as well.
-    if (this.supplyUrgent()) claim(DATA.buildings[RACE_INFO[this.race].supply] || DATA.units[RACE_INFO[this.race].supply]);
+    src = 'supply'; if (this.supplyUrgent()) claim(DATA.buildings[RACE_INFO[this.race].supply] || DATA.units[RACE_INFO[this.race].supply]);
 
     // 3. ONE WORKER, and this is the one ordering here worth arguing about. It sits ABOVE the build
     //    order because income is what pays for the build order: a player saving for a Stargate stops
@@ -389,7 +390,7 @@ class AI {
     //    mined 13.8k minerals against 33.6k. Every other number in that run was downstream of it.
     //    Still a claim and not a hole: exactly one, and only while economy() still wants one, so the
     //    worker target and the army-ratio gate continue to bound it.
-    claim(this.workerDef);
+    src = 'worker'; claim(this.workerDef);
 
     // 4. AN EXPANSION, for the same reason and by the same measurement. Taking the force flag off
     //    macro()'s expansion was right -- force bypassing the reserve is what starved Zerg's Spire
@@ -398,22 +399,22 @@ class AI {
     //    fields it OWNS, so the worker cap fell with the base count. Committed rather than forced is
     //    the whole difference: the money is held, so nothing below can spend it out from under the
     //    expansion, and it is held in priority order, so it cannot outrank anything above it either.
-    claim(this.expandDef);
+    src = 'expand'; claim(this.expandDef);
 
     // 5. THE HEAD OF THE BUILD ORDER -- the tech tree, and the thing everything behind it waits on.
     //    Dropped while overrun: an army arriving at the door beats a building later.
-    if (!this.overrun()) claim(this.headDef);
+    src = 'head'; if (!this.overrun()) claim(this.headDef);
 
     // 6. THE NEXT UPGRADE. Below the build order, because M12 measured upgrades outbidding it as the
     //    reason the army stayed small; above a single unit, because an upgrade is worth more than one
     //    zealot and the two are competing for the same gas. Without this, research() -- which runs
     //    second to last -- was simply never asked while there was anything left: 84.8% of every gas
     //    mined went to units and a 20-minute game finished with two upgrades against thirty-two.
-    claim(this.researchDef);
+    src = 'research'; claim(this.researchDef);
 
     // 7. THE COMPOSITION'S TOP PICK, so the army has a shape. Last, because a unit is the one thing
     //    on this list that can be bought again in a few seconds.
-    claim(this.topDef);
+    src = 'top'; claim(this.topDef);
 
     // ONE THINK STALE, and that is the point. script() and production() are the only two that know
     // what the build order and the composition currently want, and they run fourth and fifth -- long
@@ -434,6 +435,22 @@ class AI {
     if (!d) return false;
     for (const c of this.claims) if (c.id === d.id && c.min >= d.min && c.gas >= d.gas) return true;
     return false;
+  }
+  // A CLAIM IS CONSUMED WHEN THE THING IT WAS HELD FOR IS BOUGHT. Without this, committed still counts
+  // money that has already left the bank -- and free is p.minerals minus committed, so a think that
+  // buys a worker out of its claim is charged for it twice: once when p.minerals falls, and again
+  // because committed did not. Over a think with several claimants spending, free goes deeply negative
+  // and everything after them is refused. Measured before this existed: the head of the build order
+  // was funded on 22% of thinks and claims 6 and 7 -- research and the composition's top pick -- were
+  // never funded at all, so a Zerg finished a 20-minute game with no upgrades whatsoever.
+  //
+  // ONLY FOR PURCHASES THAT DEBIT IMMEDIATELY. A building is paid for when its worker REACHES the
+  // site, so a building claim must stay held: the money is still in the bank and still spoken for, and
+  // next think budget() re-derives it as claim 1 (in flight) instead. Releasing it at order time would
+  // let something else spend the money out from under a worker already walking.
+  release(d) {
+    for (let i = 0; i < this.claims.length; i++) { const c = this.claims[i];
+      if (c.id === d.id && c.min >= d.min && c.gas >= d.gas) { this.commitMin -= c.min; this.commitGas -= c.gas; this.claims.splice(i, 1); return; } }
   }
   // THE LEDGER HOOK. `this.ledger` is undefined in a real game, so every call below is one property
   // read and nothing else; test/ledger.js sets it to an array and each gate then records what it
@@ -902,7 +919,7 @@ class AI {
       // down that free can pay for is bought now, and it cannot eat the claim, because the claim has
       // already been taken out of free before this line is reached.
       if (!this.claimed(want) && !this.afford(want.min, want.gas)) { if (!this.researchDef) this.researchDef = want; this.note(0, 'resFree', id, want.min, want.gas); continue; }
-      if (DATA.techs[id] ? G.queueTech(bld, id) : G.queueUpgrade(bld, id)) return;
+      if (DATA.techs[id] ? G.queueTech(bld, id) : G.queueUpgrade(bld, id)) { this.release(want); return; }
     }
   }
   // ---------------- helpers ----------------
@@ -917,12 +934,21 @@ class AI {
     // it trades a tech stall for a supply block, which is worse.
     if (!this.claimed(ud) && !this.afford(ud.min, ud.gas)) return this.note(false, 'trainReserve', id, ud.min, ud.gas);
     if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) return this.note(false, 'trainSupply', id, ud.min, ud.gas);
-    if (ud.from === 'larva') { const l = this.mine(u => u.def.larva)[0]; if (!l) return false; return G.larvaMorph(l, id); }
+    if (ud.from === 'larva') { const l = this.mine(u => u.def.larva)[0]; if (!l) return false; if (!G.larvaMorph(l, id)) return false; this.release(ud); return true; }
     const bs = this.mine(u => u.isBuilding && u.done && !u.lifted && u.def.produces.includes(id) && u.prod.length < (maxQ || 2) && !(u.addon && !u.addon.done)); if (!bs.length) return this.note(false, 'trainNoProd', id, ud.min, ud.gas);
-    bs.sort((a, b) => a.prod.length - b.prod.length); return G.queueUnit(bs[0], id);
+    bs.sort((a, b) => a.prod.length - b.prod.length); if (!G.queueUnit(bs[0], id)) return false; this.release(ud); return true;
   }
   // could we train this if we had the money? (requirements, supply room and a production building with a free slot)
-  canTrainSoon(id) { const p = this.p, ud = DATA.units[id]; if (!ud || !p.hasReq(ud)) return false; if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) return false; if (ud.from === 'larva') return !!this.mine(u => u.def.larva).length; return !!this.mine(u => u.isBuilding && u.done && !u.lifted && u.def.produces.includes(id) && u.prod.length < 3 && !(u.addon && !u.addon.done)).length; }
+  // SOON, not this instant. For every other race this asks for a production building with a free
+  // queue slot; for Zerg it used to ask for a LARVA IN HAND, which is a strictly harder question --
+  // larvae are consumed the moment they appear, so it was false on most thinks. That mattered once
+  // budget() started using this to decide whether to hold money for the composition's top pick:
+  // claim 7 was simply never armed for Zerg, so nothing was ever saved for a Hydralisk and free
+  // hovered in the band between a zergling's 25 minerals and a hydralisk's 75. Measured: 113
+  // zerglings against 17 hydralisks and 3 roaches in a 20-minute game. A hatchery that spawns larva
+  // is the Zerg equivalent of a gateway with a free slot, and it is what this function's own comment
+  // has always described.
+  canTrainSoon(id) { const p = this.p, ud = DATA.units[id]; if (!ud || !p.hasReq(ud)) return false; if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) return false; if (ud.from === 'larva') return !!this.mine(u => u.def.spawnsLarva && u.done).length; return !!this.mine(u => u.isBuilding && u.done && !u.lifted && u.def.produces.includes(id) && u.prod.length < 3 && !(u.addon && !u.addon.done)).length; }
   addon(id) { const p = this.p, ad = DATA.buildings[id]; if (!p.hasReq(ad)) return false; const b = this.mine(u => u.isBuilding && u.done && u.def.id === ad.parent && !u.addon && !u.prod.length)[0]; if (!b) return false; return G.queueAddon(b, id); }
   // The source of a morph is DERIVED from the data, not listed here. It used to be a three-way ternary
   // -- lair from hatchery, hive from lair, greater spire from spire -- which was every morph that
