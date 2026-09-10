@@ -795,10 +795,47 @@ const G = {
     return true;
   },
   // ---------------- commands (validated) ----------------
+  //
+  // GATED BY DATA, NOT BY CONVENTION -- FIXLIST-M14 A4.
+  //
+  // The reported fault was "the Reactor gives no prerequisite error". It was true and the cause was
+  // wider than the Reactor: an audit of every def and every command below found three separate holes,
+  // and the third was the interesting one.
+  //
+  //   1. FIVE of the seven add-ons carried no `req` at all -- reactor, machine_shop, control_tower,
+  //      physics_lab, covert_ops. `p.hasReq` passes trivially against an empty list, so nothing could
+  //      ever be refused and nothing was ever said. The Reactor now requires the Academy (see its def).
+  //      The other four are gated completely by their parent, which is now enforced below rather than
+  //      assumed, so they need nothing else -- that is the audit's finding, not an omission.
+  //
+  //   2. FOUR refusal states said NOTHING AT ALL. Click Reactor on a Barracks that is still building,
+  //      or already has an add-on, or is training a marine, or has lifted off, and the command was
+  //      dropped in silence. That, far more than the missing `req`, is what a player experiences as
+  //      "it gives no error". Every one of them now says which it is.
+  //
+  //   3. AND THE COMMANDS TRUSTED THE COMMAND CARD. Nothing here checked that the building being asked
+  //      actually offers the thing being asked for -- only the UI knew, because the UI builds its
+  //      buttons from `produces` / `addons` / `tech` / `upg` / `morphOptions`. Measured, before this
+  //      change: a Barracks would accept a Physics Lab, a Machine Shop, Siege Tech and Vehicle
+  //      Weapons, and a Factory would accept being turned into an Orbital Command -- all silently, all
+  //      paid for, all real. A command log is not the UI; it is the sim's public interface, and every
+  //      one of those was reachable from a replay, a rejoin or a modified client.
+  //
+  // The membership test reads the BUILDING'S OWN list rather than comparing against the tech table's
+  // `bld` field, and that is deliberate and was measured: a Lair legitimately lists `burrow_tech`
+  // whose own `bld` is `hatchery`, a Hive lists three more of the Lair's, and a Greater Spire lists
+  // both of the Spire's upgrades. Comparing `td.bld === b.def.id` would have refused all seven and
+  // broken Zerg tier inheritance.
+  //
+  // The AI was checked and needs no change: AI.research already selects its building by `td.bld` /
+  // `ud.bld`, and AI.addon by `ad.parent`, so it never asked for any of this.
+  // "a Machine Shop" but "an Orbital Command". One line, because the refusals above name a def and
+  // every def name is player-facing text.
+  anA(name) { return (/^[AEIOU]/.test(name) ? 'an ' : 'a ') + name; },
   queueUnit(b, uid) {
     const p = this.players[b.owner], ud = DATA.units[uid];
     if (!ud || !b.done || b.lifted) return false;
-    if (!((b.def.produces || []).includes(uid) || (b.def.id === 'reaver' && uid === 'scarab') || (b.def.id === 'carrier' && uid === 'interceptor'))) return false;
+    if (!((b.def.produces || []).includes(uid) || (b.def.id === 'reaver' && uid === 'scarab') || (b.def.id === 'carrier' && uid === 'interceptor'))) { p.msg(b.def.name + ' does not train ' + ud.name + '.', 'error'); return false; }
     if (uid === 'scarab' || uid === 'interceptor') { const max = uid === 'scarab' ? (p.hasTech('reaver_capacity') ? 10 : 5) : (p.hasTech('carrier_capacity') ? 8 : 4); const have = (uid === 'scarab' ? b.scarabs : b.interceptors) + b.prod.length; if (have >= max) return false; }
     if (b.prod.length >= MAX_QUEUE) return false;
     if (!p.hasReq(ud)) { p.msg('Requires ' + p.missingReq(ud), 'error'); return false; }
@@ -820,7 +857,8 @@ const G = {
     this.recomputeSupply(); return true;
   },
   queueUpgrade(b, uid) {
-    const p = this.players[b.owner], ud = DATA.upgrades[uid]; if (!b.done || b.lifted || b.unpowered) return false;
+    const p = this.players[b.owner], ud = DATA.upgrades[uid]; if (!ud || !b.done || b.lifted || b.unpowered) return false;
+    if (!(b.def.upg || []).includes(uid)) { p.msg(b.def.name + ' does not research ' + ud.name + '.', 'error'); return false; }
     const lvl = p.upgLevel(uid); if (lvl >= 3 || p.researching.has(uid)) return false;
     const rq = ud.req[lvl]; if (rq && !p.hasBuilding(rq)) { p.msg('Requires ' + DATA.buildings[rq].name, 'error'); return false; }
     if (b.prod.length >= MAX_QUEUE) return false; if (!p.canAfford(ud.min[lvl], ud.gas[lvl])) return false;
@@ -828,7 +866,8 @@ const G = {
     b.prod.push({ kind: 'upg', id: uid, level: lvl + 1, progress: 0, total: ud.time[lvl] }); return true;
   },
   queueTech(b, tid) {
-    const p = this.players[b.owner], td = DATA.techs[tid]; if (!b.done || b.lifted || b.unpowered) return false;
+    const p = this.players[b.owner], td = DATA.techs[tid]; if (!td || !b.done || b.lifted || b.unpowered) return false;
+    if (!(b.def.tech || []).includes(tid)) { p.msg(b.def.name + ' does not research ' + td.name + '.', 'error'); return false; }
     if (p.tech.has(tid) || p.researching.has(tid)) return false;
     if (td.req && !p.hasReq(td)) { p.msg('Requires ' + p.missingReq(td), 'error'); return false; }
     if (b.prod.length >= MAX_QUEUE) return false; if (!p.canAfford(td.min, td.gas)) return false;
@@ -836,7 +875,14 @@ const G = {
     b.prod.push({ kind: 'tech', id: tid, progress: 0, total: td.time }); return true;
   },
   queueAddon(b, aid) {
-    const p = this.players[b.owner], ad = DATA.buildings[aid]; if (!b.done || b.lifted || b.addon || b.prod.length) return false;
+    const p = this.players[b.owner], ad = DATA.buildings[aid]; if (!ad) return false;
+    if (!(b.def.addons || []).includes(aid)) { p.msg(b.def.name + ' cannot build ' + this.anA(ad.name) + '.', 'error'); return false; }
+    // The four that used to be dropped in silence. Order matters only in that each says the one true
+    // thing about the state it is in, so a player never has to guess which of them stopped them.
+    if (!b.done) { p.msg(b.def.name + ' is not finished.', 'error'); return false; }
+    if (b.lifted) { p.msg('Land the ' + b.def.name + ' first.', 'error'); return false; }
+    if (b.addon) { p.msg(b.def.name + ' already has an add-on.', 'error'); return false; }
+    if (b.prod.length) { p.msg(b.def.name + ' is busy.', 'error'); return false; }
     if (!p.hasReq(ad)) { p.msg('Requires ' + p.missingReq(ad), 'error'); return false; }
     const tx = b.tx + b.def.w, ty = b.ty + b.def.h - 2;
     const err = this.map.canPlace(ad, tx, ty, p, this.units, null); if (err) { p.msg(err, 'error'); return false; }
@@ -845,7 +891,9 @@ const G = {
     const a = this.placeBuilding(ad, tx, ty, b.owner); a.parent = b; b.addon = a; return true;
   },
   queueMorph(b, toId) {
-    const p = this.players[b.owner], nd = DATA.buildings[toId]; if (!b.done || b.prod.length) return false;
+    const p = this.players[b.owner], nd = DATA.buildings[toId]; if (!nd) return false;
+    if (!(b.def.morphTo === toId || (b.def.morphOptions || []).includes(toId))) { p.msg(this.anA(b.def.name).replace(/^a/, 'A').replace(/^an/, 'An') + ' cannot become ' + this.anA(nd.name) + '.', 'error'); return false; }
+    if (!b.done || b.prod.length) return false;
     if (!p.hasReq(nd)) { p.msg('Requires ' + p.missingReq(nd), 'error'); return false; }
     if (!p.canAfford(nd.min, nd.gas)) return false;
     p.minerals -= nd.min; p.gas -= nd.gas;

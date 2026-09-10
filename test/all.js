@@ -61,6 +61,7 @@ const TESTS = [
   { name: 'auras', args: ['auras.js'], what: 'field hospitals mend and jamming towers blind, to the documented contract' },
   { name: 'card', args: ['card.js'], what: 'the command card is 4x3, pages, and never draws outside its grid' },
   { name: 'describe', args: ['describe.js'], what: 'every unit and building says what it is for, on the card and in the codex' },
+  { name: 'gated', args: ['gated.js'], what: 'nothing is gated by convention: every command refuses what it should, out loud' },
   { name: 'fognight', args: ['fognight.js'], what: 'explored ground remembers, and night shortens sight on maps that have one' },
   { name: 'formation', args: ['formation.js'], what: 'a right-drag spreads the selection evenly along the line' },
   { name: 'mapmodes', args: ['mapmodes.js'], what: 'the four map sizes are different rules, and the sandstorm is deterministic' },

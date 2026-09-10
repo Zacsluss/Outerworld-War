@@ -777,7 +777,16 @@ const DATA = (() => {
   //
   // `reactor: true` is the flag the simulation reads (Abilities.tickTerran), not the id, so a second
   // parent later is a one-word change to `addons` and nothing else.
-  B('reactor', { name: 'Reactor', race: 'T', hp: 600, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'X', tier: 'addon', parent: 'barracks', reactor: true });
+  //
+  // `req: ['academy']` is FIXLIST-M14 A4, and it is the answer to "the Reactor gives no prerequisite
+  // error": it had no `req` array at all, so `p.hasReq` passed trivially and nothing could ever be
+  // refused. The Academy is the gate because it is the Barracks' own upgrade building -- Stimpacks,
+  // U-238, the Medic and the Ghost all come off it -- so "you have committed to infantry, now you may
+  // mass them" is the sentence the tree already speaks. Without it a 50/50 add-on doubled the game's
+  // cheapest production line the moment the opening Barracks finished, which is the hole rather than
+  // the feature. THIS IS A BALANCE-RELEVANT CHOICE and is flagged for the gated balance run; the AI
+  // build script is unaffected (Academy at supply 20, Reactor at 45).
+  B('reactor', { name: 'Reactor', race: 'T', hp: 600, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'X', tier: 'addon', parent: 'barracks', req: ['academy'], reactor: true });
 
   // ============================ ZERG BUILDINGS ============================
   B('hatchery', { name: 'Hatchery', race: 'Z', hp: 1250, w: 4, h: 3, min: 300, time: 1800, hk: 'H', tier: 'basic', sup: 1, depot: true, spawnsLarva: true, creep: 11, morphTo: 'lair', sight: 9 });
