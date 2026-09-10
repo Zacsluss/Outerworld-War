@@ -641,6 +641,10 @@ const UI = {
   // Slot 11 is reserved: it is Cancel where a card has one, and the page turn where a card overflows.
   CARD_COLS: 4, CARD_ROWS: 3,
   get CARD_SLOTS() { return this.CARD_COLS * this.CARD_ROWS; },
+  // How wide the command-card tooltip is allowed to get, in pixels, before a description wraps. A
+  // sentence is longer than a price, so without a cap the popup grows to the width of the longest
+  // def in the game and covers the map it is describing. 260 holds about six words a line at size 10.
+  TIP_W: 260,
   cardPage: 0,
   // Split an over-long card into pages, keeping any button that asked for the reserved slot pinned to
   // it on every page -- Cancel has to stay reachable from page two.

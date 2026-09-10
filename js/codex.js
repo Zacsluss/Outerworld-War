@@ -426,7 +426,11 @@ const Codex = {
     if (d.min) cost.push(d.min + ' min'); if (d.gas) cost.push(d.gas + ' gas');
     if (d.sup) cost.push(d.sup + (d.pair ? ' x2' : '') + ' supply'); if (d.supGive) cost.push('+' + d.supGive + ' supply');
     if (d.time) cost.push(Math.round(d.time / TPS) + 's');
-    HUD.text(ctx, cost.length ? cost.join('   ') : 'No build cost', tx, y, '#ffe45a', 12); y += 20;
+    HUD.text(ctx, cost.length ? cost.join('   ') : 'No build cost', tx, y, '#ffe45a', 12); y += 18;
+    // What the thing is FOR, straight under the price and above the two columns of numbers. It wraps
+    // to the space left of the calculator buttons rather than the whole pane, or it runs under them.
+    if (d.desc) { y = this.wrap(ctx, d.desc, tx, y, D.w - (tx - D.x) - 150, '#9fb0c4', 11) + 4; }
+    else y += 2;
 
     // buttons that load it into the calculator
     for (const [b, lbl, c] of [[L.setAtk, 'AS ATTACKER (A)', '#ff8a5a'], [L.setDef, 'AS DEFENDER (D)', '#6fd0ff']]) {
@@ -493,16 +497,10 @@ const Codex = {
     drawCol(rowsL, c1, colW); drawCol(rowsR, c2, colW);
     ctx.restore();
   },
-  // Word wrap for the fact columns. Rebuilt per line, which is fine at codex prices.
+  // Word wrap for the fact columns and the description. The splitting lives in HUD.wrapLines so the
+  // command-card tooltip, which has to size its panel before it draws, breaks lines the same way.
   wrap(ctx, text, x, y, w, color, sz) {
-    ctx.font = HUD.font(sz, false);
-    const words = String(text).split(' '); let line = '';
-    for (const wd of words) {
-      const t = line ? line + ' ' + wd : wd;
-      if (ctx.measureText(t).width > w && line) { HUD.text(ctx, line, x, y, color, sz, false); y += sz + 3; line = wd; ctx.font = HUD.font(sz, false); }
-      else line = t;
-    }
-    if (line) { HUD.text(ctx, line, x, y, color, sz, false); y += sz + 3; }
+    for (const line of HUD.wrapLines(ctx, text, w, sz)) { HUD.text(ctx, line, x, y, color, sz, false); y += sz + 3; }
     return y;
   },
 

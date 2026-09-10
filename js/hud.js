@@ -767,6 +767,21 @@ const HUD = {
     for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [1, 1]]) ctx.fillText(s, x + dx, y + dy);
     ctx.fillStyle = color; ctx.fillText(s, x, y); ctx.textAlign = 'left';
   },
+  // Greedy word wrap that MEASURES and returns lines rather than drawing them, because the two callers
+  // both need the width and the line count before they can draw anything: the command-card tooltip
+  // sizes its panel around the result, and Codex.wrap needs somewhere to start each line. Sets ctx.font
+  // itself so the measurement is taken at the size it will be drawn at -- measuring at whatever font
+  // happened to be current was how the first version came out a word short on every line.
+  wrapLines(ctx, text, w, sz, bold = false) {
+    ctx.font = this.font(sz, bold);
+    const out = []; let line = '';
+    for (const wd of String(text).split(' ')) {
+      const t = line ? line + ' ' + wd : wd;
+      if (line && ctx.measureText(t).width > w) { out.push(line); line = wd; } else line = t;
+    }
+    if (line) out.push(line);
+    return out;
+  },
   hotLabel(ctx, label, hk, x, y, w, color = '#e6eaf0', fs = 10) { // label with hotkey letter highlighted
     ctx.font = this.font(fs); const words = label.split(' '); const lines = []; let cur = ''; for (const wd of words) { if (ctx.measureText((cur + ' ' + wd).trim()).width > w - 6 && cur) { lines.push(cur); cur = wd; } else cur = (cur + ' ' + wd).trim(); } lines.push(cur);
     let hkDone = false; lines.forEach((ln, i) => { let lx = x + w / 2 - ctx.measureText(ln).width / 2, ly = y + i * (fs + 1); if (!hkDone && hk && hk.length === 1) { const idx = ln.toUpperCase().indexOf(hk.toUpperCase()); if (idx >= 0) { const a = ln.slice(0, idx), b = ln[idx], c = ln.slice(idx + 1); ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillText(ln, lx + 1, ly + 1); ctx.fillStyle = color; ctx.fillText(a, lx, ly); lx += ctx.measureText(a).width; ctx.fillStyle = '#ffe45a'; ctx.fillText(b, lx, ly); lx += ctx.measureText(b).width; ctx.fillStyle = color; ctx.fillText(c, lx, ly); hkDone = true; return; } } ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillText(ln, lx + 1, ly + 1); ctx.fillStyle = color; ctx.fillText(ln, lx, ly); });
@@ -841,9 +856,14 @@ Object.assign(UI, {
       ctx.restore();
       HUD.hotLabel(ctx, b.label, this.gridKeys ? '' : b.hk, bx, by + cr.bh - Math.round(10 * cr.k), cr.bw, b.dim ? '#7a828c' : '#e6eaf0', Math.max(8, Math.round(10 * cr.k))); if (this.gridKeys && b.hk !== 'Escape') { ctx.font = HUD.font(9); ctx.fillStyle = '#ffe45a'; ctx.fillText(b.hk, bx + 3, by + 10); }
       if (b.hk === 'Escape') { ctx.font = HUD.font(8); ctx.fillStyle = '#ffe45a'; ctx.fillText('ESC', bx + cr.bw - 20, by + 10); }
-      if (hov && (b.cost || b.energy)) { const parts = [b.label]; if (b.cost && b.cost.min !== undefined) { parts.push(b.cost.min + ' minerals'); if (b.cost.gas) parts.push(b.cost.gas + ' gas'); if (b.cost.sup) parts.push(b.cost.sup + ' supply'); if (b.cost.time) parts.push(Math.round(b.cost.time / TPS) + 's'); } if (b.energy) parts.push(b.energy + ' energy'); this.tooltip = { lines: parts, x: bx, y: by }; }
+      if (hov && (b.cost || b.energy)) { const parts = [b.label]; if (b.cost && b.cost.min !== undefined) { parts.push(b.cost.min + ' minerals'); if (b.cost.gas) parts.push(b.cost.gas + ' gas'); if (b.cost.sup) parts.push(b.cost.sup + ' supply'); if (b.cost.time) parts.push(Math.round(b.cost.time / TPS) + 's'); } if (b.energy) parts.push(b.energy + ' energy'); this.tooltip = { lines: parts, desc: (b.cost && b.cost.desc) || null, x: bx, y: by }; }
     }
-    if (this.tooltip) { const t = this.tooltip; ctx.font = HUD.font(11); const tw = Math.max(...t.lines.map(l => ctx.measureText(l).width)) + 16, th = t.lines.length * 15 + 8; const tx = Math.min(t.x, Render.W - tw - 4), ty = t.y - th - 6; HUD.bevel(ctx, tx, ty, tw, th, true, 'rgba(10,12,16,0.95)'); t.lines.forEach((l, i) => HUD.text(ctx, l, tx + 8, ty + 15 + i * 15, i ? (l.includes('minerals') ? '#6fe0ff' : l.includes('gas') ? '#7ee07a' : l.includes('energy') ? '#c86aff' : '#c8d0d8') : '#ffe45a', 11, i === 0)); }
+    // The description hangs below the cost lines and is kept in its own field rather than pushed onto
+    // `lines`, because the cost lines are coloured by SEARCHING THEM for the words "minerals", "gas"
+    // and "energy" -- and a Refinery whose description says "so SCVs can harvest gas" would be tinted
+    // green as though the sentence were a price. It wraps to a fixed column so a two-sentence def
+    // cannot stretch the popup across the screen.
+    if (this.tooltip) { const t = this.tooltip; ctx.font = HUD.font(11); const dl = t.desc ? HUD.wrapLines(ctx, t.desc, UI.TIP_W, 10) : []; ctx.font = HUD.font(11); const cw = Math.max(...t.lines.map(l => ctx.measureText(l).width)); ctx.font = HUD.font(10, false); const dw = dl.length ? Math.max(...dl.map(l => ctx.measureText(l).width)) : 0; const tw = Math.max(cw, dw) + 16, th = t.lines.length * 15 + dl.length * 13 + (dl.length ? 6 : 0) + 8; const tx = Math.min(t.x, Render.W - tw - 4), ty = t.y - th - 6; HUD.bevel(ctx, tx, ty, tw, th, true, 'rgba(10,12,16,0.95)'); t.lines.forEach((l, i) => HUD.text(ctx, l, tx + 8, ty + 15 + i * 15, i ? (l.includes('minerals') ? '#6fe0ff' : l.includes('gas') ? '#7ee07a' : l.includes('energy') ? '#c86aff' : '#c8d0d8') : '#ffe45a', 11, i === 0)); dl.forEach((l, i) => HUD.text(ctx, l, tx + 8, ty + t.lines.length * 15 + 12 + i * 13, '#9aa4b0', 10, false)); }
     // LAST, and only over the console band. The glitch tears what is already on the glass, so it has
     // to run after everything that draws on it -- and it is confined to the console rather than the
     // whole window because the cursor and the world are not part of the commander's hardware. Tearing
