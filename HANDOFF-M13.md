@@ -159,6 +159,12 @@ a confidence interval, not a pass/fail.
 8. **`\s*[^']` and `\s*(?!')` both match the space**, because `\s*` backtracks to empty. Trim
    explicitly and look at one character.
 
+## Ending this milestone
+
+When M13 is done, close it the way `CLAUDE.md` requires: a ready-to-paste kickoff prompt for a fresh
+chat, high-level bullets of what changed in a player's language, and **how to playtest each item by
+hand** -- committed as `PLAYTEST-M13.md`, not left in the transcript.
+
 ## Conventions that are not negotiable
 
 - **Determinism.** Never `Math.random()` in sim code — use `G.rand()`. Anything a replay must

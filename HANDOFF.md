@@ -7,6 +7,22 @@ exactly what is left to do.
 > faults in the AI economy. That file carries the current state, the ordered plan, and the traps.
 > **Every balance number below this line is stale** and was already stale before those AI changes.
 
+## Ending a major task
+
+Every milestone, numbered work item, or stretch of work that produced commits worth playing ends the
+same way, without being asked -- the rule is in `CLAUDE.md`, which is loaded every session:
+
+1. **A ready-to-paste kickoff prompt for a NEW chat.** Long chats get expensive and eventually lose
+   their early context, so work hands over to a fresh one at each boundary. The prompt stands alone:
+   repo path, branch, HEAD, tree state, which file to read first, the single next action, the test
+   gate, known reds, and anything gated.
+2. **High-level bullets of what was done** -- in a player's language, not function names, including
+   anything deliberately different from what was asked, and anything left unfinished.
+3. **How to playtest each item by hand** -- the screen to open, the key to press, the unit to select,
+   and what "working" looks like. Where a mechanic is invisible from normal play, say so. The
+   durable version goes in a `PLAYTEST-*.md` and is committed; nothing important lives only in a
+   chat transcript.
+
 ## Kickoff for the next chat
 
 Open a chat in `Default Project/broodwar/` and paste:
