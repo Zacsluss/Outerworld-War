@@ -26,8 +26,15 @@ const AI_SCRIPTS = {
   //     Command Center it owns, and by 46 the main one is already an Orbital, so the Fortress lands on
   //     the natural. That is where a Fortress belongs and it is arrived at rather than special-cased.
   //   sensor_tower@52 -- late, cheap, and needs the engineering bay from 25.
-  T: [[9, 'supply_depot'], [11, 'barracks'], [12, 'refinery'], [15, 'supply_depot'], [16, 'factory'], [19, 'supply_depot'], [20, 'machine_shop'], [22, 'academy'], [23, 'bunker'], [24, 'command_center'], [25, 'engineering_bay'], [26, 'supply_depot'], [27, 'blast_barricade'], [28, 'factory'], [30, 'comsat_station'], [31, 'orbital_command'], [32, 'armory'], [33, 'scrambler_mast'], [34, 'supply_depot'], [36, 'starport'], [38, 'science_facility'], [39, 'aid_station'], [40, 'machine_shop'], [42, 'control_tower'], [44, 'barracks'], [45, 'reactor'], [46, 'command_center'], [48, 'planetary_fortress'], [50, 'factory'], [52, 'sensor_tower'], [56, 'missile_turret'], [60, 'physics_lab'], [62, 'science_facility'], [64, 'starport'], [66, 'covert_ops'], [68, 'nuclear_silo'], [70, 'barracks'], [80, 'factory']],
-  Z: [[11, 'spawning_pool'], [12, 'hatchery'], [13, 'extractor'], [16, 'hydralisk_den'], [17, 'roach_warren'], [18, 'creep_colony'], [19, 'sunken_colony'], [20, 'lair'], [21, 'carapace_ridge'], [22, 'extractor'], [24, 'hatchery'], [26, 'spire'], [28, 'evolution_chamber'], [29, 'miasma_gland'], [30, 'creep_colony'], [31, 'spore_colony'], [32, 'defiler_mound'], [34, 'hatchery'], [36, 'mending_pool'], [38, 'creep_colony'], [42, 'infestation_pit'], [44, 'queens_nest'], [48, 'extractor'], [52, 'hive'], [56, 'creep_colony'], [60, 'ultralisk_cavern'], [64, 'hatchery'], [68, 'nydus_canal'], [70, 'greater_spire'], [80, 'hatchery']],
+  // TIER 3 COMES BEFORE THE OPTIONAL STRUCTURES. The Starport sat at supply 36, behind a bunker, an
+  // engineering bay, a blast barricade, a comsat and an armory; it is at 22 now, with the Control
+  // Tower right behind it. Nothing is removed -- the defensive and utility buildings move to AFTER
+  // the tech that decides what army you are allowed to have.
+  T: [[9, 'supply_depot'], [11, 'barracks'], [12, 'refinery'], [15, 'supply_depot'], [16, 'factory'], [18, 'machine_shop'], [19, 'supply_depot'], [20, 'academy'], [22, 'starport'], [23, 'bunker'], [24, 'command_center'], [25, 'control_tower'], [26, 'supply_depot'], [27, 'armory'], [28, 'factory'], [29, 'engineering_bay'], [30, 'comsat_station'], [31, 'orbital_command'], [32, 'science_facility'], [34, 'supply_depot'], [36, 'blast_barricade'], [37, 'scrambler_mast'], [38, 'machine_shop'], [39, 'aid_station'], [42, 'physics_lab'], [44, 'barracks'], [45, 'reactor'], [46, 'command_center'], [48, 'planetary_fortress'], [50, 'factory'], [52, 'sensor_tower'], [56, 'missile_turret'], [62, 'science_facility'], [64, 'starport'], [66, 'covert_ops'], [68, 'nuclear_silo'], [70, 'barracks'], [80, 'factory']],
+  // Lair moves 20 -> 16 and everything behind it moves with it. Hive was at supply 52 behind a
+  // Queen's Nest at 44, so a Zerg reached Hive at seventeen minutes when it reached it at all, and
+  // Ultralisk Cavern and Greater Spire at 60 and 70 were unreachable in any real game.
+  Z: [[11, 'spawning_pool'], [12, 'hatchery'], [13, 'extractor'], [15, 'hydralisk_den'], [16, 'lair'], [17, 'roach_warren'], [18, 'creep_colony'], [19, 'sunken_colony'], [20, 'spire'], [21, 'carapace_ridge'], [22, 'extractor'], [24, 'hatchery'], [25, 'queens_nest'], [26, 'infestation_pit'], [28, 'evolution_chamber'], [30, 'hive'], [31, 'spore_colony'], [32, 'defiler_mound'], [34, 'hatchery'], [35, 'greater_spire'], [36, 'mending_pool'], [38, 'creep_colony'], [40, 'ultralisk_cavern'], [42, 'miasma_gland'], [44, 'creep_colony'], [48, 'extractor'], [56, 'creep_colony'], [64, 'hatchery'], [68, 'nydus_canal'], [80, 'hatchery']],
   // M12 wave four adds two steps and no more: the Roach Warren at 17, between the den and the first
   // creep colony, because the Roach is a tier-one unit and AI_COMP.Z now spends four of its weight on
   // one; and the Infestation Pit at 42, ahead of the Queen's Nest, because everything behind it
@@ -46,7 +53,12 @@ const AI_SCRIPTS = {
   // converted gateway stops counting, so the later `gateway` steps go unmet and one more goes up. That
   // is the right shape for a computer opponent: it keeps a queue-based production line AND gains the
   // ability to put reinforcements at the front, rather than betting the whole army on warp-in.
-  P: [[8, 'pylon'], [10, 'gateway'], [12, 'assimilator'], [14, 'cybernetics_core'], [15, 'pylon'], [18, 'gateway'], [20, 'nexus'], [22, 'pylon'], [24, 'citadel_of_adun'], [26, 'forge'], [27, 'pylon'], [28, 'robotics_facility'], [29, 'shield_battery'], [30, 'observatory'], [30, 'warp_gate'], [31, 'shield_battery'], [32, 'templar_archives'], [33, 'rejuvenation_shrine'], [34, 'gateway'], [35, 'shield_battery'], [36, 'pylon'], [37, 'null_obelisk'], [38, 'photon_cannon'], [39, 'shield_battery'], [40, 'gateway'], [41, 'warded_bastion'], [42, 'stargate'], [44, 'nexus'], [46, 'arbiter_tribunal'], [48, 'pylon'], [50, 'robotics_support_bay'], [52, 'fleet_beacon'], [56, 'gateway'], [66, 'gateway'], [72, 'stargate'], [80, 'nexus']],
+  // Protoss was the worst of the three: NINE side-buildings sat between the Templar Archives and the
+  // Stargate -- three shield batteries, a null obelisk, a photon cannon, a rejuvenation shrine, a
+  // warded bastion, a gateway and a pylon -- so Stargate at 42, Robotics Support Bay at 50 and Fleet
+  // Beacon at 52 were never reached in a real game. The tech tree front-loads now: robotics, citadel,
+  // stargate and archives all sit inside supply 24, and the batteries and cannons follow them.
+  P: [[8, 'pylon'], [10, 'gateway'], [12, 'assimilator'], [14, 'cybernetics_core'], [15, 'pylon'], [18, 'gateway'], [19, 'robotics_facility'], [20, 'nexus'], [21, 'citadel_of_adun'], [22, 'pylon'], [23, 'stargate'], [24, 'templar_archives'], [26, 'forge'], [27, 'pylon'], [28, 'observatory'], [29, 'robotics_support_bay'], [30, 'warp_gate'], [32, 'fleet_beacon'], [33, 'gateway'], [34, 'arbiter_tribunal'], [36, 'pylon'], [37, 'shield_battery'], [38, 'photon_cannon'], [39, 'rejuvenation_shrine'], [40, 'gateway'], [41, 'null_obelisk'], [42, 'warded_bastion'], [44, 'nexus'], [46, 'shield_battery'], [48, 'pylon'], [56, 'gateway'], [66, 'gateway'], [72, 'stargate'], [80, 'nexus']],
 };
 const gasBuildings = ai => ai.mine(u => u.def.onGeyser).length + 1;
 const AI_COMP = {
@@ -213,12 +225,17 @@ class AI {
       expander: {
         atk: 6, halls: 1, expandT: 0.6, workers: 1.15, wkFloor: 4, wkGate: 0.5, under: 1,
         race: { Z: { expandT: 1, halls: 0 } },   // see styleFor(): Zerg expands hard for free
-        early: { T: { command_center: 18 }, Z: { hatchery: 10 }, P: { nexus: 16 } },
+        // Protoss needed pulling harder once tier 3 moved forward. A Nexus at 16 used to sit in an empty
+        // stretch of the Protoss order; it now competes with a Robotics Facility at 19, a Citadel at 21
+        // and a Stargate at 23, and it lost -- expander Protoss took TWO bases against standard's four,
+        // which is the style doing the opposite of its name. Measured by test/aistyles.js, which
+        // compares the styles against each other rather than against fixed numbers, and so noticed.
+        early: { T: { command_center: 18 }, Z: { hatchery: 10 }, P: { nexus: 13 } },
         // Zerg gets the earlier first hatchery and nothing else. A hatchery is a Zerg's production as
         // well as its expansion, so the shared expansion rules already push it hard: with a step here
         // too it reached thirteen hatcheries and twenty army supply at ten minutes, which is not a play
         // style but a caricature of one.
-        add: { T: [[28, 'command_center']], P: [[26, 'nexus']] },
+        add: { T: [[28, 'command_center']], P: [[22, 'nexus'], [30, 'nexus']] },
       },
       // Smaller waves, more of them, and an army that can leave: mobile units up, siege units down,
       // speed upgrades first, and twice as many drops. waveGrow is the important one -- the second wave
@@ -226,7 +243,12 @@ class AI {
       harasser: {
         atk: -6, waveGrow: 3, reinforce: 8, regroup: 14, dropT: 0.5, def: 0.75, workers: 1.05,
         front: { T: ['ion_thrusters', 'u238'], Z: ['metabolic', 'pneumatized'], P: ['leg_enhancements', 'gravitic_drive'] },
-        early: { T: { starport: 30 }, Z: { spire: 22 }, P: { citadel_of_adun: 18 } },
+        // These have to stay AHEAD of the base script, and the base script moved: Starport went 36 -> 22
+        // and Spire 26 -> 20 when tier 3 was pulled forward, which left the old 30 and 22 here pointing
+        // BEHIND the thing they exist to bring forward. test/aistyles.js caught it -- it asserts that
+        // every id a style names is actually moved earlier, precisely so a style cannot quietly become
+        // a no-op when the order beneath it changes.
+        early: { T: { starport: 16 }, Z: { spire: 16 }, P: { citadel_of_adun: 16 } },
         comp: {
           vulture: 3, wraith: 2, dropship: 2.5, goliath: 0.8, siege_tank: 0.5, valkyrie: 0.7, battlecruiser: 0.5,
           zergling: 2, mutalisk: 2, scourge: 1.5, hydralisk: 0.8, ultralisk: 0.4,
@@ -279,7 +301,40 @@ class AI {
     return AI_STYLE_CACHE[k] = r;
   }
   // money set aside for the building the script/expansion logic is waiting to afford; workers, supply and gas ignore it
-  afford(min, gas) { const m = this.p.minerals, g = this.p.gas; if (min && this.reserveMin && m >= this.reserveMin * 0.4 && m - this.reserveMin < min) return false; if (gas && this.reserveGas && g >= this.reserveGas * 0.4 && g - this.reserveGas < gas) return false; return m >= min && g >= gas; } // once 40% of the target is banked, stop spending until it is affordable. A quarter was too eager: it froze unit production for a fifth of the game while a hall was being saved for, which is the single largest cause of idle production buildings
+  // HAS THE BUILD ORDER BEEN STUCK LONG ENOUGH THAT IT OUTRANKS EXPANDING?
+  //
+  // macro() spends with force=true for expansions and production buildings, and force bypasses
+  // afford(), which is what the head step of the build script reserves with. So a Zerg expansion --
+  // 300 minerals, every few minutes, forever -- takes exactly the money the Spire is saving for.
+  // Measured on a solo 20-minute game, seed 1: the Spire held the head of the script for 842 SECONDS,
+  // 4:23 to 18:25, and spent that whole time on ~60 minerals and ~300 gas. It had the gas. It never
+  // had the minerals, because a hatchery took them first every time.
+  //
+  // Expanding is not wrong and this does not stop it -- it stops it OUTRANKING a tech step that has
+  // been starved for 45 seconds. Gas buildings keep their force unconditionally: gas pays for itself
+  // and is the thing the tech step is usually short of anyway.
+  techStarved() { return this.stepT !== undefined && G.frame - this.stepT > 24 * 45; }
+  // Once 40% of the target is banked, stop spending until it is affordable. A quarter was too eager: it
+  // froze unit production for a fifth of the game while a hall was being saved for, which is the single
+  // largest cause of idle production buildings.
+  //
+  // THE 40% FLOOR IS A TRAP WHEN INCOME IS BEING SPENT AS FAST AS IT ARRIVES, though, and that is the
+  // normal state of a working AI. Below 40% the reserve is off, so units are bought, so the bank never
+  // reaches 40%, so the reserve is never on. The bank random-walks near zero and the thing it is
+  // "saving for" is never bought. Measured, solo 20-minute game, seed 1: Zerg's Spire held the head of
+  // the build script for 842 seconds sitting on ~60 minerals against a 200 target -- 30%, just under
+  // the floor -- while zerglings took every mineral that arrived.
+  //
+  // So the floor is skipped once the head step has actually been starved (see techStarved). That keeps
+  // the measured behaviour in the normal case, where a step is briefly unaffordable and production
+  // should not stall, and drops it in the pathological one, where nothing is going to change on its
+  // own. It is a deadlock breaker, not a new spending policy.
+  afford(min, gas) {
+    const m = this.p.minerals, g = this.p.gas, hard = this.techStarved();
+    if (min && this.reserveMin && (hard || m >= this.reserveMin * 0.4) && m - this.reserveMin < min) return false;
+    if (gas && this.reserveGas && (hard || g >= this.reserveGas * 0.4) && g - this.reserveGas < gas) return false;
+    return m >= min && g >= gas;
+  }
   reserve(def) { this.reserveMin = Math.max(this.reserveMin, def.min); this.reserveGas = Math.max(this.reserveGas, def.gas); } // hold back the single most expensive thing we are saving for, not the sum
   get race() { return this.p.race; }
   mine(pred) { const out = []; for (const u of G.units) if (u.alive && u.owner === this.p.id && pred(u)) out.push(u); return out; }
@@ -296,6 +351,16 @@ class AI {
     this.lastThink = G.frame;
     this.reserveMin = 0; this.reserveGas = 0;
     for (const w of this.mine(u => u.def.worker && u.order.type === 'build' && u.order.def)) this.reserve(w.order.def); // keep the money for buildings a worker is walking to
+    // THE HEAD STEP'S COST, CARRIED FROM THE LAST THINK. Everything below runs in order, and script()
+    // -- the only thing that knows what the build order currently wants -- runs FOURTH. So economy()
+    // and supply(), which are the two largest mineral sinks in the game (every worker and every
+    // overlord), always saw a reserve of exactly zero and spent as if nothing were being saved for.
+    // That is why gating worker production on afford() changed nothing at all for Zerg: at the moment
+    // workers are trained there was never anything to be short of.
+    //
+    // One think stale is fine and is the point: the figure is only a spending brake, and the step it
+    // refers to is by definition the one that was not affordable last time.
+    if (this.headDef) this.reserve(this.headDef);
     try { this.economy(); this.supply(); this.script(); this.macro(); this.production(); this.research(); this.army(); this.scout(); this.drops(); this.micro(); } catch (e) { console.error('AI', e); }
   }
   // ---------------- economy ----------------
@@ -319,7 +384,23 @@ class AI {
       const on = workers.filter(w => (w.order.type === 'gather' && w.order.target === g) || (w.order.type === 'return' && w.order.then === g));
       let want = workers.length < 11 ? (gi === 0 ? 2 : 0) : workers.length < 18 ? 3 : 3;
       if (p.gas > 800 && p.minerals < 300) want = Math.min(want, 1); if ((p.gas > 400 && p.minerals < 150) || p.gas > 1500) want = 0;
-      if (on.length < want) { const cands = workers.filter(w => w.order.type === 'gather' && w.order.target && w.order.target.type === 'mineral' && !w.carrying && dist(w, g) < 20 * TILE); cands.sort((a, b) => dist(a, g) - dist(b, g)); for (let i = 0; i < want - on.length && i < cands.length; i++) cands[i].applyOrder({ type: 'gather', target: g, phase: 'goto' }); }
+      // A GEYSER WITH NOBODY NEAR IT IS STILL WORTH STAFFING. The candidate list was restricted to
+      // workers already within 20 tiles, so a geyser at a base the AI had just taken -- where there are
+      // no workers yet, because they arrive by being sent -- stayed on ZERO for the rest of the game.
+      // Measured on a solo 20-minute game: Protoss held eleven geysers staffed [3,3,3,2,0,3,3,0,0,2,0],
+      // 19 of a possible 33, with 39 workers on minerals and 100 gas in the bank. Zerg was worse at
+      // 6/15. Tier 3 is gas-gated, and the same run with unlimited gas reached every tier-3 building in
+      // five to eight minutes -- so this single filter was most of the reason the AI never teched.
+      //
+      // Near workers are still strongly preferred: the fallback only widens the search when nothing is
+      // close, and the list is sorted by distance either way, so the nearest worker is always taken.
+      if (on.length < want) {
+        const free = workers.filter(w => w.order.type === 'gather' && w.order.target && w.order.target.type === 'mineral' && !w.carrying);
+        let cands = free.filter(w => dist(w, g) < 20 * TILE);
+        if (!cands.length) cands = free;
+        cands.sort((a, b) => dist(a, g) - dist(b, g));
+        for (let i = 0; i < want - on.length && i < cands.length; i++) cands[i].applyOrder({ type: 'gather', target: g, phase: 'goto' });
+      }
       else if (on.length > want) { const m = G.findNearestResource(on[0], 'mineral'); if (m) on[0].applyOrder({ type: 'gather', target: m, phase: 'goto' }); }
     });
     // worker production
@@ -387,7 +468,32 @@ class AI {
     if (this.scriptIdx >= s.length) return;
     if (this.stepT === undefined) this.stepT = G.frame;
     if (p.supUsed < s[this.scriptIdx][0]) { this.stepT = G.frame; return; }
-    const under = this.underway(); const prodDone = this.mine(u => u.isBuilding && u.def.produces.length && !u.def.depot && u.done).length;
+    // Remember what the head of the order is, so turn() can hold money for it BEFORE economy() and
+    // supply() get to spend next think. Cleared when the script runs out.
+    this.headDef = s[this.scriptIdx] ? DATA.buildings[s[this.scriptIdx][1]] : null;
+    const under = this.underway();
+    // `!u.def.depot` excluded a Zerg hatchery, and EVERY Zerg production building is a depot -- so
+    // prodDone was permanently 0 for Zerg and the gas-tech gate below (which passes at prodDone >= 3)
+    // could only ever be opened by the armySup arm. Measured: the Spire was refused for this reason
+    // 138 times in one solo game while Zerg sat on the same script step from 6:40 to 16:40. A larva
+    // hatchery IS the production building; count it as one.
+    const prodDone = this.mine(u => u.isBuilding && u.done && (u.def.spawnsLarva || (u.def.produces.length && !u.def.depot))).length;
+    // HOW MANY THINGS MAY BE GOING UP AT ONCE -- a function of income, not a constant.
+    //
+    // This was a flat 2 (3 for a hall), which is right for a twelve-worker opening and absurd for a
+    // seventy-worker one, and macro() does not respect it at all: expansions, gas and production
+    // buildings start whenever they like. So in any developed economy `under` sat at 3-5 permanently
+    // and the head of the TECH order was simply never startable. Measured on a solo 20-minute game,
+    // seed 1: the head step was rejected for this reason 423 times for Protoss's Citadel of Adun and
+    // 226 for its Robotics Facility; Terran's Factory 244; Zerg's Spire 225 and its Hive 58. The
+    // 200-second escape hatch below then advanced past them, so the buildings were not delayed --
+    // they were SKIPPED, which is why no tier-3 unit appeared in any of the eighteen soak games.
+    //
+    // A worker is roughly a unit of income, so slots scale with workers. Twelve workers still gets 2,
+    // which preserves the opening this was tuned for; seventy gets 7, which is what a player with
+    // seventy workers actually does.
+    const wCount = this.mine(u => u.def.worker && !u.def.mule).length;
+    const slots = Math.floor(wCount / 12);
     for (let i = this.scriptIdx; i < s.length; i++) {
       if (p.supUsed < s[i][0]) break;                                    // not time for this one, nor for anything after it
       if (met(i)) continue;
@@ -444,7 +550,11 @@ class AI {
       // defensive building in ten minutes and no engineering bay, academy or machine shop either. The
       // throttle is a shared budget, the Terran script already spends all of it, and two more steps
       // starved the rest of the order rather than being starved themselves.
-      if (!(def.gw || def.aw || def.id === 'creep_colony') && under >= (def.depot ? 3 : 2) + (st.under || 0)) continue; // finish what is already going up first
+      // The HEAD step gets one slot more than a look-ahead step. It is the single most time-critical
+      // building the AI owns and everything behind it waits on it, whereas a step reached by scanning
+      // ahead is by definition optional right now.
+      if (!(def.gw || def.aw || def.id === 'creep_colony')
+          && under >= (def.depot ? 3 : 2) + (st.under || 0) + slots + (i === this.scriptIdx ? 1 : 0)) continue; // finish what is already going up first
       // gas-hungry tech waits until there is an army and enough production to use it
       if (def.gas >= 100 && !def.produces.length && (this.armySup || 0) < 16 && prodDone < 3) continue;
       if (p.minerals < def.min || p.gas < def.gas) { if (i === this.scriptIdx) this.reserve(def); continue; } // save up for the head step instead of spending on units
@@ -463,7 +573,7 @@ class AI {
     // floor that grows with the clock so every race keeps taking ground.
     const st = this.sty(), exT = st.expandT || 1; // an expander runs the same clock faster and starts a base ahead of it; a turtle runs it slower and stays a base behind
     const wantHalls = Math.min(G.map.bases.length, 2 + (st.halls || 0) + Math.floor(G.frame / (24 * 60 * 3 * exT)));
-    if (G.frame - this.lastExpand > 24 * 45 * exT && (p.minerals > 500 || workers > halls.length * 16 || halls.length < wantHalls || ((this.armySup || 0) >= 30 && halls.length < 3)) && this.count(RACE_INFO[r].hall) <= halls.length) { const hd = DATA.buildings[RACE_INFO[r].hall]; if (p.minerals < hd.min) { if (this.pickExpansion()) this.reserve(hd); } else if (this.build(RACE_INFO[r].hall, true)) this.lastExpand = G.frame; } // start saving as soon as a free base exists, or the army eats the money forever
+    if (G.frame - this.lastExpand > 24 * 45 * exT && (p.minerals > 500 || workers > halls.length * 16 || halls.length < wantHalls || ((this.armySup || 0) >= 30 && halls.length < 3)) && this.count(RACE_INFO[r].hall) <= halls.length) { const hd = DATA.buildings[RACE_INFO[r].hall]; if (p.minerals < hd.min) { if (this.pickExpansion()) this.reserve(hd); } else if (this.build(RACE_INFO[r].hall, !this.techStarved() || (st.halls || 0) > 0)) this.lastExpand = G.frame; } // ...but an EXPANDER keeps its forced expansion: taking ground before teching is the whole style, and yielding it cost a base against standard // start saving as soon as a free base exists, or the army eats the money forever
     // more production when floating
     // production capacity should track income: roughly one production building per 4 workers
     const prodWant = Math.min(10, Math.max(2, Math.floor(workers / 4)));
@@ -472,7 +582,7 @@ class AI {
       // it ever adding production: eight command centres, one barracks and no army at ten minutes.
       if (this.underway() >= 3 + (st.under || 0)) return; const prodId = r === 'T' ? (this.count('factory') >= 2 && p.gas > 200 ? 'factory' : 'barracks') : r === 'P' ? 'gateway' : 'hatchery';
       if (r === 'Z' && this.count('hatchery') + this.count('lair') + this.count('hive') < 8 && workers >= 12 * this.mine(u => u.isBuilding && u.def.spawnsLarva).length) this.build('hatchery');
-      else if (r !== 'Z' && this.count(prodId) < prodWant) this.build(prodId, true); // the army engine outranks whatever the script is saving for
+      else if (r !== 'Z' && this.count(prodId) < prodWant) this.build(prodId, !this.techStarved()); // the army engine outranks whatever the script is saving for -- unless that step has been starved for 45s
     }
     // Zerg macro hatcheries: larvae are the bottleneck, so floating minerals with no larva means another hatchery, not more drones per hatchery
     if (r === 'Z' && ((p.minerals > 300 && !this.mine(u => u.def.larva).length) || p.minerals > 550) && workers >= 5 * this.mine(u => u.isBuilding && u.def.spawnsLarva).length && this.count('hatchery') <= this.halls().length && this.mine(u => u.isBuilding && u.def.spawnsLarva).length < 6 && halls.length) { const h = halls[Math.floor(G.rand() * halls.length)]; this.buildNear('hatchery', h.x, h.y); } // macro hatcheries go next to a base we already hold; real expansions come from the shared rule below
@@ -553,25 +663,31 @@ class AI {
         break;
       }
     }
+  // A NOTE ON THE MORPH CLAUSES BELOW. Every one of them used to gate on `p.minerals >= X && p.gas >= Y`
+  // read straight off the player, which walks past AI.afford() and therefore past the reserve that the
+  // head step of the build script is saving with. A Lurker morph is 50/100 and a Spire is 200/150, so
+  // Zerg spent the Spire's gas on lurkers frame after frame and then reported the Spire as unaffordable
+  // -- measured as 146 refusals of the Hive and 103 of the Greater Spire for "broke" in a single solo
+  // game, while gas never rose above 118. They all go through afford() now, which honours the reserve.
     // M12 wave four: the five Zerg morphs. Each sits after the lurker/guardian/devourer clauses above
     // and each returns, so a think spends itself on at most one morph and the composition weights in
     // AI_COMP still decide everything that comes off a larva. All five are gated on a count relative
     // to the unit they consume, because a morph that eats its own source unconditionally converts the
     // whole army -- which is the mistake the Protoss archon clause below was written to stop.
-    if (this.race === 'Z' && p.hasTech('volatile_bile') && (counts.baneling || 0) < 6 && (counts.zergling || 0) > 6 && p.minerals >= 25 && p.gas >= 25) { const z = this.mine(u => u.def.id === 'zergling' && u.order.type !== 'attack'); if (z.length) { Abilities.morph(z[0], 'baneling'); return; } }
-    if (this.race === 'Z' && p.hasTech('ravager_aspect') && (counts.ravager || 0) < (counts.roach || 0) / 2 && p.minerals >= 25 && p.gas >= 75) { const r = this.mine(u => u.def.id === 'roach' && u.order.type !== 'attack'); if (r.length) { Abilities.morph(r[0], 'ravager'); return; } }
-    if (this.race === 'Z' && p.hasBuilding('infestation_pit') && (counts.swarm_host || 0) < 3 && (counts.roach || 0) > 4 && p.minerals >= 50 && p.gas >= 100) { const r = this.mine(u => u.def.id === 'roach' && u.order.type !== 'attack'); if (r.length) { Abilities.morph(r[0], 'swarm_host'); return; } }
-    if (this.race === 'Z' && p.hasBuilding('infestation_pit') && p.hasBuilding('hive') && (counts.viper || 0) < 2 && p.minerals >= 100 && p.gas >= 200) { const m = this.mine(u => u.def.id === 'mutalisk'); if (m.length > 4) { Abilities.morph(m[0], 'viper'); return; } }
+    if (this.race === 'Z' && p.hasTech('volatile_bile') && (counts.baneling || 0) < 6 && (counts.zergling || 0) > 6 && this.afford(25, 25)) { const z = this.mine(u => u.def.id === 'zergling' && u.order.type !== 'attack'); if (z.length) { Abilities.morph(z[0], 'baneling'); return; } }
+    if (this.race === 'Z' && p.hasTech('ravager_aspect') && (counts.ravager || 0) < (counts.roach || 0) / 2 && this.afford(25, 75)) { const r = this.mine(u => u.def.id === 'roach' && u.order.type !== 'attack'); if (r.length) { Abilities.morph(r[0], 'ravager'); return; } }
+    if (this.race === 'Z' && p.hasBuilding('infestation_pit') && (counts.swarm_host || 0) < 3 && (counts.roach || 0) > 4 && this.afford(50, 100)) { const r = this.mine(u => u.def.id === 'roach' && u.order.type !== 'attack'); if (r.length) { Abilities.morph(r[0], 'swarm_host'); return; } }
+    if (this.race === 'Z' && p.hasBuilding('infestation_pit') && p.hasBuilding('hive') && (counts.viper || 0) < 2 && this.afford(100, 200)) { const m = this.mine(u => u.def.id === 'mutalisk'); if (m.length > 4) { Abilities.morph(m[0], 'viper'); return; } }
     // An Overseer costs eight SUPPLY as well as its minerals, because it gives up the overlord's
     // `supGive`. Exactly one, and only with room to lose it: an AI that morphs at 198/200 has supply
     // blocked itself to buy detection it already had, since every overlord in this game detects.
-    if (this.race === 'Z' && p.hasBuilding('lair') && (counts.overseer || 0) < 1 && p.supMax - p.supUsed >= 12 && p.minerals >= 50 && p.gas >= 50) { const o = this.mine(u => u.def.id === 'overlord'); if (o.length > 2) { Abilities.morph(o[0], 'overseer'); return; } }
+    if (this.race === 'Z' && p.hasBuilding('lair') && (counts.overseer || 0) < 1 && p.supMax - p.supUsed >= 12 && this.afford(50, 50)) { const o = this.mine(u => u.def.id === 'overlord'); if (o.length > 2) { Abilities.morph(o[0], 'overseer'); return; } }
     // Zerg morphs: hydras -> lurkers, mutas -> guardians
-    if (this.race === 'Z' && p.hasTech('lurker_aspect') && (counts.lurker || 0) < (counts.hydralisk || 0) / 1.5 && p.minerals >= 50 && p.gas >= 100) { const h = this.mine(u => u.def.id === 'hydralisk' && u.order.type !== 'attack' && u.done); if (h.length) { Abilities.morph(h[0], 'lurker'); return; } }
-    if (this.race === 'Z' && p.hasBuilding('greater_spire') && (counts.guardian || 0) < 4 && p.minerals >= 50 && p.gas >= 100) { const m = this.mine(u => u.def.id === 'mutalisk'); if (m.length > 4) { Abilities.morph(m[0], 'guardian'); return; } }
+    if (this.race === 'Z' && p.hasTech('lurker_aspect') && (counts.lurker || 0) < (counts.hydralisk || 0) / 1.5 && this.afford(50, 100)) { const h = this.mine(u => u.def.id === 'hydralisk' && u.order.type !== 'attack' && u.done); if (h.length) { Abilities.morph(h[0], 'lurker'); return; } }
+    if (this.race === 'Z' && p.hasBuilding('greater_spire') && (counts.guardian || 0) < 4 && this.afford(50, 100)) { const m = this.mine(u => u.def.id === 'mutalisk'); if (m.length > 4) { Abilities.morph(m[0], 'guardian'); return; } }
     // Devourers, which nothing ever built: guardians hit ground, devourers hit air, and the greater spire
     // buys both. Gated on the enemy actually flying, the way scourge and corsairs already are.
-    if (this.race === 'Z' && p.hasBuilding('greater_spire') && (counts.devourer || 0) < 3 && enemyAir && p.minerals >= 150 && p.gas >= 50) { const m = this.mine(u => u.def.id === 'mutalisk'); if (m.length > 4) { Abilities.morph(m[0], 'devourer'); return; } }
+    if (this.race === 'Z' && p.hasBuilding('greater_spire') && (counts.devourer || 0) < 3 && enemyAir && this.afford(150, 50)) { const m = this.mine(u => u.def.id === 'mutalisk'); if (m.length > 4) { Abilities.morph(m[0], 'devourer'); return; } }
     // A high templar is built to cast storm; an archon is what a spent one becomes. Merging any pair
     // under 60 energy while storm was unresearched merged every templar on sight -- a fresh one starts
     // at 50 -- so no templar ever lived to see the tech land. Merge only what cannot storm: the spent
@@ -646,7 +762,13 @@ class AI {
   train(id, maxQ) {
     const p = this.p, ud = DATA.units[id]; if (!ud || !p.hasReq(ud)) return false;
     if (p.minerals < ud.min || p.gas < ud.gas) return false;
-    if (!ud.worker && !(ud.supGive && p.supMax - p.supUsed < 4) && !this.afford(ud.min, ud.gas)) return false; // saving up never starves workers or urgent supply
+    // Saving up never starves workers or urgent supply -- EXCEPT when the build order has been starved
+    // for 45 seconds, at which point another drone is not what is wrong with this game. Zerg is the
+    // reason: drones and overlords both skip afford(), Zerg wants ~70 of the first and a steady stream
+    // of the second, and between them they took every mineral that arrived while the Spire sat at the
+    // head of the script on one mineral. Supply keeps its exemption unconditionally, because blocking
+    // it trades a tech stall for a supply block, which is worse.
+    if (!(ud.supGive && p.supMax - p.supUsed < 4) && (!ud.worker || this.techStarved()) && !this.afford(ud.min, ud.gas)) return false;
     if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) return false;
     if (ud.from === 'larva') { const l = this.mine(u => u.def.larva)[0]; if (!l) return false; return G.larvaMorph(l, id); }
     const bs = this.mine(u => u.isBuilding && u.done && !u.lifted && u.def.produces.includes(id) && u.prod.length < (maxQ || 2) && !(u.addon && !u.addon.done)); if (!bs.length) return false;
