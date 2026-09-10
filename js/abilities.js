@@ -44,6 +44,49 @@ const MULE_HAUL = 16;
 // extending that or-chain, because two other races are adding to the same function this milestone
 // and a three-way merge of one long boolean is how somebody's work goes missing.
 const Z12_ASPECTS = new Set(['baneling_aspect', 'ravager_aspect', 'swarm_host_aspect', 'viper_aspect', 'overseer_aspect']);
+// ---------------------------------------------------------------------------------------------
+// M12 wave four, Protoss: THE FORCE FIELD IS TERRAIN, so it belongs to the map.
+//
+// These two methods are the js/map.js half of item 12's sibling mechanic and they are written HERE
+// only because this branch does not own js/map.js and three race branches are editing in parallel.
+// They are on GameMap.prototype rather than on Abilities because that is where they belong, because
+// js/build.js hashes GameMap.prototype by name (so the stamp moves when they change, wherever the
+// text lives), and because js/abilities.js loads after js/map.js in index.html and in every headless
+// harness. MOVE THEM INTO js/map.js, verbatim, next to paintWreck, at the next merge.
+//
+// WHY THE TILE LIST LIVES IN G.fields AND NOTHING COUNTS DOWN HERE. js/map.js's own sandstorm comment
+// is the rule: anything with a timer that a replay seek must reproduce has to be state the snapshot
+// carries or a pure function of the frame. `walk` is in the snapshot and so is G.fields, so a restored
+// checkpoint comes back with the same wall standing and the same number of frames left on it. A
+// countdown remembered inside the map -- which was the obvious first shape -- would restore to a fresh
+// one and the wall would expire dozens of frames late, which is a desync nothing would notice for
+// minutes.
+//
+// A tile is only CLAIMED if it is plain open ground, exactly the rule GameMap.addWreck uses and for
+// the same reason: whatever we set back to walkable on expiry, we must have taken. Cliffs, buildings,
+// mineral lines, hulks and destructible features are all skipped, so a Force Field can never hand back
+// terrain it never owned.
+if (typeof GameMap !== 'undefined' && !GameMap.prototype.raiseForceField) {
+  GameMap.prototype.raiseForceField = function (px, py, r) {
+    const cx = Math.floor(px / TILE), cy = Math.floor(py / TILE), tiles = [];
+    if (!this.inb(cx, cy)) return tiles;
+    this.ellipse(cx, cy, r, r, (x, y) => {
+      const i = this.idx(x, y);
+      if (this.walk[i] !== 1 || this.blocked[i] !== -1 || this.cliff[i] !== 0) return;
+      if (this.featTile && this.featTile[i] >= 0) return;   // a destructible's own tiles open and shut on their own schedule
+      tiles.push(i);
+    });
+    for (const i of tiles) this.walk[i] = 0;
+    return tiles;
+  };
+  GameMap.prototype.clearForceField = function (tiles) {
+    for (const i of tiles) if (this.walk[i] === 0) this.walk[i] = 1;
+  };
+}
+// How far a ground unit must be able to WALK from a blink destination for that destination to be legal.
+// See Abilities.blinkReach for what this is protecting against and why it is not a reachability test
+// from the caster.
+const BLINK_ESCAPE = 4;
 const Abilities = {
   // Is ability usable/visible for this unit right now?
   available(u, id) {
@@ -58,6 +101,11 @@ const Abilities = {
     if (id === 'lurker_aspect' || id === 'guardian_aspect' || id === 'devourer_aspect') { const ud = DATA.units[ab.unit]; if (!p.hasReq(ud)) return false; }
     if ((id === 'guardian_aspect' || id === 'devourer_aspect') && !p.hasBuilding('greater_spire')) return false;
     if (Z12_ASPECTS.has(id)) { const ud = DATA.units[ab.unit]; if (!p.hasReq(ud)) return false; }
+    // M12 item 12. A Warp Gate offers exactly the units a Gateway would have offered, so the button is
+    // hidden for anything whose tech is not in yet -- the same line the Zerg aspects above use rather
+    // than a second rule. NOT gated on the gate's recharge: the card should keep showing what this
+    // building makes, and Abilities.warpIn says "recharging" out loud when it is pressed early.
+    if (ab.warp) { const ud = DATA.units[ab.unit]; if (!ud || !p.hasReq(ud)) return false; }
     // A tumour seeds exactly one child, ever. `tumoured` is a flag and not a counter on purpose: a
     // tumour that could seed twice covers the map while the player is looking somewhere else, and the
     // whole mechanic is supposed to cost attention rather than minerals.
@@ -115,6 +163,27 @@ const Abilities = {
       case 'uproot': return this.uproot(u);
       case 'volatile_burst': return this.volatileBurst(u);
       case 'spawn_locusts': return this.spawnLocusts(u);
+      // M12 wave four. GUARDIAN SHIELD REUSES `fx.matrix`, the Science Vessel's Defensive Matrix, and
+      // that is the whole implementation: a pool of absorbed damage per unit, spent by G.damage before
+      // armour and expired by Unit.tick. Nothing new for js/snapshot.js to learn, nothing new in the
+      // damage path, and it reads correctly -- a bubble over the army that soaks a fixed amount and
+      // then pops. SC2's version is a flat -2 on incoming ranged damage, which would have meant a new
+      // branch inside G.damage, in a file this change does not own.
+      //
+      // It covers ALLIES and not the enemy, which is the check test/protoss12.js pins, and it covers
+      // the Sentry itself: a shield that excluded its own caster would be the one unit standing in the
+      // fight without one.
+      case 'guardian_shield': {
+        if (u.energy < ab.energy) { p.msg('Not enough energy.', 'error'); return false; }
+        u.energy -= ab.energy;
+        for (const o of G.near(u.x, u.y, ab.r * TILE)) {
+          if (!o.alive || o.isBuilding || o.inside || o.def.larva || o.def.egg || o.def.notUnit) continue;
+          if (!G.allied(o.owner, u.owner)) continue;
+          o.fx.matrix = { hp: ab.absorb, t: ab.t };
+        }
+        G.effects.push({ kind: 'ring', x: u.x, y: u.y, r: ab.r * TILE, t: 16, color: '#adf' });
+        return true;
+      }
     }
     return false;
   },
@@ -203,12 +272,136 @@ const Abilities = {
     p.minerals -= def.min; p.gas -= def.gas;
     return G.placeBuilding(def, tx, ty, u.owner);
   },
-  // Pair up selected units for Archon / Dark Archon merging
+  // Pair up selected units for Archon / Dark Archon / Mothership merging.
+  //
+  // `ab.from` NAMES WHAT IS CONSUMED, and it is read before the old guess. The guess was
+  // "summon_archon means high templar, anything else means dark templar", which was true while there
+  // were exactly two merges and silently made the Mothership ask for two dark templar. A third merge
+  // is the moment a two-way guess stops being a shortcut and becomes a bug, so the pairing is in the
+  // data now; the fallback stays so the two older abilities keep working unchanged.
   merge(units, id) {
-    const ab = DATA.abilities[id]; const want = id === 'summon_archon' ? 'high_templar' : 'dark_templar';
+    const ab = DATA.abilities[id]; const want = ab.from || (id === 'summon_archon' ? 'high_templar' : 'dark_templar');
     const list = units.filter(x => x.alive && x.def.id === want && !x.disabled);
     for (let i = 0; i + 1 < list.length; i += 2) { const a = list[i], b = list[i + 1]; a.setOrder({ type: 'merge', partner: b, unit: ab.unit }); b.setOrder({ type: 'merge', partner: a, unit: ab.unit }); }
     return list.length >= 2;
+  },
+  // ---------------- M12 wave four: Protoss ----------------
+  // ITEM 12, WARP-IN. Every refusal happens BEFORE anything is spent, and the order of the checks is
+  // the order a player would ask them in: is the gate ready, is that ground mine, can something stand
+  // there, do I have the tech, can I pay, do I have the supply.
+  //
+  // THE PSI CHECK IS THE WHOLE MECHANIC AND IT IS A HARD REFUSAL, not a nudge. The obvious kindness --
+  // "slide the landing to the nearest powered tile" -- is precisely the failure this must not have: a
+  // warp that quietly moves is a warp on to ground the player does not hold, which is the difference
+  // between a mechanic and an exploit. It asks GameMap.hasPsi, the same query a Protoss building makes
+  // every tick to decide whether it is powered, so there is exactly one power grid and a Warp Prism's
+  // moving field feeds it for free.
+  //
+  // THE RECHARGE IS LONGER THAN THE TRAINING TIME IT REPLACES (`cdMult` 1.25). That is the balance of
+  // the item in one number: converting a Gateway makes your production worse everywhere except at the
+  // front, so the Warp Gate is a decision about WHERE rather than a free upgrade. `u.cooldown` is used
+  // for it rather than a new field because Unit.tick already decrements it for every unit including
+  // buildings, and a Warp Gate has no weapon to contend for it.
+  //
+  // The unit lands helpless: `morphT` is the same field G.mergeUnits uses for a forming Archon, so
+  // Unit.tick returns early, Unit.disabled is true, and the render pass already fades anything with a
+  // morph timer. That is the risk half -- a warp-in on top of an army is five free kills.
+  warpIn(gate, id, x, y) {
+    const ab = DATA.abilities[id], p = gate.player, ud = DATA.units[ab.unit], m = G.map;
+    if (gate.cooldown > 0) { p.msg('Warp Gate is recharging.', 'error'); return false; }
+    const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+    if (!m.hasPsi(gate.owner, tx, ty)) { p.msg('Can only warp in to a powered area.', 'error'); return false; }
+    if (!m.walkable(tx, ty)) { p.msg('Cannot warp in there.', 'error'); return false; }
+    if (!p.hasReq(ud)) { p.msg('Requires ' + p.missingReq(ud), 'error'); return false; }
+    if (!p.canAfford(ud.min, ud.gas)) return false;
+    if (ud.sup && p.supUsed + ud.sup > p.supMax && !(G.cheats.food && p.human)) { G.supplyRefused(p); return false; }
+    p.minerals -= ud.min; p.gas -= ud.gas;
+    const u = G.spawnUnit(ab.unit, gate.owner, (tx + 0.5) * TILE, (ty + 0.5) * TILE);
+    u.morphT = ab.form;
+    gate.cooldown = Math.round(ud.time * ab.cdMult);
+    G.effects.push({ kind: 'ring', x: u.x, y: u.y, r: u.r + 12, t: 14, color: '#8cf' });
+    G.recomputeSupply();
+    return true;
+  },
+  // BLINK, and the one check that is not obvious. "Is the destination walkable" is not enough, because
+  // the top of a cliff is walkable and so is a single tile sealed in by rock -- and a unit blinked into
+  // the second one is gone for the rest of the game, because the pathfinder starts from where you
+  // already are.
+  //
+  // The rule is NOT "can a ground unit walk here from the caster". That would be the tidy version and
+  // it would delete the ability: crossing terrain you cannot walk is the entire point of Blink, and a
+  // cliff top fails a reachability test from below every time. What a legal destination has to be is
+  // ground you can walk OFF -- so this floods out from the destination over walkable tiles and asks
+  // whether anything BLINK_ESCAPE tiles away is reachable. A plateau passes, a wall you can walk around
+  // passes, a one-tile pocket does not, and a rock island in the middle of water does not.
+  //
+  // Bounded at 400 tiles, which it only ever reaches when the answer is already no; it returns the
+  // instant it escapes, so the normal case visits a handful. Blink is rate-limited to one cast per unit
+  // per ten seconds, so even the worst case is nothing next to one pathfinder search.
+  blinkReach(m, tx, ty, esc) {
+    if (!m.walkable(tx, ty)) return false;
+    const seen = new Set([m.idx(tx, ty)]), q = [tx, ty];
+    for (let h = 0; h < q.length && h < 800; h += 2) {
+      const x = q[h], y = q[h + 1];
+      if (Math.max(Math.abs(x - tx), Math.abs(y - ty)) >= esc) return true;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const nx = x + dx, ny = y + dy;
+        if (!m.walkable(nx, ny)) continue;
+        const i = m.idx(nx, ny); if (seen.has(i)) continue;
+        seen.add(i); q.push(nx, ny);
+      }
+    }
+    return false;
+  },
+  // Which of my buildings is under this point. Chrono Boost is cast from a building, so
+  // Abilities.issue's building branch hands `cast` a position and no target -- this is what turns the
+  // position back into the thing the player clicked. Footprint containment rather than nearest-centre,
+  // because two 4x3 halls placed a tile apart (which G.placeBuilding permits: it does not re-check
+  // canPlace) would otherwise fight over a click that is unambiguously inside one of them.
+  chronoTarget(u, x, y) {
+    for (const b of G.units) {
+      if (!b.alive || !b.isBuilding || b.owner !== u.owner || !b.done || b.lifted) continue;
+      if (x < b.tx * TILE || x >= (b.tx + b.def.w) * TILE) continue;
+      if (y < b.ty * TILE || y >= (b.ty + b.def.h) * TILE) continue;
+      return b;
+    }
+    return null;
+  },
+  // THE MOVING HALF OF THE PSI GRID. GameMap.recomputePsi walks every unit with `def.psi` and paints
+  // its ellipse from `u.tx`, which only a building has -- so a Warp Prism would project nothing at all
+  // through that path, and G.kill only recomputes psi inside its `if (u.isBuilding)` branch, so a dead
+  // prism would leave its field on the map forever. Both are fixed here rather than in js/map.js,
+  // which this change does not own: the buildings are recomputed by the map's own method and the
+  // mobile sources are painted on top of the result with the map's own `ellipse`.
+  //
+  // IT IS KEYED, NOT UNCONDITIONAL. `p.psiKey` is a digest of every mobile source's id and tile, so a
+  // full recompute happens only when one appears, moves a tile or dies -- and a Protoss player with no
+  // Warp Prism at all pays one walk of G.units every twelve frames and nothing else. The key lives on
+  // the Player, which js/snapshot.js already captures whole, so a restored checkpoint agrees with its
+  // restored `psi` grids instead of recomputing one frame later and diverging.
+  //
+  // Deterministic: G.units in order, integer arithmetic, no G.rand, no clock.
+  tickProtoss() {
+    if (G.frame % 12) return;
+    const m = G.map;
+    for (const p of G.players) {
+      if (!p || p.race !== 'P' || p.neutral) continue;
+      let key = 0;
+      for (const u of G.units) {
+        if (!u.alive || u.owner !== p.id || !u.def.psi || u.isBuilding) continue;
+        key = (Math.imul(key, 31) + u.id * 8191 + Math.floor(u.y / TILE) * m.w + Math.floor(u.x / TILE)) | 0;
+      }
+      if (key === (p.psiKey || 0)) continue;
+      p.psiKey = key;
+      m.recomputePsi(p.id, G.units);          // the buildings, by the map's own rule
+      if (!key) continue;                     // the last prism just died: buildings only is the answer
+      const grid = m.psi[p.id];
+      for (const u of G.units) {
+        if (!u.alive || u.owner !== p.id || !u.def.psi || u.isBuilding) continue;
+        m.ellipse(Math.floor(u.x / TILE), Math.floor(u.y / TILE), u.def.psi, u.def.psi * 0.7, (x, y) => { grid[m.idx(x, y)] = 1; });
+      }
+    }
   },
   // ---------------- ability order execution ----------------
   orderTick(u) {
@@ -312,6 +505,10 @@ const Abilities = {
   // ---------------- spell effects ----------------
   cast(u, id, t, x, y) {
     const p = u.player;
+    // The five warp-ins are one behaviour with five payloads, so they are dispatched off the def rather
+    // than as five identical switch arms below. See Abilities.warpIn.
+    const abd = DATA.abilities[id];
+    if (abd && abd.warp) return this.warpIn(u, id, x, y);
     const ring = (r, color) => G.effects.push({ kind: 'ring', x, y, r: r * TILE, t: 14, color });
     switch (id) {
       case 'restoration': for (const k of ['ensnare', 'plague', 'irradiate', 'lockdown', 'blind', 'maelstrom']) t.fx[k] = 0; t.fx.parasite = undefined; t.acidSpores = 0; ring(0.5, '#8f8'); break;
@@ -415,6 +612,97 @@ const Abilities = {
         if (!t || t.owner !== u.owner || !t.isBuilding || !t.def.spawnsLarva || !t.done) { p.msg('Spawn Larva needs one of your hatcheries.', 'error'); u.energy += ab.energy; break; }
         if (G.fields.some(f => f.kind === 'inject' && f.hall === t)) { p.msg('That hatchery is already spawning larva.', 'error'); u.energy += ab.energy; break; }
         G.fields.push({ kind: 'inject', x: t.x, y: t.y, r: 0, t: ab.delay, owner: u.owner, hall: t }); ring(1.4, '#c8f'); break;
+      }
+      // ---- M12 wave four, Protoss ------------------------------------------------------------------
+      // ITEM 11, CHRONO BOOST. Like the nuke, Recall and Larva Inject, the cast only books the effect
+      // and tickFields does the work -- which is what keeps the twenty seconds inside G.fields, where
+      // a snapshot, a replay seek and a rejoining client all reproduce it without knowing this ability
+      // exists. A counter on the building would restore to a fresh one after a seek.
+      //
+      // IT CANNOT STACK, and the refusal is a refund rather than a silent no-op, because
+      // Abilities.issue's building branch spends the energy before this runs. "Cast it twice" is the
+      // first thing a player tries and the answer has to be one they can predict: one boost, one
+      // building, and the second Nexus keeps its energy for something else.
+      case 'chrono_boost': {
+        const ab = DATA.abilities.chrono_boost;
+        const b = this.chronoTarget(u, x, y);
+        if (!b) { p.msg('Chrono Boost needs one of your own structures.', 'error'); u.energy += ab.energy; break; }
+        if (G.fields.some(f => f.kind === 'chrono' && f.bld === b)) { p.msg('That structure is already accelerated.', 'error'); u.energy += ab.energy; break; }
+        G.fields.push({ kind: 'chrono', x: b.x, y: b.y, r: 0, t: ab.t, owner: u.owner, bld: b });
+        G.effects.push({ kind: 'ring', x: b.x, y: b.y, r: b.r, t: 16, color: '#ffd76a' });
+        break;
+      }
+      // FORCE FIELD. The tiles come back from GameMap.raiseForceField (see the top of this file) and
+      // are carried in the field itself, so expiry gives back exactly what was taken and a snapshot
+      // restores both halves together.
+      //
+      // Anything standing on the ground that just stopped existing is pushed off it. SC2 shoves units
+      // aside; this does the same thing with G.map.findFreeTile, and it is not politeness -- a ground
+      // unit left inside the plug is wedged until the field expires, because Unit.moveTo's pathfinder
+      // starts from where the unit already is and G.tick's self-heal pass only rescues units caught
+      // inside BUILDING footprints.
+      case 'force_field': {
+        const ab = DATA.abilities.force_field;
+        const tiles = G.map.raiseForceField(x, y, ab.r);
+        if (!tiles.length) { p.msg('No room for a Force Field there.', 'error'); u.energy += ab.energy; break; }
+        for (const o of G.units) {
+          if (!o.alive || o.fly || o.isBuilding || o.inside) continue;
+          const ox = Math.floor(o.x / TILE), oy = Math.floor(o.y / TILE);
+          if (!G.map.inb(ox, oy) || !tiles.includes(G.map.idx(ox, oy))) continue;
+          const tl = G.map.findFreeTile(ox, oy, 6);
+          if (tl) { o.x = (tl[0] + 0.5) * TILE; o.y = (tl[1] + 0.5) * TILE; o.px = o.x; o.py = o.y; o.path = null; o.stuck = 0; }
+        }
+        G.fields.push({ kind: 'force_field', x, y, r: ab.r, t: ab.t, owner: u.owner, tiles });
+        ring(ab.r, '#9cf'); break;
+      }
+      // GRAVITON BEAM. `fx.maelstrom` is the one status this engine has that returns from Unit.tick
+      // outright, so a lifted unit does not move, shoot or cast -- which is what being held in the air
+      // means, and it needs no new status for js/snapshot.js to carry. A flyer is not a legal target
+      // (there is nothing to lift it off) and the energy comes back, the same refusal shape lockdown
+      // and spawn broodling already use.
+      case 'graviton_beam': {
+        const ab = DATA.abilities.graviton_beam;
+        if (!t || t.fly || t.isBuilding || t.def.larva || t.def.egg || t.def.notUnit || G.allied(t.owner, u.owner)) {
+          p.msg('Graviton Beam can only lift an enemy ground unit.', 'error'); u.energy += ab.energy; break;
+        }
+        t.fx.maelstrom = ab.t; t.path = null; t.target = null;
+        G.effects.push({ kind: 'line', x: u.x, y: u.y, tx: t.x, ty: t.y, t: 10, color: '#9df' });
+        ring(0.6, '#9df'); break;
+      }
+      // REVELATION is the Comsat's own field kind, reused rather than reinvented: G.updateVision
+      // already marks a `scan` field for whoever owns it, so this is vision and nothing else. It is
+      // deliberately not detection -- an Observer is still the only thing Protoss has that sees
+      // through a cloak, and a 150/150 ship that answered every cloak in the game would delete it.
+      case 'revelation': { const ab = DATA.abilities.revelation; G.fields.push({ kind: 'scan', x, y, r: ab.r, t: ab.t, owner: u.owner }); ring(ab.r, '#dbf'); break; }
+      // PURIFICATION NOVA is a fuse, and it does NOTHING on the frame it is cast. Same shape as the
+      // Ravager's bile and the nuke: the delay is the balance of the ability, because anything with
+      // legs walks out and anything sieged, rooted or built does not. `ff: true` is the other half --
+      // it hits the caster's own army exactly as Psionic Storm does, which is what stops it being a
+      // free button in a melee.
+      case 'purification_nova': { const ab = DATA.abilities.purification_nova; G.fields.push({ kind: 'nova', x, y, r: ab.r, t: ab.delay, owner: u.owner, src: u }); ring(ab.r, '#c9f'); break; }
+      // TIME WARP refreshes `fx.ensnare` from tickFields every frame, which is Disruption Web's idiom:
+      // leaving the field clears it two frames later with no per-unit list to keep in a snapshot, and
+      // it costs no new status. Enemy GROUND units only -- allies walk through it and flyers are over
+      // it, which is a rule a player can read off the screen while it is happening.
+      case 'time_warp': { const ab = DATA.abilities.time_warp; G.fields.push({ kind: 'time_warp', x, y, r: ab.r, t: ab.t, owner: u.owner }); ring(ab.r, '#9cf'); break; }
+      // BLINK, the folded Stalker. Two refusals, and the second one is the interesting one -- see
+      // Abilities.blinkReach for why a plain walkability test on the destination is not enough.
+      //
+      // A REFUSED BLINK DOES NOT SPEND THE RECHARGE. That is the difference between an ability with a
+      // cooldown and a trap: misclicking on to a cliff must not cost ten seconds of the thing that
+      // keeps the unit alive. `blinkAt` is a frame STAMP rather than a counting-down field, so a
+      // snapshot restores it by copying one number and nothing has to tick it.
+      case 'blink': {
+        const ab = DATA.abilities.blink;
+        const last = typeof u.blinkAt === 'number' ? u.blinkAt : -1e9;   // never `|| -1e9`: a blink on frame 0 is a real blink
+        if (G.frame - last < ab.cd) { p.msg('Blink is recharging.', 'error'); break; }
+        const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+        if (!G.map.walkable(tx, ty) || !this.blinkReach(G.map, tx, ty, BLINK_ESCAPE)) { p.msg('Cannot blink there.', 'error'); break; }
+        G.effects.push({ kind: 'ring', x: u.x, y: u.y, r: u.r + 8, t: 10, color: '#8cf' });
+        u.x = (tx + 0.5) * TILE; u.y = (ty + 0.5) * TILE; u.px = u.x; u.py = u.y;
+        u.path = null; u.stuck = 0; u.blinkAt = G.frame;
+        G.effects.push({ kind: 'ring', x: u.x, y: u.y, r: u.r + 8, t: 10, color: '#8cf' });
+        break;
       }
     }
   },
@@ -522,6 +810,7 @@ const Abilities = {
   tickFields() {
     this.tickTerran();
     this.tickZergNet();
+    this.tickProtoss();
     const fs = G.fields;
     for (let i = fs.length - 1; i >= 0; i--) {
       const f = fs[i]; f.t--;
@@ -562,6 +851,44 @@ const Abilities = {
           for (let n = h.larvae.length; n < cap; n++) G.spawnLarva(h);
           G.effects.push({ kind: 'ring', x: h.x, y: h.y, r: 26, t: 14, color: '#c8f' });
         }
+      }
+      // ---- M12 wave four, Protoss --------------------------------------------------------------
+      // ITEM 11: the boost. ONE extra unit of progress a frame on top of the one Unit.tickProduction
+      // already adds, which is exactly double and is the number test/protoss12.js measures rather than
+      // infers. It reproduces tickProduction's own guards deliberately -- `it.started` so a queue
+      // stalled on supply is not secretly advanced, `unpowered` so an unpowered Gateway stays stopped,
+      // `lifted` for symmetry -- because the alternative is a multiplier inside js/sim.js, which this
+      // change does not own. Completion is left to tickProduction on the next frame; overshooting
+      // `total` by one frame is invisible and duplicating finishProduction here would not be.
+      //
+      // A boost whose building dies CLEARS ITSELF rather than lingering as a field pointing at a
+      // corpse: `f.t = 0` and the splice at the bottom of this loop does the rest.
+      else if (f.kind === 'chrono') {
+        const b = f.bld;
+        if (!b || !b.alive || !b.done || b.owner !== f.owner) f.t = 0;
+        else if (!b.unpowered && !b.lifted && b.prod.length) {
+          const it = b.prod[0];
+          if (it.kind !== 'unit' || it.started) it.progress += (G.cheats.cwal && b.player.human) ? 10 : 1;
+          if (f.t % 8 === 0) G.effects.push({ kind: 'ring', x: b.x, y: b.y, r: b.r * 0.8, t: 8, color: '#ffd76a' });
+        }
+      }
+      // The wall gives the ground back on the frame it expires, and only the tiles it took.
+      else if (f.kind === 'force_field') { if (f.t <= 0) G.map.clearForceField(f.tiles); }
+      // Time Warp. Refreshed to 3 rather than set once: leaving the field clears in two frames with no
+      // per-unit bookkeeping, which is the same trick Disruption Web and the Jamming Field use.
+      else if (f.kind === 'time_warp') {
+        for (const o of G.near(f.x, f.y, f.r * TILE)) {
+          if (!o.alive || o.isBuilding || o.fly || o.inside || o.def.larva || o.def.egg || G.allied(o.owner, f.owner)) continue;
+          o.fx.ensnare = 3;
+        }
+        if (f.t % 12 === 0) G.effects.push({ kind: 'ring', x: f.x, y: f.y, r: f.r * TILE, t: 12, color: '#9cf' });
+      }
+      // The Disruptor's nova lands. `ff: true` -- unlike the Ravager's bile, this one DOES eat the army
+      // standing in it, which is the whole reason it is a fuse and not a gun.
+      else if (f.kind === 'nova' && f.t <= 0) {
+        const a = DATA.abilities.purification_nova, src = f.src;
+        if (src) Combat.splash(src, f.x, f.y, a.dmg + G.players[f.owner].upgLevel('gW') * 4,
+          { type: 'normal', targets: 'ground', hits: 1, ff: true, splash: [f.r * 0.6, f.r * 0.85, f.r] }, null);
       }
       else if (f.kind === 'recall' && f.t <= 0) { const src = f.src; if (src && src.alive) for (const o of G.near(f.x, f.y, f.r * TILE)) if (o.owner === f.owner && !o.isBuilding && !o.inside) { const tl = G.map.findFreeTile(Math.floor(src.x / TILE), Math.floor(src.y / TILE), 5); if (tl) { o.x = (tl[0] + .5) * TILE; o.y = (tl[1] + .5) * TILE; o.px = o.x; o.py = o.y; o.path = null; G.effects.push({ kind: 'ring', x: o.x, y: o.y, r: 16, t: 10, color: '#8cf' }); } } }
       else if (f.kind === 'nuke_target' && f.t <= 0 && !f.cancel) {
