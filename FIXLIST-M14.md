@@ -40,21 +40,21 @@ done as one. **Every reported number appears in this table exactly once.**
 
 | # | reported | entry | status |
 |---|---|---|---|
-| 1 | click a mineral node to see what is left | **B1** | ☐ |
-| 2 | double-click selects all of that building | **B2** | ☐ |
-| 3 | click a geyser / extractor to see gas left | **B1** | ☐ |
+| 1 | click a mineral node to see what is left | **B1** | ✅ done |
+| 2 | double-click selects all of that building | **B2** | ✅ done |
+| 3 | click a geyser / extractor to see gas left | **B1** | ✅ done |
 | 4 | do Queens have Spawn Larva | **V1** | ✅ they do — verify by hand |
 | 5 | creep tumours should come from the Queen | **C3** | ⚠ they come from the **Overlord** |
 | 6 | AI raids expansions, never pushes the main | **D1** | ☐ retreat exists; targeting is the fault |
-| 7 | units are hard to click | **B3** | ☐ |
-| 8 | game over screen with menu / restart | **B4** | ⚠ screen exists, **Restart** does not |
+| 7 | units are hard to click | **B3** | ✅ done |
+| 8 | game over screen with menu / restart | **B4** | ✅ done — it was never appearing in a FFA |
 | 9 | cannot build in undiscovered blackness | **C1** | ☐ |
-| 10 | dust storm has hard edges | **B6** | ☐ |
+| 10 | dust storm has hard edges | **B6** | ✅ done |
 | 11 | dust storm should not hurt units | **A2** | ✅ done |
 | 12 | sensor tower shows movement as dots | **C2** | ☐ it is plain vision today |
 | 13 | Reactor gives no prerequisite error | **A4** | ✅ done |
-| 14 | hover ring on minerals and gas | **B1** | ☐ |
-| 15 | Starport shows add-on tech, dead page button | **B5** | ☐ |
+| 14 | hover ring on minerals and gas | **B1** | ✅ done |
+| 15 | Starport shows add-on tech, dead page button | **B5** | ✅ done — one cause |
 | 16 | freehand formation shapes | **C7** | ☐ |
 | 17 | every building needs a description | **A1** | ✅ done |
 | 18 | Thor walks onto buildings | **C6** | ☐ |
@@ -174,7 +174,7 @@ requirement list, so nothing is ever refused and nothing is ever said.
 **None of these may move the build stamp** (`js/build.js` hashes simulation functions only; render, HUD
 and input are deliberately excluded). Run `node test/version.js` after each.
 
-### ☐ B1 · (items 1, 3, 14) Mineral patches and geysers: click to inspect, hover to highlight
+### ✅ B1 · (items 1, 3, 14) Mineral patches and geysers: click to inspect, hover to highlight
 
 **Asked for:** click a mineral node to see how many minerals are left; click a gas patch for gas
 remaining; clicking a built extractor/refinery/assimilator shows it too; hovering either shows a 50%
@@ -200,7 +200,7 @@ feature, not a broken one. Each resource already carries `amount` and `start`
 
 ---
 
-### ☐ B2 · (item 2) Double-clicking a building selects all of that building on screen
+### ✅ B2 · (item 2) Double-clicking a building selects all of that building on screen
 
 **Asked for:** double-clicking any building should select all instances of it.
 
@@ -220,7 +220,7 @@ unmotivated rather than load-bearing.
 
 ---
 
-### ☐ B3 · (item 7) Units are hard to click — widen the hit area to match the sprite
+### ✅ B3 · (item 7) Units are hard to click — widen the hit area to match the sprite
 
 **Asked for:** the clickable area is smaller than the visible model; expand it to fit.
 
@@ -242,7 +242,7 @@ Thor) with no relationship to how tall the sprite is drawn, so tall and wide mod
 
 ---
 
-### ⚠ B4 · (item 8) A defeat screen with Return to Menu and Restart
+### ✅ B4 · (item 8) A defeat screen with Return to Menu and Restart
 
 **Asked for:** a game-over screen with "return to menu" and "restart" buttons.
 
@@ -265,7 +265,7 @@ Restart.**
 
 ---
 
-### ☐ B5 · (item 15) The Starport shows its add-on's tech and has a dead page button
+### ✅ B5 · (item 15) The Starport shows its add-on's tech and has a dead page button
 
 **Asked for:** the "more 1/2" button does nothing; hovering shows "Apollo Reactor" if a Control Tower
 is built; a Terran main building should not show tech belonging to its attached add-on.
@@ -286,7 +286,7 @@ list plus the add-on's, long enough to paginate, with a page button that does no
 
 ---
 
-### ☐ B6 · (item 10) The dust storm has hard edges
+### ✅ B6 · (item 10) The dust storm has hard edges
 
 **Asked for:** dither or blend the edges so it looks like a real storm starting and tapering off.
 
