@@ -63,7 +63,10 @@ const CMD = {
       case 'autocast': { const us = this.units(c.u, own); if (!us.length) return false; return O.setAutocast.call(G, us, c.a, c.on === null || c.on === undefined ? undefined : !!c.on); }
       case 'ability': { let ok = false; const tg = this.deref(c.tg); for (const u of this.units(c.u, own)) if (O.issue.call(Abilities, u, c.a, tg, c.x, c.y, c.s)) ok = true; return ok; }
       case 'merge': return O.merge.call(Abilities, this.units(c.u, own), c.a);
-      case 'cheat': return O.cheat.call(G, c.code, own);
+      // No cheats in a network game unless the relay was started with them on: every client refuses, so
+      // the refusal is deterministic, and the relay drops the command before it is broadcast anyway.
+      // Single player and replays are untouched. (REVIEW-M17 decision 4)
+      case 'cheat': if (typeof Net !== 'undefined' && Net.active && !Net.cheats) return false; return O.cheat.call(G, c.code, own);
       case 'stopall': for (const u of G.units) if (u.alive && u.owner === own && (!u.isBuilding || u.lifted)) O.stop.call(u); return true; // a dropped player's units stand down
     }
     return false;

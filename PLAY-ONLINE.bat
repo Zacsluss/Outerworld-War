@@ -45,6 +45,7 @@ echo     Anyone who types NO code lands in the shared room called LAN, with
 echo     everyone else who typed nothing -- so the page insists on a code when
 echo     it is served over https, and you should always use one.
 echo.
+echo  Cheats are off in network games. Room codes are at least four characters.
 echo  Keep this window open while playing. Close it to stop the server.
 echo.
 

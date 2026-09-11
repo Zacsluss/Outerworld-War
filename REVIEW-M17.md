@@ -647,6 +647,23 @@ listed here. Ordered by what I would do first.
     **Canaries:** `aistyles` seed 5 green (131), seeds 1 and 11 at their same four known reds — the
     cadence change did not create a fifth anywhere. **Gate:** 73 of 73, 192 s, before `eightplayer`
     joined.
+13. **Decision 3: one line-ending rule.** *(commit: .gitattributes)* `* text=auto`, `*.bat text
+    eol=crlf`, `*.png binary`; the working copy was re-checked out once (`git rm --cached -r . && git
+    reset --hard`, no content change, no history rewrite). Before: 71 CRLF, 77 LF-only, 2 mixed; after:
+    134 CRLF, 0 LF, 0 mixed (`tools/inventory.js`). The detect-per-file rule in `CLAUDE.md` stays,
+    because a tool that writes LF after checkout still can.
+14. **Decision 4: the room code is at least four characters, an address may join sixty times a minute,
+    and cheats are off in a network game.** *(commit: relay decisions)* The relay refuses a shorter
+    code with the rule, throttles joins per address (read from the `cf-connecting-ip` /
+    `x-forwarded-for` headers a tunnel sets, else the socket), and drops any `cheat` command from a
+    batch unless it was started with `BW_CHEATS=1`; the start message carries `cheats`, and
+    `CMD.apply` refuses a cheat on every client when it is off, so the refusal is deterministic.
+    `test/net.js` and `test/net_many.js` start their relays with `BW_CHEATS=1` because they keep their
+    humans alive with `power overwhelming`; both pass (51 of 51, all pass). `test/rooms.js` section 10:
+    a two-character code refused and a four-character one accepted, a cheat inside a batch dropped
+    while the rest of the batch arrives, a `BW_CHEATS=1` relay forwarding it, and the fourth join from
+    one address refused when the limit is three (53 checks). The re-stamp check in section 9 now uses
+    an ordinary command, since a cheat is dropped outright. **Gate:** 74 of 74, 217 s.
 
 # 4. Considered and deliberately not done
 

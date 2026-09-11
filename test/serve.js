@@ -28,6 +28,14 @@ const root = path.join(__dirname, '..'); const port = parseInt(process.argv[2] |
 // into a frame that has already been simulated.
 const DELAY = Math.max(1, Math.min(20, parseInt(process.argv[3] || process.env.BW_DELAY || '3')));
 const MAX_PLAYERS = 8;          // humans + AI, the same ceiling `addai` has always had. `join` had none.
+// REVIEW-M17 decision 4. A code shorter than four characters is refused (the code is the only lock, and
+// "AB" is not one); an address may join JOIN_LIMIT times a minute; and cheats are refused in a network
+// game unless the relay was started with BW_CHEATS=1, which test/net.js and test/net_many.js set because
+// they keep their humans alive with `power overwhelming`. Behind a tunnel every socket is 127.0.0.1, so
+// the address is read from the forwarding headers cloudflared and ngrok set before the socket's own.
+const MIN_CODE = 4, JOIN_LIMIT = Math.max(1, parseInt(process.env.BW_JOIN_LIMIT || '60')), CHEATS = process.env.BW_CHEATS === '1';
+const joins = new Map();        // address -> recent join timestamps
+function joinAllowed(ip) { const now = Date.now(); const arr = (joins.get(ip) || []).filter(t => now - t < 60000); if (arr.length >= JOIN_LIMIT) { joins.set(ip, arr); return false; } arr.push(now); joins.set(ip, arr); return true; }
 const DEFAULT_ROOM = 'LAN';
 const types = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json' };
 // What the static half serves: the page, the code and the art. It used to serve the whole checkout --
@@ -74,10 +82,14 @@ function sendRejoin(L, c, idx, snap, snapFrame) {
   send(c, Object.assign({ t: 'rejoin', history: hist, frame: Math.max(0, maxFrame(L) - DELAY), snap, snapFrame }, startMsg(L, idx)));
   console.log('  ' + tag(L) + 'rejoin sent ' + (snap ? 'from a snapshot at frame ' + snapFrame + ' plus ' + hist.length + ' commands' : 'as ' + hist.length + ' commands from frame 0'));
 }
-function startMsg(L, idx) { return { room: L.code, seed: L.seed, layout: L.layout, players: L.started, you: idx, delay: DELAY, gone: L.gone, speed: L.speed == null ? 6 : L.speed }; }
+function startMsg(L, idx) { return { room: L.code, seed: L.seed, layout: L.layout, players: L.started, you: idx, delay: DELAY, gone: L.gone, speed: L.speed == null ? 6 : L.speed, cheats: CHEATS }; }
 function onMessage(c, m) {
   // `join` is the only message a client with no room may send: it is what puts it in one.
   if (m.t !== 'join' && !roomOf(c)) return;
+  if (m.t === 'join' && !c.room) {
+    const k = roomCode(m.room); if (k !== DEFAULT_ROOM && k.length < MIN_CODE) { send(c, { t: 'error', msg: 'A room code is at least ' + MIN_CODE + ' letters or digits.' }); return; }
+    if (!joinAllowed(c.ip)) { send(c, { t: 'error', msg: 'Too many join attempts from this address. Wait a minute.' }); return; }
+  }
   const L = m.t === 'join' ? roomFor(c.room || m.room) : roomOf(c);
   const me = L.players.find(p => p.id === c.id); const host = hostOf(L); const isHost = me && host === me;
   switch (m.t) {
@@ -154,7 +166,7 @@ function onMessage(c, m) {
     // another player's units, cancel their production or `game over man` them, deterministically, on
     // every client, with no desync to show for it. A batch that is not an array is dropped: forwarded, it
     // threw inside every receiver's beforeTick. (REVIEW-M17)
-    case 'cmds': { const idx = L.players.findIndex(p => p.id === c.id); if (idx >= 0 && L.state === 'playing' && Array.isArray(m.c)) { const cs = m.c.filter(x => x && typeof x === 'object').map(x => Object.assign({}, x, { p: idx })); const f = m.f | 0; L.history.push({ p: idx, f, c: cs }); if (!(L.lastF[idx] >= f)) L.lastF[idx] = f; broadcast(L, { t: 'cmds', p: idx, f, c: cs }, c); } break; }
+    case 'cmds': { const idx = L.players.findIndex(p => p.id === c.id); if (idx >= 0 && L.state === 'playing' && Array.isArray(m.c)) { const cs = m.c.filter(x => x && typeof x === 'object' && (CHEATS || x.t !== 'cheat')).map(x => Object.assign({}, x, { p: idx })); const f = m.f | 0; L.history.push({ p: idx, f, c: cs }); if (!(L.lastF[idx] >= f)) L.lastF[idx] = f; broadcast(L, { t: 'cmds', p: idx, f, c: cs }, c); } break; }
     case 'hash': { const idx = L.players.findIndex(p => p.id === c.id); if (idx >= 0) broadcast(L, { t: 'hash', p: idx, f: m.f, h: m.h }, c); break; }
     case 'chat': if (me) broadcast(L, { t: 'chat', from: me.name, text: String(m.text).slice(0, 200) }); break;
     case 'ping': send(c, { t: 'pong' }); break;
@@ -204,7 +216,8 @@ server.on('upgrade', (req, socket) => {
   if (req.url !== '/ws') { socket.destroy(); return; }
   const key = req.headers['sec-websocket-key']; const accept = crypto.createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
   socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n');
-  const c = { id: nextId++, socket, buf: Buffer.alloc(0), chunks: [], chunked: 0, need: 0, room: null, lastSeen: Date.now() }; clients.set(c.id, c); socket.setNoDelay(true);
+  const ip = String(req.headers['cf-connecting-ip'] || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || socket.remoteAddress || '?');
+  const c = { id: nextId++, socket, ip, buf: Buffer.alloc(0), chunks: [], chunked: 0, need: 0, room: null, lastSeen: Date.now() }; clients.set(c.id, c); socket.setNoDelay(true);
   socket.on('data', d => onData(c, d)); socket.on('close', () => leave(c)); socket.on('error', () => leave(c));
   // `state` describes the relay, not a game: a client that has not sent a code cannot be told whether
   // some room is playing without being told that room exists. The real state arrives with the `lobby`
@@ -220,5 +233,5 @@ const PING_MS = 15000, DEAD_MS = 45000;
 setInterval(() => { const now = Date.now(); for (const c of [...clients.values()]) { if (now - c.lastSeen > DEAD_MS) drop(c, 'no data for ' + Math.round((now - c.lastSeen) / 1000) + ' s'); else { try { c.socket.write(frameRaw(9, Buffer.alloc(0))); } catch (e) { } } } }, PING_MS).unref();
 server.listen(port, () => {
   const ips = []; for (const ifs of Object.values(os.networkInterfaces())) for (const i of ifs) if (i.family === 'IPv4' && !i.internal) ips.push(i.address);
-  console.log('Brood War Remake: http://localhost:' + port + (ips.length ? '   LAN: ' + ips.map(ip => 'http://' + ip + ':' + port).join(' ') : '') + '   delay ' + DELAY + ' frames');
+  console.log('Brood War Remake: http://localhost:' + port + (ips.length ? '   LAN: ' + ips.map(ip => 'http://' + ip + ':' + port).join(' ') : '') + '   delay ' + DELAY + ' frames' + (CHEATS ? '   CHEATS ON' : ''));
 });

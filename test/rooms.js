@@ -27,8 +27,8 @@ const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fa
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const servers = [];
-function serve(port, delay) {
-  const s = spawn(process.execPath, [path.join(__dirname, 'serve.js'), String(port), String(delay)], { stdio: ['ignore', 'pipe', 'pipe'] });
+function serve(port, delay, env) {
+  const s = spawn(process.execPath, [path.join(__dirname, 'serve.js'), String(port), String(delay)], { stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({}, process.env, env || {}) });
   s.stdout.on('data', () => { }); s.stderr.on('data', d => console.log('  [relay err] ' + String(d).trim()));
   servers.push(s); return s;
 }
@@ -224,8 +224,8 @@ function client(port, tag) {
 
   const SA = client(P4, 'SA'), SB = client(P4, 'SB');
   await SA.open; await SB.open;
-  SA.send({ t: 'join', name: 'Ann', race: 'T', room: 'SEC' }); await sleep(200);
-  SB.send({ t: 'join', name: 'Bee', race: 'QQ', room: 'SEC' }); await sleep(200);
+  SA.send({ t: 'join', name: 'Ann', race: 'T', room: 'SECR' }); await sleep(200);
+  SB.send({ t: 'join', name: 'Bee', race: 'QQ', room: 'SECR' }); await sleep(200);
   ok(SA.lobby && SA.lobby.players.length === 2 && SA.lobby.players[1].race === 'R', 'a race the game does not have becomes Random rather than reaching G.init (was "QQ", which threw on every client)', JSON.stringify(SA.lobby && SA.lobby.players.map(p => p.race)));
   SB.send({ t: 'set', team: { z: 1 } }); await sleep(200);
   ok(SA.lobby.players[1].team === 2, 'a team that is not an integer is ignored', JSON.stringify(SA.lobby.players[1].team));
@@ -233,20 +233,20 @@ function client(port, tag) {
   ok(SA.lobby.players.length === 3 && SA.lobby.players[2].difficulty === 'normal', 'an unknown difficulty becomes normal (was stored verbatim, 500 characters of it, and rendered into every lobby)', JSON.stringify(SA.lobby.players[2] && SA.lobby.players[2].difficulty));
   SA.send({ t: 'start' }); await sleep(300);
   ok(SA.started && SB.started, 'the SEC game starts');
-  SB.send({ t: 'cmds', f: 5, c: [{ t: 'cheat', p: 0, code: 'game over man' }] }); await sleep(200);
+  SB.send({ t: 'cmds', f: 5, c: [{ t: 'stop', p: 0, u: [] }] }); await sleep(200);   // a cheat would be dropped outright now (section 10); the re-stamp is checked on an ordinary command
   const forged = SA.cmds.find(m => m.f === 5);
   ok(forged && forged.p === 1 && forged.c.length === 1 && forged.c[0].p === 1, 'a command whose `p` names another player is re-stamped with the sender\'s slot (was forwarded as p:0, and CMD.apply trusted it)', JSON.stringify(forged));
   SB.send({ t: 'cmds', f: 6, c: 42 }); SB.send({ t: 'cmds', f: 7, c: [] }); await sleep(200);
   ok(!SA.cmds.some(m => m.f === 6) && SA.cmds.some(m => m.f === 7), 'a batch that is not a list is dropped, and the next real one still arrives (was forwarded, and threw in every receiver)', SA.cmds.map(m => m.f).join(','));
   const SE = client(P4, 'SE'); await SE.open;
-  SE.send({ t: 'join', name: 'Eve', race: 'T', room: 'SEC' }); await sleep(200);
+  SE.send({ t: 'join', name: 'Eve', race: 'T', room: 'SECR' }); await sleep(200);
   const chatsBefore = SE.chats.length; SA.send({ t: 'chat', text: 'private' }); await sleep(200);
   ok(/in progress/i.test(String(SE.error)) && SE.chats.length === chatsBefore, 'a stranger refused mid-game hears nothing afterwards (it used to count as in the room and receive every broadcast)', String(SE.error) + ' chats ' + SE.chats.length);
   SB.close(); await sleep(300);
-  SA.send({ t: 'join', name: 'Bee', race: 'T', room: 'SEC' }); await sleep(200);
+  SA.send({ t: 'join', name: 'Bee', race: 'T', room: 'SECR' }); await sleep(200);
   ok(/already in this game/i.test(String(SA.error)), 'a live player re-sending join with a dropped player\'s name is refused (it used to take the slot, and two slots shared one id)', String(SA.error));
   const SB2 = client(P4, 'SB2'); await SB2.open;
-  SB2.send({ t: 'join', name: 'Bee', race: 'T', room: 'SEC' });
+  SB2.send({ t: 'join', name: 'Bee', race: 'T', room: 'SECR' });
   for (let i = 0; i < 60 && !SB2.msgs.some(m => m.t === 'rejoin'); i++) await sleep(100);   // the donor (a raw client here) never answers, so the relay's 4 s fallback serves the rejoin
   ok(SB2.msgs.some(m => m.t === 'rejoin'), '...so the real Bee can still rejoin her slot', SB2.msgs.map(m => m.t).join(','));
   SA.close(); SB2.close(); SE.close(); await sleep(300);
@@ -291,6 +291,42 @@ function client(port, tag) {
     ok(!/<svg|<img/.test(html.v) && /&lt;svg/.test(html.v), 'a player name or difficulty is escaped before it reaches innerHTML (was raw: script in every lobby member\'s page over a public tunnel)', html.v.slice(0, 160));
   }
   ok(/PING_MS/.test(fs.readFileSync(path.join(__dirname, 'serve.js'), 'utf8')) && /DEAD_MS/.test(fs.readFileSync(path.join(__dirname, 'serve.js'), 'utf8')), 'the relay has a keepalive (static: a silent connection is dropped after DEAD_MS; verified by hand, it takes 45 s)');
+
+  // =========================================================================
+  // 10. a minimum code length, a join rate limit, and no cheats online (REVIEW-M17 decision 4)
+  // =========================================================================
+  const short = client(P4, 'short'); await short.open;
+  short.send({ t: 'join', name: 'Shorty', race: 'T', room: 'AB' }); await sleep(200);
+  ok(/at least 4/i.test(String(short.error)) && !short.lobby, 'a two-character room code is refused with the rule (the code is the only lock)', String(short.error));
+  short.send({ t: 'join', name: 'Shorty', race: 'T', room: 'ABCD' }); await sleep(200);
+  ok(!!short.lobby && short.lobby.room === 'ABCD', '...and a four-character one is accepted', JSON.stringify(short.lobby && short.lobby.room));
+  short.close();
+  // cheats: P4 was started without BW_CHEATS, so a cheat command is dropped at the relay
+  const CA = client(P4, 'CA'), CB = client(P4, 'CB'); await CA.open; await CB.open;
+  CA.send({ t: 'join', name: 'Cal', race: 'T', room: 'NOCHEAT' }); await sleep(200);
+  CB.send({ t: 'join', name: 'Cab', race: 'Z', room: 'NOCHEAT' }); await sleep(200);
+  CA.send({ t: 'start' }); await sleep(300);
+  ok(CA.started && CA.started.cheats === false, 'the start message says cheats are off', JSON.stringify(CA.started && CA.started.cheats));
+  CB.send({ t: 'cmds', f: 9, c: [{ t: 'cheat', code: 'show me the money' }, { t: 'stop', u: [] }] }); await sleep(200);
+  const b9 = CA.cmds.find(m => m.f === 9);
+  ok(b9 && b9.c.length === 1 && b9.c[0].t === 'stop', 'a cheat inside a batch is dropped by the relay and the rest of the batch still arrives', JSON.stringify(b9));
+  CA.close(); CB.close();
+  // ...and a relay started with BW_CHEATS=1 forwards it, which is what test/net.js and test/net_many.js rely on
+  const P5 = PORT + 4;
+  serve(P5, 3, { BW_CHEATS: '1', BW_JOIN_LIMIT: '3' });
+  await sleep(500);
+  const DA = client(P5, 'DA'), DB = client(P5, 'DB'); await DA.open; await DB.open;
+  DA.send({ t: 'join', name: 'Dan', race: 'T', room: 'CHEATS' }); await sleep(200);
+  DB.send({ t: 'join', name: 'Dee', race: 'Z', room: 'CHEATS' }); await sleep(200);
+  DA.send({ t: 'start' }); await sleep(300);
+  DB.send({ t: 'cmds', f: 9, c: [{ t: 'cheat', code: 'show me the money' }] }); await sleep(200);
+  const c9 = DA.cmds.find(m => m.f === 9);
+  ok(DA.started && DA.started.cheats === true && c9 && c9.c.length === 1 && c9.c[0].t === 'cheat', 'with BW_CHEATS=1 the start message says so and the cheat is forwarded', JSON.stringify({ cheats: DA.started && DA.started.cheats, c9 }));
+  // the join limit: BW_JOIN_LIMIT=3 on this relay, and this address has joined twice already
+  const R3 = client(P5, 'R3'); await R3.open; R3.send({ t: 'join', name: 'Three', race: 'T', room: 'LIMIT' }); await sleep(200);
+  const R4 = client(P5, 'R4'); await R4.open; R4.send({ t: 'join', name: 'Four', race: 'T', room: 'LIMIT' }); await sleep(200);
+  ok(!!R3.lobby && /too many join/i.test(String(R4.error)) && !R4.lobby, 'the fourth join from one address inside a minute is refused when the limit is three (60 by default)', 'third: ' + !!R3.lobby + ', fourth: ' + String(R4.error));
+  DA.close(); DB.close(); R3.close(); R4.close();
 
   await sleep(200);
   killAll();

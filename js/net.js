@@ -85,12 +85,13 @@ const Net = {
   startGame(m) {
     this.reset(m);
     this.speed = m.speed == null ? 6 : m.speed; // agreed in the lobby; every client must pace the same or lockstep just makes the fast ones wait
+    this.cheats = !!m.cheats;                   // the relay says whether cheats are on for this game (off unless it was started with BW_CHEATS=1)
     UI.start({ players: m.players.map(p => ({ race: p.race, human: p.human, name: p.name, difficulty: p.difficulty, team: p.team, style: p.style, minerals: p.minerals, gas: p.gas })), seed: m.seed, layout: m.layout, human: m.you, mode: 'play', net: true });
   },
   // Rejoin after a drop: the relay sends every command batch since the start; re-simulate from frame 0, then continue live.
   rejoinGame(m) {
     this.reset(m);
-    this.speed = m.speed == null ? 6 : m.speed;
+    this.speed = m.speed == null ? 6 : m.speed; this.cheats = !!m.cheats;
     for (const h of (m.history || [])) { if (!this.inbox[h.f]) this.inbox[h.f] = {}; this.inbox[h.f][h.p] = Array.isArray(h.c) ? h.c : []; if (h.p === this.me) this.sent[h.f] = true; }
     this.catchingUp = true; this.catchTarget = m.frame || 0;
     UI.start({ players: m.players.map(p => ({ race: p.race, human: p.human, name: p.name, difficulty: p.difficulty, team: p.team, style: p.style, minerals: p.minerals, gas: p.gas })), seed: m.seed, layout: m.layout, human: m.you, mode: 'play', net: true });
