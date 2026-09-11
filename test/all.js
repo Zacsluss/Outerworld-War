@@ -33,6 +33,15 @@
 //   test/rejoindiag.js      splits a rejoin to isolate a desync; run it when net.js breaks
 //   test/balance_ab.js      pairs two existing logs; needs logs
 //   test/balance_stats.js   the statistics behind the harness; fast, but it tests the harness, not the game
+//   test/ledger.js          a measurement, not a check: prints the AI's per-think spend, never fails
+//   test/techtime.js        a measurement: when the AI reaches each tier; 20-minute games per race and seed
+//   test/longgame.js        a sixty-minute game and its replay; ~9 minutes, six times the slowest gate member
+//   test/eightplayer.js     37 s and deterministic, but its money assertion is a known red (REVIEW-M17 bisected
+//                           it to FIXLIST-M15 C3, and the cause is AI spending, which is gated). Gate it the
+//                           day it is green; until then a red member would teach everyone to ignore the gate
+//   test/net_many.js        four lockstep clients over real sockets, ~65 s, environment-dependent like net.js,
+//                           and one of its 44 assertions is wrong by design (HANDOFF-M16, the fourth red)
+//   test/patch10/11/15.js   NOT TESTS -- one-off codemods that rewrite js/; they refuse to run without a flag
 // Run the slow ones by hand, or in CI on a schedule. They are listed in HANDOFF.md under
 // "How to run everything".
 'use strict';
@@ -108,6 +117,10 @@ const TESTS = [
   { name: 'terran12', args: ['terran12.js'], what: 'M12 Terran: the MULE expires, the Reactor doubles, the Viking has two sets of teeth' },
   { name: 'zerg12', args: ['zerg12.js'], what: 'M12 Zerg: tumours spread and stay additive, larva inject, crawlers that walk' },
   { name: 'protoss12', args: ['protoss12.js'], what: 'M12 Protoss: warp-in respects the psi grid, a force field is terrain, chrono cannot stack' },
+  // REVIEW-M17. This ran NEVER: not in the gate and not on the list above. 54 checks, ~35 s, no sockets
+  // (WebSocket is stubbed), no seeds sampled -- everything the gate asks for, and it covers the one
+  // thing a seed-plus-log save cannot fake: a nuke, a morph and a Recall all halfway through.
+  { name: 'saveload', args: ['saveload.js'], what: 'a save taken mid-nuke, mid-morph and mid-Recall reloads byte-identically; a rejoin restores the donor\'s state' },
 ];
 
 const argv = process.argv.slice(2);

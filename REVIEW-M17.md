@@ -240,6 +240,22 @@ Each entry names the file, what is wrong, the fix, and what it would cost. Anyth
    **Gate:** 69 of 69, 176.7 s. **The stamp moved: `c4fe57ceca68627b` → `14ec639729837842`.** Every
    save and replay from before this commit is refused, which is the stamp doing its job.
 2. **`.gitignore` ignores `.claude/review/`**, where this review's probes and logs live.
+3. **`test/saveload.js` is in the gate, and the other five unlisted suites are on the exclusion list
+   with reasons.** *(commit: the six suites)* Seed finding 1: six suites were neither run by
+   `test/all.js` nor named in its "deliberately not in this suite" list. Each was run once at the
+   baseline tag, in a worktree so nothing else could touch `js/` meanwhile:
+
+   | suite | result at baseline | wall time | decision |
+   |---|---|---:|---|
+   | `saveload` | 54 passed, 0 failed | 35 s | **gated** — deterministic, no sockets (`WebSocket` is stubbed), no seeds sampled; it covers the one thing a seed-plus-log save cannot fake, a nuke, a morph and a Recall all halfway through |
+   | `eightplayer` | **18 passed, 1 failed** | 37 s | excluded — the money assertion is red (question 2); gate it the day it is green |
+   | `net_many` | 43 passed, 1 failed | 65 s | excluded — real sockets, and the one failure is the assertion HANDOFF-M16 says is wrong |
+   | `longgame` | ran to 60:00, 5.2 ms/frame at the end, heap 8 → 16 MB | ~9 min | excluded — six times the slowest gate member |
+   | `ledger` | prints, never fails | 1 s at 2 min | excluded — a measurement |
+   | `techtime` | prints, never fails | 2 s at 2 min | excluded — a measurement |
+
+   The gate is **70 suites**, 177 s. The exclusion comment in `test/all.js` now also names the three
+   codemods that are not tests.
 
 # 4. Considered and deliberately not done
 
