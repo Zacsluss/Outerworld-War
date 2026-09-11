@@ -158,27 +158,36 @@ Fill in the two lists below, in this file, and commit it.
 
 # 1. Open tasks / to-dos
 
-**NEXT UP (2026-09-11, end of the third session): task 1 (the HUD overrides; needs the game open in a
-browser), then task 28 (the relay has to ship with the Tauri app), then the two faults the third session
-measured and left open, 29 and 30.** Tasks 23, 25, 26 and 27 are done — section 3, entry 18.
+**THE ORDER TO DO THEM IN (2026-09-11, the user's decisions taken; the kickoff prompt in `HANDOFF-M17.md`
+carries the same list with an action per step):** 1 (the dial; the user looked, the strip is fine) → 29 (the
+wedged crawler; makes eightplayer 19/19) → 5, 7, 8 together (one AI commit, canaries once) → 30 (rebuild a lost
+tech building) → 6 (one supply check) → 13, 14 (relay, before it is packaged) → 19, 18, 12, 17 (tests and the
+snapshot field) → 15 (hard-coded keys) → 20 (coverage; ask about the burning buildings) → 22, 24 (small
+refactors, identity-checked) → 16 (presentation cost, measure first) → 28 (the Tauri wrapper with the relay as
+an unchanged sidecar — a project) → 21 (the shared test harness, last, when the tree is quiet). Presentation
+first because it moves no stamp and has already been looked at; the measured faults next, grouped so the
+canaries re-deal as few times as possible; the relay fixed before it is shipped; the 90-file harness change
+when nothing else is moving. Done: 2, 3, 4, 9, 10, 11 (the decisions), 23, 25, 26, 27 (the Zerg notes).
 
 Each entry names the file, what is wrong, the fix, and what it would cost. Everything measured says so;
 "reviewer" means one of the six read-only region reviews, whose claims were verified before they were
 listed here. Ordered by what I would do first.
 
-1. **`js/hud.js` overrides eight `UI` draw methods at load, and two shipped features never draw.**
+1. **`js/hud.js` overrides eight `UI` draw methods at load, and the day/night dial never draws.**
    `Object.assign(UI, {...})` in `hud.js` replaces `drawConsole`, `drawUnitInfo`, `drawTop`, `drawMessages`,
    `drawHelp`, `drawMenu`, `miniRect` and `cardRect` from `ui.js`. The only callers of `UI.drawSelGrid`
-   (the "three regimes" grouped selection strip, M12 item 2, which PLAYTEST-M12 promises makes a
-   130-unit selection readable) and `UI.drawDayDial` (the day/night countdown, M11 idea 19) are inside
-   the replaced bodies, so in the browser neither ever draws: the live strip at `hud.js` `drawConsole`
-   has no cap, no grouping and no "+N more", and tiles past about eighteen units land below the screen.
-   `test/daynight.js` and `test/qol.js` pass because they call the functions directly. Fix: call
-   `this.drawSelGrid` from the HUD's multi-selection branch and `this.drawDayDial` from its `drawTop`
-   (after the clock plate), look at both in the browser, then delete the eight dead `ui.js` bodies
-   (~250 lines; one of them, the dead `drawUnitInfo`, splices `u.cargo` and calls the unwrapped
-   `G.unloadOne` — a replay bypass that is only dead because `hud.js` loads). Cost M, and it needs eyes
-   on a screen, which is why it is not done here.
+   (the grouped selection strip, M12 item 2) and `UI.drawDayDial` (the day/night countdown, M11 idea 19)
+   are inside the replaced bodies. **The user looked (2026-09-11, third session, Nightfall, Ctrl+A):** the
+   live selection strip reads fine and is accepted as it is; there is nothing beside the "1:21 TERRAN"
+   clock plate where the dial should be. `test/daynight.js` and `test/qol.js` pass because they call the
+   functions directly. Fix: call `this.drawDayDial` from the HUD's `drawTop` after the clock plate and
+   look at it in the browser on Nightfall (`.claude/launch.json` starts the server). Select 30+ units
+   once and check the live strip does not run off the bottom of the screen (the review measured tiles past
+   about eighteen landing below it; the user did not see that): if it does, wire `this.drawSelGrid` into
+   the HUD's multi-selection branch; if it does not, delete `UI.drawSelGrid` and retarget `test/qol.js`'s
+   direct call at what `hud.js` draws. Then delete the other dead `ui.js` bodies (~250 lines; the dead
+   `drawUnitInfo` splices `u.cargo` and calls the unwrapped `G.unloadOne` — a replay bypass that is only
+   dead because `hud.js` loads). Cost S-M. No stamp move (presentation only).
 2. **Cross-engine floating point in the simulation.** 75 transcendental calls (26 `Math.cos`, 24
    `Math.sin`, 16 `Math.atan2`, 9 `Math.hypot`) in the stamped files. `Math.sqrt` is correctly rounded
    by IEEE; those four are not required to be and engines differ in the last bit. Lockstep hashes
@@ -316,13 +325,18 @@ listed here. Ordered by what I would do first.
 27. **Are larvae used from every hatchery?** **DONE** (entry 18, commit `6c2687e`): `AI.train` takes the
     larva from the fullest hall (`pickLarva()`, ties in `G.units` order) instead of the oldest larva in
     the game, which drained the oldest hall first.
-28. **Peer hosting in a Tauri build.** Decision (2026-09-11): multiplayer is peer-hosted only, no server
-    of yours. `test/serve.js` is a Node process; a Tauri app ships a webview, not Node, so a sold copy
-    cannot host a game until the relay ships with it — as a bundled Node sidecar, or as a port of
-    `serve.js` (184 lines, no dependencies) to the Tauri (Rust) side behind the same WebSocket
-    protocol. Until then `PLAY.bat` / `PLAY-ONLINE.bat` on the host's machine is the way. Cost M for a
-    sidecar, L for a port; the protocol is pinned by `test/rooms.js`, `test/net.js` and
-    `test/net_many.js`, which a port would have to pass.
+28. **Peer hosting in a Tauri build: ship the relay UNCHANGED as a sidecar.** Decisions (2026-09-11):
+    multiplayer is peer-hosted only, no server of yours; and (third session) the relay ships as it is, not
+    as a Rust port. **No Tauri project exists in the repo yet** — the decision to sell wrapped in Tauri is
+    recorded, nothing is built — so the task is the wrapper and the sidecar together: create the Tauri
+    project loading `index.html`; build `test/serve.js` (237 lines, Node built-ins only: `http`, `fs`,
+    `path`, `crypto`, `os`) into one self-contained executable per platform (Node's single-executable
+    build or Bun's compile); register it as a Tauri sidecar; on Host, spawn it on a free port and kill it
+    with the game; connect the client to localhost. Internet play still needs the host's tunnel or port
+    forward, exactly as `PLAY-ONLINE.bat` does — a sidecar does not change that. The protocol suites
+    (`test/rooms.js`, `test/net.js`, `test/net_many.js`) keep running against `node test/serve.js`; add
+    one check that the built executable answers a room join. Cost M. Until then `PLAY.bat` /
+    `PLAY-ONLINE.bat` on the host's machine is the way.
 29. **An uprooted Sunken Colony with a `land` order it cannot complete grinds forever.** Measured
     (`.claude/review/ep-stuck.js`, the eight-player game at commit `bfee3d2`): Sunken Colony #274 of
     player 7 at tile 58,38 (walkable) holds `order.type === 'land'` with `path` null and `moving` false,
@@ -359,6 +373,14 @@ says what happened to each, and the numbered entries in section 3 hold the measu
 | — | Tauri: who runs the relay for sold copies? | **peer hosting only** | open task 28: the relay has to ship with the app (Tauri has no Node); `PLAY.bat` on the host's machine until then |
 | — | delete the stale worktrees? | **yes, the merged ones** | **done**: all 23 were on merged commits (the four dirty ones held superseded drafts); worktrees and their 22 agent branches removed |
 | — | (mid-session) Zerg should start with a Queen; is she injecting to the maximum? | **they should** | **done**, entry 16. She injects whenever energy allows and a hatchery within 26 tiles is short of larvae; energy bounds her to one cast per 33 s sustained. One follow-up in open task 23: the AI's Queen follows the army |
+| — | (third session) the Queen's budget claim sits above the head of the build order, not "above the top pick" as task 26 was written — measured, two of four arms never got a Queen per hall below it | **OK** | **done**, entry 18 |
+| — | Spawn Larva on a full hall is refused and refunded, with a message | **confirm** | **done**, entry 18 |
+| — | the Queen rule counts hatcheries still under construction | **confirm** | **done**, entry 18 |
+| — | the geyser fix — a worker re-ordered inside a gas building comes out empty-handed: bug, not balance | **confirm, bug** | **done**, entry 19 |
+| — | the balance run, its list grown by Spawn Larva stacking and a Queen per hatchery | **OK** — stays gated | unchanged |
+| — | task 28's shape: Node sidecar or Rust port? | **ship the relay unchanged as a sidecar** | open task 28 rewritten; no Tauri project exists yet |
+| — | task 1 looked at in the browser (Nightfall, 25+ units selected) | **the selection strip works; nothing where the dial should be** | open task 1 narrowed to the dial and the dead bodies |
+| — | README promises Terran buildings burning below one third health and no code exists (task 20): build it or drop the sentence? | *not yet answered* | open |
 
 The questions as they were put, kept for the record:
 

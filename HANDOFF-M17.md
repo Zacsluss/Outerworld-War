@@ -12,11 +12,11 @@ not a hash written here.)
 > things deliberately not done. `PLAYTEST-M17.md` is how to see every fixed thing by hand (items 38-42
 > are the third session's).
 >
-> **NEXT: task 1** (the HUD overrides that leave two shipped features never drawing — needs the game open
-> in a browser to judge), **then task 28** (peer hosting only: the relay must ship with the Tauri app),
-> **then tasks 29 and 30** (an uprooted crawler grinding on a `land` order it cannot complete; the AI never
-> rebuilding a destroyed tech building), both measured with their probes named. The balance run stays
-> gated.
+> **NEXT: finish the open list, in the order REVIEW-M17.md section 1 now gives at its head** — 1 (the
+> day/night dial; the user looked, the selection strip is fine), 29, then 5/7/8, 30, 6, 13/14, 19/18/12/17,
+> 15, 20, 22/24, 16, 28 (the Tauri wrapper with the relay shipped unchanged as a sidecar), 21 last. The
+> kickoff prompt below carries the list with an action per step. The balance run stays gated. One question
+> is still open for the user: README's burning Terran buildings (task 20) — build or drop the sentence.
 
 `HANDOFF-M16.md` remains true for its traps and its account of M15. Three of its facts moved: the fourth
 red is gone (the assertion was wrong and was replaced), `eightplayer` was never 19/19 at that tree, and
@@ -196,52 +196,97 @@ Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
 Branch: m10-overnight. HEAD: <run git log -1 --format=%h>. Working tree clean. (master is 160+
 commits behind and unmerged; nothing lives there.)
 
-Read CLAUDE.md, then HANDOFF-M17.md, then REVIEW-M17.md in full, then PLAYTEST-M17.md.
+Read CLAUDE.md, then HANDOFF-M17.md, then REVIEW-M17.md in full (section 1 is the task list, with
+file, fault, fix and cost per task and the order at its head; the decisions table in section 2 says
+what the user decided; section 3 has the measurements behind everything fixed so far; section 4 is
+what was deliberately not done), then PLAYTEST-M17.md.
 
-REVIEW-M17 was a stop-and-inspect pass over the whole codebase, a second session that carried out
-the user's ten decisions, and a third that did the user's three Zerg notes (open tasks 25-27, and 23
-with them) and fixed a wedged-geyser fault found while measuring them: twenty commits since the tag
-pre-review-m17, all gated. The four lists at the bottom of REVIEW-M17.md ARE the to-do list; the
-decisions table in section 2 says what each question became; entries 18 and 19 in section 3 are the
-third session's work, with the measurements.
+THE JOB: finish every open task in REVIEW-M17.md section 1, in the order below -- one commit per
+numbered step, the gate green before each commit, a probe before every fix, a negative control for
+every behaviour change. Mark each task DONE in section 1 with a pointer to a new section 3 entry AS
+YOU GO, so a chat that dies half-way leaves the list true. Detail for every step is in the task text.
 
-THE FIRST ACTION: REVIEW-M17.md open task 1 -- js/hud.js overrides eight UI draw methods at load, so
-UI.drawSelGrid (the grouped selection strip) and UI.drawDayDial (the day/night countdown) never draw
-in the browser. Start the game (PLAY.bat, http://localhost:8765), select 30+ units and look at the
-strip, and look for the dial; then wire both into the HUD's drawConsole / drawTop, look at them on a
-screen, and delete the eight dead ui.js bodies. It needs eyes on a screen, which is why it waited.
-THEN task 28 (peer hosting only: the relay must ship with the Tauri app, as a Node sidecar or a port
-of test/serve.js -- the protocol is pinned by test/rooms.js, net.js, net_many.js).
-THEN tasks 29 and 30, both measured, probes named in the task text: an uprooted Sunken Colony holding
-a `land` order it cannot complete grinds its stuck counter forever (eightplayer's "nothing wedged"
-line is red on it); the AI never rebuilds a destroyed tech building (a Zerg that loses its Queen's
-Nest can never make another Queen).
+  1. Task 1 (presentation; no stamp move). The user looked on 2026-09-11: the selection strip reads
+     fine; nothing draws beside the "1:21 TERRAN" clock plate on Nightfall where the day/night dial
+     should be. Wire UI.drawDayDial into hud.js's drawTop after the clock plate and look at it in the
+     browser (.claude/launch.json starts the server on 8899; Play, map Nightfall). Select 30+ units
+     once (Ctrl+A) and check the live strip does not run off the screen; if it does, wire
+     UI.drawSelGrid into hud.js's multi-selection branch, otherwise delete it and retarget
+     test/qol.js's direct call at what hud.js draws. Then delete the other dead ui.js bodies (the dead
+     drawUnitInfo calls the unwrapped G.unloadOne -- a replay bypass). daynight.js and qol.js stay green.
+  2. Task 29: an uprooted Sunken Colony grinds forever on a `land` order it cannot complete
+     (.claude/review/ep-stuck.js reproduces it: the eight-player game, player 7, 540 s, tile 58,38).
+     Probe the root spot first (creep? a unit standing on it?). Make the `land` case give up through
+     moveFailed like every other walk, or re-root where it stands. Pin it beside the crawler section
+     of test/zerg12.js. test/eightplayer.js should read 19/19 by hand afterwards.
+  3. Tasks 5, 7, 8 together (one AI commit, canaries once): research() selects a tech's building by
+     its tech list, not its id, so a Hive still researches what the Lair carried; the Raven and the
+     Disruptor join supportUnits() (or derive the list: no weapon, not a worker, no cargo, has a
+     producer); morph() and addon() release() their head-step claim as train() and research() do.
+  4. Task 30: the AI rebuilds a destroyed tech building (ep-stuck.js shows Zerg player 1 with a Hive
+     and no Queen's Nest, so it can never make another Queen). Put a passed step whose building is
+     missing back at the head of the build order. Canaries.
+  5. Task 6: one G.supplyBlocked(p, def) at the seven hand-copied supply checks. Probe the nuke at
+     the cap first (queued, never starts, reported as "supply blocked").
+  6. Tasks 13 and 14 (relay): a window on `cmds` frames -- measure against test/net_many.js before
+     choosing it -- and the rejoin-after-game-over double apply. Run test/rooms.js (gate),
+     test/net.js and test/net_many.js by hand (BW_CHEATS=1 is set by the suites themselves).
+  7. Tasks 19, 18, 12, 17: ok(G.tickErrors === 0) at the end of aiadapt, aistyles and wavetarget;
+     observer.js counts G.tick() calls during the seek instead of milliseconds; the three
+     static-only checks made live (an allied caster in a team game, a 64x128 map through the
+     recorder harness); _x/_y/_alpha moved off Unit into Render.motion, or skipped by Snapshot.enc
+     with the reason written down.
+  8. Task 15: a RESERVED list of the hard-coded keys that setBinding refuses, and the reverse
+     assertion in test/controls.js.
+  9. Task 20: drive the eighteen never-exercised abilities through gate suites (the list is in the
+     task), Infest Command Center, Interceptor loss on Carrier death, a transport killed with cargo.
+     README's "Terran buildings burning below one third health" has no code behind it: ASK the user
+     whether to build it or delete the sentence -- not answered yet. Do not decide it yourself.
+ 10. Tasks 22 and 24: the small refactors with unchanged results (the scarab/interceptor caps read
+     the def; cargo capacity once; the 27 energy literals read the ability; the five stale branch
+     comments in abilities.js), and the unused tools/ exports. Identity check: test/eightplayer.js
+     prints byte-identical banks before and after, or the change touched a game and must say why.
+ 11. Task 16: MEASURE the presentation costs the task lists (test/perf_render.js needs a browser)
+     before touching any of them; fix only what the measurement names, one at a time.
+ 12. Task 28, decided: ship the relay UNCHANGED as a sidecar. No Tauri project exists in the repo
+     yet. Create the wrapper loading index.html; build test/serve.js (237 lines, Node built-ins
+     only) into one self-contained executable per platform (Node single-executable build or Bun
+     compile); register it as the sidecar; on Host spawn it on a free port and kill it with the
+     game; connect the client to localhost. Internet play still needs the host's tunnel as
+     PLAY-ONLINE.bat does. The protocol suites keep running against node test/serve.js; add one
+     check that the built executable answers a room join.
+ 13. Task 21 last: the shared test harness (~900 lines of duplicated boilerplate across 88 files;
+     the low-risk first slice is the 42 sim-only suites sharing a byte-identical stub). A milestone
+     of its own: diff every suite's PASS/FAIL count against a baseline gate log before committing.
 
-THE GATE: node test/all.js, 75 suites, about three and a half minutes, before EVERY commit. Green
-means green. If a change fixes a real fault but turns a marginal assertion red, revert it anyway and
-say so -- six times now, all six right. (When a re-dealt AI sample turns a check red, bisect with
-tools/control.js first: the third session's alerts red was a test that matched a message by text
-which two mechanisms speak, not a fault.)
+THE GATE: node test/all.js, 75 suites, about four minutes, before EVERY commit. Green means green.
+If a change fixes a real fault but turns a marginal assertion red, revert it anyway and say so --
+six times now, all six right. When a re-dealt AI sample turns a check red, bisect with
+tools/control.js first: the third session's alerts red was a test matching a message that two
+mechanisms speak, not a fault.
 
 MEASURE BEFORE FIXING. Every fix in three sessions that started from a measurement was right the
 first time. Every new behaviour gets a negative control that goes RED when the feature is removed
 and is a CLEAN red. tools/control.js applies a control, runs a command and restores; tools/patch.js
 is the exactly-one-match patch runner. Anchor on text, never line numbers. Write probes and patch
-specs to files under .claude/review/ (gitignored) -- heredocs and node -e mangle them.
+specs to files under .claude/review/ (gitignored) -- heredocs and node -e mangle them. After any AI
+change run the canaries: test/aistyles.js --seed=1 (the gate's), 5 and 11; test/eightplayer.js by hand.
 
 KNOWN REDS, none block:
   - test/soak.js fails one tier-1/2 coverage assertion (Swarm Host). Do not weaken it.
   - test/aistyles.js: the gate runs seed 1 (clean). Seed 5 fails one economy line, seed 11 one
     first-wave line. Any AI change re-deals all fifteen arms; run 1, 5 and 11 and expect movement.
-  - test/eightplayer.js is 18/19 by hand and deliberately NOT in the gate: its money line is GREEN
-    now (every AI under 500 minerals after the geyser fix); its "nothing wedged" line is red on the
-    wedged crawler of task 29.
+  - test/eightplayer.js is 18/19 by hand and deliberately NOT in the gate: its money line is green
+    (every AI under 500 minerals); its "nothing wedged" line is red on step 2's crawler and should
+    go green with it.
 
-GATED, needs my explicit instruction: test/balance.js, test/proxy.js, the claim order in budget()
-(the Queen claim was ADDED above the head step by measurement; the seven that existed keep their
-order), and anything justified by "better balance". The balance run's list: Charon Boosters, bunker
-fire rate, the AI cadence and detector weight, the eleven energy techs, the larva-starved hatchery
-cadence, the starting Queen, Spawn Larva stacking to twelve, a Queen per hatchery.
+GATED, needs the user's explicit instruction: test/balance.js, test/proxy.js, the order of the
+eight claims in AI.budget(), and anything justified by "better balance". None of it is on this list.
+
+CLOSE every step the way CLAUDE.md says: a ready-to-paste kickoff prompt for the next chat, a
+numbered list of what changed for a player, and how to playtest each item by hand, written into
+PLAYTEST-M17.md (or PLAYTEST-M18.md if this becomes a milestone) and committed. Nothing important may
+exist only in the chat.
 
 Read the eighteen traps in HANDOFF-M17 before writing any probe.
 ```
