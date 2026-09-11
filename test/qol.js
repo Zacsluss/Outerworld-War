@@ -53,6 +53,15 @@ const r = vm.runInContext(`(() => {
   let threw = null;
   try { __calls.length = 0; UI.drawSelGrid(Render.ctx, UI.selection, 300, 500, 700, 200); } catch (e) { threw = String(e && e.message || e); }
   out.gridDrew = { threw, calls: __calls.length, hotspots: UI.hotspots ? UI.hotspots.length : -1 };
+  // REVIEW-M17 task 1: the strip through the console's OWN draw (hud.js replaces UI.drawConsole at load and
+  // its branch never called drawSelGrid). Forty units, and every tile's hotspot has to lie on the console
+  // band: the old branch capped itself at six columns of 58 px rows, so unit nineteen and everything
+  // after it was drawn below the bottom of the screen -- measured in the browser, eighteen on the plate
+  // and twenty-two off it, with nothing saying so.
+  UI.select(many.slice()); UI.hotspots = []; __calls.length = 0; let threw40 = null;
+  try { UI.drawConsole(); } catch (e) { threw40 = String(e && e.message || e); }
+  const band = Render.H - UI.consoleH;
+  out.strip40 = { threw: threw40, sel: UI.selection.length, hotspots: UI.hotspots.length, onPlate: UI.hotspots.filter(h => h.y >= band && h.y + h.h <= Render.H).length, offScreen: UI.hotspots.filter(h => h.y + h.h > Render.H).length };
 
   // ---- 3. multi-building production goes to the shortest queue ----
   start(); G.human = 0;
@@ -142,6 +151,8 @@ ok(r.sel130 === 130, '...and so does one of 130', String(r.sel130));
 ok(r.group === 130, 'a control group holds the whole selection too', String(r.group));
 ok(!r.gridDrew.threw && r.gridDrew.calls > 0, 'the console draws 130 units without throwing', JSON.stringify(r.gridDrew));
 ok(r.gridDrew.hotspots > 0, '...and every tile it draws is clickable', JSON.stringify(r.gridDrew));
+ok(!r.strip40.threw && r.strip40.sel === 40 && r.strip40.hotspots === 40 && r.strip40.onPlate === 40, 'forty units through the console itself: forty tiles, every one on the console band (REVIEW-M17 task 1: the HUD drew eighteen and put the rest below the screen)', JSON.stringify(r.strip40));
+ok(r.strip40.offScreen === 0, '...and none of them below the bottom of the screen', JSON.stringify(r.strip40));
 
 ok(r.multiCard.gotCard, 'three barracks selected together still get a production card', JSON.stringify(r.multiCard));
 ok(r.spread.reduce((a, b) => a + b, 0) === 6, 'six presses queue six units', JSON.stringify(r.spread));

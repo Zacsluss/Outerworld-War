@@ -335,3 +335,27 @@ computer did this to itself whenever it rebalanced gas workers: in the eight-pla
 Extractors were dead from minute five with three Drones each standing outside, and it banked 3,376 minerals
 it had no gas to spend. To see it in play: watch a computer Zerg's Extractors for a few minutes — the geyser
 numbers keep falling now.
+
+---
+
+# The open list (fourth session) -- how to see each by hand
+
+The open tasks of `REVIEW-M17.md` section 1, in the order its head gives. Presentation items move no stamp;
+the simulation and AI items say so where they do.
+
+## 43. The day/night dial beside the clock (task 1)
+
+**Skirmish Setup** -> map **Nightfall** -> start. **Working:** a second plate beside the "0:02 TERRAN" clock:
+a sun, **Day**, "dusk in 1:57" counting down; after dusk it is a moon, **Night**, "dawn in ...". On Lost
+Ruins or any other map there is no second plate at all -- the dial is only for a map with a cycle.
+**Before:** nothing beside the clock on any map; the dial had shipped in M11 and was never called.
+
+## 44. The selection strip holds every selected unit (task 1)
+
+Any race, `show me the money`, make forty units (or Ctrl+A over a real army) and select them all.
+**Working:** every unit has a tile on the console's middle panel -- in a 1400 px window forty full-size tiles
+in three rows, each with its own health bar; a narrow window shrinks the tiles; past 48 units the panel
+shows one tile per type ("x101 Marine") with a count and a summed health bar and a "130 units, 3 types"
+line; a tile that still does not fit is counted in "+N more". Click a type tile: every unit of that type is
+selected. Shift-click a unit tile: that unit leaves the selection. **Before:** eighteen tiles, and the
+nineteenth unit onward drawn below the bottom of the screen with nothing saying so.

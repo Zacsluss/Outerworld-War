@@ -90,6 +90,14 @@ const r = vm.runInContext(`(() => {
   start('temple'); __calls.length = 0; UI._dayCache = null;
   UI.drawDayDial(Render.ctx, 162, 6);
   out.draw = { onCycleMap: drewOnNight, onPlainMap: __calls.length };
+  // REVIEW-M17 task 1: through the console's own top bar. hud.js replaces UI.drawTop at load and its body
+  // never called the dial, so on Nightfall nothing drew beside the clock plate (the user looked).
+  const dialText = () => __calls.filter(c => c.op === 'fillText').map(c => String(c.a[0])).filter(t => /^(day|night|dusk|dawn) in [0-9]/.test(t));
+  start('nightfall'); UI.running = true; UI.mode = 'play'; UI._dayCache = null; __calls.length = 0; let topThrew = null;
+  try { UI.drawTop(); } catch (e) { topThrew = String(e && e.message || e); }
+  out.hudDial = { threw: topThrew, onCycleMap: dialText() };
+  start('temple'); UI._dayCache = null; __calls.length = 0; UI.drawTop();
+  out.hudDial.onPlainMap = dialText();
   return out;
 })()`, ctx);
 
@@ -104,6 +112,8 @@ ok(r.dusk.air > r.night.air && r.dusk.air < r.day.air, 'the air penalty eases wi
 ok(r.plainMap.light === 1, 'a map that does not declare dayNight is in permanent daylight -- the cycle is opt-in', String(r.plainMap.light));
 ok(r.plainMap.dial === null, '...and shows no dial at all, rather than a sun that never moves', JSON.stringify(r.plainMap.dial));
 ok(r.draw.onPlainMap === 0 && r.draw.onCycleMap > 0, 'the dial draws on a cycle map and draws literally nothing on any other', JSON.stringify(r.draw));
+ok(!r.hudDial.threw && r.hudDial.onCycleMap.length === 1, 'the console\'s own top bar draws the countdown beside the clock on Nightfall (REVIEW-M17 task 1: it never called the dial)', JSON.stringify(r.hudDial));
+ok(r.hudDial.onPlainMap.length === 0, '...and nothing where the dial would be on a map without a cycle', JSON.stringify(r.hudDial.onPlainMap));
 
 ok(r.phases.noon === 'Day' && r.phases.mid === 'Night', 'the dial names noon and midnight', JSON.stringify(r.phases));
 ok(r.phases.falling === 'Dusk' && r.phases.rising === 'Dawn', '...and tells falling light from rising', JSON.stringify(r.phases));

@@ -369,7 +369,6 @@ const UI = {
   // camera bug.
   screenToWorld(sx, sy) { return Render.screenToWorld(sx, sy); },
   inMinimap(x, y) { const r = this.miniRect(); return x >= r.x && x < r.x + r.s && y >= r.y && y < r.y + r.s; },
-  miniRect() { return { x: 10, y: Render.H - this.consoleH + 6, s: this.consoleH - 12 }; },
   miniToWorld(x, y) { const r = this.miniRect(); return [(x - r.x) / r.s * G.map.w * TILE, (y - r.y) / r.s * G.map.h * TILE]; },
   onMove(e) {
     const m = this.mouse; m.x = e.clientX; m.y = e.clientY; [m.wx, m.wy] = this.screenToWorld(m.x, m.y);
@@ -1103,7 +1102,6 @@ const UI = {
     for (const [id, want] of [['summon_archon', 'high_templar'], ['summon_dark_archon', 'dark_templar']]) if (!abils.includes(id) && i <= 8 && mobile.filter(x => x.def.id === want && !x.disabled).length >= 2) { const ab = DATA.abilities[id]; B(i++, ab.name, ab.hk, () => Abilities.merge(mobile, id), { abil: id }); }
     return btns;
   },
-  cardRect() { const ch = this.consoleH, k = Math.min(1, (ch - 12) / 164); const bw = Math.round(66 * k), bh = Math.round(52 * k); const w = this.CARD_COLS * bw + 8, h = this.CARD_ROWS * bh + 8; return { x: Render.W - w - 10, y: Render.H - ch + 6, w, h, bw: bw - 4, bh: bh - 4 }; },
   consoleClick(x, y, button) {
     if (this.inMinimap(x, y)) { const [wx, wy] = this.miniToWorld(x, y); if (button === 2) { const t = this.unitAt(wx, wy); if (this.pending) this.execPending(t, wx, wy, false); else this.smartCommand(t, wx, wy, this.keys.Shift); } else if (this.pending) { this.execPending(null, wx, wy, false); } else { this.centerOn(wx, wy); this.miniDrag = true; } return; }
     // Right-click on a card button ARMS an autocastable ability (M12 item 6). This used to return
@@ -1133,126 +1131,6 @@ const UI = {
     for (const h of this.hotspots) if (x >= h.x && x < h.x + h.w && y >= h.y && y < h.y + h.h) { h.fn(); Sound.click(); return; }
   },
   hotspots: [],
-  // ---------------- drawing: console ----------------
-  // The selection grid. Brood War's twelve-unit cap is gone (M12 item 2), so this has to stay legible
-  // from two units to two hundred, and the fixed 6x2 grid of 44 px tiles it replaces does not.
-  //
-  // Three regimes, and the third is the one that matters. Up to SEL_FULL the tiles are full size and
-  // you can read a health bar per unit. Between that and SEL_TILES they shrink to fit. Past SEL_TILES
-  // individual portraits stop being information -- two hundred 9 px squares tell you nothing you can
-  // act on -- so it switches to one tile PER TYPE with a count and a summed health bar. That is the
-  // view you actually want once you have selected an army: not "here are your units" but "you have 40
-  // marines and 12 tanks, and the tanks are hurt".
-  //
-  // Clicking a type tile selects every unit of that type, which makes the summary a filter rather than
-  // a readout.
-  SEL_FULL: 24, SEL_TILES: 48,
-  drawSelGrid(ctx, sel, ix, y0, iw, ch) {
-    const pad = 8, top = y0 + 12, availW = iw - pad * 2, availH = ch - 24;
-    if (sel.length > this.SEL_TILES) {
-      const byType = new Map();
-      for (const u of sel) { let g = byType.get(u.def.id); if (!g) byType.set(u.def.id, g = { def: u.def, n: 0, hp: 0, max: 0, units: [] }); g.n++; g.hp += u.hp; g.max += u.maxHp; g.units.push(u); }
-      const groups = [...byType.values()].sort((a, b) => b.n - a.n || (a.def.id < b.def.id ? -1 : 1));
-      const tw = 74, th = 40, cols = Math.max(1, Math.floor(availW / tw));
-      groups.forEach((g, i) => {
-        if (Math.floor(i / cols) * th > availH - th) return;
-        const bx = ix + pad + (i % cols) * tw, by = top + Math.floor(i / cols) * th;
-        ctx.fillStyle = '#222a33'; ctx.fillRect(bx, by, tw - 4, th - 4);
-        const icon = Sprites.icon(g.def.id, G.players[G.human].color, 26);
-        if (icon) ctx.drawImage(icon, bx + 2, by + 4, 26, 26);
-        ctx.fillStyle = '#eee'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'left';
-        ctx.fillText('x' + g.n, bx + 32, by + 18);
-        const hr = g.max ? g.hp / g.max : 1;
-        ctx.fillStyle = hr > .66 ? '#3f3' : hr > .33 ? '#ff3' : '#f33';
-        ctx.fillRect(bx + 32, by + 24, (tw - 40) * hr, 3);
-        ctx.fillStyle = '#8a94a2'; ctx.font = '9px sans-serif';
-        ctx.fillText(g.def.name.slice(0, 10), bx + 2, by + 36);
-        this.hotspots.push({ x: bx, y: by, w: tw - 4, h: th - 4, fn: () => this.select(g.units.slice()) });
-      });
-      ctx.fillStyle = '#aab'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'right';
-      ctx.fillText(sel.length + ' units, ' + groups.length + ' types', ix + iw - pad, y0 + ch - 12);
-      ctx.textAlign = 'left';
-      return;
-    }
-    const full = sel.length <= this.SEL_FULL;
-    let cw = full ? 44 : 30, chh = full ? 52 : 34;
-    let cols = Math.max(1, Math.floor(availW / cw)), rows = Math.max(1, Math.floor(availH / chh));
-    while (cols * rows < sel.length && cw > 20) { cw -= 2; chh -= 2; cols = Math.max(1, Math.floor(availW / cw)); rows = Math.max(1, Math.floor(availH / chh)); }
-    const tw = cw - 4, th = chh - 6;
-    sel.forEach((u, i) => {
-      if (i >= cols * rows) return;
-      const bx = ix + pad + (i % cols) * cw, by = top + Math.floor(i / cols) * chh;
-      ctx.fillStyle = '#222a33'; ctx.fillRect(bx, by, tw, th);
-      const hr = u.hp / u.maxHp;
-      ctx.fillStyle = hr > .66 ? '#3f3' : hr > .33 ? '#ff3' : '#f33';
-      ctx.fillRect(bx + 2, by + th - 6, (tw - 4) * hr, 3);
-      ctx.save(); ctx.beginPath(); ctx.rect(bx, by, tw, th); ctx.clip();
-      const k = tw / 50;
-      ctx.translate(bx + tw / 2, by + th / 2 - 2); ctx.scale(k, k); ctx.translate(-u.x, -u.y);
-      u._x = u.x; u._y = u.y; u._alpha = 1; Render.drawUnit(ctx, u, u.x, u.y);
-      ctx.restore();
-      if (full) { ctx.fillStyle = '#aaa'; ctx.font = '9px sans-serif'; ctx.fillText(u.def.name.slice(0, 9), bx + 2, by + 9); }
-      this.hotspots.push({ x: bx, y: by, w: tw, h: th, fn: () => { if (this.keys.Shift) this.selection = this.selection.filter(v => v !== u); else this.select([u]); } });
-    });
-    if (sel.length > cols * rows) {
-      ctx.fillStyle = '#aab'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'right';
-      ctx.fillText('+' + (sel.length - cols * rows) + ' more', ix + iw - pad, y0 + ch - 12);
-      ctx.textAlign = 'left';
-    }
-  },
-  drawConsole() {
-    const ctx = Render.ctx, W = Render.W, H = Render.H, ch = this.consoleH, y0 = H - ch;
-    ctx.fillStyle = '#1b1f26'; ctx.fillRect(0, y0, W, ch); ctx.fillStyle = '#2c3340'; ctx.fillRect(0, y0, W, 3);
-    // minimap
-    const mr = this.miniRect(); ctx.fillStyle = '#000'; ctx.fillRect(mr.x - 2, mr.y - 2, mr.s + 4, mr.s + 4);
-    if (Render.mini) { ctx.imageSmoothingEnabled = false; ctx.drawImage(Render.mini, mr.x, mr.y, mr.s, mr.s); ctx.imageSmoothingEnabled = true; }
-    const sc = mr.s / (G.map.w * TILE); const hp = G.players[G.human];
-    if (Render.fogCanvas) { ctx.globalAlpha = 0.9; ctx.drawImage(Render.fogCanvas, mr.x, mr.y, mr.s, mr.s); ctx.globalAlpha = 1; }
-    for (const r of G.map.resources) { const tx = r.x, ty = r.y; if (hp.vis[ty * G.map.w + tx] === 0) continue; ctx.fillStyle = r.type === 'mineral' ? '#5df' : '#6d5'; ctx.fillRect(mr.x + r.x * mr.s / G.map.w, mr.y + r.y * mr.s / G.map.h, 2, 1.5); }
-    for (const u of G.units) { if (!u.alive || u.inside || u.def.larva) continue; if (u.owner !== G.human && !G.canSee(G.human, u) && !(u.isBuilding && G.explored(G.human, Math.floor(u.x / TILE), Math.floor(u.y / TILE)))) continue; ctx.fillStyle = G.players[u.owner].color; const s = u.isBuilding ? Math.max(3, u.def.w * TILE * sc) : 2.5; ctx.fillRect(mr.x + u.x * sc - s / 2, mr.y + u.y * sc - s / 2, s, s); }
-    for (const pg of this.pings) { ctx.strokeStyle = `rgba(255,60,60,${pg.t / 90})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(mr.x + pg.x * sc, mr.y + pg.y * sc, 4 + (90 - pg.t) % 30 / 3, 0, 7); ctx.stroke(); }
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(mr.x + Render.camX * sc, mr.y + Render.camY * sc, Render.viewWorldW() * sc, Render.viewWorldH() * sc);
-    // info panel
-    this.hotspots = [];
-    const ix = mr.x + mr.s + 16, iw = Render.W - ix - (3 * 66 + 30); ctx.fillStyle = '#12151a'; ctx.fillRect(ix, y0 + 6, iw, ch - 12);
-    const sel = this.selection; ctx.fillStyle = '#ddd'; ctx.font = '13px sans-serif';
-    if (sel.length === 1) this.drawUnitInfo(ctx, sel[0], ix, y0 + 6, iw, ch - 12);
-    else if (sel.length > 1) this.drawSelGrid(ctx, sel, ix, y0, iw, ch);
-    else { ctx.fillStyle = '#667'; ctx.font = '12px sans-serif'; ctx.fillText('F1: help   F10: menu   Speed ' + this.SPEEDS[this.speedIdx] + 'x (+/-)   ' + this.fps + ' fps', ix + 10, y0 + 24); ctx.fillText('Map seed ' + G.map.seed + '   Frame ' + G.frame, ix + 10, y0 + 44); }
-    // command card
-    const cr = this.cardRect(); ctx.fillStyle = '#12151a'; ctx.fillRect(cr.x, cr.y, cr.w, cr.h);
-    const btns = this.currentCard(); const p = G.players[G.human];
-    // An armed ability gets a ring. Without it autocast is invisible state and the player has no way to
-    // know which of two identical medics is armed -- which is the whole reason BW draws one too.
-    const armedIds = (() => { const out = new Set(); for (const u of this.ownSel()) if (u.armed) for (const a of u.armed) out.add(a); return out; })();
-    for (const b of btns) { const bx = cr.x + 4 + (b.slot % this.CARD_COLS) * 66, by = cr.y + 4 + Math.floor(b.slot / this.CARD_COLS) * 52;
-      if (b.abil && armedIds.has(b.abil)) { ctx.strokeStyle = '#5fd06a'; ctx.lineWidth = 2; ctx.strokeRect(bx + 1, by + 1, cr.bw - 2, cr.bh - 2); ctx.lineWidth = 1; } const hov = this.mouse.x >= bx && this.mouse.x < bx + cr.bw && this.mouse.y >= by && this.mouse.y < by + cr.bh; const active = this.pending && ((this.pending.kind === 'ability' && b.label === (DATA.abilities[this.pending.abil] || {}).name) || (this.pending.kind !== 'ability' && b.label.toLowerCase().startsWith(this.pending.kind))); ctx.fillStyle = active ? '#3a5a3a' : hov ? '#38404c' : b.dim ? '#1c2026' : '#262c36'; ctx.fillRect(bx, by, cr.bw, cr.bh); ctx.strokeStyle = b.dim ? '#333' : '#556'; ctx.strokeRect(bx + .5, by + .5, cr.bw - 1, cr.bh - 1); ctx.fillStyle = b.dim ? '#666' : '#eee'; ctx.font = '10px sans-serif'; const words = b.label.split(' '); let ly = by + 14; let line = ''; for (const w of words) { if ((line + ' ' + w).trim().length > 11 && line) { ctx.fillText(line, bx + 3, ly); ly += 11; line = w; } else line = (line + ' ' + w).trim(); } ctx.fillText(line, bx + 3, ly); ctx.fillStyle = '#ff5'; ctx.font = 'bold 10px sans-serif'; ctx.fillText(b.hk === 'Escape' ? 'Esc' : b.hk, bx + cr.bw - 14, by + cr.bh - 4); if (b.cost && b.cost.min !== undefined) { ctx.fillStyle = p.minerals >= b.cost.min ? '#5df' : '#f55'; ctx.font = '9px sans-serif'; ctx.fillText(b.cost.min, bx + 3, by + cr.bh - 4); if (b.cost.gas) { ctx.fillStyle = p.gas >= b.cost.gas ? '#6d5' : '#f55'; ctx.fillText(b.cost.gas, bx + 24, by + cr.bh - 4); } } if (b.energy) { ctx.fillStyle = '#c6f'; ctx.font = '9px sans-serif'; ctx.fillText(b.energy + 'e', bx + 3, by + cr.bh - 4); }
-      if (hov && b.cost) { this.tooltip = { text: b.label + (b.cost.min !== undefined ? `  ${b.cost.min}m ${b.cost.gas ? b.cost.gas + 'g ' : ''}${b.cost.sup ? b.cost.sup + 's ' : ''}${b.cost.time ? Math.round(b.cost.time / TPS) + 's' : ''}` : ''), x: bx, y: by - 8 }; } }
-    if (this.tooltip) { ctx.font = '11px sans-serif'; const tw = ctx.measureText(this.tooltip.text).width + 10; ctx.fillStyle = '#000c'; ctx.fillRect(this.tooltip.x - tw + 60, this.tooltip.y - 14, tw, 18); ctx.fillStyle = '#fff'; ctx.fillText(this.tooltip.text, this.tooltip.x - tw + 65, this.tooltip.y - 1); this.tooltip = null; }
-  },
-  drawUnitInfo(ctx, u, x, y, w, h) {
-    const p = G.players[u.owner];
-    ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
-    // portrait
-    ctx.fillStyle = '#222a33'; ctx.fillRect(x + 8, y + 8, 64, 64); ctx.save(); ctx.translate(x + 40, y + 40); const sc = u.isBuilding ? Math.min(1, 56 / (u.def.w * TILE)) : Math.min(1.6, 24 / u.r); ctx.scale(sc, sc); if (u.isBuilding) { ctx.translate(-u.x, -u.y); Render.drawBuilding(ctx, u, u.x, u.y); } else { ctx.translate(-u.x, -u.y); u._x = u.x; u._y = u.y; u._alpha = 1; Render.drawUnit(ctx, u, u.x, u.y); } ctx.restore();
-    ctx.fillStyle = p.color; ctx.font = 'bold 14px sans-serif'; ctx.fillText(u.def.name + (u.halluc ? ' (Hallucination)' : ''), x + 84, y + 22);
-    ctx.fillStyle = '#ccc'; ctx.font = '12px sans-serif';
-    let ly = y + 40; const line = t => { ctx.fillText(t, x + 84, ly); ly += 15; };
-    line(`HP ${Math.ceil(u.hp)}/${u.maxHp}` + (u.maxSh ? `   Shields ${Math.ceil(u.sh)}/${u.maxSh}` : '') + (u.maxEnergy ? `   Energy ${Math.floor(u.energy)}/${u.maxEnergy}` : ''));
-    if (!u.isBuilding || u.def.gw || u.def.aw) { const parts = []; const w = u.sieged ? SIEGE_W : u.def.gw; if (w) parts.push(`Ground ${u.wDmg(w)}${w.hits > 1 ? 'x' + w.hits : ''} (${w.type[0].toUpperCase()}) rng ${u.wRange(w)}`); if (u.def.aw) parts.push(`Air ${u.wDmg(u.def.aw)}${u.def.aw.hits > 1 ? 'x' + u.def.aw.hits : ''} rng ${u.wRange(u.def.aw)}`); parts.push(`Armor ${u.armor}`); if (u.kills) parts.push(`Kills ${u.kills}`); if (parts.length) line(parts.join('   ')); }
-    if (u.owner === G.human) {
-      const st = { idle: 'Idle', move: 'Moving', attack: 'Attacking', attackmove: 'Attack-moving', gather: u.order.phase === 'mine' ? 'Mining' : u.order.phase === 'inside' ? 'Harvesting gas' : 'Moving to resource', return: 'Returning cargo', build: 'Moving to build', construct: 'Constructing', hold: 'Holding position', patrol: 'Patrolling', ability: 'Casting ' + (u.order.abil ? DATA.abilities[u.order.abil].name : ''), repair: 'Repairing', follow: 'Following', load: 'Boarding', unload: 'Unloading', merge: 'Merging', land: 'Landing' }[u.order.type] || u.order.type;
-      if (!u.isBuilding) line(st + (u.mines ? `   Mines ${u.mines}` : '') + (u.def.scarabs ? `   Scarabs ${u.scarabs}` : '') + (u.def.interceptors ? `   Interceptors ${u.interceptors}` : ''));
-      if (u.isBuilding && u.def.larva) line(`Larvae ${u.larvae.length}` + (u.def.creep ? '' : ''));
-      if (u.isBuilding && !u.done) line(`Constructing ${Math.floor(100 * u.progress / u.def.time)}%` + (u.def.race === 'T' && !(u.builder && u.builder.alive && u.builder.order.target === u) ? '  (no SCV)' : ''));
-      if (u.isBuilding && u.addon) line(`Addon: ${u.addon.def.name}${u.addon.done ? '' : ' (building)'}`);
-      // production queue
-      if (u.prod.length) { const qx = x + 84, qy = ly + 2; u.prod.forEach((it, i) => { const name = it.kind === 'unit' ? DATA.units[it.id].name : it.kind === 'upg' ? DATA.upgrades[it.id].name + ' L' + it.level : it.kind === 'tech' ? DATA.techs[it.id].name : DATA.buildings[it.id].name; const bx = qx + i * 74; ctx.fillStyle = '#222a33'; ctx.fillRect(bx, qy, 70, 30); ctx.fillStyle = '#ddd'; ctx.font = '10px sans-serif'; ctx.fillText(name.slice(0, 13), bx + 3, qy + 12); if (i === 0) { ctx.fillStyle = '#000'; ctx.fillRect(bx + 3, qy + 18, 64, 8); ctx.fillStyle = '#3f3'; ctx.fillRect(bx + 3, qy + 18, 64 * it.progress / it.total, 8); } this.hotspots.push({ x: bx, y: qy, w: 70, h: 30, fn: () => G.cancelProd(u, i) }); }); ly += 36; }
-      if (u.cargo.length) { u.cargo.forEach((c, i) => { const bx = x + 84 + i * 36, by = ly + 2; ctx.fillStyle = '#222a33'; ctx.fillRect(bx, by, 32, 24); ctx.fillStyle = '#ddd'; ctx.font = '9px sans-serif'; ctx.fillText(c.def.name.slice(0, 6), bx + 2, by + 15); this.hotspots.push({ x: bx, y: by, w: 32, h: 24, fn: () => { if (u.isBuilding) { const k = u.cargo.indexOf(c); if (k >= 0) { u.cargo.splice(k, 1); u.cargo.unshift(c); G.unloadOne(u); } } else G.unloadAll(u); } }); }); ly += 30; }
-      if (u.def.upgA && !u.isBuilding) { const parts = []; if (p.upgLevel(u.def.upgA)) parts.push(`Armor +${p.upgLevel(u.def.upgA)}`); const w = u.def.gw || u.def.aw; if (w && w.upgKey && p.upgLevel(w.upgKey)) parts.push(`Weapons +${p.upgLevel(w.upgKey)}`); if (u.maxSh && p.upgLevel('shields')) parts.push(`Shields +${p.upgLevel('shields')}`); if (parts.length) { ctx.fillStyle = '#9ab'; line(parts.join('  ')); } }
-    } else { line(p.name); }
-    ctx.restore();
-  },
   // The day/night dial. Drawn only on a map that actually has a cycle -- G.daylight is a flat 1 on
   // every other map, so a permanently-noon sun in the corner of Lost Ruins would be furniture that
   // means nothing, and the player would learn to stop reading it.
@@ -1312,17 +1190,6 @@ const UI = {
     ctx.fillText(p.until ? p.next + ' in ' + this.clock(p.until * TPS) : p.next, x + 27, y + 20);
     return w + 6;
   },
-  drawTop() {
-    const ctx = Render.ctx, p = G.players[G.human]; ctx.font = 'bold 13px sans-serif';
-    const txt = [['#5df', Math.floor(p.minerals)], ['#6d5', Math.floor(p.gas)], [p.supUsed > p.supMax ? '#f55' : '#eee', `${p.supUsed}/${p.supMax}`]];
-    let x = Render.W - 20; ctx.textAlign = 'right';
-    for (let i = txt.length - 1; i >= 0; i--) { ctx.fillStyle = '#000a'; const tw = ctx.measureText(txt[i][1]).width + 28; ctx.fillRect(x - tw, 6, tw, 22); ctx.fillStyle = txt[i][0]; ctx.fillText(txt[i][1], x - 6, 22); ctx.fillRect(x - tw + 6, 11, 12, 12); x -= tw + 8; }
-    ctx.textAlign = 'left';
-    const t = Math.floor(G.frame / TPS); ctx.fillStyle = '#000a'; ctx.fillRect(6, 6, 150, 22); ctx.fillStyle = '#eee'; ctx.fillText(`${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}  ${RACE_INFO[p.race].name}` + (G.paused ? '  PAUSED' : ''), 12, 22);
-    this.drawDayDial(ctx, 162, 6);
-    if (this.pending) { ctx.fillStyle = '#ff8'; ctx.fillText('Select target for ' + (this.pending.kind === 'ability' ? DATA.abilities[this.pending.abil].name : this.pending.kind) + ' (right-click to cancel)', 12, 44); }
-    if (this.showHelp) this.drawHelp(ctx);
-  },
   // Replay scrubber. The bar spans the whole recording; the filled part is where we are, and clicking
   // anywhere on it seeks (backwards means restarting and re-running, so it can take a moment on a long game).
   drawTimeline() {
@@ -1351,15 +1218,6 @@ const UI = {
     }
     ctx.fillStyle = '#7b869a'; ctx.fillText('[ ] switch player   O hide   Ctrl+V all vision   Shift+arrows skip 30 s', 10, 66 + rows.length * 20 + 12);
   },
-  drawMessages() {
-    const ctx = Render.ctx, p = G.players[G.human]; ctx.font = '13px sans-serif';
-    let y = Render.H - this.consoleH - 12; for (let i = p.msgs.length - 1; i >= 0; i--) { const m = p.msgs[i]; const age = G.frame - m.t; if (age > 24 * 8) continue; ctx.fillStyle = m.kind === 'error' ? '#f77' : m.kind === 'attack' || m.kind === 'nuke' ? '#f55' : '#ff8'; ctx.globalAlpha = age > 24 * 6 ? 1 - (age - 144) / 48 : 1; ctx.fillText(m.text, 12, y); ctx.globalAlpha = 1; y -= 18; }
-  },
-  drawHelp(ctx) {
-    const lines = ['CONTROLS', 'Left click / drag: select   Right click: smart command   Shift: queue / add to selection', 'Ctrl+click: select all of type on screen   Double-click: same', 'M move  S stop  A attack(-move)  P patrol  H hold   B build  V advanced build', 'Ctrl+0..9 assign group   0..9 select   Shift+# add   F2 F4 F6 F7 (+Shift) camera saves   F8 load autosave', 'Esc: cancel / cancel construction or last queue item   Space: jump to last alert', 'Arrow keys / screen edge: scroll   Minimap click: move, right-click: command', 'Tab: cycle selected kind   , idle worker   Ctrl+A select army   Backspace: centre on selection',
-      '+ / -: game speed   F9: pause   F10: menu   Ctrl+M: mute   F1: toggle this help', 'Unit-specific hotkeys are shown on the command card (bottom right).'];
-    ctx.fillStyle = '#000c'; ctx.fillRect(Render.W / 2 - 330, 60, 660, 20 * lines.length + 20); ctx.fillStyle = '#eee'; ctx.font = '13px sans-serif'; lines.forEach((l, i) => ctx.fillText(l, Render.W / 2 - 320, 84 + i * 20));
-  },
   // ---------------- menus ----------------
   menuItems() {
     if (this.menu === 'brief' && G.mission) { const d = G.mission.def; return { title: d.title.toUpperCase(), lines: d.brief.concat(['', 'OBJECTIVE: ' + d.objective]), items: [['Begin mission', () => { this.menu = null; }]] }; }
@@ -1384,14 +1242,6 @@ const UI = {
       items: [['Resume (Esc)', () => { this.menu = null; }],
       ...(br ? [['Abandon branch, watch the original', () => this.unbranch()]] : []),
       ['Settings', () => { this.menu = 'settings'; }], ['Save game (F5)', () => { Replay.save(true); this.menu = null; }], ['Save replay', () => { Replay.saveReplay(); this.menu = null; }], ['Restart', () => { this.start(this.lastOpts); }], ['Quit to menu', () => this.toMenu()]] };
-  },
-  drawMenu() {
-    const ctx = Render.ctx, m = this.menuItems(); const w = 420, h = 120 + m.lines.length * 22 + m.items.length * 44, x = Render.W / 2 - w / 2, y = Render.H / 2 - h / 2;
-    ctx.fillStyle = '#000b'; ctx.fillRect(0, 0, Render.W, Render.H); ctx.fillStyle = '#1b1f26'; ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#556'; ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 26px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(m.title, Render.W / 2, y + 44);
-    ctx.font = '14px sans-serif'; ctx.fillStyle = '#ccc'; m.lines.forEach((l, i) => ctx.fillText(l, Render.W / 2, y + 76 + i * 22));
-    this.menuRects = []; m.items.forEach((it, i) => { const by = y + 90 + m.lines.length * 22 + i * 44; const hov = this.mouse.x >= x + 60 && this.mouse.x < x + w - 60 && this.mouse.y >= by && this.mouse.y < by + 36; ctx.fillStyle = hov ? '#38404c' : '#262c36'; ctx.fillRect(x + 60, by, w - 120, 36); ctx.fillStyle = '#eee'; ctx.fillText(it[0], Render.W / 2, by + 24); this.menuRects.push({ x: x + 60, y: by, w: w - 120, h: 36, fn: it[1] }); });
-    ctx.textAlign = 'left';
   },
   menuClick(x, y) { for (const r of this.menuRects || []) if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) { r.fn(); return; } },
   // The codex, opened from the main menu where there is no game. Two things stand in the way and both

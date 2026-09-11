@@ -173,7 +173,10 @@ Each entry names the file, what is wrong, the fix, and what it would cost. Every
 "reviewer" means one of the six read-only region reviews, whose claims were verified before they were
 listed here. Ordered by what I would do first.
 
-1. **`js/hud.js` overrides eight `UI` draw methods at load, and the day/night dial never draws.**
+1. **`js/hud.js` overrides eight `UI` draw methods at load, and the day/night dial never draws.** **DONE**
+   (entry 20): the dial draws on its own plate beside the clock; the strip is `drawSelGrid` in `hud.js`, every
+   selected unit on the plate (forty Marines measured: eighteen drawn and twenty-two below the screen before);
+   the dead `ui.js` bodies are deleted.
    `Object.assign(UI, {...})` in `hud.js` replaces `drawConsole`, `drawUnitInfo`, `drawTop`, `drawMessages`,
    `drawHelp`, `drawMenu`, `miniRect` and `cardRect` from `ui.js`. The only callers of `UI.drawSelGrid`
    (the grouped selection strip, M12 item 2) and `UI.drawDayDial` (the day/night countdown, M11 idea 19)
@@ -871,6 +874,33 @@ The questions as they were put, kept for the record:
     one of the three changes re-dealt it green, so the test model was the thing that was wrong. It notes
     the refusal frames and judges those messages by the refusal's own truth. **Gate:** 75 of 75, 229 s.
     The stamp moved.
+20. **The day/night dial draws, the selection strip keeps every selected unit on the console, and the dead
+    `ui.js` bodies are gone.** *(commit: task 1; fourth session)* Presentation only -- the stamp is unchanged
+    (`7f822858401946ae`). **Measured first** (the browser on Nightfall at 1400x900, and the same scene in
+    `test/qol.js`'s harness at 1280x720): nothing beside the clock plate, because `hud.js` replaces `drawTop`
+    at load and the only call to `drawDayDial` was in the body it replaced; forty Marines selected, the HUD's
+    own multi-selection branch capped itself at six columns of 58 px rows, so **eighteen tiles on the plate
+    and twenty-two drawn below the bottom of the screen**, with nothing saying so (the user's 25-unit look
+    "read fine" because the missing tiles were invisible).
+    - **The dial** sits on its own bevelled plate beside the clock: `drawTop` calls `drawDayDial` when
+      `dayPhase()` is non-null, so a map without a cycle shows no second plate.
+    - **`drawSelGrid` lives in `hud.js`** now, in the console's material, and the HUD's branch calls it: full
+      42x52 tiles while they fit (a 1400-wide window holds 57), the small pitch past `SEL_FULL` when they do
+      not, one tile per type with a count and a summed health bar past `SEL_TILES`, a '+N more' line for
+      what still does not fit, every drawn tile a hotspot. The six-column cap is gone. Portraits are
+      `Sprites.tinted` icons rather than `Render.drawUnit`, which wrote `_x/_y/_alpha` onto the Unit from
+      the draw pass (open task 17).
+    - **Deleted from `ui.js`** (150 lines): `miniRect`, `cardRect`, `drawSelGrid`, `drawConsole`,
+      `drawUnitInfo` (its cargo hotspot called the unwrapped `G.unloadOne` -- a replay bypass, dead only
+      because `hud.js` loads), `drawTop`, `drawMessages`, `drawHelp`, `drawMenu`. `dayPhase` and
+      `drawDayDial` stay. Nineteen suites load `ui.js` without `hud.js`; none reaches a deleted body.
+    **Tests:** `test/daynight.js` (+2): the HUD's `drawTop` writes the countdown on Nightfall and nothing on
+    Lost Ruins. `test/qol.js` (+2): forty units through `UI.drawConsole` -- forty hotspots, all on the console
+    band, none below the screen. **Negative controls** (every file restored byte-identical): the dial call
+    removed -> one clean red; the strip branch emptied -> one red (0 hotspots); the six-column cap put back ->
+    one red (30 hotspots); the old inline branch put back whole (`.claude/review/ctl-oldstrip.js`) -> two reds
+    reading **18 on the plate, 22 off the screen**, which is the measurement. **Gate:** 75 of 75, 219 s.
+    The stamp did not move.
 
 # 4. Considered and deliberately not done
 
@@ -909,7 +939,8 @@ The questions as they were put, kept for the record:
     friends' game should allow cheats at all is a product call (question 4). Not changed.
 12. **Wiring `drawSelGrid` and `drawDayDial` into the HUD** (open task 1). Two shipped features that
     never draw is the largest presentation finding in the review, and the fix needs eyes on a screen
-    to say the diegetic HUD still reads right with the grouped strip inside it. Not done blind.
+    to say the diegetic HUD still reads right with the grouped strip inside it. Not done blind -- then
+    done with eyes on it in the fourth session (entry 20).
 13. **The AI reviewer's behaviour fixes** (open tasks 4, 5, 7, 8, 9): each changes what the computer
     does; `eightplayer` is already red and `aistyles` seeds 1 and 11 are known reds, so a behaviour
     change now would muddy the two canaries the balance work will need. Flagged with their probes.

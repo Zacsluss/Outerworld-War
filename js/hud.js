@@ -841,7 +841,7 @@ Object.assign(UI, {
     // it can only be set when `selection` is empty (UI.select clears it), so the two never contend.
     if (this.selRes) this.drawResourceInfo(ctx, this.selRes, ix, y0 + 8, iw, ch - 16);
     else if (sel.length === 1) this.drawUnitInfo(ctx, sel[0], ix, y0 + 8, iw, ch - 16);
-    else if (sel.length > 1) { const cols = Math.min(6, Math.floor((iw - 16) / 46)); sel.forEach((u, i) => { const bx = ix + 10 + (i % cols) * 46, by = y0 + 16 + Math.floor(i / cols) * 58; HUD.bevel(ctx, bx, by, 42, 52, true, sk.slot); const hr = u.hp / u.maxHp; const tint = hr > .66 ? 'rgba(60,230,60,0.8)' : hr > .33 ? 'rgba(240,220,60,0.8)' : 'rgba(255,60,60,0.8)'; ctx.drawImage(Sprites.tinted(u.def.id, G.players[u.owner].color, 36, tint), bx + 3, by + 3); if (u.maxSh) { ctx.fillStyle = '#5aa8ff'; ctx.fillRect(bx + 3, by + 42, 36 * u.sh / u.maxSh, 2); } ctx.fillStyle = hr > .66 ? '#3fe83f' : hr > .33 ? '#f0e040' : '#ff3c3c'; ctx.fillRect(bx + 3, by + 46, 36 * hr, 3); this.hotspots.push({ x: bx, y: by, w: 42, h: 52, fn: () => { if (this.keys.Shift) this.selection = this.selection.filter(v => v !== u); else this.select([u]); } }); }); }
+    else if (sel.length > 1) this.drawSelGrid(ctx, sel, ix, y0, iw, ch);
     // The console's own condition, said out loud in the one place there is room for it. A HUD that
     // degrades and never says why is atmosphere; a HUD that names the thing degrading is a readout,
     // and the word it uses is the third thing (after the material and the damage) that says which
@@ -883,6 +883,71 @@ Object.assign(UI, {
     // whole window because the cursor and the world are not part of the commander's hardware. Tearing
     // the cursor was tried once and it makes the game feel broken rather than the console.
     HUD.glitchDraw(ctx, 0, y0, W, ch);
+  },
+  // The selection strip (M12 item 2). Brood War's twelve-unit cap is gone, so this has to stay legible
+  // from two units to two hundred, and a fixed grid of full-size tiles does not: the console is at
+  // most 196 px tall -- three rows of 58 -- and the branch this replaces also capped itself at six
+  // columns, so unit nineteen and every one after it was drawn below the bottom of the screen with
+  // nothing to say so (REVIEW-M17 task 1, measured with forty Marines: eighteen tiles on the plate,
+  // twenty-two off it). It lived in js/ui.js as drawSelGrid from M12, but hud.js replaces drawConsole
+  // at load and the HUD's own branch never called it.
+  //
+  // Three regimes, and the third is the one that matters. Up to SEL_FULL the tiles are full size and
+  // you can read a health bar per unit. Between that and SEL_TILES they shrink to fit. Past SEL_TILES
+  // individual portraits stop being information -- two hundred 9 px squares tell you nothing you can
+  // act on -- so it switches to one tile PER TYPE with a count and a summed health bar. That is the
+  // view you actually want once you have selected an army: not "here are your units" but "you have
+  // 40 marines and 12 tanks, and the tanks are hurt".
+  //
+  // Clicking a type tile selects every unit of that type, which makes the summary a filter rather
+  // than a readout; in the tile regimes a click selects the one unit and Shift-click drops it, as
+  // before. The columns are whatever the panel is wide (the six-column cap wasted two thirds of a
+  // wide window), and a tile that still does not fit is counted in a '+N more' line rather than
+  // drawn off the plate. Portraits are the tinted icons the console already uses, not a live
+  // Render.drawUnit -- which wrote _x/_y/_alpha onto the Unit from the draw pass (open task 17).
+  SEL_FULL: 24, SEL_TILES: 48,
+  drawSelGrid(ctx, sel, ix, y0, iw, ch) {
+    const sk = HUD.skin(), pad = 10, top = y0 + 16, availW = iw - pad * 2, availH = ch - 24;
+    const bar = hr => hr > .66 ? '#3fe83f' : hr > .33 ? '#f0e040' : '#ff3c3c';
+    const tintOf = hr => hr > .66 ? 'rgba(60,230,60,0.8)' : hr > .33 ? 'rgba(240,220,60,0.8)' : 'rgba(255,60,60,0.8)';
+    if (sel.length > this.SEL_TILES) {
+      const byType = new Map();
+      for (const u of sel) { let g = byType.get(u.def.id); if (!g) byType.set(u.def.id, g = { def: u.def, owner: u.owner, n: 0, hp: 0, max: 0, units: [] }); g.n++; g.hp += u.hp; g.max += u.maxHp; g.units.push(u); }
+      const groups = [...byType.values()].sort((a, b) => b.n - a.n || (a.def.id < b.def.id ? -1 : 1));
+      const tw = 84, th = 44, cols = Math.max(1, Math.floor(availW / tw)), rows = Math.max(1, Math.floor((availH - 14 - (th - 4)) / th) + 1);   // 14 px kept for the summary line
+      let shown = 0;
+      groups.forEach((g, i) => {
+        if (i >= cols * rows) return; shown++;
+        const bx = ix + pad + (i % cols) * tw, by = top + Math.floor(i / cols) * th, hr = g.max ? g.hp / g.max : 1;
+        HUD.bevel(ctx, bx, by, tw - 4, th - 4, true, sk.slot);
+        ctx.drawImage(Sprites.tinted(g.def.id, G.players[g.owner].color, 30, tintOf(hr)), bx + 3, by + 3);
+        HUD.text(ctx, 'x' + g.n, bx + 36, by + 17, '#e6eaf0', 13);
+        HUD.text(ctx, g.def.name.slice(0, 11), bx + 36, by + 29, '#9aa4b0', 9, false);
+        ctx.fillStyle = bar(hr); ctx.fillRect(bx + 3, by + th - 9, (tw - 10) * hr, 3);
+        this.hotspots.push({ x: bx, y: by, w: tw - 4, h: th - 4, fn: () => this.select(g.units.slice()) });
+      });
+      HUD.text(ctx, sel.length + ' units, ' + groups.length + ' types' + (shown < groups.length ? '  (+' + (groups.length - shown) + ' more)' : ''), ix + iw - pad, y0 + ch - 12, '#8a93a0', 11, false, 'right');
+      return;
+    }
+    // The pitch; a tile is 4 px narrower and 6 shorter, so the full tile is the 42 x 52 the console had.
+    // Full size while it fits, whatever the count -- a wide window holds fifty full tiles and there is
+    // no reason to shrink them -- and past SEL_FULL the small pitch when it does not; below SEL_FULL a
+    // narrow window shrinks the full tile a step at a time instead.
+    let cw = 46, chh = 58, cols, rows;
+    const fit = () => { cols = Math.max(1, Math.floor(availW / cw)); rows = Math.max(1, Math.floor((availH - (chh - 6)) / chh) + 1); };
+    fit(); if (cols * rows < sel.length && sel.length > this.SEL_FULL) { cw = 32; chh = 40; fit(); }
+    while (cols * rows < sel.length && cw > 22) { cw -= 2; chh -= 2; fit(); }
+    const tw = cw - 4, th = chh - 6, isz = tw - 6;
+    sel.forEach((u, i) => {
+      if (i >= cols * rows) return;
+      const bx = ix + pad + (i % cols) * cw, by = top + Math.floor(i / cols) * chh, hr = u.hp / u.maxHp;
+      HUD.bevel(ctx, bx, by, tw, th, true, sk.slot);
+      ctx.drawImage(Sprites.tinted(u.def.id, G.players[u.owner].color, isz, tintOf(hr)), bx + 3, by + 3);
+      if (u.maxSh) { ctx.fillStyle = '#5aa8ff'; ctx.fillRect(bx + 3, by + th - 10, isz * u.sh / u.maxSh, 2); }
+      ctx.fillStyle = bar(hr); ctx.fillRect(bx + 3, by + th - 6, isz * hr, 3);
+      this.hotspots.push({ x: bx, y: by, w: tw, h: th, fn: () => { if (this.keys.Shift) this.selection = this.selection.filter(v => v !== u); else this.select([u]); } });
+    });
+    if (sel.length > cols * rows) HUD.text(ctx, '+' + (sel.length - cols * rows) + ' more', ix + iw - pad, y0 + ch - 12, '#8a93a0', 11, false, 'right');
   },
   // FIXLIST-M14 B1: what is left in a patch or a geyser. Deliberately shaped like drawUnitInfo -- the
   // same inset, the same portrait socket, the same name-then-facts column -- because a player clicking
@@ -957,6 +1022,10 @@ Object.assign(UI, {
     ctx.font = HUD.font(12); ctx.textAlign = 'left';
     ctx.fillStyle = 'rgba(0,0,0,0.85)'; for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) HUD.spaced(ctx, label, 16 + dx, 23 + dy, 1.1);
     ctx.fillStyle = G.paused ? '#ffe45a' : '#e6eaf0'; HUD.spaced(ctx, label, 16, 23, 1.1);
+    // The day/night dial (M11 idea 19) sits on its own plate beside the clock. It draws nothing on a
+    // map without a cycle (dayPhase is null there), so the plate is only drawn when the dial is.
+    // REVIEW-M17 task 1: this file replaces ui.js's drawTop, whose call to it was the only one.
+    if (this.dayPhase()) { HUD.bevel(ctx, 190, 6, 122, 24, true, 'rgba(12,15,20,0.85)'); this.drawDayDial(ctx, 193, 7); }
     if (this.mode === 'replay') HUD.text(ctx, 'REPLAY  ' + this.speedName() + '  (+/- speed, Ctrl+V perspective, F10 menu)', Render.W / 2, 23, '#ffe45a', 13, true, 'center');
     if (G.mission && !G.mission.done) { const d = G.mission.def; const left = d.minutes ? Math.max(0, d.minutes * 60 - Math.floor((G.frame - G.mission.start) / TPS)) : 0; HUD.text(ctx, 'Objective: ' + d.objective + (d.minutes ? `   ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : ''), 16, 66, '#ffe45a', 12); }
     if (this.net && Net.waitingSince && performance.now() - Net.waitingSince > 800) HUD.text(ctx, 'Waiting for other players...', Render.W / 2, 60, '#ffe45a', 14, true, 'center');
