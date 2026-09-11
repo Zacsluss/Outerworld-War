@@ -1,0 +1,7 @@
+# REVIEW-M17 question 3. Line endings are normalised to LF in the repository and checked out with the
+# platform ending (CRLF on Windows, where core.autocrlf is true), so every clone agrees. Before this
+# file the working copy was 71 CRLF, 77 LF-only and 2 mixed files -- tools writing LF after checkout
+# -- and a patch script that assumed one ending matched nothing. Detect per file anyway (CLAUDE.md).
+* text=auto
+*.bat text eol=crlf
+*.png binary
