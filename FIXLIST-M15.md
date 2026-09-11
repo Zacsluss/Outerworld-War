@@ -1,13 +1,22 @@
 # FIXLIST-M15 — locked
 
 Six reported items, plus three found while verifying them, plus everything left over from
-`HANDOFF-M15.md`. **When this list is closed the project has no open to-dos.**
+`HANDOFF-M15.md`.
+
+**CLOSED. All seven reported-or-found entries are done. Group D is closed too, but not the way it
+was planned: D1 was attempted four ways, measured, and REVERTED, and that measurement moved D2 from
+"blocked on D1" to "blocked on the gated claim-order decision in `budget()`". Read the Group D
+section before touching the AI — the four things that did not work are more useful than the
+diagnosis that led to them.**
+
+**The only thing left in this project is the balance run, and it is gated.**
 
 Every entry below was checked against the code before it was written. Where the report and the code
 disagree, the entry says so and gives the number. Where I could not reproduce the report, the entry
 says that too, plainly, and names the probe to build first.
 
-**Read `HANDOFF-M15.md` for the state of the tree and the three known reds.**
+**Read `HANDOFF-M15.md` for the state of the tree and the three known reds, and `HANDOFF-M16.md` for
+where this list finished.**
 
 ---
 
@@ -15,7 +24,7 @@ says that too, plainly, and names the probe to build first.
 
 - **Work the groups in order: A (data / presentation) → B (interface) → C (simulation) → D (AI).**
   Strictly increasing risk, strictly decreasing independence. Same order as M14, for the same reason.
-- **`node test/all.js` is the gate before every commit.** 63 suites, ~2.7 minutes. Green means green.
+- **`node test/all.js` is the gate before every commit.** 68 suites, ~3.8 minutes. Green means green.
   A change that fixes a real fault but turns a marginal assertion red gets reverted anyway.
 - **Group A3 is render-only and must not move the build stamp.** Run `node test/version.js` after it.
 - **The balance run stays gated.** Do not run `test/balance.js` or `test/proxy.js` without an explicit
@@ -332,27 +341,85 @@ StarCraft 2 so look up the exact percentage."
 
 # Group D — the AI, carried over from HANDOFF-M15
 
-Highest risk. Both were measured last session; neither has been attempted.
+Highest risk. Both were measured last session. **D1 has now been attempted, four ways, and reverted —
+and the measurement behind the revert changes what D2 is blocked on.**
 
-### ☐ D1 · Bound the fall-through in `AI.production()`
+### ⚠ D1 · Bound the fall-through in `AI.production()` — TRIED, MEASURED, REVERTED
 
-Carried over unchanged and **this is the one next action `HANDOFF-M15.md` names.** The measurement is
-done and is in that file: the AI ignores its own composition table in all three races — the cheapest
-tier-one unit takes 3–6× its intended share of army supply — and the cause is that `production()`
-buys the cheapest affordable unit whenever its correctly-ranked top pick cannot be paid for.
+**The diagnosis was right and the fix does not work.** `production()` does buy the cheapest affordable
+unit when its correctly-ranked top pick cannot be paid for, and bounding that does improve the shape of
+the army. What it does not do is put the money anywhere better. **The money the fall-through declines
+never reaches the top pick.**
 
-**The probe already exists:** `node test/ledger.js 20 1 solo Z`, section 6. Get before numbers for all
-three races **in a git worktree** before editing.
+Before numbers, taken in a git worktree at `89f2e40` (so C1–C3 are already in), 20 minutes, solo, hard,
+`node test/ledger.js 20 <seed> solo <race>` section 6:
 
-**Do not** open by re-tuning `AI_COMP`, and **do not** take the claim-order reorder — it is measured,
-priced per race in `HANDOFF-M15.md`, and gated on the balance run.
+| arm | misallocation | army supply | bank |
+|---|---|---|---|
+| Zerg seed 1 | 105 | 238 | 78m |
+| Zerg seed 5 | 105 | 130 | 223m |
+| Terran seed 1 | 103 | 237 | 796m |
+| Terran seed 5 | 63 | 199 | 231m |
+| Protoss seed 1 | 78 | 143 | 266m |
+| Protoss seed 5 | 81 | 145 | 230m |
 
-### ☐ D2 · Re-tune `AI_COMP` weights — only after D1
+**Four bounds were implemented and measured.** All of them read the refusal reason, which `note()` now
+had to record — `trainBroke` (empty bank) and `trainReserve` (bank already claimed) are money, and
+`trainNoProd` / `trainSupply` are not, and only the first two are the bug.
 
-Blocked on D1 by measurement, not by preference: the weights are not being read, so tuning them tunes
-a table nothing consults. Worth doing when section 6's misallocation number is small enough that a
-weight change shows up in it.
+1. **Cost floor** — nothing strictly cheaper than what money refused. Misallocation 105 → **38** on Zerg
+   seed 1, and army supply 238 → **26.5** with 547 minerals floating. A perfectly proportioned army with
+   nothing in it. Terran seed 1 banked **5,019 minerals** against 796 before.
+2. **Share floor** — nothing already at or over its intended share, using AI_COMP's own weights, so no
+   threshold to tune. Bit-identical to the cost floor on Zerg seed 1: 38 / 26.5 / 547m.
+3. **Share floor armed only by `trainReserve`** (held money, not an empty bank). Half the arms good and
+   half bad: Protoss seed 1 went 78 → **34** with army 143 → **151**, Terran seed 1 went 103 → **58**
+   with army 237 → 219 — but Zerg seed 1 went to **50** army supply with **1,105m** banked, and Terran
+   seed 5 banked 1,048m.
+4. **Share floor with a lapse valve** — the bound drops if honouring it would produce nothing at all
+   this think. Nearly a no-op: Terran seed 1, Protoss seed 5 and Protoss seed 1 came back **bit-identical
+   to before**, Terran seed 5 got *worse* (63 → 66), and only Zerg improved (105 → 78 on seed 5).
 
+**The two ends bracket the problem and the answer is in the middle of the ledger, not in the middle of
+the range.** Arm 3's Zerg run says where the declined money went:
+
+| | before | bound armed |
+|---|---|---|
+| `unit/production` | 12,575m / 2,900g, 221 buys | **2,700m / 925g, 43 buys** |
+| `building/outside` | 5,375m, 47 buildings | **8,475m, 67 buildings** |
+| `upgrade/research` | 200m / 200g, 2 buys | **2,300m / 2,300g, 14 buys** |
+| banked at the end | 78m | **1,105m** |
+| claim 7 (`top`) funded in full | 940 of 22,221 — **4%** | 960 of 23,821 — **4%** |
+
+**Claim 7's funding rate does not move.** Not by one point, under any bound. `budget()` hands the top
+pick whatever is left after six claims, and each of those claims takes `min(p.minerals, …)` — so they
+grow with the bank. Saving does not fill claim 7; it fills claims 1–6. `production()` declines to buy
+the cheap unit, `research()` runs two phases later and takes the money instead, and the AI ends the game
+with more buildings, more upgrades and no army. Total mined even *falls* (29,428m → 24,480m), because a
+smaller army holds fewer bases.
+
+**That is the army-for-tech trade `HANDOFF-M15.md` already priced for the claim-order reorder, arrived at
+from the other direction.** The handoff said bounding the fall-through was "the one avenue here that does
+not obviously trade army for tech". It measured otherwise. Every bound strong enough to change the
+composition makes that trade, and every bound weak enough not to make it changes nothing.
+
+**So D1 is reverted, and the revert is verified** — `node test/ledger.js 20 1 solo Z` at the reverted tree
+is byte-identical to the before run. Nothing of the attempt is in `js/`.
+
+**What would actually fix it is the claim order in `budget()`, and that is GATED.** It is priced per race
+in `HANDOFF-M15.md` and it trades most of the AI's upgrades for a much bigger army. It is a balance
+question and it needs the balance run and an explicit instruction.
+
+### ⛔ D2 · Re-tune `AI_COMP` weights — BLOCKED, and the reason has changed
+
+It was blocked because "the weights are not being read". D1 measured something stricter: the weights
+**are** read and the ranking off them **is correct** — hydralisk really is the top pick, 155 times on
+Zerg seed 1 — and it cannot be **funded**, on 96% of the thinks it is chosen, at any bound. Tuning a
+weight moves which unit is ranked first. It cannot move which unit is affordable, and affordability is
+what decides what gets built.
+
+**D2 is therefore blocked on the gated claim-order decision in `budget()`, not on D1.** There is no
+version of D1 that unblocks it. Do not open D2 until claim 7's funding rate is materially above 4%.
 ---
 
 # Gated — not part of this list
