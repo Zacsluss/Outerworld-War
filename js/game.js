@@ -17,6 +17,10 @@ const SEP_DIRS = [[1, 0], [D, D], [0, 1], [-D, D], [-1, 0], [-D, -D], [0, -1], [
 // Referenced rather than inlined because the supply-block alert and the refusal message both have to
 // agree with it, and they did not used to.
 const SUPPLY_CAP = 500;
+// Full pathfinder searches allowed per tick; a unit past the budget keeps its old path and asks again
+// next frame (Unit.moveTo). This was a literal 40 in two places -- G's initial value, which tick()
+// overwrote every frame, and tick() itself -- so the declared value was dead. One number, stamped.
+const PATH_BUDGET = 40;
 // Day and night. Derived from the frame and stored nowhere, exactly like the sandstorm in js/map.js and
 // for the same reason: anything remembered would be dropped by a replay seek or a rejoin and the two
 // sides would then have different weather. 1 is full day, 0 is deep night.
@@ -83,7 +87,7 @@ const ALERTS = {
 
 const G = {
   map: null, pf: null, players: [], units: [], byId: new Map(), effects: [], projectiles: [], fields: [], frame: 0,
-  pathBudget: 40, over: false, winner: -1, speed: 1, paused: false, human: 0, cell: 64, grid: null, gw: 0, gh: 0, alliances: null,
+  pathBudget: PATH_BUDGET, over: false, winner: -1, speed: 1, paused: false, human: 0, cell: 64, grid: null, gw: 0, gh: 0, alliances: null,
   nukeAlerts: [],
 
   init(opts) {
@@ -1051,7 +1055,7 @@ const G = {
     if (this.over || this.paused) return;
     if (typeof Replay !== 'undefined') Replay.applyPending();
     this.inTick = true;
-    this.frame++; this.pathBudget = 40;
+    this.frame++; this.pathBudget = PATH_BUDGET;
     if (this.map.wrecks.length) this.map.tickWrecks(this.frame);   // before rebuildGrid, so a cleared hulk is walkable this frame
     this.rebuildGrid();
     if (this.frame % 3 === 0) this.updateVision();

@@ -558,7 +558,6 @@ const HUD = {
   // face is -- and it survives the font not being installed, which the face itself does not.
   caps(s) { return String(s).toUpperCase(); },
   spaced(ctx, s, x, y, tracking) { let cx = x; for (const ch of s) { ctx.fillText(ch, cx, y); cx += ctx.measureText(ch).width + tracking; } return cx - x - tracking; },
-  spacedWidth(ctx, s, tracking) { let w = 0; for (const ch of s) w += ctx.measureText(ch).width + tracking; return w - tracking; },
   // Two-pixel bevel rather than one: the outer line is the hard highlight, the inner a softer one, so
   // a button reads as a thick piece of plate at a glance instead of a rectangle with a light edge.
   bevel(ctx, x, y, w, h, raised = true, fill = '#1c212a') {

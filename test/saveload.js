@@ -241,8 +241,8 @@ const startMission = id => {
     let threw = null;
     try { R(D, 'Snapshot.restore(this.early);'); } catch (e) { threw = e; }
     ok('restoring a checkpoint taken before a patch was mined out does not throw',
-      threw === null, String(threw && threw.message) + '  -- js/snapshot.js:121 indexes G.map.resources[i] for every entry in the snapshot, ' +
-      'and G.removeResource (js/game.js:221) has spliced the live array shorter, so _apply gets undefined');
+      threw === null, String(threw && threw.message) + '  -- Snapshot.restore indexes G.map.resources[i] for every entry in the snapshot, ' +
+      'and G.removeResource has spliced the live array shorter, so _apply gets undefined');
     if (!threw) {
       ok('...and it puts the resource list back to what it was', R(D, 'G.map.resources.length') === R(D, 'this.n0'),
         R(D, 'G.map.resources.length') + ' of ' + R(D, 'this.n0'));
@@ -277,7 +277,7 @@ const startMission = id => {
       R(F, 'this.res') === donorRes && R(F, 'this.ids') === donorIds,
       'donor has ' + donorRes + ' patches, the rejoiner has ' + R(F, 'this.res') +
       '; ids ' + (R(F, 'this.ids') === donorIds ? 'match' : 'differ') +
-      '  -- js/snapshot.js:121 only overwrites G.map.resources[0..n-1] in place, so the patches the donor mined out survive on the rejoiner and every {__r: i} reference resolves to a different patch');
+      '  -- Snapshot.restore only overwrites G.map.resources[0..n-1] in place, so the patches the donor mined out survive on the rejoiner and every {__r: i} reference resolves to a different patch');
     ok('...and resById still points at the right object for every patch', R(F, 'this.byIdOk') === true,
       'js/snapshot.js never rebuilds GameMap.resById, and _apply copies the donor resource\'s own `id` onto whichever object sits at that index');
     ok('...and the restored state is byte-identical to the donor\'s', R(F, 'this.fp') === R(E, 'this.fp'), firstDiff(R(E, 'this.fp'), R(F, 'this.fp')));

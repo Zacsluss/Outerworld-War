@@ -75,7 +75,6 @@ const Abilities = {
     return true;
   },
   label(u, id) { const ab = DATA.abilities[id]; if (id === 'siege_mode') return u.sieged ? 'Tank Mode' : 'Siege Mode'; if (id === 'burrow') return u.burrowed ? 'Unburrow' : 'Burrow'; if (id === 'viking_mode') return u.def.id === 'viking' ? 'Assault Mode' : 'Fighter Mode'; if (id === 'cloak_ghost' || id === 'cloak_wraith') return u.cloaked ? 'Decloak' : ab.name; return ab.name; },
-  needsTarget(id) { const k = DATA.abilities[id].kind; return k === 'unit' || k === 'point'; },
   // FIXLIST-M15 C2. How far a caster can be from a point and still cast, in pixels -- the declared
   // tile range plus both bodies, which is what orderTick has always computed inline. It is a method
   // now because TWO paths need it and they were about to drift: orderTick for a mobile caster, and

@@ -117,7 +117,7 @@ has('halluBuilding', /building/i, 'Hallucination on a building says it cannot co
 const storm = J(`(() => { ${SCENE}
   const ht = caster('high_templar');
   const x = 44 * TILE, y = 44 * TILE;
-  // The CALLER deducts the cost before cast() runs (js/abilities.js:240), so a direct call has to
+  // The CALLER deducts the cost before cast() runs (Abilities.orderTick, and Abilities.instant for a cast with no target), so a direct call has to
   // model that or the refund inside the refusal looks like free energy.
   const cost = DATA.abilities.psi_storm.energy;
   ht.energy -= cost; const first = say(() => Abilities.cast(ht, 'psi_storm', null, x, y));

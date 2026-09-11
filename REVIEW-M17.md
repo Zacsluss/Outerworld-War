@@ -159,25 +159,7 @@ Each entry names the file, what is wrong, the fix, and what it would cost. Anyth
    sites, a replay test across two engines that this repo cannot run headlessly). Moves the stamp and
    changes results by a hair. **Blocked on question 1** — it is only worth doing if mixed-browser
    multiplayer is a target.
-2. **`G.pathBudget` is set to a literal `40` in two places.** `js/game.js` declares `pathBudget: 40` on
-   `G` and `tick()` resets it to `40` every frame, so the declared value is dead and the literal is the
-   rule. A `PATH_BUDGET` constant in `BUILD.TUNING` would make it one number. Cost S. *(Will be done in
-   this review's small-fixes commit.)*
-3. **Seven dead definitions**, found by cross-referencing every definition in `js/` against every
-   identifier in `js/`, `index.html`, `test/`, `tools/` and `assets/` — each has exactly one hit, its own
-   definition: `Abilities.needsTarget` (`js/abilities.js:78`), `HUD.spacedWidth` (`js/hud.js:561`),
-   `GameMap.wreckAt` (`js/map.js:977`), `GameMap.walkableTerrain` (`js/map.js:1434`), `Unit.supCost`
-   (`js/sim.js:134`), `AI_KEEP` (`js/snapshot.js:199`, declared and then the literal `'__ai'` is used
-   on the next line instead), `Terrain.getChunk` (`js/terrain.js:218` — the render loop at line 412
-   inlines its own budgeted version). Cost S. *(Will be done in the small-fixes commit.)*
-4. **Four stale `file:line` references in test messages** point at comments or unrelated code today:
-   `test/eightplayer.js:162` says `js/ai.js:141`, `test/net_many.js:329` and `test/saveload.js:244,280`
-   say `js/snapshot.js:121`, `test/saveload.js:245` says `js/game.js:221`, `test/refusals.js:120` says
-   `js/abilities.js:240`. The project's own rule is "search the identifier, not the line". Cost S.
-   *(Will be done in the small-fixes commit.)*
-5. **`HANDOFF.md` still says the gate is "the 49 fast deterministic checks"** and its banner points at
-   `HANDOFF-M13.md`. It is 69 (70 once `saveload` joins, below) and the current file is `HANDOFF-M16.md` / this review. Cost S.
-6. **Test-harness duplication.** 90 of 102 suites build their own `document` stub, through 11 differently
+2. **Test-harness duplication.** 90 of 102 suites build their own `document` stub, through 11 differently
    named builders (`makeCtx` ×8, `mkCtx` ×7, `mk` ×5, `mkCtx` const ×4, `mkCanvas` ×3, `fakeCtx` ×3,
    `mkCtx2` ×2, `makeClient` ×2, `mkContext`, `makeCtxNoAudio`, `loadSim`), ~300 lines of near-identical
    stubs. A `test/_harness.js` exposing one builder with options (which files, canvas recorder or not,
@@ -208,15 +190,17 @@ Each entry names the file, what is wrong, the fix, and what it would cost. Anyth
    Auth is the room code alone. My recommendation is to keep the relay plain and tunnel-only for
    internet play, and to harden what exists (minimum code length, a join rate limit, input validation —
    the networking findings below say exactly what). Anything more is a product decision.
-5. **22 stale agent worktrees** under `.claude/worktrees/` plus one at `%TEMP%\pre-m12`, all on old
-   commits. I did not create them and have not touched them. May I `git worktree remove` each one that
-   reports a clean tree, and list the ones that do not?
+5. **22 stale agent worktrees** under `.claude/worktrees/` plus one at `%TEMP%\pre-m12`. All 23 are on
+   commits already merged into this branch. 19 are clean; **four hold uncommitted M12-era edits**
+   (`agent-a8b7db…`: `js/build.js`; `agent-ac63287…` and `agent-af39846…`: nine files each, mostly
+   sprites, models and a race test; `agent-ac730fb…`: five). I did not create them and have not touched
+   them. May I `git worktree remove` the 19 clean ones, and what do you want done with the four dirty?
 6. **The balance run and the AI claim order** stay gated, as briefed. Nothing in this review touches
    either; they are recorded here so the list is complete.
 
 # 3. Fixed / changed / updated
 
-1. **The build stamp now covers the simulation.** *(commit: build stamp)* `js/build.js` named nine
+1. **The build stamp now covers the simulation.** *(commit `e35c828`)* `js/build.js` named nine
    tables and six singletons and nothing else; a top-level `const`, `function` or `class` in a classic
    script is not a property of the global object, so nothing else was reachable.
    **Measured before:** a probe over the ten stamped files found **76 top-level bindings, 56 not reached**
@@ -232,8 +216,8 @@ Each entry names the file, what is wrong, the fix, and what it would cost. Anyth
    **The list cannot rot:** `test/version.js` parses every stamped file for its top-level declarations
    (multi-name lines included) and fails if a name is in no list, in two lists, or in a list but no
    longer declared; plus ten new edit checks, one per class of thing that was blind.
-   **Measured after:** the 17-edit probe reports 0 blind (the one edit still inert is `G.pathBudget`'s
-   initial value, which `tick()` overwrites with a hashed literal — open task 2).
+   **Measured after:** the 17-edit probe reports 0 blind (the one edit still inert was `G.pathBudget`'s
+   initial value, which `tick()` overwrote with a hashed literal — fixed in entry 4).
    **Negative controls:** removing `CHURN_SLOW` from `TUNING` → two clean reds (`editing map.js …
    changes the hash` and `every top-level binding … is in a BUILD list  map.js:288 CHURN_SLOW`);
    adding a name that no file declares → two clean reds. Both restored byte-identical.
@@ -241,7 +225,7 @@ Each entry names the file, what is wrong, the fix, and what it would cost. Anyth
    save and replay from before this commit is refused, which is the stamp doing its job.
 2. **`.gitignore` ignores `.claude/review/`**, where this review's probes and logs live.
 3. **`test/saveload.js` is in the gate, and the other five unlisted suites are on the exclusion list
-   with reasons.** *(commit: the six suites)* Seed finding 1: six suites were neither run by
+   with reasons.** *(commit `b13d7a2`)* Seed finding 1: six suites were neither run by
    `test/all.js` nor named in its "deliberately not in this suite" list. Each was run once at the
    baseline tag, in a worktree so nothing else could touch `js/` meanwhile:
 
@@ -250,19 +234,36 @@ Each entry names the file, what is wrong, the fix, and what it would cost. Anyth
    | `saveload` | 54 passed, 0 failed | 35 s | **gated** — deterministic, no sockets (`WebSocket` is stubbed), no seeds sampled; it covers the one thing a seed-plus-log save cannot fake, a nuke, a morph and a Recall all halfway through |
    | `eightplayer` | **18 passed, 1 failed** | 37 s | excluded — the money assertion is red (question 2); gate it the day it is green |
    | `net_many` | 43 passed, 1 failed | 65 s | excluded — real sockets, and the one failure is the assertion HANDOFF-M16 says is wrong |
-   | `longgame` | ran to 60:00, 5.2 ms/frame at the end, heap 8 → 16 MB | ~9 min | excluded — six times the slowest gate member |
+   | `longgame` | 19 passed, 0 failed; 5.2 ms/frame at 60:00, heap 8 → 16 MB | 14 min here | excluded — many times the slowest gate member |
    | `ledger` | prints, never fails | 1 s at 2 min | excluded — a measurement |
    | `techtime` | prints, never fails | 2 s at 2 min | excluded — a measurement |
 
    The gate is **70 suites**, 177 s. The exclusion comment in `test/all.js` now also names the three
    codemods that are not tests.
+4. **One literal made a constant, seven dead definitions removed, four stale references replaced, and
+   the living handoff pointed at the present.** *(commit: small fixes)*
+   - `PATH_BUDGET` in `js/game.js`: the per-tick pathfinder budget was a literal `40` in two places,
+     one of them dead. One stamped constant now, in `BUILD.TUNING` — and the version audit refused
+     the tree until it was listed, which is the audit doing its job on its first day.
+   - Dead, each with exactly one hit in `js/`, `index.html`, `test/`, `tools/` and `assets/` — its own
+     definition: `Abilities.needsTarget`, `HUD.spacedWidth`, `GameMap.wreckAt`, `GameMap.walkableTerrain`,
+     `Unit.supCost`, `Terrain.getChunk` (the render loop inlines its own budgeted chunk fetch). `AI_KEEP`
+     in `js/snapshot.js` was declared and then bypassed by the literal `'__ai'` on the next line; it is
+     used now.
+   - The four `file:line` references in test messages name identifiers instead (`wantHalls`,
+     `Snapshot.restore`, `G.removeResource`, `Abilities.orderTick` / `instant`).
+   - `HANDOFF.md`: the banner points at `HANDOFF-M16.md` and this review; "49 fast checks" is 70.
+
+   No negative control applies to a deletion; the evidence is the cross-reference count. Gate 70 of 70,
+   166.9 s. The stamp moved again, `14ec639729837842` → `a82605150bc95a01` (source in `game.js`,
+   `sim.js`, `map.js` and `abilities.js` changed).
 
 # 4. Considered and deliberately not done
 
 1. **Hashing every own property of `G`** (which would have caught `G.cell` without naming it). No:
    almost all of them are runtime state, and `BUILD.hash()` is lazy — the first call can happen
    mid-game, so the stamp would depend on *when* it was first computed. `G.cell` is named in `TUNING`
-   instead; `G.pathBudget` is covered by the literal in `tick()`.
+   instead.
 2. **Stamping the presentation strings that live in stamped files** (`UNEXPLORED_MSG`, `HAZARD_SAYS`,
    `FEATURE_SAYS`, `PLAYER_COLORS`, `TILESET_NAMES`, `DESC_MAX`, `ALERTS`). No: the header comment's
    rule is that stamping presentation would refuse a save for a wording tweak. Each is in `NOT_SIM`
@@ -270,8 +271,9 @@ Each entry names the file, what is wrong, the fix, and what it would cost. Anyth
 3. **Moving the `eightplayer` money threshold** to make it green. No: it is the canary every handoff
    points at, and the cause is gated (question 2).
 4. **Updating `file:line` references inside the closed `FIXLIST-M14.md`.** No: it is a frozen record
-   and the references were true when written. Living documents are a different matter (open task 5).
+   and the references were true when written. Living documents are a different matter.
 5. **Deleting the 23 stale worktrees.** Not without an answer to question 5.
+6. **Migrating the 90 suites to a shared harness inside this review.** No: open task 2 says why.
 
 ---
 

@@ -159,7 +159,7 @@ ok('eight players still tick faster than real time (41.7 ms/frame at 24 tps), wi
 const bank = R(g, 'G.players.map(p => Math.round(p.minerals) + "/" + Math.round(p.gas)).join(" ")');
 console.log('  minerals/gas banked at the end: ' + bank);
 ok('no AI is left sitting on money it cannot spend', R(g, 'G.players.every(p => p.minerals < 2500)'),
-  bank + '  -- with eight players sharing sixteen bases, AI.macro\'s wantHalls floor (min(G.map.bases.length, 2 + minutes/3), js/ai.js:141) ' +
+  bank + '  -- with eight players sharing sixteen bases, AI.macro\'s wantHalls floor (min(G.map.bases.length, 2 + minutes/3) -- search wantHalls in js/ai.js) ' +
   'asks for up to seven halls when only two bases per player exist, so the expansion branch never completes');
 
 // ---------------------------------------------------------------- did the AI expand sanely?

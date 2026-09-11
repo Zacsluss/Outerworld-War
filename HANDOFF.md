@@ -3,7 +3,9 @@
 Read this first in a fresh chat. It says where the build is, how it is wired, what must never break, and
 exactly what is left to do.
 
-> **2026-09-10 — START AT `HANDOFF-M13.md`.** M12 is complete and the session after it fixed ten
+> **2026-09-11 — START AT `HANDOFF-M16.md`, then `REVIEW-M17.md`.** Fifteen milestones are closed, the
+> to-do list is empty, and the review holds the open findings. `HANDOFF-M13.md` to `M16.md` carry the traps.
+> M12 is complete and the session after it fixed ten
 > faults in the AI economy. That file carries the current state, the ordered plan, and the traps.
 > **Every balance number below this line is stale** and was already stale before those AI changes.
 
@@ -783,7 +785,7 @@ reverted. Zerg buys upgrades it does not live to use. Treat this lever as closed
 ```bash
 node test/serve.js 8765          # or double-click PLAY.bat; prints LAN URL
 node test/features.js            # 87 gameplay checks
-node test/all.js                   # the 49 fast deterministic checks, in parallel (~2 min)
+node test/all.js                   # the 70 fast deterministic checks, in parallel (~3 min)
 node test/rates.js                 # every weapon's observed rate of fire matches its table entry
 node test/cardsay.js               # every greyed command-card button explains itself when pressed
 node test/wrongthing.js            # do the wrong thing on purpose: nothing crashes, nothing wedges

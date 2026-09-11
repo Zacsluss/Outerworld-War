@@ -326,7 +326,7 @@ async function gameC() {
   await catchUp(B2, [A], 'Bob');
   const donorRes = vm.runInContext('G.map.resources.length', A.ctx), joinRes = vm.runInContext('G.map.resources.length', B2.ctx);
   check(joinRes === donorRes, 'game C: the rejoining client has the same resource list as the live one (' + joinRes + ' vs ' + donorRes + ')' +
-    (joinRes === donorRes ? '' : '  -- js/snapshot.js:121 writes the donor\'s shorter list over the head of the rejoiner\'s freshly generated full one'));
+    (joinRes === donorRes ? '' : '  -- Snapshot.restore (js/snapshot.js) writes the donor\'s shorter list over the head of the rejoiner\'s freshly generated full one'));
   await play([A, B2], A.frame() + 2400, 'game C phase 4');
   const c2 = agree([A, B2], pokeAt + 1200);
   check(c2.ok, 'game C: the rejoined client stays in sync (frame ' + c2.f + ', ' + (c2.hs || []).join('/') + ')');

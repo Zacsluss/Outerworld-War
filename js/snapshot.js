@@ -199,7 +199,7 @@ const Snapshot = {
     const AI_KEEP = new Set(['__ai']);
     s.players.forEach((sp, i) => {
       const p = G.players[i];
-      const decoded = {}; for (const k of Object.keys(sp)) if (k !== '__ai') decoded[k] = this.dec(sp[k]);
+      const decoded = {}; for (const k of Object.keys(sp)) if (!AI_KEEP.has(k)) decoded[k] = this.dec(sp[k]);
       this._apply(p, decoded, new Set(['ai']));
       if (sp.__ai && p.ai) this._apply(p.ai, this.dec(sp.__ai)); // keep the AI instance, replace its state exactly
     });

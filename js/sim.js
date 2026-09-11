@@ -131,7 +131,6 @@ class Unit {
   get canMove() { return !this.isBuilding || this.lifted; }
   get disabled() { return this.fx.lockdown > 0 || this.fx.stasis > 0 || this.fx.maelstrom > 0 || this.morphT > 0 || this.unpowered; }
   get idle() { return this.order.type === 'idle'; }
-  get supCost() { return this.def.sup || 0; }
   tile() { return [Math.floor(this.x / TILE), Math.floor(this.y / TILE)]; }
   heightLevel() { return this.fly ? 2 : G.map.heightAtPx(this.x, this.y); }
 

@@ -215,11 +215,6 @@ const Terrain = {
     return this._ramp[key] = cv;
   },
   checkDpr() { const k = this.bakeDpr(); if (k !== this._bakedAt) { this.chunks.clear(); this._bakedAt = k; } },   // a ratio change invalidates every cached chunk
-  getChunk(cx, cy) {
-    this.checkDpr();
-    const key = cx + ',' + cy; let c = this.chunks.get(key); if (c) return c;
-    c = this.renderChunk(cx, cy); this.chunks.set(key, c); this.trim(); return c;
-  },
   // The chunk cache had no bound, and did not need one while the camera never saw more than about
   // thirty chunks: a game would cache a few hundred over an hour of scrolling and that was that.
   // Zooming out to OVER_Z puts a hundred and forty in view AT ONCE, and panning a 256-tile map at

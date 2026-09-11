@@ -974,7 +974,6 @@ class GameMap {
     }
     return n;
   }
-  wreckAt(tx, ty) { if (!this.inb(tx, ty)) return null; const i = this.idx(tx, ty); if (this.blocked[i] !== WRECK_BLOCKED) return null; for (const wk of this.wrecks) if (wk.tiles.includes(i)) return wk; return null; }
 
   placeFeatures(L) {
     const defs = L.features || []; if (!defs.length) return;
@@ -1431,7 +1430,6 @@ class GameMap {
 
   // ---------------- queries ----------------
   walkable(tx, ty) { if (!this.inb(tx, ty)) return false; const i = this.idx(tx, ty); return this.walk[i] === 1 && this.blocked[i] === -1; }
-  walkableTerrain(tx, ty) { return this.inb(tx, ty) && this.walk[this.idx(tx, ty)] === 1; }
   heightAtPx(px, py) { return this.H(Math.floor(px / TILE), Math.floor(py / TILE)); }
 
   // ============================================================================
