@@ -23,6 +23,8 @@
 // 10. THE MANUAL COULD NOT BE WHEEL-SCROLLED: the wheel handler returned before calling Codex.wheel.
 // 11. Static: the terrain clamp uses both axes, the minimap reads the tileset's palette, the help text
 //     tells the truth about F-keys, and three pieces of dead code are gone.
+// 12. THE FOG SHOWED WHAT IS THERE, NOT WHAT YOU SAW: G.rememberSeen kept the memory since M11 and the
+//     renderer drew live enemy buildings on explored ground (REVIEW-M17 decision 10).
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
 let pass = 0, fail = 0;
@@ -208,6 +210,48 @@ R(ctx, `G.init({ players: [{ race: 'T', human: true, name: 'H' }, { race: 'Z', h
   ok('buildMini reads the tileset palette rather than five badlands browns', /buildMini\(\) \{[\s\S]{0,600}this\.pal/.test(terrain) && !/\[118, 96, 62\]/.test(terrain));
   ok('the help text no longer promises F2-F8 as camera slots', !/F2-F8/.test(hud) && /F8 load autosave/.test(hud));
   ok('dead: the \'waiting\' menu nothing set, the interceptor projectile colour nothing pushed, a stray path before a save()', !/menu === 'waiting'/.test(ui) && !/p\.kind === 'interceptor'/.test(render) && !/roundRect\(-6, -7, 20, 14, 2\); ctx\.save/.test(sb));
+}
+
+// ============================================================================
+// 12. the fog shows what you last saw, not what is there (REVIEW-M17 decision 10)
+// ============================================================================
+// G.rememberSeen has kept the memory since M11; the renderer drew live enemy buildings on explored
+// ground instead, so a building destroyed while you were not watching vanished at once. Render.remembered
+// turns the memory into ghosts for tiles you have explored but cannot see; live enemy buildings are
+// drawn only where you can see right now. Negative control: with the memory pass removed, the destroyed
+// building draws nowhere.
+{
+  const out = R(ctx, `
+    G.init({ players: [{ race: 'T', human: true, name: 'H' }, { race: 'T', human: false, difficulty: 'easy', name: 'C' }], seed: 3, layout: 'temple' }); G.human = 0; G.players[1].ai = null; UI.viewAll = false;
+    const hp = G.players[0], foe = G.players[1];
+    // an enemy building far from both bases, and a Marine standing next to it
+    const def = DATA.buildings.supply_depot; let bld = null;   // a Terran building: no creep needed at the map centre
+    const cx = Math.floor(G.map.w / 2), cy = Math.floor(G.map.h / 2);
+    for (let r = 0; r < 40 && !bld; r++) for (let k = 0; k < 16 && !bld; k++) { const a = k / 16 * Math.PI * 2; const tx = Math.round(cx + Math.cos(a) * r), ty = Math.round(cy + Math.sin(a) * r); let free = true; for (let yy = 0; yy < def.h && free; yy++) for (let xx = 0; xx < def.w; xx++) if (!G.map.walkable(tx + xx, ty + yy)) { free = false; break; } if (free) { bld = G.placeBuilding(def, tx, ty, 1);   /* placed directly: canPlace refuses unexplored ground (FIXLIST-M14 C1), and nobody has explored the centre */ if (bld) { bld.done = true; bld.hp = bld.maxHp; bld.progress = def.time; G.completeBuilding(bld); } } }
+    if (!bld) return { noBuilding: true };
+    const marine = G.spawnUnit('marine', 0, bld.x + 3 * TILE, bld.y);
+    for (let i = 0; i < 6; i++) G.tick();                       // vision and memory update every third frame
+    const mem = hp.seen && hp.seen.get(bld.id);
+    const m = G.map, vis = hp.vis;
+    const seen = (x, y) => { const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); return m.inb(tx, ty) && vis[ty * m.w + tx] > 0; };
+    const visNow = (x, y) => { const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); return m.inb(tx, ty) && vis[ty * m.w + tx] === 2; };
+    const inView = () => true;
+    const whileVisible = typeof Render.remembered === 'function' ? Render.remembered(seen, visNow, inView).length : 'no such method';
+    // the Marine leaves, the tile falls back to explored, and the building is destroyed while nobody watches
+    G.kill(marine, null, true); for (let i = 0; i < 6; i++) G.tick();
+    const nowVisible = visNow(bld.x, bld.y), explored = seen(bld.x, bld.y);
+    G.kill(bld, null, true); for (let i = 0; i < 6; i++) G.tick();
+    const ghosts = typeof Render.remembered === 'function' ? Render.remembered(seen, visNow, inView) : [];
+    const g = ghosts[0];
+    return { remembered: !!mem, memHp: mem && mem.hp, whileVisible, nowVisible, explored, buildingAlive: bld.alive, ghosts: ghosts.length, ghostDef: g && g.def.id, ghostAt: g && [g.tx, g.ty], realAt: [bld.tx, bld.ty], ghostAlpha: g && g._alpha, ghostIsProxy: !!g && Object.getPrototypeOf(g) === bld, unitUntouched: bld.alive === false && bld._alpha !== 0.75 };`);
+  ok('the scene stands: the building was remembered with its hp while a Marine could see it', !out.noBuilding && out.remembered && out.memHp > 0, JSON.stringify(out));
+  ok('while the tile is visible nothing is drawn from memory (the live building is drawn instead)', out.whileVisible === 0, JSON.stringify(out.whileVisible));
+  ok('after the Marine is gone the tile is explored but not visible, and the building is dead', out.nowVisible === false && out.explored === true && out.buildingAlive === false, JSON.stringify(out));
+  ok('the fog draws a ghost of the destroyed building at its remembered footprint, at fog alpha (was: nothing -- it vanished the moment it died)', out.ghosts === 1 && out.ghostDef === 'supply_depot' && out.ghostAt && out.ghostAt[0] === out.realAt[0] && out.ghostAt[1] === out.realAt[1] && out.ghostAlpha === 0.75, JSON.stringify(out));
+  ok('the ghost is a proxy over the real unit and writes nothing to it', out.ghostIsProxy === true && out.unitUntouched === true, JSON.stringify({ proxy: out.ghostIsProxy, untouched: out.unitUntouched }));
+  const render = src('render');
+  ok('a live enemy building is drawn only where it is visible right now (the memory pass owns the fog)', /else canSee = visNow\(x, y\); if \(!canSee\) continue;/.test(render) && !/else if \(u\.isBuilding\) canSee = seen\(x, y\)/.test(render));
+  ok('...and the draw list takes the memory pass (the wiring; the method itself is exercised above)', /for \(const g of this\.remembered\(seen, visNow, inView\)\) list\.push\(g\);/.test(render));
 }
 
 ok('no JS errors', ctx.errors.length === 0, ctx.errors.slice(0, 3).join(' | '));

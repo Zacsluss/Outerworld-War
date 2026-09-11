@@ -336,11 +336,15 @@ const Render = {
     const list = [];
     for (const u of G.units) {
       if (!u.alive || u.inside) continue; const x = u.px + (u.x - u.px) * alpha, y = u.py + (u.y - u.py) * alpha; if (!inView(x, y, u.r * 2 + 40)) continue;
-      let canSee; if (u.owner === G.human) canSee = true; else if (u.isBuilding) canSee = seen(x, y); else canSee = visNow(x, y); if (!canSee) continue;
+      // An enemy building is drawn LIVE only where you can see right now. Under the fog the memory pass
+      // below draws what you last saw of it, which may be a building that no longer exists -- the map lies
+      // to you until you go and look again (REVIEW-M17 decision 10; the memory is G.rememberSeen's).
+      let canSee; if (u.owner === G.human) canSee = true; else canSee = visNow(x, y); if (!canSee) continue;
       if (u.owner !== G.human && u.isCloaked && !G.detected(u, G.human) && !UI.viewAll) { if (!visNow(x, y)) continue; u._alpha = 0.16; } else u._alpha = u.isCloaked ? 0.45 : 1;
       if (u.owner !== G.human && u.isBuilding && !visNow(x, y)) u._alpha = 0.75;
       u._x = x; u._y = y; list.push(u);
     }
+    for (const g of this.remembered(seen, visNow, inView)) list.push(g);
     list.sort((a, b) => (a.fly - b.fly) || (b.isBuilding - a.isBuilding) || (a._y - b._y));
     this.tickMotion(list);   // one pass per SIM frame, whatever the frame rate; see tickMotion
     // Shadows. The unit's own silhouette, sheared away from the light and flattened onto the ground,
@@ -1254,6 +1258,25 @@ const Render = {
       ctx.strokeStyle = this.rimCol(o, RIM_A * k); ctx.stroke();
     }
     ctx.restore();
+  },
+  // WHAT YOU REMEMBER, where you cannot currently see. G.rememberSeen keeps, per player, the last state a
+  // unit of theirs saw of every enemy building (position, owner, hp, whether it was finished). Each entry
+  // whose tile is explored but not visible becomes a ghost the draw pass treats as a building: a proxy
+  // whose reads fall through to the real unit (its def, its sprite, its footprint) with the remembered
+  // state laid over the top, drawn at fog alpha. Nothing here writes to the unit, and the memory is
+  // corrected only by sight, in the simulation. Observers see everything and remember nothing.
+  // (REVIEW-M17 decision 10)
+  remembered(seen, visNow, inView) {
+    const out = []; const hp = G.players[G.human]; if (!hp || !hp.seen || UI.viewAll) return out;
+    for (const [id, mem] of hp.seen) {
+      if (visNow(mem.x, mem.y) || !seen(mem.x, mem.y) || !inView(mem.x, mem.y, 120)) continue;
+      const u = G.byId.get(id); if (!u) continue;
+      const g = Object.create(u);
+      g.x = mem.x; g.y = mem.y; g.tx = mem.tx; g.ty = mem.ty; g.owner = mem.o; g.hp = mem.hp == null ? u.maxHp : mem.hp; g.done = mem.done !== false;
+      g.alive = true; g.inside = null; g.lifted = false; g._x = mem.x; g._y = mem.y; g._alpha = 0.75; g.remembered = true;
+      out.push(g);
+    }
+    return out;
   },
   drawUnit(ctx, u) {
     const x = u._x, y = u._y;

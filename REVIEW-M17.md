@@ -706,6 +706,20 @@ listed here. Ordered by what I would do first.
     Terran gets none, and a Zerg AI casts Spawn Larva at least twice in its first minute (before the
     change: zero Queens, zero casts). **Gate:** 74 of 74, 169 s. Not done, and listed as an open task: the AI's
     Queen is a `supportUnits()` member and follows the army, so once the army leaves she stops injecting.
+17. **Decision 10: the fog shows the last state one of your units saw, not what is there now.** *(commit:
+    fog memory)* `G.rememberSeen` has kept that memory per player since M11 — every enemy building a
+    unit of yours saw, corrected only by sight — and nothing drew it: the renderer drew the *live* enemy
+    building on explored ground, so one destroyed while you were not watching vanished at once. Now an
+    enemy building is drawn live only where you can see this instant, and `Render.remembered()` turns
+    each memory entry on explored-but-fogged ground into a ghost — a proxy whose reads fall through to
+    the real unit (its sprite, its footprint) with the remembered position, owner, hp and completion laid
+    over it, at fog alpha, writing nothing to the unit. The memory record gained `hp` and `done`, so what
+    you see is the state you saw. Observers see everything and remember nothing. `test/review17ui.js`
+    section 12 (38 checks): a depot placed at the map centre is remembered while a Marine watches, the
+    Marine leaves, the depot is destroyed unseen, and the fog still draws it at its footprint at 0.75
+    alpha; while the tile is visible nothing comes from memory; the ghost is a proxy and the unit is
+    untouched; plus two static checks on the draw list. **Negative control:** the memory pass returning
+    nothing → two clean reds; the draw-list wiring dropped → one clean red. **Gate:** 74 of 74, 168 s.
 
 # 4. Considered and deliberately not done
 

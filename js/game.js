@@ -286,7 +286,7 @@ const G = {
     for (const u of this.units) {
       if (!u.alive || !u.isBuilding || u.inside) continue;
       if (this.allied(u.owner, p.id)) continue;
-      if (this.visibleAt(p.id, u.x, u.y)) p.seen.set(u.id, { d: u.def.id, x: u.x, y: u.y, tx: u.tx, ty: u.ty, o: u.owner, f: this.frame });
+      if (this.visibleAt(p.id, u.x, u.y)) p.seen.set(u.id, { d: u.def.id, x: u.x, y: u.y, tx: u.tx, ty: u.ty, o: u.owner, f: this.frame, hp: u.hp, done: u.done });   // hp and done: the STATE seen, which is what the fog draws (REVIEW-M17 decision 10)
     }
     // ...and the correction. Walks the Map in insertion order, which is stable across a snapshot because
     // restore rebuilds it from an ordered array.
