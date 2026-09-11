@@ -50,7 +50,7 @@ async function main() {
   check(B2.Net.catchingUp && B2.Net.me === 1, 'phase 3: relay accepted the rejoin with the history (' + Object.keys(B2.Net.inbox).length + ' frames of batches)');
   // A rejoin used to replay the entire game; with a snapshot from a live player it replays only the tail,
   // so this must stay tiny however long the game has been running.
-  check(Object.keys(B2.Net.inbox).length < 100 && B2.frame() >= 16000, 'phase 3: rejoin started from a snapshot, not from frame 0 (frame ' + B2.frame() + ', ' + Object.keys(B2.Net.inbox).length + ' batches to replay)');
+  check(Object.keys(B2.Net.inbox).length < 100 && B2.frame() > FRAMES, 'phase 3: rejoin started from a snapshot, not from frame 0 (frame ' + B2.frame() + ', ' + Object.keys(B2.Net.inbox).length + ' batches to replay)');
   const t0 = Date.now(); while (B2.Net.catchingUp) { const n = B2.step(400); if (!n) { if (!B2.Net.ready(B2.frame())) B2.Net.catchingUp = false; } A.step(30); await sleep(0); if (Date.now() - t0 > 120000) throw new Error('rejoin catch-up timeout'); }
   console.log('  Bob caught up to frame ' + B2.frame() + ' (Alice at ' + A.frame() + ')');
   await run([A, B2], A.frame() + 2400, 'phase 3');

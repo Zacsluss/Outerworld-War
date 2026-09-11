@@ -141,7 +141,10 @@ const UI = {
       else if (this.loading) this.loading.target = Math.max(this.loading.target, G.frame + 1);
       return;
     }
-    if (G.paused || this.menu || this.loading) return;
+    // A menu is a local overlay. In a network game the lockstep runs behind it: a client with the pause
+    // menu open, or an eliminated player looking at the result screen, used to stop sending batches and
+    // every peer froze on "Waiting for other players". (REVIEW-M17)
+    if (G.paused || this.loading || (this.menu && !this.net)) return;
     if (this.mode === 'play' && G.frame > 0 && G.frame % (TPS * 120) === 0 && !(typeof Net !== 'undefined' && Net.active) && !this._autosaved) { this._autosaved = true; Replay.save(false); } else if (G.frame % (TPS * 120) !== 0) this._autosaved = false;
     const step = 1 / (TPS * this.SPEEDS[this.speedIndex()]); this.accum += dt; let n = 0;
     if (this.net && typeof Net !== 'undefined' && Net.active) { while (this.accum >= step && n < 8) { if (!Net.ready(G.frame)) { if (!Net.waitingSince) Net.waitingSince = performance.now(); this.accum = Math.min(this.accum, step); break; } Net.waitingSince = 0; Net.beforeTick(); G.tick(); this.accum -= step; n++; } return; }
@@ -1977,7 +1980,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const cbx = $('codexBtn'); if (cbx) cbx.addEventListener('click', () => UI.openCodexFromMenu());
   const qc = $('mute'); if (qc) { qc.checked = Sound.muted; qc.addEventListener('change', () => Sound.setMuted(qc.checked)); }
   const vc = $('voice'), mc = $('music'); if (vc) { vc.checked = Voice.on; vc.addEventListener('change', () => Voice.set(vc.checked)); } if (mc) { mc.checked = Music.on; mc.addEventListener('change', () => Music.set(mc.checked)); }
-  const nc = $('netConnect'); if (nc) { $('netUrl').placeholder = Net.defaultUrl(); nc.addEventListener('click', () => Net.connect($('netUrl').value.trim() || Net.defaultUrl(), $('netName').value.trim() || 'Player', 'R', ($('netRoom') ? $('netRoom').value.trim() : ''))); }
+  const nc = $('netConnect'); if (nc) { $('netUrl').placeholder = Net.defaultUrl(); nc.addEventListener('click', () => { const room = $('netRoom') ? $('netRoom').value.trim() : ''; if (location.protocol === 'https:' && !room) { Net.status('Type a room code first: over the internet, no code means the shared room anyone with the link can walk into.'); return; } Net.connect($('netUrl').value.trim() || Net.defaultUrl(), $('netName').value.trim() || 'Player', 'R', room); }); }
   // Custom maps made in the editor appear in the same dropdown as the built-ins. Editor.register() is
   // what puts them into MAP_LAYOUTS, so it has to run before the list is rebuilt from it; the whole
   // select is rebuilt rather than patched because the list is grouped now and a saved map has to land

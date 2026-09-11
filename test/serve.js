@@ -13,6 +13,9 @@
 // anything with the link could walk into a lobby. A code the host shares out of band fixes that, and
 // it is why THE RELAY NEVER LISTS THE ROOMS IT HOLDS. A room browser would hand out exactly the
 // secret the code is. Guessing wrong lands you in an empty room of your own, never in someone else's.
+// NO code is not a private room: it is the shared room called LAN, where everyone else with no code
+// also lands. Over a tunnel that is the room a stranger with the link walks into, so the page insists
+// on a code when it is served over https (js/ui.js).
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto'), os = require('os');
 const root = path.join(__dirname, '..'); const port = parseInt(process.argv[2] || '8765');
 // THE LOCKSTEP BUDGET, and on the internet it is the difference between "connects" and "playable".
@@ -27,9 +30,15 @@ const DELAY = Math.max(1, Math.min(20, parseInt(process.argv[3] || process.env.B
 const MAX_PLAYERS = 8;          // humans + AI, the same ceiling `addai` has always had. `join` had none.
 const DEFAULT_ROOM = 'LAN';
 const types = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json' };
+// What the static half serves: the page, the code and the art. It used to serve the whole checkout --
+// /.git/HEAD, every handoff, this file -- to anyone holding the tunnel link, and a malformed URL
+// (GET /%) threw out of decodeURIComponent and took every room on the relay down with it. (REVIEW-M17)
+const SERVED = p => p === '/index.html' || p.startsWith('/js/') || p.startsWith('/assets/');
 const server = http.createServer((req, res) => {
-  let p = decodeURIComponent(req.url.split('?')[0]); if (p === '/') p = '/index.html';
-  const f = path.join(root, p); if (!f.startsWith(root)) { res.writeHead(403); return res.end(); }
+  let p; try { p = decodeURIComponent(req.url.split('?')[0]); } catch (e) { res.writeHead(400); return res.end('bad request'); }
+  if (p === '/') p = '/index.html';
+  if (!SERVED(p)) { res.writeHead(404); return res.end('not found'); }
+  const f = path.join(root, p); if (!f.startsWith(root + path.sep)) { res.writeHead(403); return res.end(); }
   fs.readFile(f, (e, d) => { if (e) { res.writeHead(404); return res.end('not found'); } res.writeHead(200, { 'Content-Type': types[path.extname(f)] || 'application/octet-stream', 'Cache-Control': 'no-store' }); res.end(d); });
 });
 // ---------------- minimal WebSocket server ----------------
@@ -43,7 +52,14 @@ function roomCode(s) { const k = String(s == null ? '' : s).toUpperCase().replac
 function roomFor(code) { const k = roomCode(code); let L = rooms.get(k); if (!L) { L = newLobby(k); rooms.set(k, L); } return L; }
 function roomOf(c) { return c.room ? rooms.get(c.room) : null; }
 function tag(L) { return L.code === DEFAULT_ROOM ? '' : '[' + L.code + '] '; }
-function frame(text) { const b = Buffer.from(text, 'utf8'); let h; if (b.length < 126) h = Buffer.from([0x81, b.length]); else if (b.length < 65536) { h = Buffer.alloc(4); h[0] = 0x81; h[1] = 126; h.writeUInt16BE(b.length, 2); } else { h = Buffer.alloc(10); h[0] = 0x81; h[1] = 127; h.writeBigUInt64BE(BigInt(b.length), 2); } return Buffer.concat([h, b]); }
+function frameRaw(op, b) { let h; if (b.length < 126) h = Buffer.from([0x80 | op, b.length]); else if (b.length < 65536) { h = Buffer.alloc(4); h[0] = 0x80 | op; h[1] = 126; h.writeUInt16BE(b.length, 2); } else { h = Buffer.alloc(10); h[0] = 0x80 | op; h[1] = 127; h.writeBigUInt64BE(BigInt(b.length), 2); } return Buffer.concat([h, b]); }
+function frame(text) { return frameRaw(1, Buffer.from(text, 'utf8')); }
+// The largest frame a client may send. A rejoin snapshot is the biggest honest message and measures
+// about a megabyte after twenty minutes with 550 units; a client claiming a 2^63-byte frame used to be
+// believed and streamed into memory. (REVIEW-M17)
+const MAX_FRAME = 16 * 1024 * 1024;
+function raceOf(r) { return /^[TZPR]$/.test(r) ? r : 'R'; }
+function teamOf(t, fallback) { return Number.isInteger(t) && t >= 1 && t <= MAX_PLAYERS ? t : fallback; }
 function send(c, msg) { try { c.socket.write(frame(JSON.stringify(msg))); } catch (e) { } }
 // Room-scoped. A client that has not joined yet has no `room` and hears nothing, which is what stops
 // a connection leaking the existence of a game it has not given the code for.
@@ -66,12 +82,16 @@ function onMessage(c, m) {
   const me = L.players.find(p => p.id === c.id); const host = hostOf(L); const isHost = me && host === me;
   switch (m.t) {
     case 'join': {
-      // A client stays in the room it first joined. Re-sending `join` with a different code would
-      // otherwise let it walk between rooms while its old slot was still in a running game.
-      if (!c.room) c.room = L.code;
+      // A client stays in the room it first joined (roomFor above prefers c.room). Re-sending `join` with
+      // a different code would otherwise let it walk between rooms while its old slot was still in a
+      // running game. `c.room` is set only once a join SUCCEEDS: a client refused here (a stranger, or the
+      // ninth player) used to count as in the room -- it received every broadcast, and the room was never
+      // reset when the real players left because inRoom() still saw it. (REVIEW-M17)
       if (L.state !== 'lobby') { // a dropped player reconnecting under the same name takes their slot back
+        if (me) { send(c, { t: 'error', msg: 'You are already in this game.' }); return; }   // a live player re-sending join with a dropped name used to take that slot too, and two slots shared one id
         const name = String(m.name || '').slice(0, 16); const idx = L.players.findIndex(p => p.gone && p.name === name);
         if (idx < 0) { send(c, { t: 'error', msg: 'Game already in progress' + (name ? ' and no dropped player is called ' + name : '') + '.' }); return; }
+        c.room = L.code;
         const slot = L.players[idx]; slot.id = c.id; slot.gone = false;
         const R = Math.max(maxFrame(L) + 1, DELAY); L.gone[idx].to = R;
         // ...and not a client that is itself mid-rejoin: `slot.gone` is cleared before this search, so
@@ -89,7 +109,7 @@ function onMessage(c, m) {
           // client blocks at that frame for a batch that never comes and the whole game wedges.
           const req = (L.snapSeq = (L.snapSeq || 0) + 1);
           L.pendingSnaps = L.pendingSnaps || new Map();
-          L.pendingSnaps.set(req, { want: c.id, idx, at: Date.now() });
+          L.pendingSnaps.set(req, { want: c.id, idx, donor: donor.id });   // donor recorded: only it may answer (any room member could, and a wrong snapshot is a silent desync for the rejoiner)
           send(donor, { t: 'needsnap', req });
           setTimeout(() => { // donor did not answer: fall back to replaying the whole history
             const ps = L.pendingSnaps && L.pendingSnaps.get(req);
@@ -103,16 +123,17 @@ function onMessage(c, m) {
       // number of humans and start a game with more players than the map has starts. It did not matter
       // while reaching the server meant being on the LAN.
       if (!me && L.players.length >= MAX_PLAYERS) { send(c, { t: 'error', msg: 'That game is full (' + MAX_PLAYERS + ' players).' }); return; }
-      if (!me) L.players.push({ id: c.id, name: String(m.name || 'Player').slice(0, 16), race: m.race || 'R', team: L.players.length + 1 }); broadcast(L, lobbyState(L)); break;
+      if (!c.room) c.room = L.code;
+      if (!me) L.players.push({ id: c.id, name: String(m.name || 'Player').slice(0, 16), race: raceOf(m.race), team: L.players.length + 1 }); broadcast(L, lobbyState(L)); break;
     }
     // Lobby settings are lobby-only. The relay is the authority here, and it was accepting both of
     // these after the game had started: `set layout` rewrote lobby.layout, which sendRejoin reads via
     // startMsg(), so the next player to rejoin loaded a DIFFERENT MAP than everyone else was playing;
     // and `addai` grew lobby.players out of step with the running game. Neither is reachable from the
     // UI, which is why nothing caught them, but a relay must not trust that its clients are the UI.
-    case 'set': if (me && !L.started) { if (m.race) me.race = m.race; if (m.team) me.team = m.team; if (isHost && m.layout) L.layout = m.layout; if (isHost && m.speed != null) L.speed = Math.max(0, Math.min(6, m.speed | 0)); } broadcast(L, lobbyState(L)); break; // everyone must run the same speed or lockstep just makes the fast clients wait
-    case 'addai': if (isHost && !L.started && L.players.length < MAX_PLAYERS) { L.players.push({ id: -(nextId++), name: 'Computer ' + L.players.filter(p => p.ai).length, race: m.race || 'R', team: L.players.length + 1, ai: true, difficulty: m.difficulty || 'normal' }); broadcast(L, lobbyState(L)); } break;
-    case 'kick': if (isHost && L.state === 'lobby') { L.players = L.players.filter(p => p.id !== m.id); broadcast(L, lobbyState(L)); } break;
+    case 'set': if (me && !L.started) { if (m.race) me.race = raceOf(m.race); if (m.team) me.team = teamOf(m.team, me.team); if (isHost && typeof m.layout === 'string' && m.layout.length <= 64) L.layout = m.layout; if (isHost && m.speed != null) L.speed = Math.max(0, Math.min(6, m.speed | 0)); } broadcast(L, lobbyState(L)); break; // everyone must run the same speed or lockstep just makes the fast clients wait
+    case 'addai': if (isHost && !L.started && L.players.length < MAX_PLAYERS) { L.players.push({ id: -(nextId++), name: 'Computer ' + L.players.filter(p => p.ai).length, race: raceOf(m.race), team: L.players.length + 1, ai: true, difficulty: ['easy', 'normal', 'hard'].includes(m.difficulty) ? m.difficulty : 'normal' }); broadcast(L, lobbyState(L)); } break;
+    case 'kick': if (isHost && L.state === 'lobby' && m.id !== c.id) { L.players = L.players.filter(p => p.id !== m.id); const kc = clients.get(m.id); if (kc) { kc.room = null; send(kc, { t: 'error', msg: 'The host removed you from the game.' }); } broadcast(L, lobbyState(L)); } break;   // the kicked client leaves the room too: it used to keep hearing every broadcast, and a re-sent join put it straight back
     case 'start': {
       if (!isHost || L.state !== 'lobby' || L.players.filter(p => !p.ai).length < 1) return; L.state = 'playing';
       L.seed = Math.floor(Math.random() * 1e9); const races = ['T', 'Z', 'P'];
@@ -123,12 +144,17 @@ function onMessage(c, m) {
       break;
     }
     case 'snap': {
-      const ps = L.pendingSnaps && L.pendingSnaps.get(m.req); if (!ps) break;
+      const ps = L.pendingSnaps && L.pendingSnaps.get(m.req); if (!ps || ps.donor !== c.id) break;
       const target = clients.get(ps.want); L.pendingSnaps.delete(m.req);
       if (target) sendRejoin(L, target, ps.idx, m.snap, m.frame | 0);
       break;
     }
-    case 'cmds': { const idx = L.players.findIndex(p => p.id === c.id); if (idx >= 0 && L.state === 'playing') { const f = m.f | 0; L.history.push({ p: idx, f, c: m.c }); if (!(L.lastF[idx] >= f)) L.lastF[idx] = f; broadcast(L, { t: 'cmds', p: idx, f, c: m.c }, c); } break; }
+    // THE SENDER IS STAMPED ON EVERY COMMAND. The envelope carried the slot the relay knew; the commands
+    // inside carried whatever `p` the client wrote, and CMD.apply trusted that -- so any player could order
+    // another player's units, cancel their production or `game over man` them, deterministically, on
+    // every client, with no desync to show for it. A batch that is not an array is dropped: forwarded, it
+    // threw inside every receiver's beforeTick. (REVIEW-M17)
+    case 'cmds': { const idx = L.players.findIndex(p => p.id === c.id); if (idx >= 0 && L.state === 'playing' && Array.isArray(m.c)) { const cs = m.c.filter(x => x && typeof x === 'object').map(x => Object.assign({}, x, { p: idx })); const f = m.f | 0; L.history.push({ p: idx, f, c: cs }); if (!(L.lastF[idx] >= f)) L.lastF[idx] = f; broadcast(L, { t: 'cmds', p: idx, f, c: cs }, c); } break; }
     case 'hash': { const idx = L.players.findIndex(p => p.id === c.id); if (idx >= 0) broadcast(L, { t: 'hash', p: idx, f: m.f, h: m.h }, c); break; }
     case 'chat': if (me) broadcast(L, { t: 'chat', from: me.name, text: String(m.text).slice(0, 200) }); break;
     case 'ping': send(c, { t: 'pong' }); break;
@@ -145,7 +171,7 @@ function leave(c) {
       L.players[idx].gone = true; L.players[idx].id = 0; L.gone[idx] = { from: stopAt, to: null };
       broadcast(L, { t: 'left', p: idx, f: stopAt }); broadcast(L, lobbyState(L)); console.log(tag(L) + L.players[idx].name + ' dropped; units stop at frame ' + stopAt);
     }
-    if (!inRoom(L).length) { L.players = []; L.state = 'lobby'; L.history = []; L.lastF = {}; L.gone = {}; console.log(tag(L) + 'all players gone, back to lobby'); }
+    if (!inRoom(L).length) { L.players = []; L.state = 'lobby'; L.started = null; L.history = []; L.lastF = {}; L.gone = {}; L.pendingSnaps = null; console.log(tag(L) + 'all players gone, back to lobby'); }   // `started` too: `set` and `addai` gate on it, so the second game in the LAN room could change no race, team, map or speed (REVIEW-M17)
   }
   else { L.players = L.players.filter(p => p.id !== c.id); if (!L.players.some(p => !p.ai)) L.players = []; broadcast(L, lobbyState(L)); }
   // An empty room is forgotten, so a relay that has hosted a thousand games holds a thousand nothings.
@@ -153,16 +179,24 @@ function leave(c) {
   // time would be churn for no gain.
   if (!inRoom(L).length && L.code !== DEFAULT_ROOM) rooms.delete(L.code);
 }
+function drop(c, why) { console.log('  dropping client ' + c.id + ': ' + why); try { c.socket.destroy(); } catch (e) { } leave(c); }
 function onData(c, data) {
-  c.buf = Buffer.concat([c.buf, data]);
+  c.lastSeen = Date.now();
+  // Chunks are collected and joined once per frame rather than on every chunk: a large frame arriving
+  // in 64 KB pieces used to be re-copied in full for each piece.
+  c.chunks.push(data); c.chunked += data.length; if (c.chunked < c.need) return;
+  c.buf = Buffer.concat([c.buf].concat(c.chunks)); c.chunks = []; c.chunked = 0; c.need = 0;
   for (;;) {
-    if (c.buf.length < 2) return; const b0 = c.buf[0], b1 = c.buf[1]; const op = b0 & 0x0f, masked = !!(b1 & 0x80); let len = b1 & 0x7f, off = 2;
+    if (c.buf.length < 2) return; const b0 = c.buf[0], b1 = c.buf[1]; const fin = !!(b0 & 0x80), op = b0 & 0x0f, masked = !!(b1 & 0x80); let len = b1 & 0x7f, off = 2;
     if (len === 126) { if (c.buf.length < 4) return; len = c.buf.readUInt16BE(2); off = 4; } else if (len === 127) { if (c.buf.length < 10) return; len = Number(c.buf.readBigUInt64BE(2)); off = 10; }
-    const mlen = masked ? 4 : 0; if (c.buf.length < off + mlen + len) return;
+    if (len > MAX_FRAME) { drop(c, 'frame of ' + len + ' bytes'); return; }
+    if (!fin || op === 0) { drop(c, 'fragmented frame'); return; }   // never assembled here; browsers and Node send whole frames, and half a message used to become 'bad message' plus lost pieces
+    const mlen = masked ? 4 : 0; if (c.buf.length < off + mlen + len) { c.need = off + mlen + len - c.buf.length; return; }
     const mask = masked ? c.buf.subarray(off, off + 4) : null; const payload = Buffer.from(c.buf.subarray(off + mlen, off + mlen + len)); if (mask) for (let i = 0; i < payload.length; i++) payload[i] ^= mask[i & 3];
     c.buf = c.buf.subarray(off + mlen + len);
     if (op === 8) { try { c.socket.end(); } catch (e) { } leave(c); return; }
-    if (op === 9) { try { c.socket.write(Buffer.concat([Buffer.from([0x8a, payload.length]), payload])); } catch (e) { } continue; }
+    if (op === 9) { try { c.socket.write(frameRaw(0xa, payload)); } catch (e) { } continue; }   // a pong with the right length header (the one-byte form was malformed past 125 bytes)
+    if (op === 10) continue;   // a pong to our keepalive ping; lastSeen is already updated
     if (op === 1) { try { onMessage(c, JSON.parse(payload.toString('utf8'))); } catch (e) { console.error('bad message', e.message); } }
   }
 }
@@ -170,13 +204,20 @@ server.on('upgrade', (req, socket) => {
   if (req.url !== '/ws') { socket.destroy(); return; }
   const key = req.headers['sec-websocket-key']; const accept = crypto.createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
   socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n');
-  const c = { id: nextId++, socket, buf: Buffer.alloc(0), room: null }; clients.set(c.id, c); socket.setNoDelay(true);
+  const c = { id: nextId++, socket, buf: Buffer.alloc(0), chunks: [], chunked: 0, need: 0, room: null, lastSeen: Date.now() }; clients.set(c.id, c); socket.setNoDelay(true);
   socket.on('data', d => onData(c, d)); socket.on('close', () => leave(c)); socket.on('error', () => leave(c));
   // `state` describes the relay, not a game: a client that has not sent a code cannot be told whether
   // some room is playing without being told that room exists. The real state arrives with the `lobby`
   // message `join` triggers, or with the `error` that refuses it.
   send(c, { t: 'hello', id: c.id, state: 'lobby', rooms: true });
 });
+// KEEPALIVE. A connection that dies without a FIN -- wifi drop, a laptop closing, a tunnel hiccup, the
+// ordinary internet failure -- was never leave()d: every other client waited on that player's batch
+// until the OS gave up on the socket, and the player's own reconnect was refused because their slot
+// was not `gone`. A ping every PING_MS; silence for DEAD_MS drops the client. A live client sends a
+// batch every frame during play, so silence is unambiguous. (REVIEW-M17)
+const PING_MS = 15000, DEAD_MS = 45000;
+setInterval(() => { const now = Date.now(); for (const c of [...clients.values()]) { if (now - c.lastSeen > DEAD_MS) drop(c, 'no data for ' + Math.round((now - c.lastSeen) / 1000) + ' s'); else { try { c.socket.write(frameRaw(9, Buffer.alloc(0))); } catch (e) { } } } }, PING_MS).unref();
 server.listen(port, () => {
   const ips = []; for (const ifs of Object.values(os.networkInterfaces())) for (const i of ifs) if (i.family === 'IPv4' && !i.internal) ips.push(i.address);
   console.log('Brood War Remake: http://localhost:' + port + (ips.length ? '   LAN: ' + ips.map(ip => 'http://' + ip + ':' + port).join(' ') : '') + '   delay ' + DELAY + ' frames');

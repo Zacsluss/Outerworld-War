@@ -18,7 +18,7 @@
 // and belongs in the gate. test/net.js and test/net_many.js are the ones that play.
 //
 //   node test/rooms.js [port=8793]
-const path = require('path'), { spawn } = require('child_process');
+const path = require('path'), { spawn } = require('child_process'), http = require('http'), net = require('net'), vm = require('vm'), fs = require('fs');
 const root = path.join(__dirname, '..');
 const PORT = parseInt(process.argv[2] || '8793');
 if (typeof WebSocket === 'undefined') { console.error('needs Node 22+ (global WebSocket)'); process.exit(2); }
@@ -203,6 +203,94 @@ function client(port, tag) {
   await sleep(300);
   ok(K.started && K.started.delay === 20, '...and an absurd one is clamped to 20', K.started && String(K.started.delay));
   K.close();
+
+  // =========================================================================
+  // 9. the relay does not trust its clients (REVIEW-M17)
+  // =========================================================================
+  // Every one of these was probed against the old relay first: GET /% killed the process, the checkout
+  // was served whole, a command's `p` was whatever the sender wrote, a non-array batch was forwarded
+  // and threw in every receiver, a refused stranger counted as in the room, a live player could take a
+  // dropped slot, a race of "QQ" reached G.init, the LAN room could not change a setting for its second
+  // game, a kicked client kept hearing the lobby, and a frame could claim 2^63 bytes.
+  const P4 = PORT + 3;
+  serve(P4, 3);
+  await sleep(500);
+  const get = (p) => new Promise(r => { const rq = http.get('http://localhost:' + P4 + p, res => { let b = ''; res.on('data', d => b += d); res.on('end', () => r({ status: res.statusCode, body: b })); }); rq.on('error', e => r({ status: -1, body: String(e.message) })); });
+  const bad = await get('/%'); const after = await get('/index.html');
+  ok(bad.status === 400 && after.status === 200, 'GET /% is a 400 and the relay is still up afterwards (it used to throw out of decodeURIComponent and exit)', bad.status + ' then ' + after.status);
+  const git = await get('/.git/HEAD'), md = await get('/HANDOFF-M16.md'), srv = await get('/test/serve.js'), js = await get('/js/net.js'), art = await get('/assets/atlas.js');
+  ok(git.status === 404 && md.status === 404 && srv.status === 404, 'the static half serves neither the repository nor the docs nor itself (was 200 for all three)', git.status + '/' + md.status + '/' + srv.status);
+  ok(js.status === 200 && art.status === 200, '...and still serves the page\'s code and art', js.status + '/' + art.status);
+
+  const SA = client(P4, 'SA'), SB = client(P4, 'SB');
+  await SA.open; await SB.open;
+  SA.send({ t: 'join', name: 'Ann', race: 'T', room: 'SEC' }); await sleep(200);
+  SB.send({ t: 'join', name: 'Bee', race: 'QQ', room: 'SEC' }); await sleep(200);
+  ok(SA.lobby && SA.lobby.players.length === 2 && SA.lobby.players[1].race === 'R', 'a race the game does not have becomes Random rather than reaching G.init (was "QQ", which threw on every client)', JSON.stringify(SA.lobby && SA.lobby.players.map(p => p.race)));
+  SB.send({ t: 'set', team: { z: 1 } }); await sleep(200);
+  ok(SA.lobby.players[1].team === 2, 'a team that is not an integer is ignored', JSON.stringify(SA.lobby.players[1].team));
+  SA.send({ t: 'addai', race: 'Z', difficulty: 'x'.repeat(500) }); await sleep(200);
+  ok(SA.lobby.players.length === 3 && SA.lobby.players[2].difficulty === 'normal', 'an unknown difficulty becomes normal (was stored verbatim, 500 characters of it, and rendered into every lobby)', JSON.stringify(SA.lobby.players[2] && SA.lobby.players[2].difficulty));
+  SA.send({ t: 'start' }); await sleep(300);
+  ok(SA.started && SB.started, 'the SEC game starts');
+  SB.send({ t: 'cmds', f: 5, c: [{ t: 'cheat', p: 0, code: 'game over man' }] }); await sleep(200);
+  const forged = SA.cmds.find(m => m.f === 5);
+  ok(forged && forged.p === 1 && forged.c.length === 1 && forged.c[0].p === 1, 'a command whose `p` names another player is re-stamped with the sender\'s slot (was forwarded as p:0, and CMD.apply trusted it)', JSON.stringify(forged));
+  SB.send({ t: 'cmds', f: 6, c: 42 }); SB.send({ t: 'cmds', f: 7, c: [] }); await sleep(200);
+  ok(!SA.cmds.some(m => m.f === 6) && SA.cmds.some(m => m.f === 7), 'a batch that is not a list is dropped, and the next real one still arrives (was forwarded, and threw in every receiver)', SA.cmds.map(m => m.f).join(','));
+  const SE = client(P4, 'SE'); await SE.open;
+  SE.send({ t: 'join', name: 'Eve', race: 'T', room: 'SEC' }); await sleep(200);
+  const chatsBefore = SE.chats.length; SA.send({ t: 'chat', text: 'private' }); await sleep(200);
+  ok(/in progress/i.test(String(SE.error)) && SE.chats.length === chatsBefore, 'a stranger refused mid-game hears nothing afterwards (it used to count as in the room and receive every broadcast)', String(SE.error) + ' chats ' + SE.chats.length);
+  SB.close(); await sleep(300);
+  SA.send({ t: 'join', name: 'Bee', race: 'T', room: 'SEC' }); await sleep(200);
+  ok(/already in this game/i.test(String(SA.error)), 'a live player re-sending join with a dropped player\'s name is refused (it used to take the slot, and two slots shared one id)', String(SA.error));
+  const SB2 = client(P4, 'SB2'); await SB2.open;
+  SB2.send({ t: 'join', name: 'Bee', race: 'T', room: 'SEC' });
+  for (let i = 0; i < 60 && !SB2.msgs.some(m => m.t === 'rejoin'); i++) await sleep(100);   // the donor (a raw client here) never answers, so the relay's 4 s fallback serves the rejoin
+  ok(SB2.msgs.some(m => m.t === 'rejoin'), '...so the real Bee can still rejoin her slot', SB2.msgs.map(m => m.t).join(','));
+  SA.close(); SB2.close(); SE.close(); await sleep(300);
+
+  // the LAN room's second game: no code means the shared room, and it must be reusable
+  const L1 = client(P4, 'L1'); await L1.open;
+  L1.send({ t: 'join', name: 'Lou', race: 'T', room: '' }); await sleep(200);
+  L1.send({ t: 'start' }); await sleep(300);
+  ok(L1.started, 'a game starts in the LAN room');
+  L1.close(); await sleep(300);
+  const L2 = client(P4, 'L2'); await L2.open;
+  L2.send({ t: 'join', name: 'Mo', race: 'T', room: '' }); await sleep(200);
+  L2.send({ t: 'set', race: 'Z' }); await sleep(200);
+  ok(L2.lobby && L2.lobby.state === 'lobby' && L2.lobby.players[0] && L2.lobby.players[0].race === 'Z', 'the second game in the LAN room can change a setting again (the reset left `started` behind, so race, team, map and speed were all refused)', JSON.stringify(L2.lobby && { state: L2.lobby.state, race: L2.lobby.players[0] && L2.lobby.players[0].race }));
+  const L3 = client(P4, 'L3'); await L3.open;
+  L3.send({ t: 'join', name: 'Ned', race: 'T', room: '' }); await sleep(200);
+  const nedId = L3.hello && L3.hello.id;
+  L2.send({ t: 'kick', id: nedId }); await sleep(200);
+  const lobbiesBefore = L3.msgs.filter(m => m.t === 'lobby').length; L2.send({ t: 'set', race: 'P' }); await sleep(200);
+  ok(/removed you/i.test(String(L3.error)) && L3.msgs.filter(m => m.t === 'lobby').length === lobbiesBefore, 'a kicked client is told, and hears no more of that lobby (it used to keep receiving every broadcast)', String(L3.error) + ' lobbies ' + lobbiesBefore + '/' + L3.msgs.filter(m => m.t === 'lobby').length);
+  L2.close(); L3.close();
+
+  // a frame that claims more bytes than any honest message: the socket is closed, not believed
+  const raw = await new Promise(r => {
+    const sock = net.createConnection(P4, 'localhost'); let closed = false; let out = '';
+    sock.on('data', d => { out += d; if (out.includes('\r\n\r\n') && !sock.sentBad) { sock.sentBad = true; const h = Buffer.alloc(14); h[0] = 0x81; h[1] = 0x80 | 127; h.writeBigUInt64BE(BigInt(2 ** 40), 2); sock.write(h); } });
+    sock.on('close', () => { closed = true; r({ closed }); }); sock.on('error', () => { });
+    sock.on('connect', () => sock.write('GET /ws HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n'));
+    setTimeout(() => r({ closed }), 3000);
+  });
+  ok(raw.closed, 'a frame claiming 2^40 bytes gets the connection closed (it used to be streamed into memory)', JSON.stringify(raw));
+  const alive = await get('/index.html');
+  ok(alive.status === 200, '...and the relay is still up', String(alive.status));
+
+  // the lobby renders names as text, never as markup
+  {
+    const netSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'net.js'), 'utf8');
+    const html = { v: '' }; const el = () => ({ get innerHTML() { return html.v; }, set innerHTML(v) { html.v = v; }, querySelectorAll: () => [], value: '', onchange: null });
+    const c = { console, location: { protocol: 'http:', host: 'localhost' }, document: { getElementById: el }, TPS: 24, WebSocket: function () { } };
+    vm.createContext(c); vm.runInContext(netSrc, c);
+    const rendered = vm.runInContext(`Net.id = 7; Net.lobby = { room: 'LAN', state: 'lobby', speed: 6, players: [{ id: 7, name: '<svg/onload=x()>', race: 'T', team: 1, host: true }, { id: -1, name: 'Computer 0', ai: true, difficulty: '<img src=x onerror=y>', race: 'R', team: 2 }] }; Net.render(); Net.lobby = null; 1;`, c);
+    ok(!/<svg|<img/.test(html.v) && /&lt;svg/.test(html.v), 'a player name or difficulty is escaped before it reaches innerHTML (was raw: script in every lobby member\'s page over a public tunnel)', html.v.slice(0, 160));
+  }
+  ok(/PING_MS/.test(fs.readFileSync(path.join(__dirname, 'serve.js'), 'utf8')) && /DEAD_MS/.test(fs.readFileSync(path.join(__dirname, 'serve.js'), 'utf8')), 'the relay has a keepalive (static: a silent connection is dropped after DEAD_MS; verified by hand, it takes 45 s)');
 
   await sleep(200);
   killAll();

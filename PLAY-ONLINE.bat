@@ -39,8 +39,11 @@ echo     Everyone opens the link, expands Multiplayer, types the SAME room code
 echo     and their name, and presses CONNECT. Then you press START.
 echo.
 echo     THE ROOM CODE IS THE ONLY THING KEEPING STRANGERS OUT. The link is not
-echo     a secret once you have sent it. Anyone who opens it without the code
-echo     lands in an empty room of their own and never sees your game.
+echo     a secret once you have sent it. Anyone who opens it and types a WRONG
+echo     code lands in an empty room of their own and never sees your game.
+echo     Anyone who types NO code lands in the shared room called LAN, with
+echo     everyone else who typed nothing -- so the page insists on a code when
+echo     it is served over https, and you should always use one.
 echo.
 echo  Keep this window open while playing. Close it to stop the server.
 echo.

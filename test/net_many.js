@@ -5,7 +5,8 @@
 //   * two players dropping simultaneously (the relay picks a stop frame per player, and every other
 //     client has to apply both on the same tick)
 //   * two players rejoining -- sequentially, and then at the same moment, which is where the relay's
-//     single `pendingSnap` slot lives
+//     snapshot bookkeeping lives (it was a single `pendingSnap` slot once, and that is the wedge this
+//     found; it is a map keyed by request now)
 //   * dropping the *host*. HANDOFF says migration "should work by construction" because the relay
 //     picks the first non-dropped human; this drops player 0 and checks that the next player really
 //     does inherit the host-only powers, and that nobody else has them before or after.
@@ -35,7 +36,7 @@ function startRelay(port, tag) {
   return s;
 }
 
-function makeClient(name, race, port) {
+function makeClient(name, race, port, room) {
   const errors = [];
   const el = () => ({ style: {}, addEventListener() { }, click() { }, remove() { }, getContext: () => null, value: '', appendChild() { }, textContent: '', querySelectorAll: () => [] });
   const ctx = {
@@ -57,7 +58,7 @@ function makeClient(name, race, port) {
     this.waitingOn = () => Net.players.map((p, i) => p.human && !Net.isGone(i, G.frame) && !(Net.inbox[G.frame] || {})[i] ? i : '').join('');`, ctx);
   return {
     name, ctx, errors, race,
-    connect() { vm.runInContext(`Net.connect('ws://localhost:${port}/ws', ${JSON.stringify(name)}, ${JSON.stringify(race)})`, ctx); },
+    connect() { vm.runInContext(`Net.connect('ws://localhost:${port}/ws', ${JSON.stringify(name)}, ${JSON.stringify(race)}, ${JSON.stringify(room || '')})`, ctx); },
     get Net() { return ctx.__Net; }, get G() { return ctx.__G; },
     frame() { return ctx.__G.frame; }, step(n) { return ctx.step(n); }, order() { ctx.orderSomething(); },
     waiting() { return ctx.waitingOn(); }, kill() { try { ctx.__Net.ws.close(); } catch (e) { } },
@@ -170,14 +171,15 @@ async function gameA() {
   check(rest.every(c => c.G.log.some(e => e.c.t === 'stopall' && e.c.p === 0 && e.f === D.Net.gone[0].from)), 'phase 4: the host\'s units stopped on the relay-chosen frame on every client');
   const a4 = agree(rest, a3.f || 0);
   check(a4.ok, 'phase 4: the survivors agree after the host left, at frame ' + a4.f + ' (' + (a4.hs || []).join('/') + ')');
-  // the promotion has to be real, not cosmetic: the new host's host-only command must be obeyed and
-  // a non-host's must still be ignored.
+  // The promotion has to be real, not cosmetic -- but mid-game there is NO host-only power to prove it
+  // with: the relay refuses every `set`, `addai` and `kick` once a game has started, from the host or
+  // anyone else, by design. The assertion that used to sit here ("the promoted host's speed change is
+  // obeyed") contradicted that rule and was HANDOFF-M16's fourth known red. So this half asserts the
+  // rule, promoted host included, and the lobby block after game A proves the promotion with the
+  // powers a lobby has. (REVIEW-M17)
   const speedBefore = D.Net.lobby.speed;
-  D.Net.send({ t: 'set', speed: 6 }); await sleep(300);
-  const speedNonHost = D.Net.lobby.speed;
-  B2.Net.send({ t: 'set', speed: 4 }); await sleep(400);
-  check(speedNonHost === speedBefore, 'phase 4: a non-host still cannot change a host-only setting (' + speedBefore + ' -> ' + speedNonHost + ')');
-  check(D.Net.lobby.speed === 4, 'phase 4: the promoted host\'s host-only command is obeyed (speed ' + D.Net.lobby.speed + ')');
+  D.Net.send({ t: 'set', speed: 6 }); B2.Net.send({ t: 'set', speed: 4 }); await sleep(400);
+  check(rest.every(c => c.Net.lobby.speed === speedBefore), 'phase 4: once the game has started no setting is mutable, from the promoted host or anyone else (' + speedBefore + ' -> ' + rest.map(c => c.Net.lobby.speed).join('/') + ')');
 
   // ---- phase 5: the old host comes back
   const A2 = makeClient('Alice', 'T', PORT); A2.connect();
@@ -195,6 +197,32 @@ async function gameA() {
   const stranger = makeClient('Eve', 'T', PORT); stranger.connect();
   await until(() => stranger.Net.lastError, 6000, 'stranger refused').catch(() => { });
   check(/in progress/i.test(stranger.Net.lastError || '') && !stranger.ctx.UI.started, 'a name nobody dropped under is refused mid-game ("' + (stranger.Net.lastError || '') + '")');
+
+  // ---- host migration where host-only powers EXIST: a lobby, in its own room on the same relay ----
+  // Every check reads the NON-acting client's lobby, so it measures what the relay broadcast, not local
+  // state. Negative control (run by hand): drop the `filter` in leave()'s lobby branch so the dead host
+  // stays first in the list -- hostOf() returns Xavier, Yves's `set` is refused, and this block goes red.
+  {
+    const X = makeClient('Xavier', 'T', PORT, 'HOSTTEST'), Y = makeClient('Yves', 'Z', PORT, 'HOSTTEST'), Z = makeClient('Zoe', 'P', PORT, 'HOSTTEST');
+    X.connect(); await until(() => X.Net.lobby, 6000, 'X in the lobby');
+    Y.connect(); await until(() => Y.Net.lobby && Y.Net.lobby.players.length === 2, 6000, 'Y in the lobby');
+    Z.connect(); await until(() => Z.Net.lobby && Z.Net.lobby.players.length === 3, 6000, 'Z in the lobby');
+    check(hostId(Z) === 'Xavier', 'lobby: the first to join is the host (' + hostId(Z) + ')');
+    X.kill(); await until(() => hostId(Z) === 'Yves', 6000, 'host promoted in the lobby').catch(() => { });
+    check(hostId(Z) === 'Yves', 'lobby: when the host leaves, the next human is promoted (' + hostId(Z) + ')');
+    Y.Net.send({ t: 'set', speed: 3 }); await sleep(300);
+    check(Z.Net.lobby && Z.Net.lobby.speed === 3, 'lobby: the promoted host\'s speed setting is obeyed, as seen by a third client (' + (Z.Net.lobby && Z.Net.lobby.speed) + ')');
+    Z.Net.send({ t: 'set', speed: 5 }); await sleep(300);
+    check(Y.Net.lobby && Y.Net.lobby.speed === 3, 'lobby: a non-host\'s speed setting is refused (' + (Y.Net.lobby && Y.Net.lobby.speed) + ')');
+    Y.Net.send({ t: 'addai', race: 'T', difficulty: 'easy' }); await sleep(300);
+    check(Z.Net.lobby && Z.Net.lobby.players.length === 3 && Z.Net.lobby.players.some(p => p.ai), 'lobby: the promoted host can add a computer player (' + (Z.Net.lobby && Z.Net.lobby.players.length) + ' slots)');
+    Z.Net.send({ t: 'addai', race: 'T' }); await sleep(300);
+    check(Y.Net.lobby && Y.Net.lobby.players.filter(p => p.ai).length === 1, 'lobby: a non-host cannot add one');
+    const zId = Z.Net.id; Y.Net.send({ t: 'kick', id: zId }); await sleep(300);
+    check(Y.Net.lobby && !Y.Net.lobby.players.some(p => p.id === zId), 'lobby: the promoted host can kick, and the kicked client leaves the list');
+    check(/removed you/i.test(Z.Net.lastError || ''), 'lobby: ...and the kicked client is told why ("' + (Z.Net.lastError || '') + '")');
+    Y.kill(); Z.kill();
+  }
 
   const errs = [];
   for (const c of [A, B, C, D, B2, C2, A2, stranger]) for (const e of c.errors) if (!/desync at frame/.test(e)) errs.push(c.name + ': ' + e);
@@ -245,8 +273,9 @@ async function gameB() {
   await play([A], A.frame() + 900, 'game B phase 2 (one survivor)');
   check(A.frame() > FRAMES, 'game B: the last player alone keeps playing (frame ' + A.frame() + ')');
 
-  // Both reconnect back to back, with no wait between them. The relay keeps one `pendingSnap` slot and
-  // asks a donor for a snapshot per request, so the second join overwrites the first request's bookkeeping.
+  // Both reconnect back to back, with no wait between them. The relay asks a donor for a snapshot per
+  // request; when it kept one `pendingSnap` slot the second join overwrote the first request's bookkeeping,
+  // which is the wedge this check exists for.
   const B2 = makeClient('Bob', 'Z', P), C2 = makeClient('Carol', 'P', P);
   B2.connect(); C2.connect();
   console.log('  both reconnected in the same tick of the event loop');

@@ -12,6 +12,8 @@ node broodwar/test/serve.js 8765
 
 Then open http://localhost:8765. The server also prints a LAN address for multiplayer. Opening `index.html` directly from disk works too (single player).
 
+For a game over the internet, run `PLAY-ONLINE.bat` instead: it starts the same server with a longer lockstep delay and tells you how to put a tunnel (cloudflared, ngrok, a port forward) in front of it. Everyone opens the https link, types the same room code, and connects; the room code is the only thing keeping strangers out of your game.
+
 ## What is in the box
 
 **Races and rules**
@@ -25,9 +27,9 @@ Then open http://localhost:8765. The server also prints a LAN address for multip
 **Modes**
 - Single player vs 1-3 computer opponents (Easy/Normal/Hard) with **teams** (shared vision, allied victory).
 - **Campaign**: eight scripted missions with briefings and custom objectives (hold out, nuke a base, escort to a beacon, infest a Command Center, tunnel a Nydus Canal behind enemy lines, Recall an army past a sunken wall). Razing every enemy structure always completes a mission, and the result screen shows the objective plus a score line.
-- **LAN multiplayer**: deterministic lockstep over a WebSocket relay built into serve.js. Everyone opens the LAN address, connects in the lobby, the host adds AI players if wanted and starts. In-game Enter is chat. Clients exchange a state hash every two seconds; a mismatch shows a desync banner and both sides download their command logs. If someone drops, their units stop on a frame the relay picks and the game continues; connecting again with the same name rejoins the game by re-simulating the relay's command history.
+- **Multiplayer**: deterministic lockstep over a WebSocket relay built into serve.js. Everyone opens the LAN address, types the same room code (or none, for the shared LAN room), connects, and the host adds AI players if wanted and starts; one relay holds many rooms and never lists them, so the code is the only thing keeping strangers out. In-game Enter is chat. Clients exchange a state hash every two seconds; a mismatch shows a desync banner and both sides download their command logs. If someone drops, their units stop on a frame the relay picks and the game continues; connecting again with the same name and room code rejoins the game from a snapshot a live player donates, with only the commands since replayed (or, with no donor, by re-simulating the relay's command history from the start).
 - **Replays**: every game records its command log. Save a replay from the menu and watch it later at up to 8x. Observer controls: `Ctrl+V` toggles full-map vision, `[` and `]` switch whose vision you are watching, `O` toggles a production overlay showing every player's resources, supply, workers, army supply and what they are building, and a timeline bar you can click to seek (`Shift+Left/Right` skip 30 s, `Home` restarts). Seeking backwards restarts from a checkpoint taken every 30 seconds rather than re-running the whole game.
-- **Save/Load**: F5 saves (file + browser autosave), F8 loads the autosave; loading re-simulates the recorded commands, so saves are tiny and always consistent. Autosave runs every two minutes. Every save and replay carries a digest of the simulation code, and one written by a different build is refused with the reason rather than quietly drifting out of sync.
+- **Save/Load**: F5 saves (file + browser autosave), F8 loads the autosave (asking first if a game is running); loading re-simulates the recorded commands, so saves are tiny and always consistent. Autosave runs every two minutes. Every save and replay carries a digest of the simulation code, and one written by a different build is refused with the reason rather than quietly drifting out of sync.
 - Three map layouts (Lost Ruins 4p, Blood Pit 4p, Twilight Valley 2p) with seeded variation, seven BW speed presets (Slowest to Fastest), Brood War or grid (QWE/ASD/ZXC) hotkeys, voice and music toggles.
 - **Map editor**: paint terrain height, ramps and rocks, drop start locations and expansions, check the map for unreachable bases, then save it. Undo/redo (Ctrl+Z / Ctrl+Y), a rectangle-fill mode (R), 2- and 4-player mirrored painting (M) that turns one stroke into a symmetric map, and a minimap you can click to jump across the 128x128 canvas. Custom maps appear in the map list next to the built-ins, work in single player and LAN, and export/import as small JSON files.
 - **Alerts**: the console, a minimap ping and a voice line tell you when production is standing idle with money in the bank, when you are supply blocked, when a Carrier is fighting with an empty hangar, and when an expansion is being attacked with nothing defending it. Space jumps the camera to the last one.
@@ -55,7 +57,7 @@ Left click select, drag to box-select, right click for smart commands. `A` attac
 
 ```bash
 node broodwar/test/features.js      # 87 gameplay checks
-node broodwar/test/all.js                   # the eleven fast deterministic checks, in parallel
+node broodwar/test/all.js                   # the gate: 70 fast deterministic checks, in parallel (~3 min); green before every commit
 node broodwar/test/rates.js                 # every weapon's observed rate of fire matches its table entry
 node broodwar/test/cardsay.js               # every greyed command-card button explains itself when pressed
 node broodwar/test/wrongthing.js            # do the wrong thing on purpose: nothing crashes, nothing wedges
@@ -88,6 +90,6 @@ node broodwar/test/editor.js                # builds a custom map, then plays an
 
 ## Known gaps vs. the original
 
-- No online matchmaking (LAN only), no original campaign story, no hand-painted art or recorded voice acting.
+- No matchmaking and no hosted server: multiplayer is LAN, or internet through a tunnel you run yourself (`PLAY-ONLINE.bat`), with a room code as the only gate. No original campaign story, no hand-painted art or recorded voice acting.
 - Exact BW pathfinding quirks, collision boxes and animation timings are approximations.
 - Balance is tuned by AI-vs-AI runs, not by human ladder play. **No matchup is outside the 60/40 band, and none is confirmed inside it**: Terran vs Zerg 64% [59-69] to Terran, Protoss vs Zerg 36% [31-41] to Protoss, Protoss vs Terran 62% [57-67] to Protoss -- all three "undecided", meaning the confidence interval still crosses the line. Everything was re-measured from scratch after a bug found in M9: Hold Position never checked the weapon cooldown, so any unit holding with a target in range fired 24 times a second. See HANDOFF.md.

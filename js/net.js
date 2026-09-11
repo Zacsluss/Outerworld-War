@@ -7,23 +7,25 @@
 // a mismatch is reported on screen and both command logs are dumped.
 // A dropped player's units stop at a frame chosen by the relay (so every
 // client applies it on the same tick); the player can rejoin by connecting
-// again with the same name: the relay sends the whole command history and
-// the client re-simulates from frame 0, then rejoins the lockstep.
+// again with the same name and room: the relay asks a live player for a
+// snapshot and sends it with the commands since, so the client restores and
+// replays only the tail (or, with no donor, re-simulates the whole history
+// from frame 0), then rejoins the lockstep.
 // ============================================================================
 // Speed names for the lobby. Duplicated from UI rather than referenced, because net.js is loaded
 // without ui.js in the headless harnesses and reaching into UI here threw for both clients.
 const NET_SPEED_NAMES = ['Slowest', 'Slower', 'Slow', 'Normal', 'Fast', 'Faster', 'Fastest'];
 const Net = {
-  active: false, ws: null, me: -1, delay: 3, outbox: [], inbox: {}, sent: {}, gone: {}, players: [], lobby: null, connected: false, id: 0, waitingSince: 0, chatLog: [], room: '',
-  HASH_EVERY: 48, myHashes: {}, theirHashes: {}, desynced: false, desyncFrame: -1, catchingUp: false, catchTarget: 0, serverState: 'lobby', name: 'Player', lastError: '',
+  active: false, ws: null, me: -1, delay: 3, outbox: [], inbox: {}, sent: {}, gone: {}, players: [], lobby: null, connected: false, id: 0, waitingSince: 0, room: '',
+  HASH_EVERY: 48, myHashes: {}, theirHashes: {}, desynced: false, desyncFrame: -1, catchingUp: false, catchTarget: 0, name: 'Player', lastError: '',
   defaultUrl() { return (location.protocol === 'https:' ? 'wss://' : 'ws://') + (location.host || 'localhost:8765') + '/ws'; },
   // `room` is a short code deciding WHICH game on this relay you are joining, and on a public server
   // it is the only thing stopping anything with the link walking into your lobby. Empty means the room
   // called LAN, so a LAN game needs nothing typed and behaves exactly as it always did.
   //
-  // KEPT ON `this`, because a rejoin after a drop reconnects through here and has to land in the same
-  // room. A rejoin that fell back to the default room would look to the relay like a stranger turning
-  // up with a name that is already taken, and be refused.
+  // KEPT ON `this` so a caller that passes no room lands in the one it had. The connect button always
+  // passes the room field's current value, so in practice what keeps a rejoin in its room is that field
+  // still holding the code: clear it and you land in LAN and are refused as a stranger.
   connect(url, name, race, room) {
     this.disconnect(); this.name = name || 'Player'; this.room = (room == null ? this.room : room) || ''; const ws = new WebSocket(url || this.defaultUrl()); this.ws = ws;
     ws.onopen = () => { this.connected = true; this.send({ t: 'join', name: this.name, race, room: this.room }); this.status('Connected. Waiting in lobby...'); };
@@ -43,26 +45,29 @@ const Net = {
       // state arrives with the `lobby` message `join` triggers, or the `error` that refuses it. Without
       // the guard `undefined !== 'lobby'` is true and every fresh connection announces a game in
       // progress that may not exist.
-      case 'hello': this.id = m.id; this.serverState = m.state || 'lobby'; this.hasRooms = !!m.rooms; if (m.state && m.state !== 'lobby') this.status('A game is running on this server. Connect with the name you used to rejoin it.'); break;
-      case 'lobby': this.lobby = m; this.serverState = m.state; this.render(); break;
+      case 'hello': this.id = m.id; if (m.state && m.state !== 'lobby') this.status('A game is running on this server. Connect with the name you used to rejoin it.'); break;
+      case 'lobby': this.lobby = m; this.render(); break;
       case 'error': this.lastError = m.msg; this.status(m.msg); break;
       case 'start': this.startGame(m); break;
       case 'rejoin': this.rejoinGame(m); break;
       case 'needsnap': if (this.active && typeof Snapshot !== 'undefined') { try { this.send({ t: 'snap', req: m.req, frame: G.frame, snap: Snapshot.take() }); } catch (e) { console.error('snapshot for rejoin failed', e); } } break;
-      case 'cmds': if (this.active && m.f >= G.frame) { if (!this.inbox[m.f]) this.inbox[m.f] = {}; this.inbox[m.f][m.p] = m.c; } break;
+      case 'cmds': if (this.active && m.f >= G.frame) { if (!this.inbox[m.f]) this.inbox[m.f] = {}; this.inbox[m.f][m.p] = Array.isArray(m.c) ? m.c : []; } break;   // a batch that is not a list counts as an empty one that ARRIVED, so the frame is not blocked forever
       case 'hash': this.onHash(m); break;
       case 'left': { this.gone[m.p] = { from: m.f, to: Infinity }; if (typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg(this.playerName(m.p) + ' dropped. Their units stop at ' + this.clock(m.f) + '; the game continues.', 'info'); break; }
       case 'rejoined': { const g = this.gone[m.p]; if (g) g.to = m.f; else this.gone[m.p] = { from: -1, to: m.f }; if (typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg(this.playerName(m.p) + ' is rejoining; they take control again at ' + this.clock(m.f) + '.', 'info'); break; }
-      case 'chat': if (typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg(m.from + ': ' + m.text, 'chat'); this.chatLog.push(m); break;
+      case 'chat': if (typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg(m.from + ': ' + m.text, 'chat'); break;
     }
   },
   clock(f) { const s = Math.floor(f / TPS); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); },
+  // Everything from the relay that lands in innerHTML goes through here: a 16-character name fits
+  // <svg/onload=x()>, and on a public tunnel that is script in every lobby member's page. (REVIEW-M17)
+  esc(s) { return String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); },
   render() {
     const el = document.getElementById('lobby'); if (!el) return; const L = this.lobby; if (!L) { el.innerHTML = ''; return; }
     const meP = L.players.find(p => p.id === this.id); const host = !!(meP && meP.host);
     // The room is shown only when it is not the default: on a LAN there is one room and naming it is
     // noise, and over a tunnel it is the thing everyone needs to have agreed on.
-    let h = (L.room && L.room !== 'LAN' ? '<div class="sub">Room <b>' + L.room + '</b></div>' : '') + '<div class="lobbyList">' + L.players.map(p => `<div class="lp">${p.host ? '★ ' : ''}${p.name}${p.ai ? ' (AI ' + p.difficulty + ')' : ''}${p.gone ? ' (dropped)' : ''} — ${{ T: 'Terran', Z: 'Zerg', P: 'Protoss', R: 'Random' }[p.race]} — Team ${p.team}${host && p.id !== this.id ? ` <a href="#" data-kick="${p.id}">✕</a>` : ''}</div>`).join('') + '</div>';
+    let h = (L.room && L.room !== 'LAN' ? '<div class="sub">Room <b>' + this.esc(L.room) + '</b></div>' : '') + '<div class="lobbyList">' + L.players.map(p => `<div class="lp">${p.host ? '★ ' : ''}${this.esc(p.name)}${p.ai ? ' (AI ' + this.esc(p.difficulty) + ')' : ''}${p.gone ? ' (dropped)' : ''} — ${{ T: 'Terran', Z: 'Zerg', P: 'Protoss', R: 'Random' }[p.race]} — Team ${p.team}${host && p.id !== this.id ? ` <a href="#" data-kick="${p.id}">✕</a>` : ''}</div>`).join('') + '</div>';
     if (L.state !== 'lobby') { h += '<div class="sub">Game in progress. Dropped players can rejoin by connecting with their name.</div>'; el.innerHTML = h; return; }
     if (meP) h += `<div class="row"><label>My race</label><select id="lbRace"><option value="R">Random</option><option value="T">Terran</option><option value="Z">Zerg</option><option value="P">Protoss</option></select><label>Team</label><select id="lbTeam">${[1, 2, 3, 4].map(t => `<option value="${t}">${t}</option>`).join('')}</select></div>`;
     if (host) h += `<div class="row"><label>Map</label><select id="lbLayout"><option value="temple">Lost Ruins</option><option value="bloodbath">Blood Pit</option><option value="valley">Twilight Valley</option></select><button id="lbAddAi" class="small">ADD AI</button></div><div class="row"><label>Speed</label><select id="lbSpeed">` + NET_SPEED_NAMES.map((n, i) => `<option value="${i}">${n}</option>`).join('') + `</select></div><button id="lbStart">START MULTIPLAYER GAME</button>`;
@@ -86,7 +91,7 @@ const Net = {
   rejoinGame(m) {
     this.reset(m);
     this.speed = m.speed == null ? 6 : m.speed;
-    for (const h of (m.history || [])) { if (!this.inbox[h.f]) this.inbox[h.f] = {}; this.inbox[h.f][h.p] = h.c; if (h.p === this.me) this.sent[h.f] = true; }
+    for (const h of (m.history || [])) { if (!this.inbox[h.f]) this.inbox[h.f] = {}; this.inbox[h.f][h.p] = Array.isArray(h.c) ? h.c : []; if (h.p === this.me) this.sent[h.f] = true; }
     this.catchingUp = true; this.catchTarget = m.frame || 0;
     UI.start({ players: m.players.map(p => ({ race: p.race, human: p.human, name: p.name, difficulty: p.difficulty, team: p.team, style: p.style, minerals: p.minerals, gas: p.gas })), seed: m.seed, layout: m.layout, human: m.you, mode: 'play', net: true });
     // A snapshot from a live player skips straight to their state; only the commands after it get replayed.
@@ -113,7 +118,9 @@ const Net = {
     if (this.appliedFrame === f) return; this.appliedFrame = f; // a finished (or paused) game must never apply a frame's batch twice
     for (let i = 0; i < this.players.length; i++) { const g = this.gone[i]; if (g && g.from === f) G.exec({ t: 'stopall', p: i }); }
     const b = this.inbox[f] || {};
-    for (let i = 0; i < this.players.length; i++) for (const c of (b[i] || [])) G.exec(c);
+    // The slot the batch arrived under is the owner of every command in it, whatever `p` the sender
+    // wrote: the relay stamps it too, and this covers a rejoin history from an older relay. (REVIEW-M17)
+    for (let i = 0; i < this.players.length; i++) { const batch = Array.isArray(b[i]) ? b[i] : []; for (const c of batch) { if (!c || typeof c !== 'object') continue; c.p = i; G.exec(c); } }
     delete this.inbox[f]; delete this.sent[f];
     if (f % this.HASH_EVERY === 0 && f > 0) this.exchangeHash(f);
   },
@@ -121,7 +128,8 @@ const Net = {
   exchangeHash(f) {
     const h = G.stateHash(); this.myHashes[f] = h; this.send({ t: 'hash', f, h });
     const theirs = this.theirHashes[f]; if (theirs) for (const [p, th] of Object.entries(theirs)) if (th !== h) this.desync(f, +p);
-    for (const k of Object.keys(this.myHashes)) if (+k < f - this.HASH_EVERY * 40) { delete this.myHashes[k]; delete this.theirHashes[k]; }
+    for (const k of Object.keys(this.myHashes)) if (+k < f - this.HASH_EVERY * 40) delete this.myHashes[k];
+    for (const k of Object.keys(this.theirHashes)) if (+k < f - this.HASH_EVERY * 40) delete this.theirHashes[k];   // by its own keys: a peer's hashes for frames we never hashed used to pile up forever
   },
   onHash(m) {
     if (!this.active) return;

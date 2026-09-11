@@ -146,57 +146,187 @@ Fill in the two lists below, in this file, and commit it.
 
 # 1. Open tasks / to-dos
 
-Each entry names the file, what is wrong, the fix, and what it would cost. Anything measured says so.
+Each entry names the file, what is wrong, the fix, and what it would cost. Everything measured says so;
+"reviewer" means one of the six read-only region reviews, whose claims were verified before they were
+listed here. Ordered by what I would do first.
 
-1. **Cross-engine floating point in the simulation.** `js/sim.js`, `js/game.js`, `js/combat.js`,
-   `js/abilities.js`, `js/ai.js` make **75 transcendental calls** (26 `Math.cos`, 24 `Math.sin`,
-   16 `Math.atan2`, 9 `Math.hypot`); `Math.sqrt` is IEEE-correctly-rounded, those four are not
-   required to be, and V8, SpiderMonkey and JavaScriptCore differ in the last bit on some inputs.
-   Lockstep hashes positions at 1/16 px, so a last-bit difference in a facing or a step can, over
-   minutes, become a desync between two *different browsers* on the same build. Same-browser play is
-   unaffected. Fix: route the five through one deterministic table (quantised angle in, fixed-precision
-   out) in a stamped file, and turn `hypot` into `sqrt(dx*dx+dy*dy)`. Cost M (one helper, ~80 call
-   sites, a replay test across two engines that this repo cannot run headlessly). Moves the stamp and
-   changes results by a hair. **Blocked on question 1** — it is only worth doing if mixed-browser
-   multiplayer is a target.
-2. **Test-harness duplication.** 90 of 102 suites build their own `document` stub, through 11 differently
-   named builders (`makeCtx` ×8, `mkCtx` ×7, `mk` ×5, `mkCtx` const ×4, `mkCanvas` ×3, `fakeCtx` ×3,
-   `mkCtx2` ×2, `makeClient` ×2, `mkContext`, `makeCtxNoAudio`, `loadSim`), ~300 lines of near-identical
-   stubs. A `test/_harness.js` exposing one builder with options (which files, canvas recorder or not,
-   UI stub or not) would remove most of it. Cost L — a 90-file diff, every suite re-run — and it is
-   the kind of change that should be its own milestone, not a review. Not started.
+1. **`js/hud.js` overrides eight `UI` draw methods at load, and two shipped features never draw.**
+   `Object.assign(UI, {...})` in `hud.js` replaces `drawConsole`, `drawUnitInfo`, `drawTop`, `drawMessages`,
+   `drawHelp`, `drawMenu`, `miniRect` and `cardRect` from `ui.js`. The only callers of `UI.drawSelGrid`
+   (the "three regimes" grouped selection strip, M12 item 2, which PLAYTEST-M12 promises makes a
+   130-unit selection readable) and `UI.drawDayDial` (the day/night countdown, M11 idea 19) are inside
+   the replaced bodies, so in the browser neither ever draws: the live strip at `hud.js` `drawConsole`
+   has no cap, no grouping and no "+N more", and tiles past about eighteen units land below the screen.
+   `test/daynight.js` and `test/qol.js` pass because they call the functions directly. Fix: call
+   `this.drawSelGrid` from the HUD's multi-selection branch and `this.drawDayDial` from its `drawTop`
+   (after the clock plate), look at both in the browser, then delete the eight dead `ui.js` bodies
+   (~250 lines; one of them, the dead `drawUnitInfo`, splices `u.cargo` and calls the unwrapped
+   `G.unloadOne` — a replay bypass that is only dead because `hud.js` loads). Cost M, and it needs eyes
+   on a screen, which is why it is not done here.
+2. **Cross-engine floating point in the simulation.** 75 transcendental calls (26 `Math.cos`, 24
+   `Math.sin`, 16 `Math.atan2`, 9 `Math.hypot`) in the stamped files. `Math.sqrt` is correctly rounded
+   by IEEE; those four are not required to be and engines differ in the last bit. Lockstep hashes
+   positions at 1/16 px, so two *different browsers* on the same build can drift apart over minutes.
+   Same-browser play is unaffected. The cheap half is `hypot` → `sqrt(dx*dx + dy*dy)` in the two
+   helpers and nine inline sites (S); sin/cos/atan2 need one deterministic table in a stamped file (M).
+   Moves the stamp, changes results by ulps. **Blocked on question 1.**
+3. **Bunkered infantry fire at double rate.** `Unit.tick` decrements `cooldown`, then the bunker loop in
+   `tickBuilding` decrements it again: measured 7.5-frame gaps against 15 for a free Marine. Deleting
+   the second decrement is one line and halves bunker DPS — a balance consequence. **Question 7.**
+4. **The 12-frame micro cadence exists only for player 0.** `AI.tick` runs micro on `G.frame % 12 === 0`
+   inside a think-gate, but `G.tick` schedules player *i*'s AI on `frame % 4 === i % 4`, and 12 is a
+   multiple of 4, so players 1-3 never land on a multiple of 12: their micro runs only on think frames,
+   and `turn(id, n)` collapses to a few residues. Reviewer's probe: player 0 ran micro 400-560 times in
+   4,800 frames, players 1-3 66-239 times, zero on a multiple of 12. On normal, players 1-2 can never
+   Comsat scan and their crawlers never move; on easy, no Chrono Boost and no MULE. The human is player
+   0, so **every computer opponent on easy and normal is the degraded one**. Fix: count micro ticks on
+   the AI (`this.microN++`) and key `turn()` on that. Cost S — but it changes what every AI casts and
+   sieges, so it belongs with the balance run. **Question 8.**
+5. **`research()` cannot find a tech's building once it has morphed.** It selects `bld` by
+   `u.def.id === td.bld`; a Lair morphed to a Hive carries the same techs but not the id, so after the
+   Hive, `pneumatized`, `ventral_sacs` and `antennae` are unresearchable for the AI (the harasser style
+   fronts one of them). Fix: select by `(u.def.tech || []).includes(id)`, the test `queueTech` already
+   makes. Cost S; changes Zerg late research spend, so run aistyles seeds 1/5/11 and eightplayer first.
+6. **Seven hand-copied supply-block tests disagree** (`queueUnit`, `larvaMorph`, `warpIn`,
+   `tickProduction`, `tickAlerts`, and two more): only `queueUnit` honours `notUnit`, `warpIn` omits
+   `pair`, and a nuke (`sup: 8, notUnit: true`) queued at the cap is accepted, never starts, and is
+   reported as "supply blocked" (measured). One `G.supplyBlocked(p, def)` at all seven sites. Cost S-M;
+   touches production for every race, so probe first.
+7. **The Raven and the Disruptor are bought and never moved.** Neither has a weapon, so `armyUnits()`
+   excludes them, and neither is in `supportUnits()`; 100/150 and 150/150 per unit that stands at the
+   rally for the game. Fix: add both to `supportUnits()` — or derive the list (`!weapon && !worker &&
+   !cargo && from`), which is exactly the current twelve plus these two. Cost S; changes where the AI
+   army goes with them, not what it builds.
+8. **`morph()` and `addon()` never `release()` their head-step claim**, unlike `train()` and
+   `research()`, so a Lair/Hive/Orbital/add-on head step stays charged against `commitMin` for the rest
+   of that think and `afford()` under-reports. Cost S; one think's worth of money per morph — probe
+   with the ledger before and after.
+9. **The "needs a detector" counter has never fired**: `if (needDet && ud.detector)` reads a key no def
+   carries (they carry `det: true`), and `sawCloak()` tests `d.cloak || d.burrow`, which no unit has
+   (they are abilities). The ×2.5 detector weight has been dead since it was written. A one-word fix
+   that starts changing composition the day it lands — gated-adjacent; **question 8**.
+10. **Eleven `energy:` techs do nothing** (`caduceus`, `moebius`, `apollo`, `titan`, `colossus_reactor`,
+    `gamete`, `metasynaptic`, `khaydarin_amulet`, `argus_talisman`, `argus_jewel`, `khaydarin_core`):
+    `maxEnergy = def.energy` is the only writer and nothing reads the tech's key, yet the AI buys them
+    at 150-200 each. Either `+50 maxEnergy` in the one getter, or remove them from the cards and
+    `AI_RESEARCH`. **Question 9** (balance either way).
+11. **`p.seen` is computed for every player every three frames and snapshotted, and no renderer reads
+    it.** The comment at `G.rememberSeen` promises a building destroyed while unwatched stays on your
+    map; `render.js` draws enemy buildings from the live list, so it vanishes at once. Either wire the
+    renderer to `p.seen` (M, a feature) or delete it and `test/fognight.js`'s memory checks (S); at
+    minimum gate the computation on `p.human`. **Question 10.**
+12. **Static-only checks worth making live.** `test/review17.js` guards `AI.micro`'s ally test by
+    regex; a team game with an allied caster at full energy inside your marines would prove it.
+    `test/review17ui.js` checks the terrain clamp, the minimap palette and the help text by regex;
+    a 64×128 editor map drawn through the recorder harness in `test/zoom.js` would prove the clamp.
+    `test/rooms.js` checks the keepalive by regex; a 45-second silence is too long for the gate, so it
+    stays a hand check. Cost S each.
+13. **Relay: a batch frame far in the future poisons rejoins.** `case 'cmds'` takes `m.f | 0` with no
+    window; a batch at `f: 2147483647` sets `maxFrame`, and every later rejoin's catch target and stop
+    frame come from it. Fix: drop batches with `f > maxFrame(L) + 2 * DELAY + 24` (a client is never more
+    than DELAY ahead). Measure the window against `test/net_many.js` before committing it. Cost S.
+14. **Relay: a rejoin after game over applies one batch twice.** `G.tick()` no-ops once `G.over`, so
+    `appliedFrame === G.frame` with that frame's batch already applied; a donor snapshot taken then
+    carries `frame: G.frame`, the rejoiner sets `appliedFrame = G.frame - 1` and re-applies it. Only
+    matters if "Continue playing" follows. Cost S.
+15. **Hard-coded keys outside the bindings table.** Ctrl+M, Ctrl+V, Ctrl+B, F8, F9/Pause, the digit
+    groups and the F2-F8 camera slots are read directly in `onKey`, while the comment above the table
+    says every read goes through `UI.key(action)` so nothing is unrebindable; `test/controls.js` checks
+    only the declared→consulted direction, so a rebind that collides with a hard-coded key is a silent
+    two-actions-on-one-key. Fix: a `RESERVED` list that `setBinding` refuses, and the reverse assertion.
+    Cost M.
+16. **Presentation cost, unmeasured — measure before touching** (`test/perf_render.js` needs a browser):
+    the fog `ImageData` is rebuilt every drawn frame though vision changes every third sim frame
+    (`render.js` ~510); one `createRadialGradient` per additive particle per frame (`fx.js` ~144) and
+    per Pylon/Nexus/Cannon per frame (`sprites_buildings.js` ~286, six lines above a comment that says
+    never to); a canvas `filter` per corpse per frame (`fx.js` ~175); the minimap creep pass scans a
+    quarter of the map and issues a `fillRect` per visible creep cell per frame (`hud.js` ~824); the
+    editor minimap does W×H `fillRect`s per frame; per-unit string keys built twice per frame in
+    `sprites.js`/`atlas.js`. Each S once measured.
+17. **`_x`, `_y`, `_alpha` are written on `Unit` by the draw pass** (`render.js` ~340) while the file's
+    own comment explains that the settle spring lives off the Unit because a field on one rides the
+    reflective snapshot and the rejoin. They do ride it (three floats per unit per checkpoint; not a
+    hash divergence, `stateHash` lists its fields). Move them into `Render.motion` or have
+    `Snapshot.enc` skip `_`-prefixed keys and say so. Cost S.
+18. **`test/observer.js` keeps two wall-clock budgets** (`backMs < 1500`, `backMs * 3 < scratchMs`)
+    in a gate whose header promises none; 198 ms measured here against 1500. Count `G.tick()` calls
+    during the seek instead. Cost S.
+19. **Gate suites cannot see an AI exception.** `test/aiadapt.js`, `aistyles.js`, `wavetarget.js` stub
+    `console.error` to a no-op; `G.tickErrors` now counts throws inside `G.tick` and `AI.tick`, so each
+    should end with `ok(G.tickErrors === 0)`. Cost S per suite.
+20. **Coverage the gate does not have** (reviewer's identifier sweep): 18 of 80 abilities are never
+    named in any gate suite — `restoration`, `optical_flare`, `lockdown`, `cloak_ghost`,
+    `defensive_matrix`, `emp`, `yamato`, `parasite`, `ensnare`, `nydus_exit`, `feedback`, `maelstrom`,
+    `disruption_web`, `build_scarab`, `build_interceptor` among them (the Overlord became a Feedback/EMP
+    target in M15 and neither cast is exercised); Infest Command Center is never driven; Interceptor
+    docking and loss on Carrier death, Scarab pathing, worker re-targeting when a patch mines out, and a
+    transport killed with cargo are untested. **One feature gap, not a coverage gap:** README promises
+    "Terran buildings burning below one third health" and there is no code path for it.
+21. **Test-harness duplication.** 88 files carry their own `document` stub, 71 their own `ok`, through
+    11 differently named builders; ~870 lines of boilerplate (reviewer's catalogue is in the
+    agent-F section of `.claude/review/` while it exists, and summarised here: six file-list shapes,
+    three DOM tiers, four canvas stubs, two `ok` argument orders). A `test/_harness.js` would remove
+    ~800-900 lines; the low-risk first slice is the 42 sim-only suites that share a byte-identical stub.
+    Cost L — a 90-file diff, every suite's PASS/FAIL count diffed against the baseline log. A milestone,
+    not a review.
+22. **Small refactors, results unchanged:** the scarab/interceptor caps (`hasTech('reaver_capacity')
+    ? 10 : 5`) are written three times and the defs carry `scarabTech`/`interceptorTech` that nothing
+    reads (and the AI's reaver loop reads the literal 5, so Reaver Capacity is bought and never used);
+    cargo capacity is written twice; `Unit.suppresses` iterates `p.tech` on every `damage()` call and
+    could be cached per player; five comments in `abilities.js` justify code living in the wrong file
+    by a branch constraint that expired at M13 (`EQUIV` mutated at load, `tickTerran`/`muleHaul`/
+    `reactorTick`/`tickZergNet` hung off `tickFields`) — relocate and rewrite the comments; the
+    energy literals in the older micro clauses (27 of them; all equal to `DATA` today except cloak 50
+    vs 25) should read the ability; `HOVER` in `abilities.js` and `hover: true` in the data disagree
+    on membership (six ids vs three); `seenSup` decays per call, not per frame; `AI_COMP` lists the
+    Raven and Disruptor (see 7).
+23. **`tools/`:** `raster.js` exports `mesh`, `V`, `M` and `models.js` exports `C` with no consumer;
+    `bake.js` writes `META.dirs` into `assets/atlas.js` (16) while five units bake at 32 and
+    `js/atlas.js` never reads it. Cosmetic; a re-bake is not worth it for this alone.
 
 # 2. Questions and decisions for the user
 
-1. **Is mixed-browser multiplayer a target?** If yes, open task 1 is real work and should be scheduled;
-   if the answer is "everyone uses the same browser", it is a documented limitation and nothing else.
+1. **Is mixed-browser multiplayer a target?** If yes, open task 2 is real work; if "everyone uses the
+   same browser", it is a documented limitation and nothing else.
 2. **`test/eightplayer.js` has been RED since FIXLIST-M15 C3, not "19/19 passing by 4%".** Measured
    three times at the baseline tag (deterministic: identical banks each run) and bisected: 19/19 with
    the handoff's 2405 at `57d61d2`, 19/19 at C1 and C2, **18/19 from `89f2e40` (C3, the creep speed
-   bonus) onward** — one AI ends with 2630 minerals against the 2500 threshold. The test's own message
-   names the cause (`AI.macro`'s `wantHalls` floor), which is AI spending, which is gated. The
-   threshold is the canary the handoffs rely on, so I have not moved it. Decision: accept it as the
-   fifth known red until the balance work, or authorise a change. It is now documented in
-   `test/all.js`'s exclusion list either way.
+   bonus) onward** — one AI ends with 2630 minerals against the 2500 threshold. It printed byte-identical
+   banks before and after every simulation change in this review, so nothing here moved it. The cause
+   the test names (`AI.macro`'s `wantHalls` floor) is AI spending, which is gated, and the threshold is
+   the canary the handoffs rely on, so I have not moved it. Decision: accept it as a known red until the
+   balance work, or authorise a change.
 3. **Line endings.** 71 CRLF, 77 LF-only, 2 mixed in the working copy; the index is LF throughout
    (`core.autocrlf=true`), so this is purely a working-copy artefact of tools writing LF after
-   checkout. Two options: (a) leave it and keep the detect-per-file rule in `CLAUDE.md`; (b) add a
-   `.gitattributes` (`* text=auto`, `*.bat text eol=crlf`) so every clone normalises the same way,
-   then re-check out the working copy once (`git rm --cached -r . && git reset --hard`) to make it
-   uniform — no history rewrite, no blame pollution, no commit beyond the one-line `.gitattributes`.
-   I recommend (b). Say which.
-4. **The relay has no TLS and no auth beyond the room code** (seed finding 5). `PLAY-ONLINE.bat`
-   already answers TLS by putting a tunnel in front, and the client picks `wss://` on an https page.
-   Auth is the room code alone. My recommendation is to keep the relay plain and tunnel-only for
-   internet play, and to harden what exists (minimum code length, a join rate limit, input validation —
-   the networking findings below say exactly what). Anything more is a product decision.
+   checkout. (a) Leave it and keep the detect-per-file rule; (b) add a `.gitattributes` (`* text=auto`,
+   `*.bat text eol=crlf`) so every clone normalises the same way, then re-check out the working copy
+   once (`git rm --cached -r . && git reset --hard`) — no history rewrite, no blame pollution, one
+   one-line commit. I recommend (b). Say which.
+4. **The relay has no TLS and no auth beyond the room code** (seed finding 5). TLS is answered by the
+   tunnel `PLAY-ONLINE.bat` puts in front (the client picks `wss://` on an https page); auth is the room
+   code. This review hardened what exists (the relay validates every field, stamps the sender on every
+   command, refuses strangers cleanly, drops silent connections, caps frames, serves only the game).
+   Two things remain product decisions: a minimum code length and a join rate limit (both S), and
+   whether cheats should work in multiplayer at all — `G.cheat` is in `CMD.apply`, the relay forwards
+   it, and `test/net.js` relies on it for god mode, so today anyone can `show me the money` on every
+   client with only their own screen saying "Cheat enabled". Allow-and-announce, or refuse when
+   `Net.active` (and give `test/net.js` an invulnerability option instead)?
 5. **22 stale agent worktrees** under `.claude/worktrees/` plus one at `%TEMP%\pre-m12`. All 23 are on
    commits already merged into this branch. 19 are clean; **four hold uncommitted M12-era edits**
    (`agent-a8b7db…`: `js/build.js`; `agent-ac63287…` and `agent-af39846…`: nine files each, mostly
    sprites, models and a race test; `agent-ac730fb…`: five). I did not create them and have not touched
    them. May I `git worktree remove` the 19 clean ones, and what do you want done with the four dirty?
+   (Two more were added by this review, `review-base` and `review-bisect`; I will remove those.)
 6. **The balance run and the AI claim order** stay gated, as briefed. Nothing in this review touches
-   either; they are recorded here so the list is complete.
+   either. Three things this review found belong on the balance run's list: Charon Boosters now
+   lengthen the Goliath's air range to 8 instead of shortening it to 3 (fixed here as a data bug; the
+   AI buys Charon), and open tasks 3 and 4.
+7. **Bunker double fire rate** (open task 3): fix it, and accept that bunkers get weaker?
+8. **The AI cadence bug and the dead detector weight** (open tasks 4 and 9): both are one-line fixes
+   that change what the computer does on easy and normal. Take them together with the balance run, or
+   now?
+9. **The eleven inert energy techs** (open task 10): implement (+50 max energy) or remove?
+10. **`p.seen`** (open task 11): a feature to wire, or dead weight to remove?
 
 # 3. Fixed / changed / updated
 
@@ -421,6 +551,59 @@ Each entry names the file, what is wrong, the fix, and what it would cost. Anyth
      against `MAX_DECALS` 260; a comment that called `FX.rnd` seeded (it is `Math.random`).
    **Gate:** 73 of 73, 173 s. `test/larvacard.js` starts its game with `G.init` and drives the D key
    through `UI.onKey`, so it now says `UI.running = true` itself.
+10. **The relay stops trusting its clients.** *(commit: networking)* Every item was probed against the
+    old relay by the networking reviewer and re-probed here; `test/rooms.js` (in the gate) gained a
+    section of 20 checks, and `test/net_many.js` and `test/net.js` were run by hand: **51 of 51 and
+    all pass**.
+    - **One HTTP request took every room down.** `GET /%` threw out of `decodeURIComponent` and exited
+      the process. A 400 now, and the relay stays up.
+    - **The whole checkout was served** — `/.git/HEAD`, every handoff, `test/serve.js` itself — to
+      anyone holding the tunnel link, and the path check had no trailing separator. Only
+      `/index.html`, `/js/` and `/assets/` are served.
+    - **Any player could order another player's units.** The envelope carried the slot the relay knew;
+      the commands inside carried whatever `p` the sender wrote, and `CMD.apply` trusted it — a
+      `game over man` on your opponent, deterministically, on every client, with no desync to show.
+      The relay re-stamps `p` on every command and the client does the same on receipt.
+    - **A batch that was not a list was forwarded** and threw inside every receiver's `beforeTick`; a
+      falsy one blocked the frame forever. Dropped at the relay; treated as an empty batch that arrived
+      by the client.
+    - **A refused stranger counted as in the room**: it received every broadcast, and the room was
+      never reset when the real players left. `c.room` is set only when a join succeeds. A live player
+      re-sending `join` with a dropped player's name took that slot (two slots, one id, and the game
+      wedged on the hijacked one's batch); refused now, and the real owner can still rejoin.
+    - **Anyone could answer a snapshot request** — a wrong snapshot is a silent desync for the
+      rejoiner. The donor's id is recorded and required.
+    - **Unvalidated lobby fields**: a race of `"QQ"` reached `G.init` and threw on every client after
+      the relay had already marked the room playing; team, layout and difficulty were stored verbatim
+      (500 characters of difficulty, rendered into every lobby). Whitelisted.
+    - **Names went into `innerHTML` unescaped**: 16 characters fit `<svg/onload=x()>`. Escaped.
+    - **The LAN room's second game could not change a setting**: the reset left `started` behind and
+      `set`/`addai` gate on it — the ordinary "play again" flow. Cleared on reset.
+    - **A kicked client kept hearing the lobby** and a re-sent join put it straight back. It leaves
+      the room and is told why.
+    - **A frame could claim 2^63 bytes** and was streamed into memory; chunks were re-concatenated per
+      piece. A 16 MB cap (a rejoin snapshot is ~1 MB at 20 minutes), one concat per frame, fragmented
+      frames refused explicitly, a well-formed pong past 125 bytes.
+    - **No keepalive**: a connection that died without a FIN was never `leave()`d, so every peer
+      waited on the OS TCP timeout and the player's own reconnect was refused. The relay pings every
+      15 s and drops 45 s of silence. *(Hand-verified; it takes 45 s, so the gate checks it by regex.)*
+    - Client: `theirHashes` was pruned by the local keys only (a peer's hashes for frames we never
+      hashed piled up forever); the page insists on a room code over https; the header and two
+      comments described the pre-snapshot rejoin; `hasRooms`, `serverState`, `chatLog` (unbounded,
+      never read) removed.
+    - **`test/net_many.js`'s fourth known red is gone.** The assertion — "the promoted host's speed
+      change is obeyed mid-game" — contradicted the relay's rule that nothing is mutable once a game
+      has started. It asserts the rule now (from the promoted host and anyone else), and a new
+      lobby-phase block in its own room proves the promotion where host-only powers exist: the
+      promoted host's speed is obeyed as seen by a third client, a non-host's is refused, the host can
+      add a computer player and kick, the kicked client is told. `test/net.js`'s frame literal
+      (`>= 16000`) is `> FRAMES`, so a shorter run no longer reads red against correct code.
+    - Docs: README's multiplayer paragraph (rooms, the snapshot rejoin, F8 asks first, internet play
+      via `PLAY-ONLINE.bat`), and `PLAY-ONLINE.bat` no longer says "no code lands you in an empty room
+      of your own" — no code is the shared LAN room.
+    **Negative controls:** the relay's `p` re-stamp removed → the forged-command check goes red; the
+    static allowlist removed → the three 404 checks go red; both restored byte-identical. **Gate:** 73
+    of 73, 186 s.
 
 # 4. Considered and deliberately not done
 
@@ -452,6 +635,17 @@ Each entry names the file, what is wrong, the fix, and what it would cost. Anyth
    starting while the alert reports "supply blocked". A `G.supplyBlocked(p, def)` helper at all seven
    sites is the fix; it touches production for every race, so it is an open task with a probe, not a
    review-time change.
+10. **A frame window on the relay's `cmds`** (open task 13) and **the rejoin-after-game-over double
+    apply** (open task 14): both S, both untested against `test/net_many.js`'s timing, and the review
+    already changed enough of the relay for one pass. Measure the window first.
+11. **Refusing cheats in multiplayer.** `test/net.js` uses the cheat stream for god mode, and whether a
+    friends' game should allow cheats at all is a product call (question 4). Not changed.
+12. **Wiring `drawSelGrid` and `drawDayDial` into the HUD** (open task 1). Two shipped features that
+    never draw is the largest presentation finding in the review, and the fix needs eyes on a screen
+    to say the diegetic HUD still reads right with the grouped strip inside it. Not done blind.
+13. **The AI reviewer's behaviour fixes** (open tasks 4, 5, 7, 8, 9): each changes what the computer
+    does; `eightplayer` is already red and `aistyles` seeds 1 and 11 are known reds, so a behaviour
+    change now would muddy the two canaries the balance work will need. Flagged with their probes.
 
 ---
 
