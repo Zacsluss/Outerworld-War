@@ -1720,14 +1720,22 @@ class AI {
       // An idle Overlord is a supply crate that happens to fly. Planting from one is how the tumour
       // chain STARTS -- a tumour can only be seeded on creep, so something has to walk to the edge of
       // it first, and the overlord is the only Zerg unit that is already everywhere and already idle.
-      // Capped at eight tumours and gated on 100 spare minerals so creep never competes with an army.
+      // Capped at eight tumours and gated on spare minerals so creep never competes with an army.
       // ...and the Queen, since FIXLIST-M14 C3 gave her the same ability. THE SAME BRANCH AND THE SAME
       // BUDGET, which is the whole reason it is one clause and not two: test/zerg12.js asserts tumours
       // stay at eight or fewer per game, and a second source with a budget of its own is exactly how
       // that bound gets broken -- the cheaper of the two would simply spend what the other saved. She
       // is idle far less often than an Overlord, so in practice she plants when she has nothing to
       // inject, which is the right time.
-      else if ((d === 'overlord' || d === 'queen') && u.order.type === 'idle' && this.turn(u.id, 8) && this.tumourBudget()) {
+      // FIXLIST-M15 C1: ...and now it costs energy, so the energy is checked HERE and not in
+      // tumourBudget(). The budget is per PLAYER -- one shared bank so the two sources cannot each
+      // spend what the other saved -- and energy is per UNIT, so folding it in would have asked the
+      // wrong question about whichever caster happened to be looked at first. Reads the cost off the
+      // ability rather than writing 25 again; the number lives in js/data.js and nowhere else.
+      // Without this check the branch fires, Abilities.issue refuses, and the AI burns a think per
+      // Overlord per eight frames for the rest of the game.
+      else if ((d === 'overlord' || d === 'queen') && u.order.type === 'idle' && this.turn(u.id, 8)
+               && u.energy >= (DATA.abilities.plant_tumour.energy || 0) && this.tumourBudget()) {
         const s = this.creepEdge(u.x, u.y, DATA.abilities.plant_tumour.range);
         if (s) Abilities.issue(u, 'plant_tumour', null, s[0], s[1]);
       }

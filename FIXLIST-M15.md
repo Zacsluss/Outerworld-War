@@ -27,7 +27,7 @@ says that too, plainly, and names the probe to build first.
 | # | reported | entry | status |
 |---|---|---|---|
 | 1 | were unit projectiles ever researched? make them varied | **A1** | ✅ done — **No, they never were.** All 67 weapon slots now carry their own shot, 20 kinds, races disjoint |
-| 2 | tumours should cost energy; Overlords need an energy pool | **C1** | ☐ confirmed: `plant_tumour` has no energy cost and the Overlord has no energy at all |
+| 2 | tumours should cost energy; Overlords need an energy pool | **C1** | ✅ done — both halves were true. One Overlord planted **30 of 30** free tumours; now 25 energy each and a 200 pool |
 | 3 | tumours have unlimited range | **C2** | ⚠ confirmed but not for the reported reason — see the entry |
 | 4 | Spawn Broodlings is unexplained and says only "invalid target" | **A2 + B2** ✅ | A2 done — it was **0 of 80**, now 80 of 80, and two plumbing faults stopped any of it showing |
 | 5 | creep should look alive; Zerg should move faster on it | **A3** ✅ **+ C3** ☐ | A3 done — an overlay, cache untouched, stamp unmoved. C3 (the speed) still open |
@@ -215,7 +215,7 @@ would catch this whole family — that is the version worth writing.
 
 Everything here moves the build stamp, which is expected.
 
-### ☐ C1 · (item 2) Creep tumours are free, and the Overlord has no energy at all
+### ✅ C1 · (item 2) Creep tumours are free, and the Overlord has no energy at all
 
 **Asked for:** "Creep tumors should cost the queen and overlord energy (overlords should be given 200
 energy that fills over time like the queen)".

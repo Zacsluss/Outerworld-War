@@ -34,8 +34,22 @@ ok(Q[0] === 'larva_inject', 'larva_inject is still FIRST, which the def comment 
 ok(Q[1] === 'plant_tumour', 'and the tumour is second, beside the other macro ability', Q.join(','));
 ok(Q[Q.length - 1] === 'infest', 'infest is still last', Q.join(','));
 ok(J("DATA.abilities.plant_tumour.hk") === 'C', 'it is on key C, as StarCraft II puts it', J("DATA.abilities.plant_tumour.hk"));
-ok(J('DATA.abilities.plant_tumour.energy === undefined') === true,
-  'it costs no energy, because the Overlord that shares it has none -- the tumour\'s own 25 minerals is the price');
+// EVERY LOOKUP IN THIS BLOCK IS GUARDED WITH `|| 0`, and that is load-bearing rather than tidy:
+// JSON.stringify(undefined) returns the STRING "undefined", which JSON.parse throws on, so reading a
+// key the negative control has just deleted crashes this file and hides every other result in it.
+// HANDOFF-M15 trap 8, hit again while writing this very block.
+// FIXLIST-M15 C1 (item 2) REVERSED THE LINE THAT USED TO STAND HERE. It asserted `energy === undefined`
+// and its reason was 'the Overlord that shares it has none'. C1 gave the Overlord a pool, so the reason
+// is gone and SC2's own 25 applies to both casters. Measured before the change: ONE Overlord with money
+// in the bank planted THIRTY tumours back to back, thirty of thirty attempts. After: two, then refused.
+ok(J('DATA.abilities.plant_tumour.energy || 0') === 25,
+  'IT COSTS 25 ENERGY -- SC2\'s price, charged to the caster', String(J('DATA.abilities.plant_tumour.energy || 0')));
+ok(J('DATA.abilities.spawn_tumour.energy === undefined') === true,
+  '...and spawn_tumour still costs NONE, because the thing that casts it is a tumour and a tumour has no pool');
+ok(J('DATA.units.overlord.energy || 0') === 200,
+  'THE OVERLORD IS AN ENERGY UNIT NOW: a 200 pool, which it did not have at all', String(J('DATA.units.overlord.energy || 0')));
+ok(J('DATA.units.overlord.energy || 0') === J('DATA.units.queen.energy || 0'),
+  '...the same size as the Queen\'s, which is what the request asked for');
 ok(J('DATA.buildings.creep_tumour.min') === 25, '...and the tumour itself costs 25 minerals, which is the price', String(J('DATA.buildings.creep_tumour.min')));
 ok(J('DATA.units.queen.abil').length === 6, 'the Queen now offers six abilities', String(Q.length));
 
@@ -152,6 +166,75 @@ ok(bound.overlordsSeen > 0, 'the AI has Overlords in those games', String(bound.
   ok((src.match(/tumourBudget\(\)/g) || []).length >= 2 && !/queenTumourBudget|tumourBudget2/.test(src),
     'and there is exactly one budget function -- a second one is how the bound gets broken'); }
 
+// =============================================================================
+// 2b. FIXLIST-M15 C1 -- the pool is real, it is SPENT, and it refills off the ONE regen
+// =============================================================================
+// The negative control for the whole entry is `zeroEnergy`: an Overlord holding nothing must plant
+// NOTHING. Delete `energy: 25` from the ability, or `energy: 200` from the Overlord, and that number
+// becomes 1 and this file goes red without throwing. Everything else here would still pass with the
+// cost removed, which is exactly why it is not the control.
+const pool = J(`(() => {
+  G.init({ players: [{ race: 'Z', human: true, name: 'A' }, { race: 'T', human: false, difficulty: 'easy', name: 'B' }], seed: 4, layout: 'temple' });
+  for (const p of G.players) p.ai = null;
+  for (let f = 0; f < 200; f++) G.tick();
+  const p = G.players[0], hall = G.units.find(u => u.owner === 0 && u.def.depot);
+  p.minerals = 100000; p.gas = 100000;
+  const m = G.map;
+  const spot = () => {
+    for (let r = 2; r < 10; r++) for (let k = 0; k < 40; k++) {
+      const a = k / 40 * Math.PI * 2;
+      const tx = Math.floor(hall.x / TILE + Math.cos(a) * r), ty = Math.floor(hall.y / TILE + Math.sin(a) * r);
+      if (!m.canPlace(DATA.buildings.creep_tumour, tx, ty, p, G.units, null)) return [(tx + .5) * TILE, (ty + .5) * TILE];
+    }
+    return null;
+  };
+  // plant from one caster as many times as it will let us, and count
+  const run = (mk, setE) => {
+    const s0 = spot(); if (!s0) return 'no spot';
+    const u = mk(s0); if (setE !== null) u.energy = setE;
+    let planted = 0;
+    for (let i = 0; i < 12; i++) {
+      const s = spot(); if (!s) break;
+      u.x = s[0]; u.y = s[1]; u.order = { type: 'idle' }; u.queue = [];
+      const before = G.units.filter(o => o.alive && o.def.tumour).length;
+      Abilities.issue(u, 'plant_tumour', null, s[0], s[1]);
+      for (let f = 0; f < 6; f++) G.tick();
+      if (G.units.filter(o => o.alive && o.def.tumour).length > before) planted++;
+    }
+    return planted;
+  };
+  const out = {};
+  const fresh = G.spawnUnit('overlord', 0, hall.x, hall.y);
+  out.freshMax = fresh.maxEnergy; out.freshStart = fresh.energy;
+  G.kill(fresh, null, true);
+  out.zeroEnergy = run(s => G.spawnUnit('overlord', 0, s[0], s[1]), 0);
+  out.fullOverlord = run(s => G.spawnUnit('overlord', 0, s[0], s[1]), 200);
+  out.fullQueen = run(s => G.spawnUnit('queen', 0, s[0], s[1]), 200);
+  // the regen: one line, shared. Measure the Overlord's against the Queen's over the same frames.
+  const a = G.spawnUnit('overlord', 0, hall.x + 200, hall.y), b = G.spawnUnit('queen', 0, hall.x + 240, hall.y);
+  a.energy = 0; b.energy = 0;
+  for (let f = 0; f < 320; f++) G.tick();
+  out.olRegen = a.energy; out.qRegen = b.energy;
+  // and it does not overfill
+  a.energy = a.maxEnergy - 0.01;
+  for (let f = 0; f < 60; f++) G.tick();
+  out.capped = a.energy <= a.maxEnergy;
+  return out;
+})()`);
+ok(pool.freshMax === 200 && pool.freshStart === 50,
+  'a NEW Overlord arrives with 50 of 200, the same start every caster in the game gets', JSON.stringify([pool.freshMax, pool.freshStart]));
+ok(pool.zeroEnergy === 0,
+  'NEGATIVE CONTROL: an Overlord with NO energy plants NOTHING in twelve tries -- before C1 it planted all twelve', String(pool.zeroEnergy));
+ok(pool.fullOverlord === 8,
+  '...and a FULL one plants exactly eight, which is 200 energy at 25 a tumour', String(pool.fullOverlord));
+ok(pool.fullQueen === 8,
+  '...and so does a full Queen -- one price, both casters', String(pool.fullQueen));
+ok(pool.olRegen > 9 && Math.abs(pool.olRegen - pool.qRegen) < 1e-9,
+  'THE OVERLORD REFILLS OFF THE QUEEN\'S REGEN, not a second one: identical energy after 320 frames', JSON.stringify([pool.olRegen, pool.qRegen]));
+ok(pool.capped === true, '...and stops at the cap', String(pool.capped));
+{ const src = fs.readFileSync(path.join(root, 'js', 'sim.js'), 'utf8');
+  ok((src.match(/this\.maxEnergy && this\.energy < this\.maxEnergy/g) || []).length === 1,
+    'there is exactly ONE energy-regen line in js/sim.js -- C1 was told to find it, not to write a second'); }
 ok(errors.length === 0, 'no JS errors were logged along the way', errors.slice(0, 3).join(' | '));
 console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

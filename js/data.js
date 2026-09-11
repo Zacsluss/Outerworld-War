@@ -294,7 +294,19 @@ const DATA = (() => {
   U('cocoon', { name: 'Cocoon', race: 'Z', hp: 200, armor: 10, size: 'medium', speed: 0, sight: 4, r: 12, bio: true, egg: true, fly: true });
   U('drone', { name: 'Drone', race: 'Z', hp: 40, size: 'small', min: 50, sup: 1, time: 300, speed: 4.92, sight: 7, r: 9, hk: 'D', from: 'larva', worker: true, bio: true, cargoSize: 1,
     gw: W(5, 'normal', 0.4, 22, { upgKey: null }), abil: ['gather', 'build_basic', 'build_adv', 'burrow'], upgA: 'carapace' });
-  U('overlord', { name: 'Overlord', race: 'Z', hp: 200, size: 'large', min: 100, sup: 0, supGive: 8, time: 600, speed: 0.83, sight: 9, r: 18, hk: 'O', from: 'larva', bio: true, fly: true, det: true,
+  // `energy: 200` -- FIXLIST-M15 C1 (item 2). The Overlord was NOT AN ENERGY UNIT AT ALL: no `energy`,
+  // no `maxEnergy`, no bar, and therefore a free and unlimited `plant_tumour`. One Overlord with money
+  // in the bank planted THIRTY tumours back to back in the probe that opened C1, thirty of thirty.
+  // Joining the pool is the whole fix and it needs nothing else: Unit's constructor reads `def.energy`
+  // for the cap and starts every caster in the game at 50, and Unit.tick's ONE regen line (js/sim.js)
+  // fills it at the shared rate. No second regen was written and none should be -- 200 at 0.03125 a
+  // frame is 6,400 frames, the same four and a half minutes a Queen waits.
+  //
+  // THE SIDE EFFECT IS DELIBERATE AND IS A REAL BALANCE CHANGE: an Overlord with a pool is now a legal
+  // Feedback and EMP target like any other caster, and Feedback does damage equal to the energy it
+  // burns. A full Overlord is 200 energy against 200 hp. That is exactly SC2's rule for energy units,
+  // so it is listed for the balance run rather than special-cased here.
+  U('overlord', { name: 'Overlord', race: 'Z', hp: 200, size: 'large', min: 100, sup: 0, supGive: 8, time: 600, speed: 0.83, sight: 9, r: 18, hk: 'O', from: 'larva', bio: true, fly: true, det: true, energy: 200,
     abil: ['unload', 'plant_tumour', 'overseer_aspect'], upgA: 'flyA', speedTech: ['pneumatized', 2.5], cargoTech: 'ventral_sacs', sightTech: ['antennae', 11] });
   U('zergling', { name: 'Zergling', race: 'Z', hp: 35, size: 'small', min: 50, sup: 0.5, time: 420, speed: 5.49, sight: 5, r: 7, hk: 'Z', from: 'larva', req: ['spawning_pool'], bio: true, cargoSize: 1, pair: true,
     gw: W(5, 'normal', 0.5, 8, { upgKey: 'meleeW', cdTech: ['adrenal', 6] }), abil: ['burrow', 'baneling_aspect'], upgA: 'carapace', speedTech: ['metabolic', 6.58] });   // Brood War's own pair: 5.49 base, 6.58 boosted. The table had 2.61/5.49 -- the boosted value was BW's base, and the base was invented under it, leaving a zergling slower than a high templar.
@@ -328,10 +340,14 @@ const DATA = (() => {
   // UI.buildCard's ability cap was raised from four to six in the same change, which is where it
   // should have gone when the command card grew from 3x3 to 4x3 and did not.
   //
-  // It costs NO ENERGY, deliberately, and that is the one place this departs from SC2. The ability is
-  // shared with the Overlord, which has no energy at all, so an `energy: 25` on the ability would not
-  // make the Queen cost more -- it would stop the Overlord planting tumours entirely, which is exactly
-  // the thing the decision said not to do. The tumour's own 25 minerals is the price.
+  // IT NOW COSTS 25 ENERGY, and that reverses the note that stood here through M14. The old reasoning
+  // was sound on its own terms -- the ability is shared with the Overlord, the Overlord had no energy
+  // at all, so pricing the ability would have silently disarmed one of its two sources -- but it was
+  // reasoning from a missing pool rather than from what the ability is worth. FIXLIST-M15 C1 gave the
+  // Overlord the 200-point pool it never had, so the premise is gone and SC2's own price applies to
+  // both casters. 25 is SC2's number for Creep Tumour and it is charged ON TOP of the tumour's own
+  // 25 minerals, not instead of it: the mineral cost bounds how much creep you can afford and the
+  // energy cost bounds how FAST you can lay it, which is the half that was missing.
   U('queen', { name: 'Queen', race: 'Z', hp: 120, size: 'medium', min: 100, gas: 100, sup: 2, time: 750, speed: 6.67, sight: 10, r: 14, hk: 'Q', from: 'larva', req: ['queens_nest'], bio: true, fly: true, energy: 200,
     abil: ['larva_inject', 'plant_tumour', 'parasite', 'ensnare', 'spawn_broodling', 'infest'], upgA: 'flyA' });
   U('guardian', { name: 'Guardian', race: 'Z', hp: 150, armor: 2, size: 'large', min: 50, gas: 100, sup: 2, time: 600, speed: 2.5, sight: 11, r: 16, from: 'mutalisk', req: ['greater_spire'], bio: true, fly: true, morphFrom: 'mutalisk', hk: 'G',
@@ -1313,7 +1329,12 @@ const DATA = (() => {
   // banked larvae past three turn every hall into a burst of eight units and rewrite what Zerg's
   // production curve looks like, which is not what item 11 asked for.
   A('larva_inject', 'Spawn Larva', 'L', 'unit', { energy: 25, range: 4, delay: 240, cap: 3 });
-  A('plant_tumour', 'Creep Tumour', 'C', 'point', { range: 3 });
+  // `energy: 25` -- FIXLIST-M15 C1 (item 2), and SC2's own price for Creep Tumour. It is charged to the
+  // CASTER, so it lands on the Queen and on the Overlord (which C1 gave a pool of its own) and NOT on
+  // `spawn_tumour` below, because the thing that casts that is a tumour and a tumour has no pool. That
+  // asymmetry is the mechanic and not an oversight: STARTING a chain costs a caster's attention and its
+  // energy, CONTINUING one costs only the 25 minerals the tumour itself is worth.
+  A('plant_tumour', 'Creep Tumour', 'C', 'point', { range: 3, energy: 25 });
   A('spawn_tumour', 'Spread Creep', 'C', 'point', { range: 9 });
   // 'instant', not 'toggle', and the reason is UI.buildCard: on a BUILDING it fires only the `instant`
   // kind directly and sends everything else to targeting mode, which would ask a spine crawler where
@@ -1682,7 +1703,7 @@ const DATA = (() => {
     nydus_exit: 'Place the far end of a Nydus Canal at another base you hold. Until it has one, the canal does nothing at all.',
     infest: 'Take over an enemy Terran Command Center that has been damaged below half health, turning it into an Infested Command Center.',
     larva_inject: 'Fill one of your Hatcheries back up to three larvae after a short delay. It tops a hall up, it does not raise its ceiling.',
-    plant_tumour: 'Grow a Creep Tumour on creep you are standing over. It spreads creep around itself and can seed one more tumour of its own.',
+    plant_tumour: 'Costs 25 energy. Grow a Creep Tumour on creep you are standing over. It spreads creep around itself and can seed one more tumour of its own.',
     spawn_tumour: 'Seed one more Creep Tumour anywhere within nine tiles that is already creep. Each tumour may do this exactly once, ever.',
     uproot: 'Pull a Spine or Spore Crawler out of the ground so it can walk. It cannot attack until it roots again.',
     volatile_burst: 'Detonate the Baneling, destroying it and dealing splash damage to ground units around it.',
@@ -1835,7 +1856,7 @@ const DATA = (() => {
     lurker_egg: 'A Hydralisk mid-morph into a Lurker.',
     cocoon: 'A Mutalisk mid-morph into one of its greater forms.',
     drone: 'The Zerg worker. Mines, and is consumed by every building it makes -- so every Zerg structure costs a worker as well as its price.',
-    overlord: 'Zerg supply on wings, and a detector. Slow and defenceless, but it carries units once upgraded and can plant creep tumours.',
+    overlord: 'Zerg supply on wings, and a detector. Slow and defenceless, but it carries units once upgraded, and its 200 energy pays for creep tumours.',
     zergling: 'The cheapest unit in the game, made two at a time. Alone it is nothing; in enough numbers it surrounds and eats almost anything on the ground.',
     hydralisk: 'The Zerg ranged core. Shoots ground and air, is cheap enough to mass, and morphs into a Lurker when a Den allows it.',
     lurker: 'A burrowed ambusher. It cannot be seen or shot without detection, and its spines hit everything along a line -- a wall of them holds a choke on their own.',
