@@ -76,6 +76,13 @@ const Abilities = {
   },
   label(u, id) { const ab = DATA.abilities[id]; if (id === 'siege_mode') return u.sieged ? 'Tank Mode' : 'Siege Mode'; if (id === 'burrow') return u.burrowed ? 'Unburrow' : 'Burrow'; if (id === 'viking_mode') return u.def.id === 'viking' ? 'Assault Mode' : 'Fighter Mode'; if (id === 'cloak_ghost' || id === 'cloak_wraith') return u.cloaked ? 'Decloak' : ab.name; return ab.name; },
   needsTarget(id) { const k = DATA.abilities[id].kind; return k === 'unit' || k === 'point'; },
+  // FIXLIST-M15 C2. How far a caster can be from a point and still cast, in pixels -- the declared
+  // tile range plus both bodies, which is what orderTick has always computed inline. It is a method
+  // now because TWO paths need it and they were about to drift: orderTick for a mobile caster, and
+  // issue() for a caster that is a BUILDING and never reaches orderTick at all.
+  castRange(u, ab, t) { return (ab.range || 1) * TILE + (t ? t.r : 0) + u.r; },
+  // One sentence, said the same way by both paths. B2's rule: a refusal names what it needed.
+  outOfRangeMsg(ab) { return ab.name + ' only reaches ' + (ab.range || 1) + ' tiles -- pick a spot closer in.'; },
   // The burrow, arming and unburrow durations for a unit that has its own -- today only the Widow Mine.
   // Null for everything else, which is what keeps the generic 24-frame burrow the generic 24-frame
   // burrow. Reads the def, so the numbers have exactly one home (js/data.js) and every caller, the AI
@@ -97,7 +104,19 @@ const Abilities = {
       case 'morph': return this.morph(u, ab.unit);
       case 'produce': return G.queueUnit(u, ab.unit);
       case 'unit': if (!target) return false; if (target === u && id !== 'consume') return false; u.setOrder({ type: 'ability', abil: id, target, x: target.x, y: target.y }, shift); return true;
-      case 'point': if (u.isBuilding) { if (ab.energy) u.energy -= ab.energy; this.cast(u, id, null, x, y); return true; } u.setOrder({ type: 'ability', abil: id, x, y }, shift); return true;
+      // A BUILDING CASTS RIGHT HERE and never reaches orderTick, so a `noApproach` limit has to be
+      // enforced on this path too -- and this is the path the reported half of C2 actually takes. A
+      // creep tumour IS a building: measured before the fix, a finished tumour seeded a child 21.4
+      // tiles away against a declared range of 9. FIXLIST-M15 says this half already worked because
+      // an immobile caster takes orderTick's refuse branch; it does not, because it never gets there.
+      // Checking at issue-time is exactly right for a building and only for a building: a building
+      // will never be closer to the target than it is now.
+      case 'point':
+        if (u.isBuilding) {
+          if (ab.noApproach && distPt(u.x, u.y, x, y) > this.castRange(u, ab, null)) { p.msg(this.outOfRangeMsg(ab), 'error'); return false; }
+          if (ab.energy) u.energy -= ab.energy; this.cast(u, id, null, x, y); return true;
+        }
+        u.setOrder({ type: 'ability', abil: id, x, y }, shift); return true;
     }
     return false;
   },
@@ -391,9 +410,23 @@ const Abilities = {
   orderTick(u) {
     const o = u.order, ab = DATA.abilities[o.abil], p = u.player;
     const t = o.target; if (t && (!t.alive || (t.owner !== u.owner && !G.canSee(u.owner, t) && o.abil !== 'consume'))) { u.nextOrder(); return; }
-    const tx = t ? t.x : o.x, ty = t ? t.y : o.y; const range = (ab.range || 1) * TILE + (t ? t.r : 0) + u.r;
+    const tx = t ? t.x : o.x, ty = t ? t.y : o.y; const range = this.castRange(u, ab, t);
     if (o.phase === 'channel') { this.channel(u, o); return; }
-    if (distPt(u.x, u.y, tx, ty) > range) { if (!u.canMove || u.sieged || u.burrowed) { u.nextOrder(); return; } u.moveTo(tx, ty, t); return; }
+    // THE ONE LINE FIXLIST-M15 C2 NAMES. For anything that can move, `range` on a point ability is a
+    // WALK-TO distance and not a limit: the caster is sent to the spot and casts when it arrives. That
+    // is correct and load-bearing for every point ability in the game -- a Defiler ordered to Dark
+    // Swarm 30 tiles away walks 45 tiles and casts, and it should. It is also why an Overlord asked to
+    // plant a Creep Tumour 17 tiles away flew 13 tiles and planted it, against a declared range of 3.
+    //
+    // `noApproach` is a per-ability opt-out and NOT a change to the shared path, which is the whole
+    // of the decision: two abilities want a hard limit and twenty-six want walk-to. It is checked
+    // BEFORE the immobile-caster branch so a flagged ability says why it refused instead of dropping
+    // the order in silence, and before energy is spent a few lines below, so a refusal is free.
+    if (distPt(u.x, u.y, tx, ty) > range) {
+      if (ab.noApproach) { p.msg(this.outOfRangeMsg(ab), 'error'); u.nextOrder(); return; }
+      if (!u.canMove || u.sieged || u.burrowed) { u.nextOrder(); return; }
+      u.moveTo(tx, ty, t); return;
+    }
     u.facing = Math.atan2(ty - u.y, tx - u.x); u.path = null;
     if (ab.energy && u.energy < ab.energy) { p.msg('Not enough energy.', 'error'); u.nextOrder(); return; }
     if (o.abil === 'heal') { this.healTick(u, t); return; }

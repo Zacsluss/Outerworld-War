@@ -235,6 +235,127 @@ ok(pool.capped === true, '...and stops at the cap', String(pool.capped));
 { const src = fs.readFileSync(path.join(root, 'js', 'sim.js'), 'utf8');
   ok((src.match(/this\.maxEnergy && this\.energy < this\.maxEnergy/g) || []).length === 1,
     'there is exactly ONE energy-regen line in js/sim.js -- C1 was told to find it, not to write a second'); }
+// =============================================================================
+// 4. FIXLIST-M15 C2 -- tumour range is a LIMIT now, on BOTH paths, and only for these two
+// =============================================================================
+// The report was "creep tumors currently have unlimited range and they need to have their range
+// limited or best where they can spawn additional tumors". Both halves were true and they were TWO
+// SEPARATE FAULTS in two different functions, which is why the range printed in the data table was
+// never the range you got:
+//
+//   Abilities.orderTick -- for a caster that can MOVE, `range` is a walk-to distance, not a limit.
+//     Measured: an Overlord ordered to plant 17 tiles away, declared range 3, flew 13 tiles and
+//     planted. A Queen, 16 tiles away, flew 12 and planted.
+//   Abilities.issue    -- a point ability cast by a BUILDING resolves immediately in issue() and
+//     never reaches orderTick or its range check at all. A creep tumour IS a building. Measured: a
+//     finished tumour seeded a child 21.4 TILES away against a declared range of 9.
+//
+// FIXLIST-M15 C2 predicted the first and said the second already worked, reasoning that an immobile
+// caster takes orderTick's refuse branch. It does not take that branch, because it never arrives at
+// it. The half the player actually asked about was the unmeasured one.
+const reach = J(`(() => {
+  G.init({ players: [{ race: 'Z', human: true, name: 'A' }, { race: 'T', human: false, difficulty: 'easy', name: 'B' }], seed: 4, layout: 'temple' });
+  for (const p of G.players) p.ai = null;
+  for (let f = 0; f < 400; f++) G.tick();
+  const p = G.players[0], m = G.map;
+  const hall = G.units.find(u => u.owner === 0 && u.def.depot);
+  p.minerals = 100000; p.gas = 100000;
+  const tumours = () => G.units.filter(u => u.alive && u.def.tumour).length;
+  const legalTiles = () => { const a = []; for (let ty = 0; ty < m.h; ty++) for (let tx = 0; tx < m.w; tx++) if (!m.canPlace(DATA.buildings.creep_tumour, tx, ty, p, G.units, null)) a.push([tx, ty]); return a; };
+  const said = () => { const l = p.msgs.slice(-1)[0]; return l ? l.text : ''; };
+  const res = {};
+
+  // -- a MOBILE caster, far outside range 3: refuse, do not fly ---------------------------------
+  for (const kind of ['overlord', 'queen']) {
+    const near = legalTiles().sort((a, b) => distPt(a[0], a[1], hall.x / TILE, hall.y / TILE) - distPt(b[0], b[1], hall.x / TILE, hall.y / TILE));
+    const spot = near[Math.floor(near.length / 2)];
+    const sx = (spot[0] + 0.5) * TILE, sy = (spot[1] + 0.5) * TILE;
+    const u = G.spawnUnit(kind, 0, Math.max(TILE * 2, sx - 40 * TILE), sy);
+    u.energy = 200;
+    const d0 = distPt(u.x, u.y, sx, sy) / TILE, n0 = tumours();
+    p.msgs.length = 0; p.lastAlert = {};
+    Abilities.issue(u, 'plant_tumour', null, sx, sy);
+    let moved = 0;
+    for (let f = 0; f < 600; f++) { const px = u.x, py = u.y; G.tick(); moved += distPt(px, py, u.x, u.y); }
+    res[kind] = { orderedFromTiles: Math.round(d0), planted: tumours() - n0,
+      travelledTiles: Math.round(moved / TILE), energyLeft: Math.round(u.energy), said: said() };
+    G.kill(u, null, true);
+  }
+
+  // -- ...and IN range it still plants, which is the thing the limit must not break --------------
+  {
+    const near = legalTiles().sort((a, b) => distPt(a[0], a[1], hall.x / TILE, hall.y / TILE) - distPt(b[0], b[1], hall.x / TILE, hall.y / TILE));
+    const spot = near[Math.floor(near.length / 2)];
+    const sx = (spot[0] + 0.5) * TILE, sy = (spot[1] + 0.5) * TILE;
+    const u = G.spawnUnit('overlord', 0, sx, sy); u.energy = 200;
+    const n0 = tumours();
+    Abilities.issue(u, 'plant_tumour', null, sx, sy);
+    for (let f = 0; f < 30; f++) G.tick();
+    res.inRange = tumours() - n0;
+  }
+
+  // -- a TUMOUR seeding its child, the reported half. It is a BUILDING and casts in issue(). -----
+  {
+    // grow the carpet: a tumour at the far edge of the hall's creep pushes creep outward, so there
+    // is legal ground well past spawn_tumour's nine tiles to aim at.
+    const far0 = legalTiles().sort((a, b) => distPt(b[0], b[1], hall.x / TILE, hall.y / TILE) - distPt(a[0], a[1], hall.x / TILE, hall.y / TILE))[0];
+    const seed = G.placeBuilding(DATA.buildings.creep_tumour, far0[0], far0[1], 0);
+    for (let f = 0; f < DATA.buildings.creep_tumour.time + 600; f++) G.tick();
+    const best = legalTiles().sort((a, b) => distPt(b[0], b[1], seed.x / TILE, seed.y / TILE) - distPt(a[0], a[1], seed.x / TILE, seed.y / TILE))[0];
+    const d = distPt(best[0] + 0.5, best[1] + 0.5, seed.x / TILE, seed.y / TILE);
+    const n0 = tumours();
+    p.msgs.length = 0; p.lastAlert = {};
+    const ret = Abilities.issue(seed, 'spawn_tumour', null, (best[0] + 0.5) * TILE, (best[1] + 0.5) * TILE);
+    for (let f = 0; f < 60; f++) G.tick();
+    res.tumourFar = { done: !!seed.done, isBuilding: !!seed.isBuilding, tilesAway: Math.round(d * 10) / 10,
+      issueReturned: ret, planted: tumours() - n0, spentItsOneChild: !!seed.tumoured, said: said() };
+  }
+  return res;
+})()`);
+ok(reach.overlord.planted === 0 && reach.overlord.travelledTiles === 0,
+  'AN OVERLORD ORDERED OUT OF RANGE REFUSES AND DOES NOT MOVE -- before C2 it flew 13 tiles and planted', JSON.stringify(reach.overlord));
+ok(reach.queen.planted === 0 && reach.queen.travelledTiles === 0,
+  '...and so does a Queen, who has the same ability and the same fault', JSON.stringify(reach.queen));
+ok(reach.overlord.energyLeft === 200 && reach.queen.energyLeft === 200,
+  '...and a refusal is FREE: the 25 energy is still in the pool', JSON.stringify([reach.overlord.energyLeft, reach.queen.energyLeft]));
+ok(/only reaches 3 tiles/.test(reach.overlord.said),
+  '...and the player is TOLD why, with the number -- B2\'s rule, not a silent dropped order', JSON.stringify(reach.overlord.said));
+ok(reach.inRange === 1, 'IN range it still plants, which is what the limit must not break', String(reach.inRange));
+ok(reach.tumourFar.isBuilding === true && reach.tumourFar.tilesAway > 9,
+  'the reported half: a finished tumour, a legal creep tile ' + reach.tumourFar.tilesAway + ' tiles away against a range of 9', JSON.stringify(reach.tumourFar));
+ok(reach.tumourFar.planted === 0 && reach.tumourFar.issueReturned === false,
+  'A TUMOUR CANNOT SEED PAST ITS RANGE -- before C2 it planted at 21.4 tiles, because a building casts in issue() and never reaches orderTick', JSON.stringify(reach.tumourFar));
+ok(reach.tumourFar.spentItsOneChild === false,
+  '...and a refused seeding does not burn the one child it gets', String(reach.tumourFar.spentItsOneChild));
+ok(/only reaches 9 tiles/.test(reach.tumourFar.said),
+  '...and it says so, where before it refused in silence', JSON.stringify(reach.tumourFar.said));
+
+// THE NEGATIVE CONTROL FOR C2, and it points the other way from the rest of this file. Everything
+// above would ALSO pass if someone made range a hard limit for every point ability in the game,
+// which is the change C2 explicitly says not to make -- twenty-six other abilities rely on walk-to.
+// So the control is an ability WITHOUT the flag: a Defiler asked to Dark Swarm thirty tiles away
+// must still walk there and cast. Delete `noApproach` and the assertions above go red; move the
+// check out of the flag and into the shared path and THIS one does.
+const walk = J(`(() => {
+  G.init({ players: [{ race: 'Z', human: true, name: 'A' }, { race: 'T', human: false, difficulty: 'easy', name: 'B' }], seed: 4, layout: 'temple' });
+  for (const p of G.players) p.ai = null;
+  for (let f = 0; f < 200; f++) G.tick();
+  const p = G.players[0];
+  const hall = G.units.find(u => u.owner === 0 && u.def.depot);
+  const d = G.spawnUnit('defiler', 0, hall.x, hall.y); d.energy = 200;
+  const tx = hall.x + 30 * TILE, ty = hall.y;
+  const d0 = distPt(d.x, d.y, tx, ty) / TILE;
+  Abilities.issue(d, 'dark_swarm', null, tx, ty);
+  let cast = false, moved = 0;
+  for (let f = 0; f < 4000; f++) { const px = d.x, py = d.y; G.tick(); moved += distPt(px, py, d.x, d.y); if (G.fields.some(fl => fl.kind === 'swarm')) { cast = true; break; } }
+  return { orderedFromTiles: Math.round(d0), range: DATA.abilities.dark_swarm.range, cast, travelledTiles: Math.round(moved / TILE), flagged: !!DATA.abilities.dark_swarm.noApproach };
+})()`);
+ok(walk.flagged === false, 'CONTROL: Dark Swarm does NOT carry noApproach', String(walk.flagged));
+ok(walk.cast === true && walk.travelledTiles > 20,
+  'CONTROL: a Defiler ordered to Dark Swarm ' + walk.orderedFromTiles + ' tiles away still WALKS ' + walk.travelledTiles + ' tiles and casts -- walk-to is untouched for everything unflagged', JSON.stringify(walk));
+{ const flagged = J('Object.entries(DATA.abilities).filter(([,a]) => a.noApproach).map(([k]) => k).sort().join(",")');
+  ok(flagged === 'plant_tumour,spawn_tumour',
+    'EXACTLY TWO abilities carry the flag, which is the whole scope of the behaviour change', flagged); }
 ok(errors.length === 0, 'no JS errors were logged along the way', errors.slice(0, 3).join(' | '));
 console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

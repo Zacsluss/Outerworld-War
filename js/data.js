@@ -1334,8 +1334,14 @@ const DATA = (() => {
   // `spawn_tumour` below, because the thing that casts that is a tumour and a tumour has no pool. That
   // asymmetry is the mechanic and not an oversight: STARTING a chain costs a caster's attention and its
   // energy, CONTINUING one costs only the 25 minerals the tumour itself is worth.
-  A('plant_tumour', 'Creep Tumour', 'C', 'point', { range: 3, energy: 25 });
-  A('spawn_tumour', 'Spread Creep', 'C', 'point', { range: 9 });
+  //
+  // `noApproach` -- FIXLIST-M15 C2 (item 3), and it is the ONLY flag of its kind in the game. `range`
+  // on a point ability normally means "get this close and then cast": Abilities.orderTick walks the
+  // caster to the spot first, which is what every other point ability relies on and what made these
+  // two read as unlimited. With the flag, range is a LIMIT -- refuse, say so, do not travel. Nothing
+  // else carries it, so nothing else changed.
+  A('plant_tumour', 'Creep Tumour', 'C', 'point', { range: 3, energy: 25, noApproach: true });
+  A('spawn_tumour', 'Spread Creep', 'C', 'point', { range: 9, noApproach: true });
   // 'instant', not 'toggle', and the reason is UI.buildCard: on a BUILDING it fires only the `instant`
   // kind directly and sends everything else to targeting mode, which would ask a spine crawler where
   // it would like to stand up. The rooting half of the pair is the Land button the card already grows

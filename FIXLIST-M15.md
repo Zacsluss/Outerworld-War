@@ -28,7 +28,7 @@ says that too, plainly, and names the probe to build first.
 |---|---|---|---|
 | 1 | were unit projectiles ever researched? make them varied | **A1** | ✅ done — **No, they never were.** All 67 weapon slots now carry their own shot, 20 kinds, races disjoint |
 | 2 | tumours should cost energy; Overlords need an energy pool | **C1** | ✅ done — both halves were true. One Overlord planted **30 of 30** free tumours; now 25 energy each and a 200 pool |
-| 3 | tumours have unlimited range | **C2** | ⚠ confirmed but not for the reported reason — see the entry |
+| 3 | tumours have unlimited range | **C2** | ✅ done — and the report was right on BOTH halves. Two faults in two functions: a mobile caster flew to the spot, and a tumour (a *building*) cast in `issue()` and never reached the range check at all — it seeded a child **21.4 tiles away** against a declared 9 |
 | 4 | Spawn Broodlings is unexplained and says only "invalid target" | **A2 + B2** ✅ | A2 done — it was **0 of 80**, now 80 of 80, and two plumbing faults stopped any of it showing |
 | 5 | creep should look alive; Zerg should move faster on it | **A3** ✅ **+ C3** ☐ | A3 done — an overlay, cache untouched, stamp unmoved. C3 (the speed) still open |
 | 6 | training a Drone at supply cap also says "Spire required" | **B1 + B3** | ✅ done — fully reproduced. It was **B3**: the card was shifted one slot, so grid-key D hit Scourge |
@@ -243,7 +243,7 @@ energy that fills over time like the queen)".
 
 ---
 
-### ⚠ C2 · (item 3) Tumour range — confirmed, but NOT for the reason the report gives
+### ✅ C2 · (item 3) Tumour range — confirmed, and it was TWO faults, not one
 
 **Asked for:** "Creep tumors currently have unlimited range and they need to have their range limited
 or best where they can spawn additional tumors".
@@ -264,9 +264,22 @@ if (distPt(u.x, u.y, tx, ty) > range) {
 to wherever you clicked and plants there. So:
 
 - **`plant_tumour` from an Overlord or Queen is effectively unlimited** — anywhere on your creep.
-- **`spawn_tumour` from a tumour IS already limited to 9 tiles**, and correctly, because a tumour
+- ~~**`spawn_tumour` from a tumour IS already limited to 9 tiles**, and correctly, because a tumour
   cannot move so it takes the `nextOrder()` branch. **The half of this the report asked to limit is
-  the half that already works.**
+  the half that already works.**~~
+
+  **THAT WAS WRONG, and the probe caught it.** A creep tumour is a **building**, and `Abilities.issue`
+  has its own branch for a point ability cast by a building:
+
+  ```js
+  case 'point': if (u.isBuilding) { if (ab.energy) u.energy -= ab.energy; this.cast(u, id, null, x, y); return true; }
+  ```
+
+  It resolves the cast **immediately** and never reaches `orderTick` or its range check at all. So a
+  tumour never took the refuse branch — it never got there. **Measured: a finished tumour seeded a
+  child 21.4 tiles away against a declared range of 9.** The first probe missed it because its far
+  target was not creep, so the refusal came from placement and looked like a range limit. The report
+  was right on both halves and there were two faults, in two functions.
 
 Combined with C1 — free casts — an Overlord can plant unlimited free tumours anywhere on the creep
 field. C1 and C2 together are the actual fix.
