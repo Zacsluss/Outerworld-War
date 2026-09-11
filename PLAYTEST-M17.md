@@ -372,3 +372,27 @@ half is easier to see: wall a creep tile in with colonies on all sides and order
 on it. **Working:** it walks up to the wall, gives up, and stands there lifted. **Before:** it rooted
 inside the wall. Saves and replays from before this commit are refused (the stamp moved). The eight-player
 test game (`node test/eightplayer.js`) reads 19 of 19 for the first time since FIXLIST-M15 C3.
+
+## 46. A computer Zerg with a Hive still researches the Lair's techs (task 5)
+
+Play against a **hard** computer Zerg to the twenty-minute mark, `black sheep wall`, and click its Hive.
+**Working:** at some point after the Hive lands, its production slot shows Pneumatized Carapace, Ventral
+Sacs, Antennae or Burrow researching (the computer's Overlords get faster and see further). **Before:**
+once the Lair had become a Hive none of the four could ever be started by the computer -- the Hive's
+slot stayed empty for the rest of the game. Quicker: `node test/review17.js` section 19.
+
+## 47. The computer's Ravens and Disruptors march with the army (task 7)
+
+Play against a **hard** computer Terran (or Protoss) past minute twelve, `black sheep wall`. When its
+wave leaves, look for the Raven (Terran) or the Disruptor (Protoss) among the units that go.
+**Working:** they travel with the wave and gather at the rally between attacks like the Medics and
+Science Vessels do. **Before:** each one stood where it was built for the whole game -- 100/150 and
+150/150 that never moved.
+
+## 48. The computer does not double-count the money a Lair or an add-on cost it (task 8)
+
+Invisible from play: it is the AI's private reserve. Within the same think that morphs a Lair (or
+builds a Reactor), the money already paid stayed reserved as well, so anything bought later in that
+think was refused for a cost the bank had already met. `node test/review17.js` section 19 shows the
+reserve falling by the morph's price the moment it is queued. Saves and replays from before this commit
+are refused (the stamp moved).

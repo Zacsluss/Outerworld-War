@@ -210,7 +210,9 @@ listed here. Ordered by what I would do first.
    0, so **every computer opponent on easy and normal is the degraded one**. Fix: count micro ticks on
    the AI (`this.microN++`) and key `turn()` on that. Cost S — but it changes what every AI casts and
    sieges, so it belongs with the balance run. **Question 8.**
-5. **`research()` cannot find a tech's building once it has morphed.** It selects `bld` by
+5. **`research()` cannot find a tech's building once it has morphed.** **DONE** (entry 22): the building is
+   chosen by what it can research, the test `G.queueTech` makes; a Hive researches the Lair's three techs
+   and Burrow. As listed: It selects `bld` by
    `u.def.id === td.bld`; a Lair morphed to a Hive carries the same techs but not the id, so after the
    Hive, `pneumatized`, `ventral_sacs` and `antennae` are unresearchable for the AI (the harasser style
    fronts one of them). Fix: select by `(u.def.tech || []).includes(id)`, the test `queueTech` already
@@ -220,12 +222,15 @@ listed here. Ordered by what I would do first.
    `pair`, and a nuke (`sup: 8, notUnit: true`) queued at the cap is accepted, never starts, and is
    reported as "supply blocked" (measured). One `G.supplyBlocked(p, def)` at all seven sites. Cost S-M;
    touches production for every race, so probe first.
-7. **The Raven and the Disruptor are bought and never moved.** Neither has a weapon, so `armyUnits()`
+7. **The Raven and the Disruptor are bought and never moved.** **DONE** (entry 22): both are on
+   `supportUnits()` by name -- deriving the list was measured and is wrong (it adds the Overlord, drops the
+   Arbiter and the Dark Archon). As listed: Neither has a weapon, so `armyUnits()`
    excludes them, and neither is in `supportUnits()`; 100/150 and 150/150 per unit that stands at the
    rally for the game. Fix: add both to `supportUnits()` — or derive the list (`!weapon && !worker &&
    !cargo && from`), which is exactly the current twelve plus these two. Cost S; changes where the AI
    army goes with them, not what it builds.
-8. **`morph()` and `addon()` never `release()` their head-step claim**, unlike `train()` and
+8. **`morph()` and `addon()` never `release()` their head-step claim**, **DONE** (entry 22): both release
+   on a successful queue, as `train()` and `research()` do. As listed: unlike `train()` and
    `research()`, so a Lair/Hive/Orbital/add-on head step stays charged against `commitMin` for the rest
    of that think and `afford()` under-reports. Cost S; one think's worth of money per morph — probe
    with the ledger before and after.
@@ -938,6 +943,28 @@ The questions as they were put, kept for the record:
     red (`lands: [{tx:22, ty:11, d:146}]`, the teleport); the escape removed -> three clean reds
     (`pathOut 0`, `rooted null`, `maxStuck 717`). **Canaries:** aistyles seed 1 clean (131, the gate's); seed 5 two reds (the known economy line 57 vs 61, and one first-wave line re-dealt to 67 vs 68 over ZP); seed 11 the same one first-wave line as before (32 vs 34 over P). The stamp is `e80c5cb3de9a467f`. **Gate:** 75 of 75, 266 s.
     The stamp moved (`sim.js`, `map.js`).
+22. **Three AI faults in one commit: the Hive's techs, the Raven and the Disruptor, the morph and add-on
+    claims (tasks 5, 7, 8).** *(commit: AI tasks 5/7/8; fourth session)* **Measured first**
+    (`.claude/review/ai578-probe.js`): a Zerg AI whose only hall is a Hive, 5000/5000, six `research()` calls
+    -- **none of `pneumatized`, `ventral_sacs`, `antennae` queued** (nor Burrow, which the Hive also carries;
+    the building was selected by def id and a Hive is not a `'lair'`). The derived support list ("no weapon,
+    not a worker, no cargo, has a producer") is **not** the written twelve plus the two: it adds the
+    Overlord, which stays home on purpose, and drops the Arbiter (it has a weapon) and the Dark Archon (a
+    merge, no producer) -- so the reviewer's derivation was rejected and the two are added by name. After
+    `morph('lair')` with the head claim armed, `commitMin` **still held the Lair's 150/100** after the bank had
+    paid it: `afford(150, 100)` read free = 0 against a bank of 250.
+    - `research()` selects a tech's building by `def.tech.includes(id)` and an upgrade's by
+      `def.upg.includes(id)` -- exactly what `G.queueTech`/`G.queueUpgrade` accept -- so the Greater Spire
+      special case is gone with it, and a lifted building is skipped for upgrades as it was for techs.
+    - `supportUnits()` names the Raven and the Disruptor; the comment records why the list is written.
+    - `morph()` and `addon()` `release()` their claim on a successful queue; both debit the bank at once.
+    **Tests:** `test/review17.js` section 19 (9 checks): the Hive-only AI queues a Lair tech at the Hive;
+    a Raven and a Disruptor idle fourteen tiles from the rally are sent to it by `army()` while an Overlord
+    is not a support unit and a Marine is army; the morph and the add-on each drop their claim and the
+    reserve falls by their price. **Negative controls** (all restored byte-identical): the def-id selection
+    put back -> one clean red; the two names off the list -> two reds; the morph release removed -> one
+    red; the add-on release removed -> one red. **Canaries:** aistyles seed 1 clean (131, the gate's); seed 5 the known economy line (57 vs 61) and the first-wave line re-dealt (28 vs 34 over P); seed 11 the same one line (32 vs 34 over P). **Eight-player banks:** 253/352/414/478/257/80/23/242 (every AI under 500; re-dealt from 337/294/462/488/188/70/144/252, which is what an AI change does).
+    **Gate:** 75 of 75, 245 s. The stamp moved (`ai.js`): `ac3cc0ea77d0c21c`.
 
 # 4. Considered and deliberately not done
 
@@ -981,6 +1008,7 @@ The questions as they were put, kept for the record:
 13. **The AI reviewer's behaviour fixes** (open tasks 4, 5, 7, 8, 9): each changes what the computer
     does; `eightplayer` is already red and `aistyles` seeds 1 and 11 are known reds, so a behaviour
     change now would muddy the two canaries the balance work will need. Flagged with their probes.
+    (4 and 9 were taken with decision 8, entry 12; 5, 7 and 8 in the fourth session, entry 22.)
 14. **The Queen claim below the head step** (position 7 — "above the composition's top pick", as task 26 was
     written). Measured and rejected (entry 18): two of four arms never reached a Queen per hall in fifteen
     minutes, the head step and the next upgrade holding her gas. Above the head step it costs at most a

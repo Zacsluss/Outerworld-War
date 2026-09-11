@@ -32,6 +32,10 @@
 // 18. A WORKER RE-ORDERED INSIDE A GAS BUILDING NEVER LEFT IT. Unit.tick returns early for anything inside,
 //     applyOrder never cleared `inside`, and the worker stayed the building's occupant: the geyser was dead
 //     for the game. Found measuring the Zerg notes in the eight-player game (both extractors, minute five on).
+// 19. THREE AI FAULTS (tasks 5, 7, 8): research() chose a tech's building by def id, so a Lair that had
+//     become a Hive could never research its three techs; the Raven and the Disruptor were bought and never
+//     moved (weaponless, and not on supportUnits()); morph() and addon() never released their claim, so
+//     the money the bank had already paid stayed reserved for the rest of the think.
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
 let pass = 0, fail = 0;
@@ -411,6 +415,67 @@ function DATA_NAME(c, id) { return R(c, 'return DATA.units[' + JSON.stringify(id
   ok('RE-ORDERED WHILE INSIDE, SHE COMES OUT: inside cleared, the occupant slot freed (both used to stay set for the rest of the game)', out.after.inside && out.after.occupant, JSON.stringify(out.after));
   ok('...and she actually moves on her new order (Unit.tick used to return early for her, forever)', out.moved && out.aOrder === 'gather' && out.aTarget === 'mineral', JSON.stringify(out));
   ok('...and the next drone gets in and the geyser pays again (it paid nothing for five minutes in the eight-player game)', out.bIn && out.gas > 0, JSON.stringify([out.bIn, out.gas]));
+}
+
+// ============================================================================
+// 19. three AI faults: the Hive's techs, the Raven and the Disruptor, the morph and add-on claims
+// ============================================================================
+// Measured before the fix (.claude/review/ai578-probe.js): a Zerg AI with a Hive and no Lair, 5000/5000,
+// six research() calls -- none of pneumatized, ventral_sacs, antennae queued (the Hive is not a 'lair');
+// supportUnits() named twelve units and neither the Raven nor the Disruptor, both of which AI_COMP buys;
+// after morph('lair') with the head claim armed, commitMin still held the Lair's 150/100 and
+// afford(150, 100) read free = 0 against a bank of 250.
+{
+  const put = `this.put = (defId, owner, near, extra) => { const pl = G.players[owner], def = DATA.buildings[defId]; for (let r = 3; r < 30; r++) for (let k = 0; k < 24; k++) { const a = k / 24 * Math.PI * 2; const tx = Math.round(near.x / TILE + Math.cos(a) * r - def.w / 2), ty = Math.round(near.y / TILE + Math.sin(a) * r * .8 - def.h / 2); if (G.map.canPlace(def, tx, ty, pl, G.units, null)) continue; if (extra && !extra(tx, ty)) continue; const b = G.placeBuilding(def, tx, ty, owner); b.done = true; b.progress = def.time; b.hp = b.maxHp; b.creepR = def.creep || 0; if (def.creep) G.map.recomputeCreep(G.units); G.recomputeSupply(); return b; } return null; };`;
+  // 5. the Hive researches what the Lair carried
+  const t5 = R(ctx, put + `
+    G.init({ players: [{ race: 'Z', human: false, difficulty: 'normal', name: 'Z', team: 1 }, { race: 'T', human: true, name: 'H', team: 2 }], seed: 3, layout: 'temple' });
+    G.recording = false; G.applying = true; const p = G.players[0], ai = p.ai; const hall = G.units.find(u => u.alive && u.owner === 0 && u.def.depot);
+    this.put('spawning_pool', 0, hall); this.put('queens_nest', 0, hall);
+    hall.def = DATA.buildings.hive; hall.maxHp = hall.def.hp; hall.hp = hall.maxHp;   // the morph's end state: a Hive and no Lair anywhere
+    p.minerals = 5000; p.gas = 5000; ai.researchDef = null; ai.commitMin = 0; ai.commitGas = 0; ai.claims = [];
+    p.tech.add('burrow_tech');   // the Hive carries Burrow too (equally unreachable before); own it so the three Lair techs are what is left
+    for (let i = 0; i < 6; i++) ai.research();
+    const lairTechs = ['pneumatized', 'ventral_sacs', 'antennae'];
+    return { lair: p.hasBuilding('lair'), hive: p.hasBuilding('hive'), noLairUnit: !G.units.some(u => u.alive && u.owner === 0 && u.def.id === 'lair'), got: lairTechs.filter(id => p.researching.has(id)), hiveQueue: hall.prod.map(it => it.id), researching: [...p.researching] };`);
+  ok('the scene stands: a Zerg AI whose only hall is a Hive, with a full bank', t5.hive && t5.noLairUnit, JSON.stringify(t5));
+  ok('THE HIVE RESEARCHES A LAIR TECH (before: research() selected the building by def id and queued none of the three -- nor Burrow -- in six calls)', t5.got.length >= 1 && t5.hiveQueue.some(id => t5.got.includes(id)), JSON.stringify(t5));
+  // 7. the Raven and the Disruptor are support units and move to the rally with the rest
+  const t7 = R(ctx, `
+    G.init({ players: [{ race: 'T', human: false, difficulty: 'normal', name: 'T', team: 1 }, { race: 'P', human: false, difficulty: 'normal', name: 'P', team: 2 }], seed: 3, layout: 'temple' });
+    G.recording = false; G.applying = true; const out = {};
+    for (const [pi, id] of [[0, 'raven'], [1, 'disruptor'], [1, 'observer'], [0, 'marine']]) {
+      const p = G.players[pi], ai = p.ai; const rally = ai.rallyPoint(); ai.state = 'gather';
+      const u = G.spawnUnit(id, pi, rally.x + 14 * TILE, rally.y); u.applyOrder({ type: 'idle' });
+      const inSupport = ai.supportUnits().includes(u), inArmy = ai.armyUnits().includes(u);
+      ai.army();
+      out[id] = { inSupport, inArmy, order: u.order.type, toRally: u.order.type === 'move' && distPt(u.order.x, u.order.y, rally.x, rally.y) < 2 * TILE };
+    }
+    const ov = G.spawnUnit('overlord', 0, 0, 0); out.overlordSupport = G.players[0].ai.supportUnits().includes(ov);
+    return out;`);
+  ok('the Raven is a support unit and an idle one far from the rally is sent to it (before: not on the list, and it stood where it was born for the game)', t7.raven.inSupport && !t7.raven.inArmy && t7.raven.toRally, JSON.stringify(t7.raven));
+  ok('...and so is the Disruptor', t7.disruptor.inSupport && !t7.disruptor.inArmy && t7.disruptor.toRally, JSON.stringify(t7.disruptor));
+  ok('the Observer still is, the Marine is army and the Overlord stays home (the list is written, not derived: deriving it adds the Overlord and drops the Arbiter and the Dark Archon)', t7.observer.inSupport && t7.observer.toRally && t7.marine.inArmy && !t7.marine.inSupport && t7.overlordSupport === false, JSON.stringify(t7));
+  // 8. morph() and addon() consume their claim
+  const t8 = R(ctx, put + `
+    G.init({ players: [{ race: 'Z', human: false, difficulty: 'normal', name: 'Z', team: 1 }, { race: 'T', human: false, difficulty: 'normal', name: 'T', team: 2 }], seed: 3, layout: 'temple' });
+    G.recording = false; G.applying = true; const out = {};
+    { const p = G.players[0], ai = p.ai; const hall = G.units.find(u => u.alive && u.owner === 0 && u.def.depot); this.put('spawning_pool', 0, hall);
+      p.minerals = 400; p.gas = 300; ai.headDef = DATA.buildings.lair; ai.workerDef = null; ai.expandDef = null; ai.queenDef = null; ai.researchDef = null; ai.topDef = null; ai.budget();
+      const before = { commitMin: ai.commitMin, commitGas: ai.commitGas, lairClaim: ai.claims.some(c => c.id === 'lair') };
+      const ok8 = ai.morph('lair');
+      out.morph = { ok: ok8, before, after: { commitMin: ai.commitMin, commitGas: ai.commitGas, lairClaim: ai.claims.some(c => c.id === 'lair') }, bank: [p.minerals, p.gas], afford: ai.afford(150, 100) }; }
+    { const p = G.players[1], ai = p.ai; const hall = G.units.find(u => u.alive && u.owner === 1 && u.def.depot); this.put('academy', 1, hall);
+      const ad = DATA.buildings.reactor; const bar = this.put('barracks', 1, hall, (tx, ty) => !G.map.canPlace(ad, tx + 4, ty + 1, p, G.units, null));   // room for the add-on on its right
+      p.minerals = 300; p.gas = 200; ai.headDef = ad; ai.workerDef = null; ai.expandDef = null; ai.queenDef = null; ai.researchDef = null; ai.topDef = null; ai.budget();
+      const before = { commitMin: ai.commitMin, commitGas: ai.commitGas, claim: ai.claims.some(c => c.id === 'reactor') };
+      const okA = ai.addon('reactor');
+      out.addon = { ok: okA, placed: !!bar, before, after: { commitMin: ai.commitMin, commitGas: ai.commitGas, claim: ai.claims.some(c => c.id === 'reactor') }, bank: [p.minerals, p.gas] }; }
+    return out;`);
+  ok('the morph scene stands: the Lair is the head claim (150/100 reserved) and the morph is bought', t8.morph.ok && t8.morph.before.lairClaim && t8.morph.before.commitMin >= 150, JSON.stringify(t8.morph));
+  ok('MORPH RELEASES ITS CLAIM: the reserve falls by the Lair\'s price and afford(150, 100) is true again (before: 250 reserved of a 250 bank, afford false)', !t8.morph.after.lairClaim && t8.morph.after.commitMin === t8.morph.before.commitMin - 150 && t8.morph.after.commitGas === t8.morph.before.commitGas - 100 && t8.morph.afford === true, JSON.stringify(t8.morph));
+  ok('the add-on scene stands: the Reactor is the head claim and the add-on is bought', t8.addon.placed && t8.addon.ok && t8.addon.before.claim, JSON.stringify(t8.addon));
+  ok('ADD-ON RELEASES ITS CLAIM too', !t8.addon.after.claim && t8.addon.after.commitMin === t8.addon.before.commitMin - 50 && t8.addon.after.commitGas === t8.addon.before.commitGas - 50, JSON.stringify(t8.addon));
 }
 
 ok('no JS errors', ctx.errors.length === 0, ctx.errors.slice(0, 3).join(' | '));

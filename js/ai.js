@@ -977,8 +977,13 @@ class AI {
       // one the list still owes and cannot pay for becomes next think's claim 6; anything it CAN pay
       // for out of free is simply bought now and no claim is needed.
       let want = null, bld = null;
-      if (DATA.techs[id]) { if (p.tech.has(id) || p.researching.has(id)) continue; const td = DATA.techs[id]; want = { id, min: td.min, gas: td.gas }; bld = this.mine(u => u.isBuilding && u.done && u.def.id === td.bld && !u.prod.length && !u.lifted)[0]; }
-      else if (DATA.upgrades[id]) { const ud = DATA.upgrades[id]; const lvl = p.upgLevel(id); if (lvl >= 3 || p.researching.has(id)) continue; if (this.diff === 'easy' && lvl >= 1) continue; want = { id, min: ud.min[lvl], gas: ud.gas[lvl] }; bld = this.mine(u => u.isBuilding && u.done && (u.def.id === ud.bld || (ud.bld === 'spire' && u.def.id === 'greater_spire')) && !u.prod.length)[0]; }
+      // The building is chosen by what it can research -- the test G.queueTech and G.queueUpgrade make --
+      // not by its def id. A Lair that has become a Hive carries the same three techs and not the id, so
+      // after the Hive morph pneumatized, ventral_sacs and antennae were unresearchable for the AI for
+      // the rest of the game (REVIEW-M17 task 5; measured: six research() calls with a full bank queued
+      // none of them). The Greater Spire special case was the same fault fixed for one building.
+      if (DATA.techs[id]) { if (p.tech.has(id) || p.researching.has(id)) continue; const td = DATA.techs[id]; want = { id, min: td.min, gas: td.gas }; bld = this.mine(u => u.isBuilding && u.done && (u.def.tech || []).includes(id) && !u.prod.length && !u.lifted)[0]; }
+      else if (DATA.upgrades[id]) { const ud = DATA.upgrades[id]; const lvl = p.upgLevel(id); if (lvl >= 3 || p.researching.has(id)) continue; if (this.diff === 'easy' && lvl >= 1) continue; want = { id, min: ud.min[lvl], gas: ud.gas[lvl] }; bld = this.mine(u => u.isBuilding && u.done && (u.def.upg || []).includes(id) && !u.prod.length && !u.lifted)[0]; }
       if (!want || !bld) continue;                       // no building to research it in: money would be held for nothing
       // A RESEARCH LIST IS NOT A QUEUE EITHER, and this is the same fault script() was rewritten for
       // in M11. Stopping at the first item we cannot pay for reads as a priority order and behaves as
@@ -1026,7 +1031,11 @@ class AI {
   // is the Zerg equivalent of a gateway with a free slot, and it is what this function's own comment
   // has always described.
   canTrainSoon(id) { const p = this.p, ud = DATA.units[id]; if (!ud || !p.hasReq(ud)) return false; if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) return false; if (ud.from === 'larva') return !!this.mine(u => u.def.spawnsLarva && u.done).length; return !!this.mine(u => u.isBuilding && u.done && !u.lifted && u.def.produces.includes(id) && u.prod.length < 3 && !(u.addon && !u.addon.done)).length; }
-  addon(id) { const p = this.p, ad = DATA.buildings[id]; if (!p.hasReq(ad)) return false; const b = this.mine(u => u.isBuilding && u.done && u.def.id === ad.parent && !u.addon && !u.prod.length)[0]; if (!b) return false; return G.queueAddon(b, id); }
+  // Both consume their claim the way train() and research() do: G.queueAddon and G.queueMorph debit the
+  // bank at once, so a claim left standing is money counted twice for the rest of the think (REVIEW-M17
+  // task 8; measured: after morph('lair') commitMin still held the Lair's 150/100 and afford(150, 100)
+  // read free = 0 against a bank of 250).
+  addon(id) { const p = this.p, ad = DATA.buildings[id]; if (!p.hasReq(ad)) return false; const b = this.mine(u => u.isBuilding && u.done && u.def.id === ad.parent && !u.addon && !u.prod.length)[0]; if (!b) return false; if (!G.queueAddon(b, id)) return false; this.release(ad); return true; }
   // The source of a morph is DERIVED from the data, not listed here. It used to be a three-way ternary
   // -- lair from hatchery, hive from lair, greater spire from spire -- which was every morph that
   // existed when it was written. M11 added three Protoss structures that morph off a Shield Battery,
@@ -1039,7 +1048,7 @@ class AI {
     }
     return null;
   }
-  morph(id) { const p = this.p, nd = DATA.buildings[id]; const from = this.morphSource(id); if (!from) return false; if (p.minerals < nd.min || p.gas < nd.gas) return false; const b = this.mine(u => u.isBuilding && u.done && u.def.id === from && !u.prod.length)[0]; if (!b) return false; return G.queueMorph(b, id); }
+  morph(id) { const p = this.p, nd = DATA.buildings[id]; const from = this.morphSource(id); if (!from) return false; if (p.minerals < nd.min || p.gas < nd.gas) return false; const b = this.mine(u => u.isBuilding && u.done && u.def.id === from && !u.prod.length)[0]; if (!b) return false; if (!G.queueMorph(b, id)) return false; this.release(nd); return true; }
   // force: this is the building being saved for (script step, expansion, gas, urgent supply); otherwise the reserve applies
   build(id, force) {
     const def = DATA.buildings[id], p = this.p; if (!p.hasReq(def)) return false;
@@ -1099,7 +1108,12 @@ class AI {
   // ...and a HOMED Queen is not support either (REVIEW-M17 task 26, which closes open task 23): as a
   // member here she left with the army, out of injectHall's 26 tiles, and stopped injecting. u.home is
   // set by homeQueens(); a Queen with no hall to keep still follows the army as before.
-  supportUnits() { return this.mine(u => ['medic', 'science_vessel', 'observer', 'high_templar', 'defiler', 'arbiter', 'dark_archon', 'queen', 'infestor', 'viper', 'swarm_host', 'overseer'].includes(u.def.id) && !u.inside && !(u.def.id === 'queen' && u.home)); }
+  // Written out rather than derived. "No weapon, not a worker, no cargo, has a producer" was tried
+  // (REVIEW-M17 task 7): it adds the Overlord, which stays home on purpose, and drops the Arbiter (it
+  // has a weapon, so armyUnits() already moves it) and the Dark Archon (a merge, no producer). The Raven
+  // and the Disruptor were bought by AI_COMP and, being weaponless and not on this list, stood at the
+  // rally for the whole game: 100/150 and 150/150 apiece that never left the base.
+  supportUnits() { return this.mine(u => ['medic', 'science_vessel', 'raven', 'observer', 'high_templar', 'defiler', 'arbiter', 'dark_archon', 'disruptor', 'queen', 'infestor', 'viper', 'swarm_host', 'overseer'].includes(u.def.id) && !u.inside && !(u.def.id === 'queen' && u.home)); }
   rallyPoint() {
     const halls = this.halls().filter(h => h.done); const p = this.p;
     const nat = halls.length > 1 ? halls[1] : halls[0]; if (!nat) return { x: p.startX, y: p.startY };
