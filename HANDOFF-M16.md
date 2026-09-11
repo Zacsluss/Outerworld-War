@@ -41,6 +41,46 @@ All three were measured before and after every change this session and none of t
    minerals. It is back where it was because D1 was reverted, but it is the assertion any future AI
    spending change will hit first.
 
+4. **`test/net_many.js` fails one of 44** — `phase 4: the promoted host's host-only command is obeyed`.
+   **NEWLY RECORDED, PRE-EXISTING, AND THE ASSERTION IS THE THING THAT IS WRONG.** Verified identical
+   at `57d61d2` (before this milestone) and at HEAD: 43 passed, 1 failed, the same assertion, both trees.
+
+   The relay gates `case 'set'` on `!lobby.started` (`test/serve.js`), so once a game begins NO settings
+   change is accepted from anyone, host or not. That rule is deliberate, and the same rule is what makes
+   *"the relay refuses a map change once the game is running"* PASS in game C of the same file. Phase 4
+   promotes a new host mid-game and then asserts that the new host's speed change takes effect — but
+   there is no host-only setting that CAN be changed mid-game, so it asserts something the design
+   deliberately forbids.
+
+   **Host migration itself is fine, and the same run proves it:** dropping the host promotes the next
+   surviving human, every remaining client is told who the new host is, and phase 5 passes — the role is
+   handed back when the original host rejoins its own slot.
+
+   **Do not "fix" this by loosening the relay.** The fix is a replacement assertion that shows the
+   promotion is real using a power that exists mid-game, or moving the check into a lobby-phase test.
+
+### Multiplayer, run by hand this session
+
+Neither net test is in the gate — both are slow and environment-dependent — and this milestone changed
+the movement path, which is exactly what deterministic lockstep rests on. So both were run against HEAD
+rather than assumed:
+
+- **`node test/net.js` — ALL PASS.** Two clients plus an AI over real sockets: 14,400 frames of random
+  orders with state hashes matching at every 48-frame checkpoint; a killed client whose units stop on
+  the relay-chosen frame that both clients agree on; a rejoin served from a live player's snapshot
+  rather than a re-simulation from frame 0; and an artificially injected divergence reported by both
+  clients at the same frame, which is what makes the other three results mean anything.
+- **`node test/net_many.js` — 43 of 44**, the one failure being the assertion above. Four humans in
+  lockstep, host migration, two players dropping and rejoining in the same tick of the event loop, and
+  a rejoin into a game old enough to have mined a mineral patch out all pass.
+
+**What LAN multiplayer is and is not.** `test/serve.js` is the static server and the WebSocket relay in
+one file with no dependencies; it binds every interface and prints its LAN URLs on startup, and a client
+points its socket back at whatever host served the page. So everyone on one LAN opening one URL works
+with nothing installed. There is **no NAT traversal, no matchmaking, no TLS and no auth**, and the relay
+holds one lobby and one game — internet play needs a port forward or a tunnel, and anyone who can reach
+the port can join the lobby.
+
 ---
 
 ## What this session changed
@@ -208,6 +248,9 @@ KNOWN REDS, none of which block:
   - test/eightplayer.js is 19/19, but its money assertion passes by only 4% (2405 against a
     2500 threshold). It is the first thing any AI spending change will break -- the D1
     attempts pushed one bank from 796 to 5,019 minerals before they were reverted.
+  - test/net_many.js fails 1 of 44 (the promoted host's mid-game setting). NOT IN THE GATE, and
+    the ASSERTION is what is wrong -- the relay refuses every settings change once a game has
+    started, by design. Verified identical at 57d61d2. Do not loosen the relay to make it pass.
 
 Read the traps section of HANDOFF-M16.md before writing any probe, and the ones in M13, M14
 and M15 too. Eight new ones this session, including that GameMap.blocked is an Int32Array
