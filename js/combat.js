@@ -14,9 +14,44 @@ const Combat = {
     if (w.scarab) { if (a.scarabs <= 0) { a.cooldown = 8; return; } a.scarabs--; const s = G.spawnUnit('scarab', a.owner, a.x + Math.cos(a.facing) * a.r, a.y + Math.sin(a.facing) * a.r); s.parent = a; s.lifetime = 110; s.facing = a.facing; s.applyOrder({ type: 'scarab', target: t }); return; }
     if (w.interceptor) { a.launched = a.launched || []; for (const ic of a.launched) if (ic.alive) { ic.order.target = t; if (ic.order.type === 'dock') ic.applyOrder({ type: 'intercept', target: t }); } if (a.interceptors > 0 && !(a.launchCd > 0)) { const ic = G.spawnUnit('interceptor', a.owner, a.x, a.y + 6); ic.parent = a; ic.facing = a.facing; ic.applyOrder({ type: 'intercept', target: t }); a.interceptors--; a.launched.push(ic); a.launchCd = 8; } a.cooldown = 6; return; }
     if (w.glaive) { this.visual(a, t, 'glaive'); let cur = t, d = dmg; const hit = [t]; for (let b = 0; b < 3 && cur; b++) { if (!swarmed || b > 0) G.damage(cur, d, w.type, a); d = Math.max(1, Math.floor(d / 3)); let nx = null, nd = 1e9; for (const o of G.near(cur.x, cur.y, 3 * TILE)) { if (hit.includes(o) || o.owner === a.owner || !G.targetable(a, o) || o.isBuilding && false) continue; const dd = dist(o, cur); if (dd < nd) { nd = dd; nx = o; } } if (nx) { hit.push(nx); G.effects.push({ kind: 'line', x: cur.x, y: cur.y, tx: nx.x, ty: nx.y, t: 6, color: '#8f8' }); } cur = nx; } return; }
-    if (w.line) { // Lurker spines along a line
-      const ang = Math.atan2(t.y - a.y, t.x - a.x); const len = 6 * TILE; G.effects.push({ kind: 'spines', x: a.x, y: a.y, tx: a.x + Math.cos(ang) * len, ty: a.y + Math.sin(ang) * len, t: 12 });
-      for (const o of G.near(a.x + Math.cos(ang) * len / 2, a.y + Math.sin(ang) * len / 2, len / 2 + 16)) { if (o.owner === a.owner || o.fly || !o.alive || o.inside) continue; const rx = o.x - a.x, ry = o.y - a.y; const proj = rx * Math.cos(ang) + ry * Math.sin(ang); if (proj < 0 || proj > len) continue; const perp = Math.abs(-rx * Math.sin(ang) + ry * Math.cos(ang)); if (perp <= o.r + 8) G.damage(o, dmg, w.type, a, { splash: true }); }   // a line hits everything along it at once
+    // A LINE HITS EVERYTHING ALONG IT AT ONCE. Two weapons use this: the Lurker's spines and the
+    // Hellion's flame. FIXLIST-M14 C5 (item 20) reported the Hellion's as broken; it was measured
+    // first, and it was not -- one Hellion into a row of five marines hit FIVE of five for 9 each. The
+    // damage was always right. What was wrong was everything around it, and all three are fixed here.
+    //
+    //   LENGTH came from a hardcoded 6 * TILE regardless of the weapon. The Hellion's range is 5, so
+    //   it reached a full tile past what its own table said -- measured: a lone target hit at 5.5 and
+    //   6.0 tiles and missed at 6.5. It now comes from wRange, which is the same number Unit.inRange
+    //   uses to decide the shot was legal in the first place, so the two can no longer disagree. The
+    //   Lurker's range IS 6, the number that was baked in, so this leaves the Lurker exactly as it was
+    //   -- that was checked before the change rather than hoped for afterwards.
+    //
+    //   THE EFFECT was `{ kind: 'spines' }` for both, written for the Lurker, so a Hellion firing drew
+    //   subterranean spines. It comes off the weapon now (`w.fx`), because two weapons sharing a look
+    //   by accident is how the report happened.
+    //
+    //   FLYERS were skipped by this branch rather than by either weapon. Both line weapons are
+    //   ground-only, so the answer was right and the reason was not: it now reads `w.targets`, like
+    //   every other weapon in the game, and a line weapon that could hit air would work without
+    //   anybody editing this.
+    //
+    //   FRIENDLY FIRE stays OFF, and that is a decision rather than an omission. `splash: true` here
+    //   is the damage TYPE flag, not permission to hit allies -- the ff opt-in that Combat.splash
+    //   reads is deliberately not set. A flame that cooked your own marines would make the Hellion
+    //   unusable in the bio ball it is built to escort, and no part of the report asked for it.
+    if (w.line) {
+      const ang = Math.atan2(t.y - a.y, t.x - a.x);
+      const len = a.wRange(w) * TILE;
+      G.effects.push({ kind: w.fx || 'spines', x: a.x, y: a.y, tx: a.x + Math.cos(ang) * len, ty: a.y + Math.sin(ang) * len, t: 12 });
+      const hitsAir = w.targets === 'air' || w.targets === 'both';
+      for (const o of G.near(a.x + Math.cos(ang) * len / 2, a.y + Math.sin(ang) * len / 2, len / 2 + 16)) {
+        if (o.owner === a.owner || !o.alive || o.inside) continue;
+        if (o.fly ? !hitsAir : w.targets === 'air') continue;
+        const rx = o.x - a.x, ry = o.y - a.y;
+        const proj = rx * Math.cos(ang) + ry * Math.sin(ang); if (proj < 0 || proj > len) continue;
+        const perp = Math.abs(-rx * Math.sin(ang) + ry * Math.cos(ang));
+        if (perp <= o.r + 8) G.damage(o, dmg, w.type, a, { splash: true });
+      }
       return;
     }
     this.visual(a, t, w);

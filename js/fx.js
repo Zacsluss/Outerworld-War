@@ -201,6 +201,40 @@ const FX = {
       case 'flame': { const a = Math.atan2(e.ty - e.y, e.tx - e.x); for (let k = 0; k < 5; k++) { const sp = 120 + this.rnd() * 120, da = (this.rnd() - .5) * 0.7; this.p({ x: e.x + Math.cos(a) * 10, y: e.y + Math.sin(a) * 10, vx: Math.cos(a + da) * sp, vy: Math.sin(a + da) * sp, life: 0.25 + this.rnd() * 0.15, max: 0.4, size: 5 + this.rnd() * 4, col: this.rnd() < 0.5 ? [255, 190, 60] : [255, 90, 20], add: true }); } break; }
       case 'slash': ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(e.tx, e.ty, 9, Math.PI * 0.2, Math.PI * 1.1); ctx.stroke(); break;
       case 'spines': { ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = 'rgba(200,140,220,0.6)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.tx, e.ty); ctx.stroke(); const k0 = 1 - e.t / 12; for (let i = 0; i < 7; i++) { const k = Math.min(1, k0 * 1.4 + i / 8); const x = e.x + (e.tx - e.x) * k, y = e.y + (e.ty - e.y) * k; ctx.fillStyle = 'rgba(240,220,255,0.9)'; ctx.beginPath(); ctx.moveTo(x, y - 7); ctx.lineTo(x + 3, y + 3); ctx.lineTo(x - 3, y + 3); ctx.closePath(); ctx.fill(); } break; }
+      // The Hellion's flame jet (FIXLIST-M14 C5). It shares Combat's line branch with the Lurker's spines
+      // and until now it shared the LOOK too -- a hover bike drawing subterranean spines, which is why
+      // a player who was taking perfectly correct line damage reported the weapon as broken.
+      //
+      // A cone rather than a beam, widening away from the muzzle, built from three additive lobes so
+      // the middle is white-hot and the edges are not. Everything is a function of `e.t` and the
+      // endpoints -- no stored state and no FX.rnd, so the same frame of the same replay draws the
+      // same flame. (FX.rnd is seeded and would have been legal; it is simply not needed here.)
+      //
+      // NOT 'flame'. That case already exists a few lines above, in this same switch -- it is the
+      // particle puff FX.fire and the explosions use -- so a second one would have been a duplicate
+      // case, silently unreachable, and the Hellion would have gone on drawing nothing new.
+      case 'flamejet': {
+        ctx.globalCompositeOperation = 'lighter';
+        const k = 1 - e.t / 12;                       // 0 at the muzzle flash, 1 as it dies
+        const dx = e.tx - e.x, dy = e.ty - e.y, L = Math.hypot(dx, dy) || 1;
+        const ux = dx / L, uy = dy / L, px = -uy, py = ux;
+        const reach = Math.min(1, 0.35 + k * 1.15);   // the tongue throws forward, then falls back
+        for (const [spread, a0, col] of [[0.30, 0.30, '255,90,20'], [0.19, 0.42, '255,170,50'], [0.09, 0.55, '255,240,190']]) {
+          const w0 = 5, w1 = L * spread;
+          const g = ctx.createLinearGradient(e.x, e.y, e.x + ux * L * reach, e.y + uy * L * reach);
+          g.addColorStop(0, 'rgba(' + col + ',' + (a0 * (1 - k * 0.2)).toFixed(3) + ')');
+          g.addColorStop(0.65, 'rgba(' + col + ',' + (a0 * 0.7 * (1 - k)).toFixed(3) + ')');
+          g.addColorStop(1, 'rgba(' + col + ',0)');
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.moveTo(e.x + px * w0, e.y + py * w0);
+          ctx.lineTo(e.x + ux * L * reach + px * w1, e.y + uy * L * reach + py * w1);
+          ctx.lineTo(e.x + ux * L * reach - px * w1, e.y + uy * L * reach - py * w1);
+          ctx.lineTo(e.x - px * w0, e.y - py * w0);
+          ctx.closePath(); ctx.fill();
+        }
+        break;
+      }
       case 'boom': case 'bigboom': { const T = e.kind === 'boom' ? 18 : 40; const k = 1 - e.t / T; if (e.kind === 'bigboom' && (e.t === 30 || e.t === 20 || e.t === 12)) { const ox = (this.rnd() - .5) * e.r * 1.2, oy = (this.rnd() - .5) * e.r; this.fire(e.x + ox, e.y + oy, 14, 130); this.smoke(e.x + ox, e.y + oy, 6, 1.6); } if (k < 0.4) { ctx.globalCompositeOperation = 'lighter'; const rr = (e.r || 14) * (0.6 + k * 2.5); const g = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, rr); g.addColorStop(0, `rgba(255,255,230,${(0.4 - k) * 2})`); g.addColorStop(0.4, `rgba(255,180,60,${(0.4 - k) * 1.5})`); g.addColorStop(1, 'rgba(255,60,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(e.x, e.y, rr, 0, 7); ctx.fill(); } break; }
       case 'blood': case 'fire': break;
       case 'ring': ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = e.color; ctx.lineWidth = 3; ctx.globalAlpha = e.t / 14; ctx.beginPath(); ctx.arc(e.x, e.y, e.r * (1.3 - e.t / 14), 0, 7); ctx.stroke(); break;

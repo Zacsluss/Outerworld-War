@@ -138,7 +138,12 @@ const DATA = (() => {
   // worker line and bad into four spaced-out goliaths. No gas, so it is the mineral dump the factory
   // never had.
   U('hellion', { name: 'Hellion', race: 'T', hp: 90, size: 'medium', min: 100, gas: 0, sup: 2, time: 420, speed: 7.2, sight: 8, r: 12, hk: 'H', from: 'factory', mech: true, cargoSize: 2, hover: true,
-    gw: W(9, 'concussive', 5, 30, { line: true, upgKey: 'vehW', upgDmg: 2 }), upgA: 'vehA' });
+    // `fx: 'flame'` is FIXLIST-M14 C5. The `line` mechanic was always correct -- one Hellion into a
+    // row of five hits all five, measured -- but the EFFECT was the Lurker's, because Combat's line
+    // branch pushed { kind: 'spines' } for anything that carried the flag. A hover bike drawing
+    // subterranean spines is why a working weapon was reported as broken. The look now comes off the
+    // weapon, so two weapons can share a mechanic without sharing an appearance.
+    gw: W(9, 'concussive', 5, 30, { line: true, fx: 'flamejet', upgKey: 'vehW', upgDmg: 2 }), upgA: 'vehA' });
   // CYCLONE -- one weapon that hits ground AND air, on the fastest chassis in the factory. The goliath
   // already exists and is the tanky escort with two separate guns and Charon Boosters; the cyclone is
   // the opposite trade -- half the armour, twice the speed, one gun for both targets, and it is the

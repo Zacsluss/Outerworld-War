@@ -69,6 +69,7 @@ const TESTS = [
   { name: 'sensor', args: ['sensor.js'], what: 'the Sensor Tower reports movement as contacts and reveals nothing' },
   { name: 'tumour', args: ['tumour.js'], what: 'the Queen plants creep tumours, the Overlord still does, and the bound holds' },
   { name: 'onmove', args: ['onmove.js'], what: 'the Cyclone fires without stopping; everything else still plants itself' },
+  { name: 'line', args: ['line.js'], what: 'a line weapon hits everything along it, to its own range, in its own colours' },
   { name: 'fognight', args: ['fognight.js'], what: 'explored ground remembers, and night shortens sight on maps that have one' },
   { name: 'formation', args: ['formation.js'], what: 'a right-drag spreads the selection evenly along the line' },
   { name: 'mapmodes', args: ['mapmodes.js'], what: 'the four map sizes are different rules, and the sandstorm is deterministic' },
