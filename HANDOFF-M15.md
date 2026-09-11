@@ -262,6 +262,56 @@ node tools/bake.js                                re-bake sprites after art chan
 
 ---
 
+## Kickoff prompt for a fresh chat
+
+CLAUDE.md requires this and requires it to stand alone. Paste everything inside the fence into an
+empty chat. **Replace the HEAD hash with `git log -1 --format=%h` before pasting** -- committing this
+file moves it.
+
+```
+Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
+Branch: m10-overnight. HEAD: <run: git log -1 --format=%h>. Working tree clean.
+
+Read CLAUDE.md, then HANDOFF-M15.md. FIXLIST-M14.md is closed -- all twenty-one reported
+items -- and PLAYTEST-M14.md is how to see them by hand. Read those two only if you need
+background on something specific.
+
+THE SINGLE NEXT ACTION: bound the fall-through in AI.production(). HANDOFF-M15 step 1
+measured that the AI ignores its own composition table in all three races -- the cheapest
+tier-one unit takes three to six times its intended share of army supply -- and that the
+cause is production() buying the cheapest affordable unit whenever its correctly-chosen
+top pick cannot be paid for. Bounding that fall-through is the one avenue identified that
+does not obviously trade army size for tech level. It has NOT been tried.
+
+Measure before fixing, which in this codebase is a rule and not advice. The probe already
+exists: `node test/ledger.js 20 1 solo Z` prints section 6, intended supply share against
+actual, and a TOTAL MISALLOCATION line. Get a before number for all three races, IN A GIT
+WORKTREE, before editing anything -- test/ledger.js, test/soak.js and test/techtime.js all
+re-read js/ per run, so editing the tree while one runs silently contaminates it.
+
+Do NOT start by re-tuning AI_COMP weights. Step 1 measured that the weights are not being
+read, so tuning them tunes a table nothing consults.
+
+THE GATE: `node test/all.js`, 63 suites, about 2.7 minutes, before every commit. Green means
+green. If a change fixes a real fault but turns a marginal assertion red, revert it anyway
+and say so.
+
+KNOWN REDS, none of which block:
+  - test/soak.js fails one tier-1/2 coverage assertion (Swarm Host). Do not weaken it.
+  - test/aistyles.js on seeds 1 and 11 fails four assertions -- no style attacks inside its
+    12,000-frame window. Pre-existing. Seed 5, the one in the gate, is clean.
+  - test/eightplayer.js is currently 19/19, but its money assertion passes by 4% (2405
+    against a 2500 threshold). If it flips back, the cause is AI.macro's wantHalls floor at
+    js/ai.js:141, not whatever you just changed.
+
+GATED, and it must come last: do NOT run test/balance.js or test/proxy.js without my
+explicit instruction, and double-check with me if I appear to give one. Every balance number
+in HANDOFF.md is stale. HANDOFF-M15 section 4 lists what is waiting on it, including a fully
+priced claim-order trade that is not to be taken unilaterally.
+```
+
+---
+
 ## Conventions that are not negotiable
 
 Unchanged, and every one of them earned its place again:
