@@ -26,7 +26,7 @@ says that too, plainly, and names the probe to build first.
 
 | # | reported | entry | status |
 |---|---|---|---|
-| 1 | were unit projectiles ever researched? make them varied | **A1** | ⚠ **No, they were not.** 34 of 63 armed things fire the same white bullet |
+| 1 | were unit projectiles ever researched? make them varied | **A1** | ✅ done — **No, they never were.** All 67 weapon slots now carry their own shot, 20 kinds, races disjoint |
 | 2 | tumours should cost energy; Overlords need an energy pool | **C1** | ☐ confirmed: `plant_tumour` has no energy cost and the Overlord has no energy at all |
 | 3 | tumours have unlimited range | **C2** | ⚠ confirmed but not for the reported reason — see the entry |
 | 4 | Spawn Broodlings is unexplained and says only "invalid target" | **A2 + B2** | ☐ confirmed: **0 of 76 abilities have a description** |
@@ -42,7 +42,7 @@ says that too, plainly, and names the probe to build first.
 
 Lowest risk. Nothing here changes what the simulation does.
 
-### ☐ A1 · (item 1) Unit projectiles were never designed — 54% fire the same white bullet
+### ✅ A1 · (item 1) Unit projectiles were never designed — 54% fire the same white bullet
 
 **Asked for:** "for all units, did you research their projectiles at all before building? I think we
 need a pass at that to make them more varied/fun".

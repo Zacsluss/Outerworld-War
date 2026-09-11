@@ -143,7 +143,7 @@ const DATA = (() => {
     // branch pushed { kind: 'spines' } for anything that carried the flag. A hover bike drawing
     // subterranean spines is why a working weapon was reported as broken. The look now comes off the
     // weapon, so two weapons can share a mechanic without sharing an appearance.
-    gw: W(9, 'concussive', 5, 30, { line: true, fx: 'flamejet', upgKey: 'vehW', upgDmg: 2 }), upgA: 'vehA' });
+    gw: W(9, 'concussive', 5, 30, { line: true, upgKey: 'vehW', upgDmg: 2 }), upgA: 'vehA' });
   // CYCLONE -- one weapon that hits ground AND air, on the fastest chassis in the factory. The goliath
   // already exists and is the tanky escort with two separate guns and Charon Boosters; the cyclone is
   // the opposite trade -- half the armour, twice the speed, one gun for both targets, and it is the
@@ -1526,6 +1526,107 @@ const DATA = (() => {
   //
   // test/card.js asserts every unit and every building has one and that it is under DESC_MAX
   // characters, so a def added later cannot ship without one.
+  // WHAT EACH WEAPON LOOKS LIKE WHEN IT FIRES. FIXLIST-M15 A1.
+  //
+  // This was a hardcoded list of unit ids inside Combat.visual(), and anything not on the list fell
+  // through to a small white bullet. Measured before the change: of the 63 armed units and buildings,
+  // 29 were named and 34 were not, so 54% of everything in the game fired the identical white dot --
+  // including every unit M12 added. The Colossus, the Carrier, the Void Ray, the Immortal, the Thor
+  // and the Mutalisk all looked the same.
+  //
+  // Keyed by WEAPON, not by unit, which is the actual fix and not just a longer list. A Goliath's
+  // autocannon and its anti-air rockets are two different weapons and used to draw identically; so
+  // did the Wraith's laser and its missiles, the Scout's twin guns, and the Thor's two mounts.
+  //
+  // Kept out of the def lines on purpose, exactly like DESC below: test/version.js reaches into this
+  // file by SOURCE TEXT to prove an edit moves the build stamp, and long def lines are what it reads.
+  //
+  // The three races are deliberately disjoint in KIND, not merely in colour, so that a zoomed-out
+  // fight is readable: Terran fires solid objects, Zerg fires organic matter, Protoss fires energy.
+  // Colour then separates units inside a race.
+  const SHOT = {
+    // ---- Terran: kinetic. Bullets are pale and fast, shells are heavy and orange, rockets trail smoke,
+    // flak bursts rather than travels. Everything Terran shoots is a physical object.
+    // The two LINE weapons live here too, so SHOT is the ONE place any look is chosen. Combat.fire's
+    // line branch reads w.fx the same way the projectile branch does -- FIXLIST-M14 C5 made that true
+    // and this keeps it true rather than leaving one weapon configured somewhere else.
+    'hellion:gw': ['flamejet', '#f83'],
+    'lurker:gw': ['spines', '#c96'],
+    'scv:gw': ['punch', '#ccb'],
+    'marine:gw': ['gauss', '#ffd'],
+    'firebat:gw': ['flame', '#f92'],
+    'ghost:gw': ['gauss', '#dfe'],
+    'vulture:gw': ['frag', '#fd6'],
+    'siege_tank:gw': ['shell', '#fc6'],
+    'goliath:gw': ['gauss', '#ffc'],
+    'goliath:aw': ['rocket', '#fb8'],
+    'wraith:gw': ['gauss', '#ffd'],
+    'wraith:aw': ['rocket', '#fa6'],
+    'battlecruiser:gw': ['battery', '#fd8'],
+    'valkyrie:aw': ['flak', '#fc7'],
+    'spider_mine:gw': ['shell', '#f84'],
+    'marauder:gw': ['rocket', '#fc9'],
+    'reaper:gw': ['gauss', '#fed'],
+    'cyclone:gw': ['rocket', '#9df'],
+    'widow_mine:gw': ['flak', '#f7a'],
+    'thor:gw': ['shell', '#fd7'],
+    'thor:aw': ['flak', '#fe9'],
+    'banshee:gw': ['rocket', '#f96'],
+    'liberator:gw': ['shell', '#fb5'],
+    'viking:aw': ['rocket', '#fca'],
+    'viking_a:gw': ['gauss', '#ffd'],
+    // ---- Zerg: organic. Spines and needles are chitin, acid is green and wet, teeth and claws are close.
+    'drone:gw': ['claw', '#b9d'],
+    'zergling:gw': ['claw', '#d97'],
+    'hydralisk:gw': ['needle', '#dc7'],
+    'mutalisk:gw': ['glaive', '#cf9'],
+    'scourge:aw': ['boom', '#af6'],
+    'guardian:gw': ['acid', '#ad4'],
+    'devourer:aw': ['acid', '#9c3'],
+    'ultralisk:gw': ['claw', '#e97'],
+    'broodling:gw': ['claw', '#c86'],
+    'infested_terran:gw': ['boom', '#8c4'],
+    'roach:gw': ['acid', '#8d3'],
+    'ravager:gw': ['acid', '#7c2'],
+    'baneling:gw': ['acid', '#bd3'],
+    'locust:gw': ['acid', '#9d5'],
+    // The Battlecruiser fires 'battery' and not 'laser', and the Corsair fires 'plasma' and not
+    // 'flak', for one reason: test/shots.js asserts the three races share NO shot kind, and those two
+    // rows were the only crossings. Readability by race is the whole point of the table, so the rule
+    // wins over the flavour of the word 'laser'.
+    // ---- Protoss: energy. Plasma is a ball, beams are continuous, psi crackles. Nothing Protoss fires
+    // is solid, so none of it reuses a Terran kind.
+    'probe:gw': ['laser', '#9cf'],
+    'zealot:gw': ['blade', '#cdf'],
+    'dragoon:gw': ['plasma', '#6cf'],
+    'dark_templar:gw': ['blade', '#a7f'],
+    'archon:gw': ['psi', '#dbf'],
+    'reaver:gw': ['plasma', '#fc7'],
+    'scout:gw': ['laser', '#8cf'],
+    'scout:aw': ['plasma', '#9df'],
+    'corsair:aw': ['plasma', '#adf'],
+    'carrier:gw': ['laser', '#cef'],
+    'interceptor:gw': ['laser', '#cef'],
+    'arbiter:gw': ['plasma', '#b9f'],
+    'sentry:gw': ['plasma', '#8df'],
+    'immortal:gw': ['plasma', '#7bf'],
+    'colossus:gw': ['beam', '#fd9'],
+    'phoenix:aw': ['beam', '#9ef'],
+    'oracle:gw': ['beam', '#f9d'],
+    'void_ray:gw': ['beam', '#c9f'],
+    'tempest:gw': ['plasma', '#adf'],
+    'mothership:gw': ['psi', '#c8f'],
+    // ---- neutral wildlife, and the five armed buildings.
+    'carrion_grub:gw': ['claw', '#ba8'],
+    'carrion_maw:gw': ['claw', '#c97'],
+    'sentinel:gw': ['laser', '#8fc'],
+    'missile_turret:aw': ['rocket', '#fb8'],
+    'planetary_fortress:gw': ['shell', '#fd8'],
+    'sunken_colony:gw': ['needle', '#c85'],
+    'spore_colony:aw': ['acid', '#ad5'],
+    'photon_cannon:gw': ['laser', '#8cf'],
+  };
+
   const DESC = {
     command_center: 'The Terran main base. Trains SCVs, takes in everything they mine, and lifts off to move somewhere else when a base runs dry.',
     comsat_station: 'A Command Center add-on. Its scanner sweep reveals any patch of the map for a moment, cloaked units included -- the cheapest detection Terran has.',
@@ -1688,6 +1789,19 @@ const DATA = (() => {
   };
   // Applied here rather than inside U()/B() so the table above can sit in race order and read as
   // prose. Anything in DESC that is not a def is a typo and would be silently dropped, so it throws.
+  // Anything in SHOT that names a weapon that does not exist is a typo and would be silently dropped,
+  // and any armed weapon MISSING from SHOT is the bug this table exists to remove -- so both throw.
+  for (const key of Object.keys(SHOT)) {
+    const [id, slot] = key.split(':');
+    const d = units[id] || buildings[id];
+    if (!d) throw new Error('SHOT names something that is not a unit or a building: ' + id);
+    if (!d[slot]) throw new Error('SHOT names a weapon that does not exist: ' + key);
+    d[slot].fx = SHOT[key][0]; d[slot].col = SHOT[key][1];
+  }
+  for (const src of [units, buildings]) for (const id of Object.keys(src))
+    for (const slot of ['gw', 'aw'])
+      if (src[id][slot] && !src[id][slot].fx) throw new Error('armed but no shot in SHOT: ' + id + ':' + slot);
+
   for (const id of Object.keys(DESC)) {
     const d = units[id] || buildings[id];
     if (!d) throw new Error('DESC names something that is not a unit or a building: ' + id);

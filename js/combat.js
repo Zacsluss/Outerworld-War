@@ -77,17 +77,34 @@ const Combat = {
     G.effects.push({ kind: 'boom', x, y, t: 12, r: r2 * TILE * 0.6 });
   },
   explode(a, t, w) { const dmg = a.wDmg(w); if (t) this.splash(a, t.x, t.y, dmg, Object.assign({ splash: w.splash || [0.3, 0.3, 0.3] }, w), t); G.effects.push({ kind: 'boom', x: a.x, y: a.y, t: 14, r: 24 }); G.kill(a, null, true); },
+  // HOW LONG A SHOT STAYS ON SCREEN, by kind. A beam lingers, a bullet does not, flak hangs as a puff
+  // after it bursts. Was a two-branch ternary (laser 6, missile 8, everything else 4) back when there
+  // were five kinds and 54% of the game shared one of them.
+  //
+  // Anything absent falls to 4 frames deliberately: a new kind that nobody has tuned should look
+  // brief and wrong rather than linger and look intentional.
+  SHOT_T: { beam: 10, flak: 10, boom: 12, rocket: 9, missile: 8, psi: 8, plasma: 7, shell: 7, acid: 7,
+    laser: 6, battery: 7, needle: 5, blade: 5, claw: 5, punch: 5, frag: 5, glaive: 4, spines: 12, flamejet: 12 },
+  // THE LOOK COMES OFF THE WEAPON. FIXLIST-M15 A1.
+  //
+  // What was here was a hardcoded list of unit ids, and anything not on it fell through to a small
+  // white bullet. Measured before the change: 29 of the 63 armed units and buildings were named and
+  // 34 were not, so 54% of everything in the game fired the identical white dot -- including every
+  // unit M12 added, so the Colossus, the Carrier, the Void Ray, the Immortal, the Thor and the
+  // Mutalisk all looked alike.
+  //
+  // Keyed by WEAPON now, not by unit, which is the fix rather than a longer list: a Goliath's
+  // autocannon and its anti-air rockets are two weapons and used to draw the same, and so did the
+  // Wraith's laser and its missiles, the Scout's two guns and the Thor's two mounts.
+  //
+  // There is no id list left here and the default is unreachable in practice -- DATA throws at load
+  // if any armed weapon has no SHOT entry, so a new unit cannot quietly inherit somebody else's shot.
+  // The fallbacks survive only for the glaive chain, which passes a string rather than a weapon.
   visual(a, t, w) {
-    const k = w === 'glaive' ? 'glaive' : a.def.id;
-    let kind = 'bullet', color = '#ffe';
-    if (w === 'glaive') kind = 'glaive';
-    else if (['marine', 'ghost', 'vulture', 'wraith', 'battlecruiser', 'goliath'].includes(k)) { kind = 'bullet'; color = '#ffd'; }
-    else if (['siege_tank', 'dragoon', 'sunken_colony', 'hydralisk', 'missile_turret', 'valkyrie', 'devourer', 'guardian', 'scout', 'arbiter'].includes(k)) { kind = 'missile'; color = k === 'dragoon' ? '#6cf' : '#fc8'; }
-    else if (['photon_cannon', 'corsair', 'spore_colony'].includes(k)) { kind = 'laser'; color = '#8cf'; }
-    else if (k === 'firebat') { kind = 'flame'; }
-    else if (['zealot', 'zergling', 'ultralisk', 'dark_templar', 'broodling', 'scv', 'probe', 'drone'].includes(k)) { kind = 'slash'; }
-    else if (k === 'archon') { kind = 'laser'; color = '#adf'; }
-    G.effects.push({ kind, x: a.x, y: a.y, tx: t.x, ty: t.y, t: kind === 'laser' ? 6 : kind === 'missile' ? 8 : 4, color });
+    const glaive = w === 'glaive';
+    const kind = glaive ? 'glaive' : (w && w.fx) || 'bullet';
+    const color = glaive ? '#cf9' : (w && w.col) || '#ffe';
+    G.effects.push({ kind, x: a.x, y: a.y, tx: t.x, ty: t.y, t: this.SHOT_T[kind] || 4, color });
   },
   tickProjectiles() {
     const ps = G.projectiles;
