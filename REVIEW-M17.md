@@ -340,7 +340,11 @@ listed here. Ordered by what I would do first.
     (`test/rooms.js`, `test/net.js`, `test/net_many.js`) keep running against `node test/serve.js`; add
     one check that the built executable answers a room join. Cost M. Until then `PLAY.bat` /
     `PLAY-ONLINE.bat` on the host's machine is the way.
-29. **An uprooted Sunken Colony with a `land` order it cannot complete grinds forever.** Measured
+29. **An uprooted Sunken Colony with a `land` order it cannot complete grinds forever.** **DONE** (entry 21):
+    the wide-body pathfinder lets a unit step out of a tile its body does not fit, and a `land` order that
+    gave up no longer roots the building at the ordered tile from wherever it stood (a sixteen-tile teleport,
+    found on the way). `test/eightplayer.js` is 19 of 19, max stuck 0. As listed:
+    Measured
     (`.claude/review/ep-stuck.js`, the eight-player game at commit `bfee3d2`): Sunken Colony #274 of
     player 7 at tile 58,38 (walkable) holds `order.type === 'land'` with `path` null and `moving` false,
     and its `stuck` counter reaches 582 by 540 s — `moveTo` adds 3 per frame when no slide is passable
@@ -901,6 +905,39 @@ The questions as they were put, kept for the record:
     one red (30 hotspots); the old inline branch put back whole (`.claude/review/ctl-oldstrip.js`) -> two reds
     reading **18 on the plate, 22 off the screen**, which is the measurement. **Gate:** 75 of 75, 219 s.
     The stamp did not move.
+21. **The wedged crawler: a wide body can walk out of a gap it does not fit, and a `land` order that gave
+    up no longer teleports the building.** *(commit: task 29; fourth session)* **Measured first**
+    (`.claude/review/ep-stuck2.js`, `ep-pocket.js`, the eight-player game at `943d9f6`): Sunken Colony #274
+    of player 7 walked west along a one-tile corridor between a Spore Colony and the 4x2 building below
+    it -- `G.passable` checks 8 px corners whatever the body, so a 2x2 crawler squeezes into a gap its
+    3x3 pathing test cannot leave -- and at tile 58,38 the wide-body A* returned an **empty path**: from a
+    start that fails `fits`, every orthogonal neighbour fails it too and every diagonal needs two that
+    pass. With no path it walked straight at its goal, the slide found nothing passable, and `stuck` grew
+    three a frame to 654 while the watchdog counted to 240. Then the watchdog fired, `moveTo` returned
+    true with `moveFailed`, and the `land` case **rooted the building at the ordered tile 499 px away**
+    -- sixteen tiles, through two buildings. Every `land` order in the trace that ended in `moveFailed`
+    landed the same way (146 px, 367 px, 499 px). `.claude/review/crawler-scenes.js` rebuilt both on the
+    temple map: a legal tile sealed inside a ring of eight colonies was landed on from 146 px after 60
+    frames (`moved 231px`, through the wall); the pocket geometry gave `pf.find(wide) = []`, `stuck` 723,
+    and a teleport attempt refused only because the ordered tile happened to be blocked.
+    - **`js/map.js` `find()`:** when a wide body starts on a tile that fails the 3x3 test, tiles within
+      two of the start pass on the narrow test (the test `G.passable` let it walk in on); past that it
+      must fit again. The pocket now paths out in five waypoints and the crawler roots on its target.
+    - **`js/sim.js` `tickOrder` `land`:** a walk that gave up drops the order through `nextOrder` like
+      every other failed walk, and a building only roots within a tile of where it stands -- which also
+      covers the "wedged within 140 px counts as arrived" branch that would have snapped it four tiles.
+    - **Not done, on purpose:** tightening `G.passable`'s corner test to the body's real radius, which is
+      what let the crawler in. It would change where every unit wider than 14 px can walk (Ultralisk,
+      Archon, Reaver, the tanks) in every game, for a fault the two lines above already close.
+    **After:** the eight-player game runs its 14,400 frames with **max stuck 0** (was 582 by 540 s, 654
+    by 541 s); `test/eightplayer.js` **19 of 19** by hand for the first time since FIXLIST-M15 C3, banks
+    337/294/462/488/188/70/144/252 (were 337/286/454/496/196/28/49/260 -- every AI still under 500). **Test:** `test/zerg12.js` section 5b (7 checks): the ring scene (the order drops, the
+    crawler stays lifted outside, `landBuilding` never called) and the pocket scene (the pathfinder
+    returns a way out, the crawler walks out and roots on the ordered tile landing from 4 px, stuck never
+    passes 100). **Negative controls** (both restored byte-identical): the land guard removed -> one clean
+    red (`lands: [{tx:22, ty:11, d:146}]`, the teleport); the escape removed -> three clean reds
+    (`pathOut 0`, `rooted null`, `maxStuck 717`). **Canaries:** aistyles seed 1 clean (131, the gate's); seed 5 two reds (the known economy line 57 vs 61, and one first-wave line re-dealt to 67 vs 68 over ZP); seed 11 the same one first-wave line as before (32 vs 34 over P). The stamp is `e80c5cb3de9a467f`. **Gate:** 75 of 75, 266 s.
+    The stamp moved (`sim.js`, `map.js`).
 
 # 4. Considered and deliberately not done
 
@@ -952,7 +989,11 @@ The questions as they were put, kept for the record:
 15. **Fixing the uprooted crawler's endless `land` order (task 29) and the AI's lost tech buildings (task
     30) in the third session.** Both measured, both real, both outside the three notes that were asked
     for; each changes unit or AI behaviour and re-deals every AI sample, so they are open tasks with their
-    probes named.
+    probes named. (Task 29 done in the fourth session, entry 21.)
+16. **Tightening `G.passable` to a wide body's real radius** (entry 21). It is what lets a 2x2 crawler into a
+    one-tile gap, but it would move every wide unit in every game; the pathfinder's escape and the `land`
+    guard close the measured fault without it. If a wide unit is ever measured wedging somewhere the
+    two-tile escape cannot reach, this is the next thing to try.
 
 ---
 

@@ -454,7 +454,13 @@ class Unit {
         }
         break; }
       case 'merge': { const t = o.partner; if (!t || !t.alive || t.order.type !== 'merge' || t.order.partner !== this) { this.nextOrder(); break; } if (dist(this, t) < 28) { if (this.id < t.id) G.mergeUnits(this, t, o.unit); } else this.moveTo(t.x, t.y, t); break; }
-      case 'land': { if (this.moveTo((o.tx + d.w / 2) * TILE, (o.ty + d.h / 2) * TILE)) { G.landBuilding(this, o.tx, o.ty); } break; }
+      // A walk that gave up is not an arrival. moveTo returns true in three ways that are not one -- the
+      // ten-second watchdog, a path that ended short, a unit wedged within 140 px -- and this case landed
+      // the building at the ordered tile from wherever it stood: measured 499 px (sixteen tiles) in the
+      // eight-player game, and straight through a sealed ring of colonies in the pin. The order drops
+      // like every other failed walk, and a building only roots within a tile of where it is standing.
+      // (REVIEW-M17 task 29.)
+      case 'land': { const cx = (o.tx + d.w / 2) * TILE, cy = (o.ty + d.h / 2) * TILE; if (this.moveTo(cx, cy)) { if (this.moveFailed || distPt(this.x, this.y, cx, cy) > TILE) { this.nextOrder(); break; } G.landBuilding(this, o.tx, o.ty); } break; }
       case 'nydus': { const c = o.target; if (!c || !c.alive || !c.nydusLink || !c.nydusLink.alive || !c.nydusLink.done || this.fly) { this.nextOrder(); break; } if (this.moveToRect(c, 6)) { const e = c.nydusLink; const t = G.map.findFreeTile(e.tx + 1, e.ty + e.def.h + 1, 6); if (t) { this.x = (t[0] + .5) * TILE; this.y = (t[1] + .5) * TILE; this.px = this.x; this.py = this.y; this.path = null; G.effects.push({ kind: 'ring', x: this.x, y: this.y, r: 16, t: 10, color: '#c8f' }); } this.nextOrder(); } break; }
       case 'intercept': { Abilities.interceptTick(this); break; }
       case 'dock': { Abilities.dockTick(this); break; }

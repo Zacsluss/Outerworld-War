@@ -421,6 +421,59 @@ run(`(() => {
   ok('...and its creep comes back with it, exactly', !!cr.back && cr.back.creep === cr.rooted.creep, cr.back.creep + ' vs ' + cr.rooted.creep);
 }
 
+// ================================================================ 5b. a crawler's walk that cannot end (REVIEW-M17 task 29)
+// Measured in the eight-player game: an uprooted Sunken Colony squeezed into the one-tile gap between a
+// Spore Colony and the building below it; the wide-body A* could not take a first step out of a tile
+// its body does not fit (every orthogonal fails the 3x3 test, every diagonal needs two that pass), so
+// the crawler ground straight at its goal for the watchdog's ten seconds at three stuck points a frame
+// (723) -- and then the `land` case took the watchdog's give-up for an arrival and rooted it AT THE
+// ORDERED TILE, sixteen tiles away. Two scenes: the teleport (a legal tile sealed inside a ring of
+// colonies) and the pocket (the eight-player geometry rebuilt tile for tile).
+{
+  const TILE_PX = run('TILE');
+  const put = `this.put = (defId, tx, ty) => { const def = DATA.buildings[defId]; const b = G.placeBuilding(def, tx, ty, 0); if (!b) return null; b.done = true; b.progress = def.time; b.hp = b.maxHp; b.creepR = def.creep || 0; if (def.creep) G.map.recomputeCreep(G.units); G.recomputeSupply(); return b; };`;
+  const A = json(`(() => {
+    this.fresh(13); ${put}
+    const p = this.p, m = G.map, hx = Math.floor(p.startX / TILE), hy = Math.floor(p.startY / TILE);
+    const lands = []; const lb = G.landBuilding; G.landBuilding = function (b, tx, ty) { lands.push({ tx, ty, d: Math.round(distPt(b.x, b.y, (tx + 1) * TILE, (ty + 1) * TILE)) }); return lb.call(this, b, tx, ty); };
+    const T = [hx + 8, hy - 2];   // a creep 2x2 east of the hall, sealed by eight creep colonies
+    const ring = [[-2, -2], [0, -2], [2, -2], [-2, 0], [2, 0], [-2, 2], [0, 2], [2, 2]].map(([dx, dy]) => !!this.put('creep_colony', T[0] + dx, T[1] + dy)).filter(Boolean).length;
+    const legal = !m.canPlace(DATA.buildings.sunken_colony, T[0], T[1], p, G.units, null);
+    const sunk = this.put('sunken_colony', hx + 4, hy + 4); Abilities.instant(sunk, 'uproot'); this.tick(2);
+    const start = [sunk.x, sunk.y];
+    sunk.setOrder({ type: 'land', tx: T[0], ty: T[1] });
+    let dropped = null; for (let i = 0; i < 720; i++) { G.tick(); if (dropped === null && sunk.order.type !== 'land') dropped = i + 1; }
+    G.landBuilding = lb;
+    return { ring, legal, dropped, lifted: !!sunk.lifted, at: [Math.round(sunk.x / TILE), Math.round(sunk.y / TILE)], moved: Math.round(distPt(start[0], start[1], sunk.x, sunk.y)), lands, target: T };
+  })()`);
+  ok('the teleport scene stands: a legal creep tile sealed inside eight colonies, a lifted crawler ordered to land on it', A.ring === 8 && A.legal === true, JSON.stringify(A));
+  ok('the walk gives up and the order drops, as every other failed walk does', A.dropped !== null && A.dropped < 700, JSON.stringify(A));
+  ok('THE CRAWLER DOES NOT ROOT INSIDE THE RING (before: it landed on the ordered tile from 146 px away, through the wall)', A.lifted === true && A.lands.length === 0, JSON.stringify(A));
+  const B = json(`(() => {
+    this.fresh(13); ${put}
+    const p = this.p, m = G.map, hx = Math.floor(p.startX / TILE), hy = Math.floor(p.startY / TILE);
+    const lands = []; const lb = G.landBuilding; G.landBuilding = function (b, tx, ty) { lands.push({ tx, ty, d: Math.round(distPt(b.x, b.y, (tx + 1) * TILE, (ty + 1) * TILE)) }); return lb.call(this, b, tx, ty); };
+    // the eight-player geometry: a Spore Colony above-left, two colonies below, the crawler in the one-tile
+    // corridor between them and pressed to its top edge (px 1858,1217 on tile 58,38 was the measurement)
+    const X = hx + 3, Y = hy + 4;
+    const spore = !!this.put('spore_colony', X, Y - 2), below = !!this.put('creep_colony', X, Y + 1) && !!this.put('creep_colony', X + 2, Y + 1);
+    const sunk = this.put('sunken_colony', hx - 6, hy + 6); Abilities.instant(sunk, 'uproot'); this.tick(2);
+    sunk.x = (X + 2) * TILE + 2; sunk.y = Y * TILE + 1; sunk.px = sunk.x; sunk.py = sunk.y;
+    const [sx, sy] = sunk.tile(); const fits = (x, y) => { for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) if (!m.walkable(x + a, y + b)) return false; return true; };
+    const T = [hx - 9, hy + 1];
+    const legal = !m.canPlace(DATA.buildings.sunken_colony, T[0], T[1], p, G.units, sunk);
+    G.pathBudget = 100; const pathOut = G.pf.find(sx, sy, T[0] + 1, T[1] + 1, 5000, true).length;
+    sunk.setOrder({ type: 'land', tx: T[0], ty: T[1] });
+    let rooted = null, maxStuck = 0; for (let i = 0; i < 1200; i++) { G.tick(); maxStuck = Math.max(maxStuck, sunk.stuck); if (rooted === null && !sunk.lifted) rooted = i + 1; }
+    G.landBuilding = lb;
+    return { spore, below, wedged: !fits(sx, sy), legal, pathOut, rooted, tx: sunk.tx, ty: sunk.ty, lifted: !!sunk.lifted, maxStuck, lands, target: T };
+  })()`);
+  ok('the pocket scene stands: the crawler is on a tile its body does not fit, a legal creep tile is ordered fourteen tiles west', B.spore && B.below && B.wedged && B.legal, JSON.stringify(B));
+  ok('the wide-body pathfinder hands it a way OUT (before: an empty path, and a straight grind into the corner)', B.pathOut > 0, JSON.stringify(B));
+  ok('...it walks out and roots on the ordered tile, landing from where it stands', B.rooted !== null && B.lifted === false && B.tx === B.target[0] && B.ty === B.target[1] && B.lands.length === 1 && B.lands[0].d <= TILE_PX, JSON.stringify(B));
+  ok('...and its stuck counter never climbs (before: 723 -- the eight-player "nothing wedged" line)', B.maxStuck < 100, JSON.stringify(B));
+}
+
 // ================================================================ 6. the Nydus network
 {
   const ny = json(`(() => {

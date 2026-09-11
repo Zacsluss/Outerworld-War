@@ -359,3 +359,16 @@ shows one tile per type ("x101 Marine") with a count and a summed health bar and
 line; a tile that still does not fit is counted in "+N more". Click a type tile: every unit of that type is
 selected. Shift-click a unit tile: that unit leaves the selection. **Before:** eighteen tiles, and the
 nineteenth unit onward drawn below the bottom of the screen with nothing saying so.
+
+## 45. An uprooted crawler walks out of a gap, and never lands where it is not (task 29)
+
+Zerg, `show me the money`. Build a Spore Colony and, two tiles below it, two Creep Colonies side by side,
+leaving a one-tile corridor between them; uproot a Sunken Colony (its **Uproot** key) and walk it into the
+corridor against the spore; then right-click creep a dozen tiles the other side of the spore (or press
+**Land**, `L`, and click there). **Working:**
+it backs out of the corridor, walks round and roots on the tile you chose. **Before:** it ground into the
+corner for ten seconds and then appeared on the target tile without having walked there. The second
+half is easier to see: wall a creep tile in with colonies on all sides and order a lifted crawler to root
+on it. **Working:** it walks up to the wall, gives up, and stands there lifted. **Before:** it rooted
+inside the wall. Saves and replays from before this commit are refused (the stamp moved). The eight-player
+test game (`node test/eightplayer.js`) reads 19 of 19 for the first time since FIXLIST-M15 C3.

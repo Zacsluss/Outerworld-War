@@ -1726,8 +1726,16 @@ class Pathfinder {
     const m = this.map, W = m.w, Hh = m.h;
     if (!m.inb(sx, sy)) return [];
     const goalWalk = m.walkable(gx, gy);
+    const fits3 = (x, y) => { for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) if (!m.walkable(x + a, y + b)) return false; return true; };
+    // A wide body standing where it does not fit -- a crawler that G.passable let squeeze into the
+    // one-tile gap between two colonies (REVIEW-M17 task 29, measured in the eight-player game) -- could
+    // never take a first step: every neighbour failed the 3x3 test and every diagonal needs two that
+    // pass, so the search returned an empty path and the unit ground straight at its goal for the
+    // watchdog's ten seconds, three stuck points a frame. Within two tiles of such a start the narrow
+    // test applies, which is the test it walked in on; past that it must fit again.
+    const escape = wide && !fits3(sx, sy);
     const fits = wide
-      ? (x, y) => { for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) if (!m.walkable(x + a, y + b)) return false; return true; }
+      ? (escape ? (x, y) => fits3(x, y) || (Math.abs(x - sx) <= 2 && Math.abs(y - sy) <= 2 && m.walkable(x, y)) : fits3)
       : (x, y) => m.walkable(x, y);
     if (this.gen >= 0x7ffffffe) { this.gen = 0; this.stamp.fill(0); this.closed.fill(0); } // 2^31 searches is not reachable in a game, but a wrap would fail the same silent way
     this.gen++;
