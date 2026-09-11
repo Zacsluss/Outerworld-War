@@ -393,21 +393,30 @@ const Render = {
       ctx.save();
       ctx.strokeStyle = armed ? 'rgba(120,255,120,0.95)' : 'rgba(180,180,180,0.5)';
       ctx.lineWidth = 1.5; ctx.setLineDash(armed ? [] : [4, 4]);
-      ctx.beginPath(); ctx.moveTo(d.x0 + .5, d.y0 + .5); ctx.lineTo(d.x1 + .5, d.y1 + .5); ctx.stroke();
+      // FIXLIST-M14 C7: draw the PATH the mouse actually took when it curved, and the chord when it did
+      // not. Both the stroke and the pips below go through the same UI.curved / UI.alongPath the
+      // command does, so the preview cannot promise a shape the release does not deliver.
+      const curvy = UI.curved && UI.curved(d.pts);
+      ctx.beginPath();
+      if (curvy) { ctx.moveTo(d.pts[0] + .5, d.pts[1] + .5); for (let i = 2; i < d.pts.length; i += 2) ctx.lineTo(d.pts[i] + .5, d.pts[i + 1] + .5); }
+      else { ctx.moveTo(d.x0 + .5, d.y0 + .5); ctx.lineTo(d.x1 + .5, d.y1 + .5); }
+      ctx.stroke();
       ctx.setLineDash([]);
       if (armed) {
         // one pip per selected unit, at the slot it will actually take -- same arithmetic as
-        // UI.lineCommand, so what you see is what you get
+        // UI.lineCommand / UI.curveCommand, so what you see is what you get
         const n = sel.length;
+        const total = curvy ? UI.pathLength(d.pts) : 0;
         for (let i = 0; i < n; i++) {
           const f = n === 1 ? 0.5 : i / (n - 1);
-          const px = d.x0 + (d.x1 - d.x0) * f, py = d.y0 + (d.y1 - d.y0) * f;
+          const p = curvy ? UI.alongPath(d.pts, total * f) : null;
+          const px = curvy ? p[0] : d.x0 + (d.x1 - d.x0) * f, py = curvy ? p[1] : d.y0 + (d.y1 - d.y0) * f;
           ctx.beginPath(); ctx.arc(px + .5, py + .5, 3, 0, Math.PI * 2);
           ctx.fillStyle = 'rgba(120,255,120,0.9)'; ctx.fill();
           ctx.strokeStyle = 'rgba(0,40,0,0.8)'; ctx.lineWidth = 1; ctx.stroke();
         }
         ctx.fillStyle = 'rgba(180,255,180,0.95)'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left';
-        ctx.fillText(n + ' in line', d.x1 + 10, d.y1 - 8);
+        ctx.fillText(n + (curvy ? ' on the curve' : ' in line'), d.x1 + 10, d.y1 - 8);
       }
       ctx.restore();
     }

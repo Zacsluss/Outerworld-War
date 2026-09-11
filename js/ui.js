@@ -348,7 +348,20 @@ const UI = {
     const m = this.mouse; m.x = e.clientX; m.y = e.clientY; [m.wx, m.wy] = this.screenToWorld(m.x, m.y);
     if (typeof Codex !== 'undefined' && Codex.isOpen()) { Codex.move(m.x, m.y); return; }
     if (this.drag && m.down && distPt(m.x, m.y, this.drag.x0, this.drag.y0) > 4) { this.dragging = true; this.drag.x1 = m.x; this.drag.y1 = m.y; }
-    if (this.lineDrag) { this.lineDrag.x1 = m.x; this.lineDrag.y1 = m.y; }
+    // FIXLIST-M14 C7: the drag remembers its whole path, not just where it started and where it is now.
+    // Sampled in SCREEN space, like x0/y0/x1/y1 beside it, because the camera may move mid-drag and the
+    // shape the player drew is the shape on the glass. Converted to world exactly once, on release.
+    if (this.lineDrag) {
+      const d = this.lineDrag; d.x1 = m.x; d.y1 = m.y;
+      const n = d.pts.length;
+      if (distPt(m.x, m.y, d.pts[n - 2], d.pts[n - 1]) >= this.CURVE_STEP) {
+        d.pts.push(m.x, m.y);
+        // The cap. A drag that wanders for a minute is still one gesture and must not grow without
+        // bound; dropping the OLDEST pair keeps the recent shape, which is the part the player is
+        // still looking at. 160 samples at CURVE_STEP apart is far longer than any map's diagonal.
+        if (d.pts.length > this.CURVE_MAX * 2) d.pts.splice(0, 2);
+      }
+    }
     if (this.sketch) { const n = this.sketch.length; if (n < 2 || distPt(m.wx, m.wy, this.sketch[n - 2], this.sketch[n - 1]) > 14) { this.sketch.push(m.wx, m.wy); if (this.sketch.length > 80) this.sketch.splice(0, 2); } }
     if (this.miniDrag) { const [wx, wy] = this.miniToWorld(m.x, m.y); this.centerOn(wx, wy); }
     if (this.placing) { const d = this.placing.def; this.placing.tx = Math.floor(m.wx / TILE - d.w / 2 + 0.5); this.placing.ty = Math.floor(m.wy / TILE - d.h / 2 + 0.5); if (d.onGeyser) { const g = G.map.resources.find(r => r.type === 'geyser' && m.wx >= r.x * TILE - 16 && m.wx < (r.x + r.w) * TILE + 16 && m.wy >= r.y * TILE - 16 && m.wy < (r.y + r.h) * TILE + 16); if (g) { this.placing.tx = g.x; this.placing.ty = g.y; } } }
@@ -376,7 +389,7 @@ const UI = {
       // Beyond All Reason's line formation: hold the right button and drag, and the selection spreads
       // evenly along the line you drew. The command is issued on RELEASE now rather than on press, so a
       // plain right-click is simply a drag of zero length and behaves exactly as it always did.
-      this.lineDrag = { x0: m.x, y0: m.y, x1: m.x, y1: m.y, shift: e.shiftKey };
+      this.lineDrag = { x0: m.x, y0: m.y, x1: m.x, y1: m.y, shift: e.shiftKey, pts: [m.x, m.y] };
       return;
       const t = this.unitAt(m.wx, m.wy); this.smartCommand(t, m.wx, m.wy, e.shiftKey);
     }
@@ -396,6 +409,11 @@ const UI = {
       const len = distPt(d.x0, d.y0, d.x1, d.y1);
       const [wx0, wy0] = this.screenToWorld(d.x0, d.y0), [wx1, wy1] = this.screenToWorld(d.x1, d.y1);
       if (len < this.LINE_MIN) { const t = this.unitAt(wx1, wy1); this.smartCommand(t, wx1, wy1, d.shift || this.keys.Shift); }
+      // A CURVED drag spreads the selection along the curve; a STRAIGHT one takes the path it always
+      // took. `curved` is the whole switch and it is deliberately conservative -- see UI.curved -- so
+      // that "this extends the feature, it does not replace it" is true by construction rather than by
+      // the two code paths happening to agree.
+      else if (this.curved(d.pts)) this.curveCommand(d.pts, d.shift || this.keys.Shift);
       else this.lineCommand(wx0, wy0, wx1, wy1, d.shift || this.keys.Shift);
       return;
     }
@@ -576,6 +594,88 @@ const UI = {
   // Spread the selection evenly along the drawn line, in the order they are standing in ALONG that line
   // rather than selection order -- so units walk to the nearest slot instead of crossing through each
   // other to reach an arbitrary one. Buildings, larvae and eggs are left out; they cannot go anywhere.
+  // ==========================================================================
+  // FREEHAND FORMATION SHAPES -- FIXLIST-M14 C7 (item 16)
+  // ==========================================================================
+  // The right-drag line works and the player said so, so the ask was to keep it and let the mouse's
+  // ACTUAL PATH be the shape: parabolas, arcs, curves.
+  //
+  // DETERMINISM WAS THE WHOLE RISK, and the architecture had already answered it. A formation does not
+  // enter the command log as a shape -- lineCommand RESOLVES it into one ordinary move order per unit,
+  // and it is those that CMD packs. So the log carries the OUTCOME rather than the input, which is a
+  // stronger guarantee than quantising a path and shipping it: there is no path in the log to
+  // re-derive, no mouse state at replay time, and a replay issues the same N moves to the same N units.
+  // The curve does exactly the same thing, so it inherits that for free and adds no new command kind.
+  //
+  //   CURVE_STEP  how far the mouse must travel before another sample is kept. Small enough that a
+  //               deliberate arc is captured, large enough that a shaky hand is not.
+  //   CURVE_MAX   the cap the item asked for. A drag that wanders for a minute is still one gesture;
+  //               past this the OLDEST sample is dropped, keeping the recent shape, which is the part
+  //               the player is still looking at. 160 samples is longer than any map's diagonal.
+  //   CURVE_BEND  how far off the straight chord the path must stray, in pixels, before it counts as a
+  //               curve at all. Below it the drag takes the original straight-line path untouched.
+  CURVE_STEP: 12, CURVE_MAX: 160, CURVE_BEND: 22,
+  // Is this drag actually curved? Maximum perpendicular distance from the chord joining its ends.
+  // Conservative on purpose: a straight drag with a wobble in it is a straight drag, and the original
+  // line command -- which players already like -- is what it must still get.
+  curved(pts) {
+    if (!pts || pts.length < 6) return false;
+    const x0 = pts[0], y0 = pts[1], x1 = pts[pts.length - 2], y1 = pts[pts.length - 1];
+    const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy);
+    if (len < 1) return true;   // a closed loop has no chord to be straight along; treat it as a shape
+    const ux = dx / len, uy = dy / len;
+    let worst = 0;
+    for (let i = 2; i < pts.length - 2; i += 2) {
+      const rx = pts[i] - x0, ry = pts[i + 1] - y0;
+      const perp = Math.abs(-rx * uy + ry * ux);
+      if (perp > worst) worst = perp;
+    }
+    return worst >= this.CURVE_BEND;
+  },
+  // Walk a polyline and return the point at arc-length `s`. One helper, used by the command and by the
+  // preview, so the pips cannot end up anywhere other than where the units are actually sent.
+  alongPath(pts, s) {
+    let acc = 0;
+    for (let i = 0; i + 3 < pts.length; i += 2) {
+      const ax = pts[i], ay = pts[i + 1], bx = pts[i + 2], by = pts[i + 3];
+      const seg = Math.hypot(bx - ax, by - ay);
+      if (acc + seg >= s || i + 5 >= pts.length) {
+        const f = seg < 1e-6 ? 0 : Math.max(0, Math.min(1, (s - acc) / seg));
+        return [ax + (bx - ax) * f, ay + (by - ay) * f];
+      }
+      acc += seg;
+    }
+    return [pts[pts.length - 2], pts[pts.length - 1]];
+  },
+  pathLength(pts) { let t = 0; for (let i = 0; i + 3 < pts.length; i += 2) t += Math.hypot(pts[i + 2] - pts[i], pts[i + 3] - pts[i + 1]); return t; },
+  // Spread the selection along the drawn curve, EVENLY BY ARC LENGTH. Screen points in, world orders
+  // out -- the conversion happens here and only here, because the samples were taken on the glass.
+  curveCommand(scr, shift) {
+    const sel = this.ownSel().filter(u => !u.isBuilding && !u.def.larva && !u.def.egg && !u.inside);
+    if (!sel.length) return;
+    if (sel.length === 1) { const [wx, wy] = this.screenToWorld(scr[scr.length - 2], scr[scr.length - 1]); this.smartCommand(null, wx, wy, shift); return; }
+    const pts = []; for (let i = 0; i < scr.length; i += 2) { const [wx, wy] = this.screenToWorld(scr[i], scr[i + 1]); pts.push(wx, wy); }
+    const total = this.pathLength(pts);
+    const n = sel.length;
+    // Ordered by where each unit already sits ALONG the curve, the same idea lineCommand uses against
+    // its chord: the unit nearest the start of the stroke takes the start of it, so the group does not
+    // cross over itself walking into formation. Ties break on id, which is stable and replayable.
+    const key = u => { let best = 0, bd = 1e18, acc = 0;
+      for (let i = 0; i + 3 < pts.length; i += 2) {
+        const seg = Math.hypot(pts[i + 2] - pts[i], pts[i + 3] - pts[i + 1]);
+        const d = distPt(u.x, u.y, pts[i], pts[i + 1]);
+        if (d < bd) { bd = d; best = acc; }
+        acc += seg;
+      }
+      return best; };
+    const order = sel.map(u => ({ u, k: key(u) })).sort((a, b) => a.k - b.k || a.u.id - b.u.id);
+    for (let i = 0; i < n; i++) {
+      const [gx, gy] = this.alongPath(pts, total * (i / (n - 1)));
+      order[i].u.setOrder({ type: 'move', x: gx, y: gy }, shift);
+    }
+    this.marker(pts[0], pts[1], '120,220,255'); this.marker(pts[pts.length - 2], pts[pts.length - 1], '120,220,255');
+    if (typeof Sound !== 'undefined') Sound.ack(order[0].u);
+  },
   lineCommand(x0, y0, x1, y1, shift) {
     const sel = this.ownSel().filter(u => !u.isBuilding && !u.def.larva && !u.def.egg && !u.inside);
     if (!sel.length) return;
