@@ -3,14 +3,14 @@
 **This file is the review's workspace and its deliverable.** It is committed at the baseline with the
 scope, the rules and the map already filled in; the review fills in the two lists at the bottom.
 
-> **OUTCOME (2026-09-11).** The review is done: ten commits since `pre-review-m17`, every one gated,
-> and the four lists at the bottom are filled in — 23 open tasks, 10 questions, 11 things fixed, 13
-> deliberately not done. The gate is **73 suites**. Two facts in the brief above moved: the fourth
-> known red (`net_many`) is gone, because the assertion was wrong and has been replaced; and
-> `eightplayer` was never "19/19 passing by 4%" at this tree — it has been 18/19 since FIXLIST-M15 C3
-> (bisected; question 2). The build stamp is `012e2e002455fa24` after the review's last simulation
-> change; the appendix map is regenerated. `HANDOFF-M17.md` carries the kickoff prompt; `PLAYTEST-M17.md`
-> says how to see each fixed item by hand.
+> **OUTCOME (2026-09-11, two sessions).** The review is done and its ten questions are answered and carried
+> out: **16 commits** since `pre-review-m17`, every one gated. The four lists at the bottom are filled in —
+> 24 open tasks, 10 questions with a decisions table saying what each became, 17 things fixed, 13
+> deliberately not done. The gate is **74 suites**. Facts in the brief above that moved: the fourth known
+> red (`net_many`) is gone (the assertion was wrong and was replaced); `eightplayer` was never "19/19 by
+> 4%" at that tree, is 19/19 now, and stays out of the gate as a measurement; the gate's `aistyles` seed
+> is 1. The build stamp is `bb40caab900717ee` at the last simulation change; the appendix is regenerated.
+> `HANDOFF-M17.md` carries the kickoff prompt; `PLAYTEST-M17.md` says how to see each fixed item by hand.
 
 ---
 
@@ -298,6 +298,25 @@ listed here. Ordered by what I would do first.
     `js/atlas.js` never reads it. Cosmetic; a re-bake is not worth it for this alone.
 
 # 2. Questions and decisions for the user
+
+**DECISIONS (2026-09-11, second session).** Answered by the user, one line each; the status column
+says what happened to each, and the numbered entries in section 3 hold the measurements.
+
+| # | question | decision | status |
+|---|---|---|---|
+| 1 | mixed-browser multiplayer? | **Yes** — the game will be sold, wrapped in Tauri (WebView2 on Windows, WebKit on macOS) | deterministic sin/cos/atan2/hypot in the simulation: **done**, entry 15 |
+| 2 | `eightplayer` red since C3 | **touch the AI's expansion floor now** | measured first: the floor was not the cause — no base left to take, and the Zerg AIs at zero larvae with income outrunning six hatcheries. A larva-starvation clause in the hall rule instead (entry 12), then the starting Queen (entry 16): every bank under 2,500. The money line stays a hand-run measurement, not a gate member — a Terran floats minerals under the flat-3 production rule kept on purpose, and any rounding-step change re-deals the game |
+| 3 | line endings | **yes**, `.gitattributes` + one re-checkout | **done**, entry 13 |
+| 4 | relay: min code length, join rate limit, cheats online | **all three; block cheats** | **done**, entry 14 |
+| 5 | 23 stale worktrees | asked what they hold | all four dirty ones are superseded drafts of work that landed (an M9 build-stamp edit that is in `js/build.js` today; the three M12 wave-four race agents, whose tests in HEAD are the longer, later versions); **still not deleted — say the word** |
+| 6 | balance run, claim order | **OK** — stay gated | unchanged |
+| 7 | bunker double fire rate | **FIX** | **done**, entry 12 |
+| 8 | AI micro cadence, dead detector weight | **FIX NOW** | **done**, entry 12 |
+| 9 | eleven inert energy techs | **+50 max energy** | **done**, entry 12 |
+| 10 | fog memory | **the fog shows the last state a unit of yours saw, not what is there now** | **done**, entry 17 |
+| — | (mid-session) Zerg should start with a Queen; is she injecting to the maximum? | **they should** | **done**, entry 16. She injects whenever energy allows and a hatchery within 26 tiles is short of larvae; energy bounds her to one cast per 33 s sustained. One follow-up in open task 23: the AI's Queen follows the army |
+
+The questions as they were put, kept for the record:
 
 1. **Is mixed-browser multiplayer a target?** If yes, open task 2 is real work; if "everyone uses the
    same browser", it is a documented limitation and nothing else.
@@ -770,84 +789,85 @@ listed here. Ordered by what I would do first.
 Regenerate at any time with `node tools/inventory.js --md`. Every description below is the file's own
 first comment line, so it cannot drift from the file.
 
-### js/ — the game  — 24 files, 17,638 lines
+### js/ — the game  — 24 files, 17,736 lines
 
 | file | lines | eol | what it is |
 |---|---:|---|---|
 | `abilities.js` | 932 | CRLF | Abilities & spells, status fields, auto-cast behaviours. |
-| `ai.js` | 1906 | CRLF | Computer opponent: scripted opening, macro loop, army control, basic micro. |
-| `atlas.js` | 65 | LF | Runtime loader for baked sprite sheets (assets/atlas.js + PNGs). |
+| `ai.js` | 1920 | CRLF | Computer opponent: scripted opening, macro loop, army control, basic micro. |
+| `atlas.js` | 65 | CRLF | Runtime loader for baked sprite sheets (assets/atlas.js + PNGs). |
 | `audio.js` | 254 | CRLF | Voice (Web Speech synthesis, original lines) and generative ambient music. |
-| `build.js` | 176 | LF | Build stamp. Saves and replays are a seed plus a command log, so they only |
+| `build.js` | 176 | CRLF | Build stamp. Saves and replays are a seed plus a command log, so they only |
 | `codex.js` | 579 | CRLF | CODEX -- the field manual (M11 wave two, idea 25). |
 | `combat.js` | 123 | CRLF | Combat: weapon firing, splash, special attack types, projectiles. |
-| `commands.js` | 163 | CRLF | Deterministic RNG, command interception/recording, replay + save/load. |
-| `data.js` | 2043 | CRLF | Brood War data tables. Times are in game frames (24/s = "Fastest"). |
-| `editor.js` | 330 | LF | In-browser map editor. Paints the height grid (low / ramp / high) and rocks, |
+| `commands.js` | 166 | CRLF | Deterministic RNG, command interception/recording, replay + save/load. |
+| `data.js` | 2083 | CRLF | Brood War data tables. Times are in game frames (24/s = "Fastest"). |
+| `editor.js` | 330 | CRLF | In-browser map editor. Paints the height grid (low / ramp / high) and rocks, |
 | `fx.js` | 369 | CRLF | FX: particles (render-side), ground decals (scorch, blood, corpses), |
-| `game.js` | 1198 | CRLF | Game state container G: units, players, spatial hash, vision, production, |
+| `game.js` | 1203 | CRLF | Game state container G: units, players, spatial hash, vision, production, |
 | `hud.js` | 1002 | CRLF | HUD: BW-style console (minimap, unit panel, command card), resource bar, |
 | `map.js` | 1792 | CRLF | Map: terrain grid, cliffs/ramps, resources, creep, psi power, placement. |
 | `missions.js` | 621 | CRLF | Scenario missions: scripted setups with custom objectives and briefings. |
-| `net.js` | 146 | CRLF | LAN multiplayer client: deterministic lockstep over a WebSocket relay. |
-| `render.js` | 1587 | CRLF | Renderer: composes terrain chunks, creep, decals, sprites, effects, fog. |
-| `sim.js` | 661 | CRLF | Simulation core: Game state, Player, Unit, orders, movement, combat, |
-| `snapshot.js` | 219 | LF | Simulation snapshots. A replay is a seed plus a command log, so seeking |
-| `sprites.js` | 102 | LF | Sprite cache: pre-renders unit painters per facing (16 dirs, 32 for a few) and building |
-| `sprites_buildings.js` | 346 | LF | Building sprite painters (static) + animated overlays. Origin = footprint |
-| `sprites_units.js` | 401 | LF | Unit sprite painters with animation state. Each paints a unit facing +x at |
+| `net.js` | 147 | CRLF | LAN multiplayer client: deterministic lockstep over a WebSocket relay. |
+| `render.js` | 1610 | CRLF | Renderer: composes terrain chunks, creep, decals, sprites, effects, fog. |
+| `sim.js` | 673 | CRLF | Simulation core: Game state, Player, Unit, orders, movement, combat, |
+| `snapshot.js` | 219 | CRLF | Simulation snapshots. A replay is a seed plus a command log, so seeking |
+| `sprites.js` | 102 | CRLF | Sprite cache: pre-renders unit painters per facing (16 dirs, 32 for a few) and building |
+| `sprites_buildings.js` | 346 | CRLF | Building sprite painters (static) + animated overlays. Origin = footprint |
+| `sprites_units.js` | 401 | CRLF | Unit sprite painters with animation state. Each paints a unit facing +x at |
 | `terrain.js` | 625 | CRLF | Terrain renderer: procedural "Badlands"-style tileset. Chunk-cached. |
 | `ui.js` | 1998 | CRLF | UI: input, selection, command card, console panel, minimap, hotkeys, |
 
-### test/ — the suites  — 105 files, 20,767 lines
+### test/ — the suites  — 106 files, 21,069 lines
 
 | file | lines | eol | gate | what it is |
 |---|---:|---|---|---|
 | `addons.js` | 158 | CRLF | ✅ | FIXLIST-M14 B5 (item 15) -- an add-on keeps its own card, and the page turn has a slot. |
-| `aiadapt.js` | 175 | LF | ✅ | The AI scouts, and what it finds changes what it does. |
+| `aiadapt.js` | 175 | CRLF | ✅ | The AI scouts, and what it finds changes what it does. |
 | `aiaudit.js` | 134 | CRLF | — | AI audit: watch AI-vs-AI games and count the things a human player would never do. |
-| `aiscripts.js` | 62 | LF | ✅ | The AI build scripts have one invariant that is easy to break and expensive to notice: the steps must |
-| `aistyles.js` | 298 | CRLF | ✅ | AI play styles: turtle, rusher, expander, harasser, and 'standard' -- which is the default and must |
-| `alerts.js` | 230 | LF | ✅ | Player alerts: idle production, supply block, an empty Carrier, an undefended expansion under attack. |
-| `all.js` | 210 | CRLF | — | The fast, deterministic checks, in one run, with one summary and a non-zero exit on any failure. |
-| `auras.js` | 92 | LF | ✅ | Building auras (M11 wave two, item 11). The data contract is documented at length in js/data.js above |
-| `baked.js` | 71 | LF | ✅ | Every unit and building has a baked sprite. |
-| `balance.js` | 81 | LF | — | AI-vs-AI balance matrix: every matchup on every layout, both sides, N seeds, run in parallel. |
-| `balance_ab.js` | 64 | LF | — | Paired A/B of two balance logs:  node test/balance_ab.js before.log after.log [--race=T] [--matchup=TZ] |
-| `balance_stats.js` | 84 | LF | — | The statistics behind test/balance.js. Every wrong turn in M3's balance work came from reading a |
-| `branch.js` | 115 | LF | ✅ | Branching replay: take control mid-replay and play the what-if. M11 wave three, item 24. |
+| `aiscripts.js` | 62 | CRLF | ✅ | The AI build scripts have one invariant that is easy to break and expensive to notice: the steps must |
+| `aistyles.js` | 302 | CRLF | ✅ | AI play styles: turtle, rusher, expander, harasser, and 'standard' -- which is the default and must |
+| `alerts.js` | 230 | CRLF | ✅ | Player alerts: idle production, supply block, an empty Carrier, an undefended expansion under attack. |
+| `all.js` | 217 | CRLF | — | The fast, deterministic checks, in one run, with one summary and a non-zero exit on any failure. |
+| `auras.js` | 92 | CRLF | ✅ | Building auras (M11 wave two, item 11). The data contract is documented at length in js/data.js above |
+| `baked.js` | 71 | CRLF | ✅ | Every unit and building has a baked sprite. |
+| `balance.js` | 81 | CRLF | — | AI-vs-AI balance matrix: every matchup on every layout, both sides, N seeds, run in parallel. |
+| `balance_ab.js` | 64 | CRLF | — | Paired A/B of two balance logs:  node test/balance_ab.js before.log after.log [--race=T] [--matchup=TZ] |
+| `balance_stats.js` | 84 | CRLF | — | The statistics behind test/balance.js. Every wrong turn in M3's balance work came from reading a |
+| `branch.js` | 115 | CRLF | ✅ | Branching replay: take control mid-replay and play the what-if. M11 wave three, item 24. |
 | `campaign.js` | 433 | CRLF | ✅ | The campaign: weighted choices, the record of them, and what the record takes away. |
-| `card.js` | 67 | LF | ✅ | The command card is 4x3 and paginates (M11 decision, 2026-09-09). It used to be 3x3 with Cancel |
+| `card.js` | 67 | CRLF | ✅ | The command card is 4x3 and paginates (M11 decision, 2026-09-09). It used to be 3x3 with Cancel |
 | `cardsay.js` | 323 | CRLF | ✅ | Every greyed command-card button must say why it is greyed. |
-| `casters.js` | 101 | LF | — | Caster audit: which of the spells the AI ever actually casts, and why the rest do not. |
+| `casters.js` | 101 | CRLF | — | Caster audit: which of the spells the AI ever actually casts, and why the rest do not. |
 | `clearance.js` | 179 | CRLF | ✅ | FIXLIST-M14 C6 (item 18) -- a wide unit gets a path its BODY can walk. |
 | `clicking.js` | 334 | CRLF | ✅ | FIXLIST-M14 B1, B2 and B3 -- what a click can reach. |
-| `cmdlog.js` | 137 | LF | ✅ | REVIEW-M17 -- every order the interface can issue survives the command log. |
+| `cmdlog.js` | 137 | CRLF | ✅ | REVIEW-M17 -- every order the interface can issue survives the command log. |
 | `codex.js` | 396 | CRLF | ✅ | The unit codex (M11 wave two, idea 25), and above all its damage calculator. |
-| `commit.js` | 48 | LF | ✅ | Two M11 rules that are easy to regress and invisible when they do: |
-| `controls.js` | 96 | LF | ✅ | Rebindable controls. M12 item 10, the half of the menu work that did not exist in any form. |
-| `craters.js` | 164 | LF | ✅ | Craters, wreckage and stripped ground -- M11 wave one, idea 9 (terrain destruction) and idea 1 |
+| `commit.js` | 48 | CRLF | ✅ | Two M11 rules that are easy to regress and invisible when they do: |
+| `controls.js` | 96 | CRLF | ✅ | Rebindable controls. M12 item 10, the half of the menu work that did not exist in any form. |
+| `craters.js` | 164 | CRLF | ✅ | Craters, wreckage and stripped ground -- M11 wave one, idea 9 (terrain destruction) and idea 1 |
 | `creeplife.js` | 171 | CRLF | ✅ | FIXLIST-M15 A3 -- creep that looks alive, without paying for it. |
 | `creepspeed.js` | 270 | CRLF | ✅ | FIXLIST-M15 C3 (item 5, second half) -- the swarm moves faster over its own ground. |
 | `curve.js` | 162 | CRLF | ✅ | FIXLIST-M14 C7 (item 16) -- freehand formation shapes. |
-| `daynight.js` | 116 | LF | ✅ | The day/night cycle as the player meets it. M11 wave one, idea 19. |
+| `daynight.js` | 116 | CRLF | ✅ | The day/night cycle as the player meets it. M11 wave one, idea 19. |
 | `defeat.js` | 176 | CRLF | ✅ | FIXLIST-M14 B4 (item 8) -- the defeat screen, and why it was never showing. |
 | `describe.js` | 242 | CRLF | ✅ | FIXLIST-M14 A1 -- every unit and every building says what it is FOR. |
-| `determinism.js` | 33 | LF | ✅ | Determinism + replay test: node test/determinism.js |
-| `diag.js` | 8 | LF | — |  |
+| `determinism.js` | 33 | CRLF | ✅ | Determinism + replay test: node test/determinism.js |
+| `diag.js` | 8 | CRLF | — |  |
 | `diegetic.js` | 539 | CRLF | ✅ | The diegetic console (M11 wave one, idea 15): a HUD that belongs to the commander, takes damage and |
-| `diverge.js` | 24 | LF | — | Finds the first frame where two identical simulations diverge. node test/diverge.js [frames] |
-| `duel.js` | 111 | LF | — | Equal-supply duels: the third proxy candidate, and the one that is supposed to show nothing. |
-| `editor.js` | 207 | LF | — | Map editor test: builds a custom 2-player map the way the editor does, validates it, |
+| `diverge.js` | 24 | CRLF | — | Finds the first frame where two identical simulations diverge. node test/diverge.js [frames] |
+| `dmath.js` | 87 | LF | ✅ | REVIEW-M17 decision 1 -- the simulation's transcendentals are the same bits on every engine. |
+| `duel.js` | 111 | CRLF | — | Equal-supply duels: the third proxy candidate, and the one that is supposed to show nothing. |
+| `editor.js` | 207 | CRLF | — | Map editor test: builds a custom 2-player map the way the editor does, validates it, |
 | `eightplayer.js` | 220 | CRLF | — | Eight players on a 192x192 map, which nothing has ever run. |
-| `facing.js` | 51 | LF | ✅ | Directional armour (M11 idea 6). A hit from behind hurts more than one you are facing, so where a |
-| `features.js` | 132 | LF | ✅ | Headless feature tests: node test/features.js |
-| `ferry.js` | 95 | LF | ✅ | Transport ferry routes that run themselves. M11 wave three, item 4. |
-| `fields.js` | 97 | LF | ✅ | Every persistent field draws SOMETHING. |
+| `facing.js` | 51 | CRLF | ✅ | Directional armour (M11 idea 6). A hit from behind hurts more than one you are facing, so where a |
+| `features.js` | 132 | CRLF | ✅ | Headless feature tests: node test/features.js |
+| `ferry.js` | 95 | CRLF | ✅ | Transport ferry routes that run themselves. M11 wave three, item 4. |
+| `fields.js` | 97 | CRLF | ✅ | Every persistent field draws SOMETHING. |
 | `flavour.js` | 305 | CRLF | ✅ | Unit flavour (M11 wave-one idea 17): the voice lines, and the state-aware delivery on top of them. |
 | `fogbuild.js` | 170 | CRLF | ✅ | FIXLIST-M14 C1 (item 9) -- you may not build on ground you have never seen. |
-| `fognight.js` | 69 | LF | ✅ | Fog that lies (M11 wave one, idea 5) and the day/night cycle (idea 19's second half). |
-| `formation.js` | 80 | LF | ✅ | Drag-line formation (M11 wave three, idea 9), as Beyond All Reason has it: hold right, drag a line, |
+| `fognight.js` | 69 | CRLF | ✅ | Fog that lies (M11 wave one, idea 5) and the day/night cycle (idea 19's second half). |
+| `formation.js` | 80 | CRLF | ✅ | Drag-line formation (M11 wave three, idea 9), as Beyond All Reason has it: hold right, drag a line, |
 | `gated.js` | 212 | CRLF | ✅ | FIXLIST-M14 A4 -- nothing is gated by convention. The audit, made durable. |
 | `highground.js` | 123 | CRLF | ✅ | High ground applied, and the vision bug that finding it uncovered. |
 | `larvacard.js` | 168 | CRLF | ✅ | FIXLIST-M15 B1 + B3 -- the Zerg larva card, and one refused click saying one thing. |
@@ -856,78 +876,80 @@ first comment line, so it cannot drift from the file.
 | `longgame.js` | 210 | CRLF | — | A sixty-minute game, which nothing in this repo has ever run. |
 | `mapfeatures.js` | 486 | CRLF | ✅ | Destructible and dynamic map features, and the procedural archetypes that place them. |
 | `mapmodes.js` | 296 | CRLF | ✅ | Map sizes as modes, and the sandstorm. |
-| `menucodex.js` | 105 | LF | ✅ | The CODEX button on the main menu, which did nothing at all until 2026-09-09. |
-| `micro.js` | 11 | LF | — |  |
-| `missions.js` | 43 | LF | — | Mission test: runs every campaign mission headlessly and checks that the setup placed what it promised, |
-| `movement.js` | 125 | LF | ✅ | Movement edge cases that used to hang a unit forever with a live order. |
-| `net.js` | 67 | LF | — | Multiplayer robustness test: two headless lockstep clients + one AI through the relay. |
+| `menucodex.js` | 105 | CRLF | ✅ | The CODEX button on the main menu, which did nothing at all until 2026-09-09. |
+| `micro.js` | 11 | CRLF | — |  |
+| `missions.js` | 43 | CRLF | — | Mission test: runs every campaign mission headlessly and checks that the setup placed what it promised, |
+| `movement.js` | 125 | CRLF | ✅ | Movement edge cases that used to hang a unit forever with a live order. |
+| `net.js` | 67 | CRLF | — | Multiplayer robustness test: two headless lockstep clients + one AI through the relay. |
 | `net_many.js` | 389 | CRLF | — | Multiplayer with more than two humans, and what happens when two of them leave at once. |
 | `neutrals.js` | 435 | CRLF | ✅ | The fourth race, which is not a race: neutral hostile life (M11 wave two, item 1) and capturable |
-| `neutralsim.js` | 165 | LF | ✅ | The neutral owner, wired into the simulation. M11 wave two, items 1 (hostile life) and 8 (derelicts). |
+| `neutralsim.js` | 165 | CRLF | ✅ | The neutral owner, wired into the simulation. M11 wave two, items 1 (hostile life) and 8 (derelicts). |
 | `newbuildings.js` | 251 | CRLF | ✅ | The nine buildings M11 wave two adds -- a field hospital, a jamming tower and a wall for each race -- |
-| `observer.js` | 142 | LF | ✅ | Observer / replay controls: per-player vision switching, the production overlay and the |
+| `observer.js` | 142 | CRLF | ✅ | Observer / replay controls: per-player vision switching, the production overlay and the |
 | `onmove.js` | 168 | CRLF | ✅ | FIXLIST-M14 C4 (item 19) -- the Cyclone fires while moving. |
-| `patch10.js` | 99 | LF | — | NOT A TEST. This is a one-off codemod from M10: it REWRITES FILES IN js/ and was applied once, |
-| `patch11.js` | 64 | LF | — | NOT A TEST. This is a one-off codemod from M11: it REWRITES FILES IN js/ and was applied once, |
-| `patch15.js` | 34 | LF | — | NOT A TEST. This is a one-off codemod from M15: it REWRITES FILES IN js/ and was applied once, |
-| `perf.js` | 53 | LF | — | Performance test: 4 players at ~200 supply fighting in the middle of the map. |
-| `perf_render.js` | 142 | LF | — | Render-side performance:  node test/perf_render.js [port] |
-| `playtest.js` | 66 | LF | — | Scripted human play-test. Drives a full game per matchup through the UI layer |
-| `playtest_bot.js` | 102 | LF | — | Harness-side "human": UI-level actions + invariant/stuck checks. Loaded into the game VM by playtest.js. |
-| `playtest_scripts.js` | 172 | LF | — | Race scripts for the scripted human (see playtest.js). Each think() runs once per second of game time |
-| `protoss12.js` | 667 | LF | ✅ | M12 wave four, the Protoss half: ten new units, the Warp Gate, Chrono Boost and Blink. |
-| `proxy.js` | 168 | LF | — | A cheap directional proxy for the balance number. |
-| `proxy_validate.js` | 107 | LF | — | Does the cheap proxy in test/proxy.js actually predict the balance number? |
-| `push.js` | 108 | LF | ✅ | Unit collision push. M12 wave three, item 14. |
-| `qol.js` | 173 | LF | ✅ | M12 wave one: the quality-of-life layer. |
+| `patch10.js` | 99 | CRLF | — | NOT A TEST. This is a one-off codemod from M10: it REWRITES FILES IN js/ and was applied once, |
+| `patch11.js` | 64 | CRLF | — | NOT A TEST. This is a one-off codemod from M11: it REWRITES FILES IN js/ and was applied once, |
+| `patch15.js` | 34 | CRLF | — | NOT A TEST. This is a one-off codemod from M15: it REWRITES FILES IN js/ and was applied once, |
+| `perf.js` | 53 | CRLF | — | Performance test: 4 players at ~200 supply fighting in the middle of the map. |
+| `perf_render.js` | 142 | CRLF | — | Render-side performance:  node test/perf_render.js [port] |
+| `playtest.js` | 66 | CRLF | — | Scripted human play-test. Drives a full game per matchup through the UI layer |
+| `playtest_bot.js` | 102 | CRLF | — | Harness-side "human": UI-level actions + invariant/stuck checks. Loaded into the game VM by playtest.js. |
+| `playtest_scripts.js` | 172 | CRLF | — | Race scripts for the scripted human (see playtest.js). Each think() runs once per second of game time |
+| `protoss12.js` | 667 | CRLF | ✅ | M12 wave four, the Protoss half: ten new units, the Warp Gate, Chrono Boost and Blink. |
+| `proxy.js` | 168 | CRLF | — | A cheap directional proxy for the balance number. |
+| `proxy_validate.js` | 107 | CRLF | — | Does the cheap proxy in test/proxy.js actually predict the balance number? |
+| `push.js` | 108 | CRLF | ✅ | Unit collision push. M12 wave three, item 14. |
+| `qol.js` | 173 | CRLF | ✅ | M12 wave one: the quality-of-life layer. |
 | `rates.js` | 255 | CRLF | ✅ | Rate of fire: does every weapon actually fire at the interval the table says? |
 | `refusals.js` | 175 | CRLF | ✅ | FIXLIST-M15 B2 -- a refused ability says WHY, and no ability refuses in silence. |
-| `rejoindiag.js` | 124 | LF | — | Diagnostic for the net.js rejoin desync: isolate which of the two things a rejoin does to a snapshot |
+| `rejoindiag.js` | 124 | CRLF | — | Diagnostic for the net.js rejoin desync: isolate which of the two things a rejoin does to a snapshot |
 | `renderfeel.js` | 552 | CRLF | ✅ | The three render changes of this commit, checked as far as render code can be checked. |
-| `review17.js` | 270 | LF | ✅ | REVIEW-M17 -- the simulation faults the review measured, fixed, and pinned. |
-| `review17ui.js` | 215 | LF | ✅ | REVIEW-M17 -- the interface faults the review found, fixed, and pinned. |
-| `rooms.js` | 299 | MIXED | ✅ | Rooms, the join code, the player cap and the configurable lockstep delay. |
+| `review17.js` | 381 | CRLF | ✅ | REVIEW-M17 -- the simulation faults the review measured, fixed, and pinned. |
+| `review17ui.js` | 259 | CRLF | ✅ | REVIEW-M17 -- the interface faults the review found, fixed, and pinned. |
+| `rooms.js` | 335 | LF | ✅ | Rooms, the join code, the player cap and the configurable lockstep delay. |
 | `saveload.js` | 297 | CRLF | ✅ | Saving and restoring while something is halfway through happening. |
 | `sensor.js` | 222 | CRLF | ✅ | FIXLIST-M14 C2 (item 12) -- the Sensor Tower reports movement, it does not reveal ground. |
-| `serve.js` | 224 | CRLF | — | Static server + multiplayer relay (WebSocket, no dependencies):  node test/serve.js [port] [delay] |
+| `serve.js` | 237 | CRLF | — | Static server + multiplayer relay (WebSocket, no dependencies):  node test/serve.js [port] [delay] |
 | `shots.js` | 211 | CRLF | ✅ | FIXLIST-M15 A1 -- every weapon has its own shot, and every shot actually draws. |
 | `skirmish.js` | 322 | CRLF | ✅ | The skirmish setup screen (M11 wave two, item 22). |
-| `smoke.js` | 22 | LF | — | Headless smoke test: loads the game scripts in a VM, runs an AI-vs-AI game for N frames. |
-| `snapshot.js` | 154 | LF | ✅ | Simulation snapshots. The whole point is that restoring one and carrying on must be |
+| `smoke.js` | 22 | CRLF | — | Headless smoke test: loads the game scripts in a VM, runs an AI-vs-AI game for N frames. |
+| `snapshot.js` | 154 | CRLF | ✅ | Simulation snapshots. The whole point is that restoring one and carrying on must be |
 | `soak.js` | 327 | CRLF | — | M12 wave five: the long run, across every matchup. |
-| `suppress.js` | 56 | LF | ✅ | Suppressing fire (M11 idea 7). One research per building that trains ranged units; everything that |
-| `targeting.js` | 67 | LF | ✅ | Target selection (M11 wave three, idea 5). Scoring purely by distance makes a unit walk past the thing |
-| `techtime.js` | 97 | LF | — | WHEN DOES THE AI REACH EACH TIER? A measurement, not a check. |
+| `suppress.js` | 56 | CRLF | ✅ | Suppressing fire (M11 idea 7). One research per building that trains ranged units; everything that |
+| `targeting.js` | 67 | CRLF | ✅ | Target selection (M11 wave three, idea 5). Scoring purely by distance makes a unit walk past the thing |
+| `techtime.js` | 97 | CRLF | — | WHEN DOES THE AI REACH EACH TIER? A measurement, not a check. |
 | `techtree.js` | 116 | CRLF | ✅ | Can everything actually be built?  node test/techtree.js [--quiet] |
 | `terran12.js` | 552 | CRLF | ✅ | M12 wave four, the Terran half: fifteen new entries, the MULE (item 11), the Reactor and the Viking. |
 | `tumour.js` | 361 | CRLF | ✅ | FIXLIST-M14 C3 (item 5) -- the Queen plants creep tumours, and the Overlord still does. |
-| `version.js` | 132 | LF | ✅ | Build stamp: saves and replays carry a digest of the simulation, and a log from a |
+| `version.js` | 132 | CRLF | ✅ | Build stamp: saves and replays carry a digest of the simulation, and a log from a |
 | `verticality.js` | 406 | CRLF | ✅ | Vertical layers: the height query the simulation reads, and the promise that a ramp is the only |
-| `veterancy.js` | 70 | LF | ✅ | Veterancy and scarring (M11 idea 2). Both are derived rather than stored -- rank comes from `kills`, |
+| `veterancy.js` | 70 | CRLF | ✅ | Veterancy and scarring (M11 idea 2). Both are derived rather than stored -- rank comes from `kills`, |
 | `wavetarget.js` | 208 | CRLF | ✅ | FIXLIST-M14 D1 (item 6) -- what a wave walks at. |
 | `wrongthing.js` | 651 | CRLF | ✅ | Do the wrong thing on purpose, and require that the game neither crashes nor hangs. |
-| `zerg12.js` | 601 | LF | ✅ | M12 wave four, the Zerg half: ten new defs, two macro mechanics, and one promise. |
-| `zoom.js` | 574 | LF | ✅ | Strategic zoom, and the render half of day/night. |
+| `zerg12.js` | 601 | CRLF | ✅ | M12 wave four, the Zerg half: ten new defs, two macro mechanics, and one promise. |
+| `zoom.js` | 574 | CRLF | ✅ | Strategic zoom, and the render half of day/night. |
 
-### tools/ — build and diagnostics  — 5 files, 1,676 lines
+### tools/ — build and diagnostics  — 7 files, 1,733 lines
 
 | file | lines | eol | what it is |
 |---|---:|---|---|
-| `bake.js` | 93 | LF | Sprite baking pipeline:  node tools/bake.js [--only id,id] [--ss N] [--pv N] |
-| `inventory.js` | 78 | LF | A map of the repo, generated rather than maintained by hand so it cannot go stale. |
-| `models.js` | 1237 | LF | 3D model definitions for the sprite baker. Model space: X forward, Y up, |
-| `raster.js` | 210 | LF | Software 3D rasterizer + PNG writer for the sprite baking pipeline. |
-| `tilesets.js` | 58 | LF | Side-by-side screenshot of every tileset:  node tools/tilesets.js [port] |
+| `bake.js` | 93 | CRLF | Sprite baking pipeline:  node tools/bake.js [--only id,id] [--ss N] [--pv N] |
+| `control.js` | 17 | LF | Negative control runner (REVIEW-M17), in the shape HANDOFF-M16 trap 2 asks for: apply a text edit to one file, |
+| `inventory.js` | 78 | CRLF | A map of the repo, generated rather than maintained by hand so it cannot go stale. |
+| `models.js` | 1237 | CRLF | 3D model definitions for the sprite baker. Model space: X forward, Y up, |
+| `patch.js` | 40 | LF | Multi-file, line-ending-safe patch runner (REVIEW-M17; every review patch went through it). All-or-nothing: every edit is checked against the |
+| `raster.js` | 210 | CRLF | Software 3D rasterizer + PNG writer for the sprite baking pipeline. |
+| `tilesets.js` | 58 | CRLF | Side-by-side screenshot of every tileset:  node tools/tilesets.js [port] |
 
 ### Totals
 
 | | files | lines |
 |---|---:|---:|
-| `js/` (the game) | 24 | 17,638 |
-| `test/` | 105 | 20,767 |
-| `tools/` | 5 | 1,676 |
-| **all** | **134** | **40,081** |
+| `js/` (the game) | 24 | 17,736 |
+| `test/` | 106 | 21,069 |
+| `tools/` | 7 | 1,733 |
+| **all** | **137** | **40,538** |
 
-**In the gate:** 73 of 105 suites.
+**In the gate:** 74 of 106 suites.
 
 **NOT in the gate** (32, deliberately — `test/all.js` says why at the top of the file): `aiaudit`, `all`, `balance`, `balance_ab`, `balance_stats`, `casters`, `diag`, `diverge`, `duel`, `editor`, `eightplayer`, `ledger`, `longgame`, `micro`, `missions`, `net`, `net_many`, `patch10`, `patch11`, `patch15`, `perf`, `perf_render`, `playtest`, `playtest_bot`, `playtest_scripts`, `proxy`, `proxy_validate`, `rejoindiag`, `serve`, `smoke`, `soak`, `techtime`.

@@ -225,3 +225,63 @@ marked gone.
   cannot be found after a morph) — see `REVIEW-M17.md` questions 7-10.
 - **`test/eightplayer.js` has been red since FIXLIST-M15 C3**, not "passing by 4%": bisected in the
   review, unchanged by any of it, and a decision for you (question 2).
+
+---
+
+# The decisions (second session) — how to see each by hand
+
+Ten questions were answered in `REVIEW-M17.md` section 2 and every one is in the game now.
+
+## 30. Zerg start with a Queen
+
+Start any Zerg game. **Working:** a Queen hovers by the Hatchery with `Energy 50/200`. Press her
+**Spawn Larva** key on the Hatchery once the first Drones have hatched: ten seconds later it is back to
+three larvae. Two casts from her starting energy, then one every ~33 seconds as she regenerates.
+**The AI does the same:** watch a computer Zerg's Hatchery in the first minute (`black sheep wall`) —
+the purple inject ring appears within a minute.
+
+## 31. Bunkers fire at the unit's own rate
+
+Terran: put a Marine in a Bunker next to a Marine outside, attack something that does not die. Count
+the shots for ten seconds. **Working:** the same number inside and out. **Before:** the bunkered
+Marine fired twice as fast.
+
+## 32. The eleven energy upgrades do something
+
+Terran, `show me the money`, `modify the phase variance`: select a Medic, note `Energy 50/200`, research
+**Caduceus Reactor** at the Academy. **Working:** the Medic reads `/250` and fills to it. The same for
+Moebius (Ghost), Apollo (Wraith), Titan (Science Vessel), Colossus (Battlecruiser), Gamete (Queen),
+Metasynaptic (Defiler), Khaydarin Amulet (High Templar), Argus Talisman (Dark Archon), Argus Jewel
+(Corsair), Khaydarin Core (Arbiter). **Before:** nothing at all.
+
+## 33. Computer opponents on easy and normal siege, scan, boost and MULE
+
+Play against **two or three** computer opponents on normal and watch the second and third ones
+(`black sheep wall`). **Working:** their tanks siege, their Comsats scan, their Queens inject, exactly
+like the first opponent's. **Before:** only the first computer player ran its micro on schedule; the
+others sieged rarely and never scanned.
+
+## 34. The fog shows what you last saw
+
+Scout an enemy building with a Marine, walk the Marine home, then have a computer ally or the enemy
+destroy that building (or `black sheep wall` off, watch, `black sheep wall` on to compare). **Working:**
+the building stays drawn in the fog, greyed, until a unit of yours sees the spot again — then it is
+gone. **Before:** it vanished the instant it died, wherever you were.
+
+## 35. Room codes, the join limit, and no cheats online
+
+`PLAY-ONLINE.bat`, two clients: type a two-letter room code — **"A room code is at least 4 letters or
+digits."** Type `show me the money` into a network game's chat — it is chat, and typing it into the
+browser console does nothing on any client. Twenty joins a minute from one machine still work; the
+sixty-first is refused for a minute.
+
+## 36. Deterministic maths — invisible, on purpose
+
+Nothing to see. Every game plays a rounding step differently from before this commit (saves and
+replays from before are refused). Where it matters: a Windows build and a Mac build, or Chrome and
+Firefox, can now play the same lockstep game without drifting into a desync. `node test/dmath.js`
+measures it.
+
+## 37. Line endings
+
+Nothing to see in the game. `git status` on a fresh clone is clean on any machine.
