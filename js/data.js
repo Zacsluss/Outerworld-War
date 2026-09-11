@@ -301,8 +301,26 @@ const DATA = (() => {
   // describes as "niche, and the only reason it is here is that every ability should mean every one".
   // It is not lost: the Infestor carries it too, and an Infestor infesting a command centre is a
   // better home for it than a Queen was.
+  //
+  // `plant_tumour` GOES SECOND -- FIXLIST-M14 C3 (item 5). The report was "how are creep tumours made,
+  // from our Queen unit? this is how it should be", and it is right that it should be: in StarCraft II
+  // the Queen's whole kit is Spawn Larva, Transfuse and Creep Tumour. What the report had wrong is
+  // where they came from: not the Queen and not nowhere, but the OVERLORD, which has had
+  // `plant_tumour` since M12 and KEEPS IT. The user's decision was two sources on purpose, so this is
+  // an addition and nothing is taken away.
+  //
+  // Second, immediately behind larva_inject, because the two are the same kind of thing -- the macro
+  // pair the race's production and its map control run through -- and the ordering rule above is that
+  // the card's order is an argument about what a Queen is for. It does NOT push anything off the end:
+  // UI.buildCard's ability cap was raised from four to six in the same change, which is where it
+  // should have gone when the command card grew from 3x3 to 4x3 and did not.
+  //
+  // It costs NO ENERGY, deliberately, and that is the one place this departs from SC2. The ability is
+  // shared with the Overlord, which has no energy at all, so an `energy: 25` on the ability would not
+  // make the Queen cost more -- it would stop the Overlord planting tumours entirely, which is exactly
+  // the thing the decision said not to do. The tumour's own 25 minerals is the price.
   U('queen', { name: 'Queen', race: 'Z', hp: 120, size: 'medium', min: 100, gas: 100, sup: 2, time: 750, speed: 6.67, sight: 10, r: 14, hk: 'Q', from: 'larva', req: ['queens_nest'], bio: true, fly: true, energy: 200,
-    abil: ['larva_inject', 'parasite', 'ensnare', 'spawn_broodling', 'infest'], upgA: 'flyA' });
+    abil: ['larva_inject', 'plant_tumour', 'parasite', 'ensnare', 'spawn_broodling', 'infest'], upgA: 'flyA' });
   U('guardian', { name: 'Guardian', race: 'Z', hp: 150, armor: 2, size: 'large', min: 50, gas: 100, sup: 2, time: 600, speed: 2.5, sight: 11, r: 16, from: 'mutalisk', req: ['greater_spire'], bio: true, fly: true, morphFrom: 'mutalisk', hk: 'G',
     gw: W(20, 'normal', 8, 30, { upgKey: 'flyW', upgDmg: 2 }), upgA: 'flyA' });
   U('devourer', { name: 'Devourer', race: 'Z', hp: 250, armor: 2, size: 'large', min: 150, gas: 50, sup: 2, time: 600, speed: 5, sight: 10, r: 16, from: 'mutalisk', req: ['greater_spire'], bio: true, fly: true, morphFrom: 'mutalisk', hk: 'V',

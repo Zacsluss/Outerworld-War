@@ -904,7 +904,15 @@ const UI = {
     // abilities common to selection (by first unit's def), only if all share the ability
     const abils = (mobile[0].def.abil || []).filter(id => Abilities.available(mobile[0], id) && all(x => (x.def.abil || []).includes(id) || x.def.id === mobile[0].def.id));
     for (const id of abils) {
-      if (i > 8) break; const ab = DATA.abilities[id]; const label = Abilities.label(mobile[0], id);
+      // SIX ABILITY SLOTS, not four. `i > 8` was the 3x3 command card's ceiling and it was never raised
+      // when the card grew to 4x3 in M11 -- slots 9, 10 and 11 have been sitting empty on every unit
+      // card in the game since. The Queen is what found it (FIXLIST-M14 C3 gives her a sixth ability),
+      // and four was already one too few: the js/data.js comment above her def records that `infest`
+      // fell off the end and calls it a deliberate loss. It is not a loss any more.
+      //
+      // Ten and not eleven: slot 11 is the one UI.paginate reserves for a page turn, so leaving it free
+      // means a seventh ability pages rather than colliding -- which is the bug B5 was about.
+      if (i > 10) break; const ab = DATA.abilities[id]; const label = Abilities.label(mobile[0], id);
       if (id === 'unload') B(i++, 'Unload', 'U', setPending('unload')); // targeted unload (click a spot); the cargo wireframes unload single units
       else if (ab.kind === 'toggle' || ab.kind === 'instant') B(i++, label, ab.hk, () => mobile.forEach(x => Abilities.issue(x, id)));
       else if (ab.kind === 'morph') B(i++, label, ab.hk, () => mobile.forEach(x => Abilities.issue(x, id)), { cost: DATA.units[ab.unit] });
