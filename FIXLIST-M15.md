@@ -30,7 +30,7 @@ says that too, plainly, and names the probe to build first.
 | 2 | tumours should cost energy; Overlords need an energy pool | **C1** | ✅ done — both halves were true. One Overlord planted **30 of 30** free tumours; now 25 energy each and a 200 pool |
 | 3 | tumours have unlimited range | **C2** | ✅ done — and the report was right on BOTH halves. Two faults in two functions: a mobile caster flew to the spot, and a tumour (a *building*) cast in `issue()` and never reached the range check at all — it seeded a child **21.4 tiles away** against a declared 9 |
 | 4 | Spawn Broodlings is unexplained and says only "invalid target" | **A2 + B2** ✅ | A2 done — it was **0 of 80**, now 80 of 80, and two plumbing faults stopped any of it showing |
-| 5 | creep should look alive; Zerg should move faster on it | **A3** ✅ **+ C3** ☐ | A3 done — an overlay, cache untouched, stamp unmoved. C3 (the speed) still open |
+| 5 | creep should look alive; Zerg should move faster on it | **A3 + C3** | ✅ both done — A3 an overlay with the cache untouched; C3 the SC2 multipliers, measured absent in all 23 cases first. The Queen is a deliberate departure: she **flies** in this game, so she collects nothing |
 | 6 | training a Drone at supply cap also says "Spire required" | **B1 + B3** | ✅ done — fully reproduced. It was **B3**: the card was shifted one slot, so grid-key D hit Scourge |
 | — | found: the supply refusal fires once per selected larva | **B1** | ✅ simplified — but NOT the reported fault; the alert cooldown already collapsed it |
 | — | found: Set Rally and Queen share slot 6 on the larva card | **B3** | ✅ done — this was the ROOT CAUSE of item 6 |
@@ -297,7 +297,7 @@ field. C1 and C2 together are the actual fix.
 
 ---
 
-### ☐ C3 · (item 5, second half) Zerg units do not move faster on creep — the bonus does not exist
+### ✅ C3 · (item 5, second half) Zerg units do not move faster on creep — the bonus does not exist
 
 **Asked for:** "All zerg units on creep should have their speed increased just like it is in
 StarCraft 2 so look up the exact percentage."

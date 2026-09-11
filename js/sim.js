@@ -76,7 +76,7 @@ class Unit {
   get player() { return G.players[this.owner]; }
   get name() { return this.def.name; }
   get speed() {
-    let s = this.def.speed || 0; const p = this.player;
+    let s = this.def.speed || 0; const p = this.player, d = this.def;
     if (this.def.speedTech && p.hasTech(this.def.speedTech[0])) s = this.def.speedTech[1];
     if (this.def.id === 'vulture' && p.hasTech('ion_thrusters')) s = 8.53;
     if (this.stim > 0) s *= 1.5; if (this.fx.ensnare > 0) s *= 0.5;
@@ -89,6 +89,27 @@ class Unit {
     // same broken footing. Ground only: a wraith does not care what the floor looks like. See the
     // CRATERS block in js/map.js.
     if (!this.fly && !this.isBuilding && G.map.scar) { const c = G.map.scarAt(this.x, this.y); if (c > 0) s *= 1 - CHURN_SLOW * c; }
+    // CREEP. FIXLIST-M15 C3 (item 5, second half) -- the swarm moves faster over its own ground, and
+    // before this there was no creep bonus anywhere in the simulation: 23 cases measured, every one
+    // of them 1.00 on creep and off it.
+    //
+    // LAST, so it multiplies whatever the lines above settled on -- including `if (this.lifted) s = 1`,
+    // which is a hard override and is the only way an uprooted crawler can get its 150%. Ordering
+    // against the churn penalty is arithmetically irrelevant (both are factors) but reads correctly:
+    // broken footing and friendly ground are two independent things about the tile you are on.
+    //
+    // FOUR GATES, and each one is an exception the entry names. Zerg only; not flying, so the
+    // Overlord, Mutalisk, Queen and the rest of the air get nothing; not burrowed; and the tile under
+    // you has to actually be creep. `s > 0` keeps an egg at zero rather than multiplying nothing.
+    //
+    // THE CREEP TEST IS THE ONE THE GAME ALREADY HAS. GameMap.hasCreep is what building placement and
+    // the Nydus worm ask, it reads the same `creep` grid js/snapshot.js captures and G.tick rebuilds,
+    // and it is two array reads. A second creep test would be a second answer to drift from.
+    if (s > 0 && d.race === 'Z' && !this.fly && !this.burrowed) {
+      const cs = DATA.creepSpeed, k = cs[d.id];
+      const mult = k !== undefined ? k : cs._;
+      if (mult !== 1 && G.map.hasCreep(Math.floor(this.x / TILE), Math.floor(this.y / TILE))) s *= mult;
+    }
     return s;
   }
   get sight() { let s = this.def.sight || 7; const p = this.player; if (this.def.sightTech && p.hasTech(this.def.sightTech[0])) s = this.def.sightTech[1]; if (this.def.id === 'ghost' && p.hasTech('ocular')) s = 11; if (this.fx.blind > 0) s = 2; if (this.isBuilding && !this.done) s = 4;

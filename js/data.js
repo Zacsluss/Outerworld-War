@@ -1453,6 +1453,42 @@ const DATA = (() => {
   // player's hands already know.
   const larvaMorphs = ['drone', 'overlord', 'zergling', 'hydralisk', 'mutalisk', 'scourge', 'queen', 'ultralisk', 'defiler', 'roach', 'infestor'];
 
+  // ============================ CREEP MOVEMENT ============================
+  // FIXLIST-M15 C3 (item 5, second half): "All zerg units on creep should have their speed increased
+  // just like it is in StarCraft 2 so look up the exact percentage." Measured absent first -- every
+  // one of 23 cases moved the same distance on creep and off it, and every `u.speed` read identical.
+  //
+  // The multipliers are StarCraft II's, from Liquipedia's Creep and Speed pages. `_` is the default
+  // that any Zerg ground unit without an entry gets; a named entry overrides it.
+  //
+  // THIS LIVES IN `DATA` AND NOT IN A CONST OF ITS OWN, for the reason spelled out at the bottom of
+  // this file for RACE_INFO.N: js/build.js hashes DATA and does not hash arbitrary globals. Unit.speed
+  // is hashed by source, so the CODE that reads this table is stamped either way -- but the NUMBERS
+  // in it would not have been, and retuning them would change the simulation while leaving the build
+  // stamp still. That is the exact desync js/build.js exists to refuse, and CHURN_SLOW in js/map.js
+  // still has the hole. Do not copy that.
+  //
+  // THE EXCEPTIONS ARE THE POINT and each one is here on purpose:
+  //   drone      -- SC2 gives the Drone no creep bonus. It is the one most likely to be missed and
+  //                 the one that most changes the early game if it is wrong: a 30% faster worker is
+  //                 a faster mineral line, and the request was about ARMIES moving over their own
+  //                 ground. The Drone sees nothing.
+  //   broodling  -- no bonus in SC2 either. It is a timed nuisance, not a unit you manoeuvre.
+  //   changeling -- SC2's scout-disguise unit. THERE IS NO CHANGELING DEF IN THIS GAME. The entry is
+  //                 here so that adding one later cannot silently hand it the default bonus.
+  //   locust     -- 40%, not 30%. It is already fast and already on a timer.
+  //   queen      -- SC2's Queen is a GROUND unit that crawls at 1.88 off creep and 5.01 on it, which
+  //                 is where +167% comes from. THE QUEEN IN THIS GAME FLIES -- Brood War's Queen,
+  //                 `fly: true` in her def -- and she already moves at 6.67, which is ABOVE SC2's
+  //                 on-creep figure. So she gets nothing, from the flier rule, and the 2.67 below is
+  //                 inert. It is recorded rather than dropped because "+167% Queen" is what the
+  //                 request named, and the next person deserves to find the answer here rather than
+  //                 conclude it was forgotten. Making her a ground unit would light it up.
+  //   crawlers   -- 150%. Unit.speed pins ANY lifted building to a flat 1, so an uprooted Sunken or
+  //                 Spore colony crawls at 1 off creep and 2.5 on it. That is the one case where the
+  //                 bonus is applied after a hard override rather than to a def's own number.
+  const creepSpeed = { _: 1.30, drone: 1, broodling: 1, changeling: 1, locust: 1.40, queen: 2.67, sunken_colony: 2.50, spore_colony: 2.50 };
+
   // ============================ THE BURIED TELL ============================
   // What marks the ground above a buried creature. This is the feature, not a garnish on it: the
   // horror of something coming out of the floor only works if the player could have known, and the
@@ -1946,7 +1982,7 @@ const DATA = (() => {
   }
 
   const all = Object.assign({}, units, buildings);
-  return { units, buildings, upgrades, techs, abilities, buildMenu, larvaMorphs, buriedTells, derelictPresets, wildlifePresets, all };
+  return { units, buildings, upgrades, techs, abilities, buildMenu, larvaMorphs, creepSpeed, buriedTells, derelictPresets, wildlifePresets, all };
 })();
 
 const RACE_INFO = {
