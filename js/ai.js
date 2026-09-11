@@ -195,7 +195,7 @@ class AI {
     this.style = Object.prototype.hasOwnProperty.call(this.styleDeltas(), want) ? want : 'standard';   // own keys only: 'constructor' is not a style
     this.p = p; const st = this.sty();       // p first: sty() is per race as well as per style
     this.diff = diff; this.step = 0; this.pending = {}; this.lastThink = 0; this.lastArmy = 0; this.state = 'gather'; this.target = null; this.attackN = 0; this.attackThreshold = Math.max(10, (diff === 'easy' ? 40 : diff === 'hard' ? 24 : 30) + 4 + (st.atk || 0)); this.waves = 0; this.scouted = false; this.dropOp = null; this.lastDrop = 0;
-    this.thinkEvery = diff === 'easy' ? 72 : diff === 'hard' ? 20 : 32; this.scriptIdx = 0; this.lastExpand = 0; this.rally = null; this.startedAttack = 0; this.commitMin = 0; this.commitGas = 0; this.claims = []; this.researchDef = null; this.topDef = null; this.headDef = null; this.workerDef = null; this.expandDef = null;
+    this.thinkEvery = diff === 'easy' ? 72 : diff === 'hard' ? 20 : 32; this.scriptIdx = 0; this.lastExpand = 0; this.rally = null; this.startedAttack = 0; this.commitMin = 0; this.commitGas = 0; this.claims = []; this.researchDef = null; this.topDef = null; this.headDef = null; this.workerDef = null; this.expandDef = null; this.queenDef = null;
   }
   // ---------------- play styles ----------------
   // A style is a DELTA over the three tables at the top of this file, not a fourth copy of them. Six
@@ -357,15 +357,16 @@ class AI {
   //
   // WHAT IS HERE NOW. Two budgets, recomputed once per think, and no overrides at all.
   //
-  //   COMMITTED -- money already spoken for. Seven claimants, honoured in this order (budget() below
+  //   COMMITTED -- money already spoken for. Eight claimants, honoured in this order (budget() below
   //   numbers them the same way):
   //       1. buildings a worker is already walking to   (the site payment is not optional)
   //       2. supply, when it is about to block          (everything else stalls otherwise)
   //       3. one worker                                 (the economy; measured, see budget())
   //       4. an expansion                               (same measurement)
-  //       5. the head of the build order                (the tech tree)
-  //       6. the next upgrade
-  //       7. the composition's top pick                 (the shape of the army)
+  //       5. a Queen for a hall that has none            (Zerg; larvae are income -- REVIEW-M17 task 26)
+  //       6. the head of the build order                (the tech tree)
+  //       7. the next upgrade
+  //       8. the composition's top pick                 (the shape of the army)
   //     Claims are SUMMED and the running total is clipped at the bank, so priority is real: if the
   //     head step eats everything, the top pick gets nothing this think and waits its turn.
   //
@@ -391,7 +392,7 @@ class AI {
     // instead of funding, the composition's top pick spent from the bank on every think regardless,
     // production took 88% of all gas, and the Templar Archives sat at the head of the build order for
     // 6:08 of a 20-minute game.
-    let src = 'inflight';   // which of the seven asked; carried on the claim so test/ledger.js can report who actually got funded
+    let src = 'inflight';   // which of the eight asked; carried on the claim so test/ledger.js can report who actually got funded
     const claim = d => { if (!d) return; const m0 = cm, g0 = cg; cm = Math.min(p.minerals, cm + d.min); cg = Math.min(p.gas, cg + d.gas); claims.push({ src, id: d.id, min: cm - m0, gas: cg - g0, want: d.min, wantG: d.gas }); };
 
     // 1. BUILDINGS A WORKER IS ALREADY WALKING TO. The site payment is not optional: a worker that
@@ -421,18 +422,31 @@ class AI {
     //    expansion, and it is held in priority order, so it cannot outrank anything above it either.
     src = 'expand'; claim(this.expandDef);
 
-    // 5. THE HEAD OF THE BUILD ORDER -- the tech tree, and the thing everything behind it waits on.
+    // 5. A QUEEN FOR A HALL THAT HAS NONE (Zerg; user decision, REVIEW-M17 task 26). Macro, not army: she
+    //    is the one unit that makes larvae, and left to the composition she was never bought. Measured on
+    //    a solo ten-minute game before this existed: production() asked for her on 215 thinks and
+    //    afford() refused every one -- 176 for the reserve, 39 flat broke -- because a unit that is not
+    //    the top pick is not a claim, and her 100 gas is exactly what the head step and the next upgrade
+    //    hold. Placed ABOVE the head step on a second measurement (.claude/review/queen-pos.js, four
+    //    arms, fifteen minutes): below it, two of the four never reached one Queen per hall, the head and
+    //    the upgrade holding the gas she needed for the whole game; above it, all four did by minute
+    //    nine, and the Lair, Spire and Hive landed at the same second on three arms and a minute later
+    //    on the fourth. Armed only after the Queen's Nest exists (canTrainSoon), so the opening is untouched.
+    //    The seven other claims keep their order.
+    src = 'queen'; claim(this.queenDef);
+
+    // 6. THE HEAD OF THE BUILD ORDER -- the tech tree, and the thing everything behind it waits on.
     //    Dropped while overrun: an army arriving at the door beats a building later.
     src = 'head'; if (!this.overrun()) claim(this.headDef);
 
-    // 6. THE NEXT UPGRADE. Below the build order, because M12 measured upgrades outbidding it as the
+    // 7. THE NEXT UPGRADE. Below the build order, because M12 measured upgrades outbidding it as the
     //    reason the army stayed small; above a single unit, because an upgrade is worth more than one
     //    zealot and the two are competing for the same gas. Without this, research() -- which runs
     //    second to last -- was simply never asked while there was anything left: 84.8% of every gas
     //    mined went to units and a 20-minute game finished with two upgrades against thirty-two.
     src = 'research'; claim(this.researchDef);
 
-    // 7. THE COMPOSITION'S TOP PICK, so the army has a shape. Last, because a unit is the one thing
+    // 8. THE COMPOSITION'S TOP PICK, so the army has a shape. Last, because a unit is the one thing
     //    on this list that can be bought again in a few seconds.
     src = 'top'; claim(this.topDef);
 
@@ -738,6 +752,20 @@ class AI {
     }
     // Zerg macro hatcheries: larvae are the bottleneck, so floating minerals with no larva means another hatchery, not more drones per hatchery
     if (r === 'Z' && ((p.minerals > 300 && !this.mine(u => u.def.larva).length) || p.minerals > 550) && workers >= 5 * this.mine(u => u.isBuilding && u.def.spawnsLarva).length && this.count('hatchery') <= this.halls().length && this.mine(u => u.isBuilding && u.def.spawnsLarva).length < 6 && halls.length) { const h = halls[Math.floor(G.rand() * halls.length)]; this.buildNear('hatchery', h.x, h.y); } // macro hatcheries go next to a base we already hold; real expansions come from the shared rule below
+    // QUEENS FOR EVERY HATCHERY, LAIR AND HIVE (user decision, REVIEW-M17 task 26). Measured before this
+    // existed (.claude/review/larva-probe.js, a solo Zerg on normal and hard): one Queen for the whole
+    // game -- the starting one -- with 227-355 gas banked at ten minutes, and injects landing only on
+    // the two halls within her 26 tiles (8/10/0/0/0). She is claim 5 in budget() and trained HERE, before
+    // production() spends and independently of the composition table (the rusher style zeroes her weight
+    // there, and a style should not be able to opt out of larvae): one per hall with eggs counted, and only
+    // while a larva could hatch her (canTrainSoon: requirements, supply, a finished hall), so the claim is
+    // never a permanent tax on free. Each Queen is then homed to a hall and kept there -- homeQueens().
+    if (r === 'Z') {
+      const wantQueen = this.count('queen') < this.mine(u => u.isBuilding && u.def.spawnsLarva).length && this.canTrainSoon('queen');
+      this.queenDef = wantQueen ? DATA.units.queen : null;
+      if (wantQueen) this.train('queen');
+      this.homeQueens();
+    }
     // gas: one per base with hall
     if (this.scriptIdx >= 3 && workers > 5 * gasBuildings(this) && !(p.gas > 800 && p.minerals < 300)) for (const h of halls) { if (!h.done) continue; const base = G.map.bases.find(b => distPt(b.cx, b.cy, h.x, h.y) < 3 * TILE); if (base && base.geyser && base.geyser.amount > 0 && !(base.geyser.building && base.geyser.building.alive) && p.minerals >= 100 && this.count(RACE_INFO[r].gasB) <= this.mine(u => u.def.onGeyser).length) { this.buildAt(RACE_INFO[r].gasB, base.geyser.x, base.geyser.y, true); break; } } // gas pays for itself, never let the reserve block it
     // Static defence at the natural, placed on the line the enemy actually comes down rather than
@@ -977,10 +1005,16 @@ class AI {
     // it trades a tech stall for a supply block, which is worse.
     if (!this.claimed(ud) && !this.afford(ud.min, ud.gas)) return this.note(false, 'trainReserve', id, ud.min, ud.gas);
     if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) return this.note(false, 'trainSupply', id, ud.min, ud.gas);
-    if (ud.from === 'larva') { const l = this.mine(u => u.def.larva)[0]; if (!l) return false; if (!G.larvaMorph(l, id)) return false; this.release(ud); return true; }
+    if (ud.from === 'larva') { const l = this.pickLarva(); if (!l) return false; if (!G.larvaMorph(l, id)) return false; this.release(ud); return true; }
     const bs = this.mine(u => u.isBuilding && u.done && !u.lifted && u.def.produces.includes(id) && u.prod.length < (maxQ || 2) && !(u.addon && !u.addon.done)); if (!bs.length) return this.note(false, 'trainNoProd', id, ud.min, ud.gas);
     bs.sort((a, b) => a.prod.length - b.prod.length); if (!G.queueUnit(bs[0], id)) return false; this.release(ud); return true;
   }
+  // THE LARVA FROM THE FULLEST HATCHERY (REVIEW-M17 task 27). train() took the first larva in G.units
+  // order -- the oldest -- which drains the oldest hall first and leaves a newer one sitting at its cap
+  // while the old one runs dry. Measured at ten minutes every hall read zero larvae, which is why it did
+  // not matter until Spawn Larva stacked to twelve (task 25): a hall at the cap is now twelve larvae its
+  // Queen cannot add to. Ties keep G.units order, so every client picks the same larva.
+  pickLarva() { let best = null, bn = -1; for (const l of this.mine(u => u.def.larva)) { const n = l.hatch && l.hatch.alive ? l.hatch.larvae.length : 0; if (n > bn) { bn = n; best = l; } } return best; }
   // could we train this if we had the money? (requirements, supply room and a production building with a free slot)
   // SOON, not this instant. For every other race this asks for a production building with a free
   // queue slot; for Zerg it used to ask for a LARVA IN HAND, which is a strictly harder question --
@@ -1062,7 +1096,10 @@ class AI {
   // The four M12 Zerg additions with no weapon at all. armyUnits() is gated on hasWeapon(), so without
   // this an infestor, viper, swarm host or overseer would be trained and then stand at the hatchery
   // for the rest of the game -- the exact shape of "the AI casts 7 of 28 spells" in HANDOFF.md.
-  supportUnits() { return this.mine(u => ['medic', 'science_vessel', 'observer', 'high_templar', 'defiler', 'arbiter', 'dark_archon', 'queen', 'infestor', 'viper', 'swarm_host', 'overseer'].includes(u.def.id) && !u.inside); }
+  // ...and a HOMED Queen is not support either (REVIEW-M17 task 26, which closes open task 23): as a
+  // member here she left with the army, out of injectHall's 26 tiles, and stopped injecting. u.home is
+  // set by homeQueens(); a Queen with no hall to keep still follows the army as before.
+  supportUnits() { return this.mine(u => ['medic', 'science_vessel', 'observer', 'high_templar', 'defiler', 'arbiter', 'dark_archon', 'queen', 'infestor', 'viper', 'swarm_host', 'overseer'].includes(u.def.id) && !u.inside && !(u.def.id === 'queen' && u.home)); }
   rallyPoint() {
     const halls = this.halls().filter(h => h.done); const p = this.p;
     const nat = halls.length > 1 ? halls[1] : halls[0]; if (!nat) return { x: p.startX, y: p.startY };
@@ -1429,20 +1466,38 @@ class AI {
   // chain and the tumour that continues it have to answer to the same budget or the cheaper of the two
   // simply spends everything the other one saved.
   tumourBudget() { return this.p.minerals >= 300 && this.count('creep_tumour') < 8; }
-  // The nearest hatchery this Queen could usefully inject: one of ours, finished, short of larvae, and
-  // without an inject already booked against it in G.fields. Null when there is nothing worth casting
-  // on, which is what lets the Queen's other spells have the tick.
+  // The hatchery this Queen should inject: HER OWN first (u.home, see homeQueens), then the nearest within
+  // 26 tiles -- one of ours, finished, under the cap (twelve since REVIEW-M17 task 25, so a hall at its
+  // natural three has room), and without an inject already booked against it in G.fields. Null when
+  // there is nothing worth casting on, which is what lets the Queen's other spells have the tick.
   injectHall(u) {
     const cap = DATA.abilities.larva_inject.cap;
+    const fit = o => o.alive && o.owner === u.owner && o.isBuilding && o.done && o.def.spawnsLarva && o.larvae.length < cap && !G.fields.some(f => f.kind === 'inject' && f.hall === o);
+    if (u.home && fit(u.home)) return u.home;
     let best = null, bd = 26 * TILE;
     for (const o of G.units) {
-      if (!o.alive || o.owner !== u.owner || !o.isBuilding || !o.done || !o.def.spawnsLarva) continue;
-      if (o.larvae.length >= cap) continue;
+      if (!fit(o)) continue;
       const dd = distPt(o.x, o.y, u.x, u.y); if (dd >= bd) continue;
-      if (G.fields.some(f => f.kind === 'inject' && f.hall === o)) continue;
       bd = dd; best = o;
     }
     return best;
+  }
+  // ONE QUEEN PER HALL, KEPT THERE (user decision, REVIEW-M17 task 26; open task 23 was the same fault
+  // seen from the other side). The pairing lives on the unit -- u.home, a Unit reference the snapshot
+  // tags like any other -- and is repaired rather than recomputed each think: a Queen whose hall died is
+  // unhomed, and a hall with no living Queen takes the nearest unhomed one. A homed Queen is not army:
+  // supportUnits() leaves her out, injectHall() casts on her hall first, and micro() flies her back when
+  // she idles away from it. Any Queen left over (more Queens than halls) stays in the army, which is
+  // where the composition's Queens always went. G.units order throughout, so every client pairs alike.
+  homeQueens() {
+    const queens = this.mine(u => u.def.id === 'queen' && !u.inside);
+    for (const q of queens) if (q.home && !q.home.alive) q.home = null;
+    for (const h of this.mine(u => u.isBuilding && u.def.spawnsLarva)) {
+      if (queens.some(q => q.home === h)) continue;
+      let best = null, bd = Infinity;
+      for (const q of queens) { if (q.home) continue; const d = distPt(q.x, q.y, h.x, h.y); if (d < bd) { bd = d; best = q; } }
+      if (best) best.home = h;
+    }
   }
   // The outermost creep tile within `range` of a point, leaning towards the enemy. A tumour planted in
   // the middle of creep you already own is a tumour that did nothing, so this walks rings from the far
@@ -1676,6 +1731,11 @@ class AI {
       // three older clauses for that tick.
       else if (d === 'queen' && u.energy >= DATA.abilities.larva_inject.energy && this.turn(u.id, 2) && this.injectHall(u)) Abilities.issue(u, 'larva_inject', this.injectHall(u));
       else if (d === 'queen' && u.energy >= 150 && p.hasTech('spawn_broodling_tech') && this.turn(u.id, 2)) { const t = G.near(u.x, u.y, 9 * TILE).find(o => !G.allied(o.owner, p.id) && !o.fly && !o.isBuilding && !NO_BROODLING.has(o.def.id) && o.def.sup >= 2); if (t) Abilities.issue(u, 'spawn_broodling', t); }
+      // A homed Queen idle away from her hall flies back to it (REVIEW-M17 task 26). supportUnits() no
+      // longer moves her, so this is the only thing that does: it carries a Queen hatched at one hall to
+      // the hall she was made for, and brings her home after planting a tumour. Ahead of the tumour
+      // clause below on purpose -- a Queen twenty tiles from home has a better use for the tick.
+      else if (d === 'queen' && u.home && u.order.type === 'idle' && distPt(u.x, u.y, u.home.x, u.home.y) > 5 * TILE) u.setOrder({ type: 'move', x: u.home.x + 48, y: u.home.y + 40 });
       else if (d === 'medic' && u.order.type === 'idle' && this.rally && distPt(u.x, u.y, this.rally.x, this.rally.y) > 8 * TILE) { const a = this.armyUnits()[0]; if (a) u.setOrder({ type: 'follow', target: a }); }
       else if (d === 'vulture' && u.mines > 0 && p.hasTech('spider_mines_tech') && u.order.type === 'idle' && this.turn(u.id, 4)) { Abilities.issue(u, 'spider_mine', null, u.x + (G.rand() - .5) * 64, u.y + (G.rand() - .5) * 64); }
       else if (d === 'arbiter' && u.energy >= 100 && p.hasTech('stasis_tech') && this.turn(u.id, 2)) { const c = this.cluster(u, 9, 4, o => !G.allied(o.owner, p.id) && !o.isBuilding); if (c) Abilities.issue(u, 'stasis_field', null, c.x, c.y); }

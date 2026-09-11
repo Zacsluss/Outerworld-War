@@ -1369,12 +1369,15 @@ const DATA = (() => {
   // of them is a key that silently does the wrong thing.
   //
   // ITEM 11, LARVA INJECT. `delay` is what makes it a decision instead of a button: ten seconds pass
-  // between the cast and the larvae, so injecting is a bet that you will still want them. `cap` is the
-  // same 3 that Unit.tickBuilding enforces on natural larva production -- inject FILLS a hatchery, it
-  // does not raise its ceiling. Raising the ceiling was the other option and it is a different game:
-  // banked larvae past three turn every hall into a burst of eight units and rewrite what Zerg's
-  // production curve looks like, which is not what item 11 asked for.
-  A('larva_inject', 'Spawn Larva', 'L', 'unit', { energy: 25, range: 4, delay: 240, cap: 3 });
+  // between the cast and the larvae, so injecting is a bet that you will still want them.
+  // `per` and `cap` (REVIEW-M17 task 25, a user decision): each cast ADDS `per` larvae and a hall may
+  // hold up to `cap` of them, which is SC2's rule. M12 shipped it as `cap: 3` -- the same three
+  // Unit.tickBuilding spawns on its own -- so inject FILLED a hatchery and never raised its ceiling, on
+  // the reasoning that banked larvae rewrite Zerg's production curve. That is exactly what the user then
+  // chose: a hall with a Queen on it is worth more than a hall without one. Natural spawning is untouched
+  // (LARVA_NATURAL in js/sim.js: three, one per LARVA_TIME), so a hall never passes three on its own and a
+  // Zerg who never injects plays the M12 game exactly. On the balance run's list.
+  A('larva_inject', 'Spawn Larva', 'L', 'unit', { energy: 25, range: 4, delay: 240, per: 3, cap: 12 });
   // `energy: 25` -- FIXLIST-M15 C1 (item 2), and SC2's own price for Creep Tumour. It is charged to the
   // CASTER, so it lands on the Queen and on the Overlord (which C1 gave a pool of its own) and NOT on
   // `spawn_tumour` below, because the thing that casts that is a tumour and a tumour has no pool. That
@@ -1790,7 +1793,7 @@ const DATA = (() => {
     consume: 'Eat one of your own units to restore 50 energy to the Defiler. Cannot eat larvae, eggs or itself.',
     nydus_exit: 'Place the far end of a Nydus Canal at another base you hold. Until it has one, the canal does nothing at all.',
     infest: 'Take over an enemy Terran Command Center that has been damaged below half health, turning it into an Infested Command Center.',
-    larva_inject: 'Fill one of your Hatcheries back up to three larvae after a short delay. It tops a hall up, it does not raise its ceiling.',
+    larva_inject: 'Add three larvae to one of your Hatcheries after a short delay, up to twelve. A hall never passes three on its own.',
     plant_tumour: 'Costs 25 energy. Grow a Creep Tumour on creep you are standing over. It spreads creep around itself and can seed one more tumour of its own.',
     spawn_tumour: 'Seed one more Creep Tumour anywhere within nine tiles that is already creep. Each tumour may do this exactly once, ever.',
     uproot: 'Pull a Spine or Spore Crawler out of the ground so it can walk. It cannot attack until it roots again.',

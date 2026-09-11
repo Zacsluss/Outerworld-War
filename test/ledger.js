@@ -260,8 +260,8 @@ for (const race of RACES) {
   console.log('   engaged (something reserved): ' + r.thinksReserved + '  (' + (100 * r.thinksReserved / (r.thinks || 1)).toFixed(0) + '%)' +
     '     BINDING (refused a purchase): ' + r.thinksBound + '  (' + (100 * r.thinksBound / (r.thinks || 1)).toFixed(0) + '%)');
   console.log('   mean reserve while engaged:   ' + r.rmMean + 'm  ' + r.rgMean + 'g');
-  console.log('   claim order -- how often each of the seven asked, and how often it got its whole cost:');
-  for (const k of ['inflight', 'supply', 'worker', 'expand', 'head', 'research', 'top']) { const e = r.funded[k]; if (!e) continue;
+  console.log('   claim order -- how often each of the eight asked, and how often it got its whole cost:');
+  for (const k of ['inflight', 'supply', 'worker', 'expand', 'queen', 'head', 'research', 'top']) { const e = r.funded[k]; if (!e) continue;
     console.log('      ' + pad(k, 10) + 'armed ' + num(e.armed, 5) + '   funded in full ' + num(e.full, 5) + '  (' + (100 * e.full / e.armed).toFixed(0) + '%)   mean minerals held ' + Math.round(e.m / e.armed)); }
   const hh = Object.entries(r.headHeld).sort((a, b) => b[1] - a[1]).slice(0, 6);
   console.log('   the build order head, longest-held first:');

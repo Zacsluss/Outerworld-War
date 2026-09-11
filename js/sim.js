@@ -11,6 +11,10 @@ const EQUIV = { hatchery: ['lair', 'hive'], lair: ['hive'], spire: ['greater_spi
 // Three defs are over it today: Thor and Ultralisk at 20, Reaver at 18.
 const WIDE_BODY = TILE / 2;
 const MINE_TIME = 75, GAS_TIME = 37, LARVA_TIME = 342, MAX_QUEUE = 5;
+// LARVA_NATURAL: how many larvae a hatchery, lair or hive spawns up to ON ITS OWN, one per LARVA_TIME.
+// Spawn Larva stacks past it to DATA.abilities.larva_inject.cap (twelve; REVIEW-M17 task 25), so the two
+// numbers are different things now and every reader names the one it means. Stamped (BUILD.TUNING).
+const LARVA_NATURAL = 3;
 const WORKER_HAUL = 8, GAS_DEPLETED = 2;   // a trip's minerals or gas, and a depleted geyser's; MULE_HAUL in js/abilities.js sits on top of the eight (REVIEW-M17: four literals before)
 const MODE_TRANS = 40;
 // unit id -> the tech that gives it +50 max energy (each such tech carries `energy: '<unit>'` in js/data.js)
@@ -71,7 +75,9 @@ class Unit {
     this.cloaked = !!def.cloaked; this.burrowed = !!def.burrowed; this.stim = 0; this.fx = {}; this.kills = 0; this.detBy = {};
     this.lifetime = def.lifetime || 0; this.mines = def.mines || 0; this.scarabs = def.scarabs || 0; this.interceptors = def.interceptors || 0;
     this.creepR = 0;
-    this.larvae = []; this.larvaT = LARVA_TIME; this.hatch = null; this.morphT = 0; this.progress = 0; this.builder = null; this.lifted = false;
+    // `home`: the hall a computer player's Queen is kept at (AI.homeQueens, REVIEW-M17 task 26); null for
+    // every other unit. A Unit reference, which the snapshot tags by id exactly as it does `hatch`.
+    this.larvae = []; this.larvaT = LARVA_TIME; this.hatch = null; this.home = null; this.morphT = 0; this.progress = 0; this.builder = null; this.lifted = false;
     this.lastHit = -9999; this.lastHitBy = null; this.arbCloak = -9999; this.halluc = false; this.idleT = 0; this.acidSpores = 0;
     this.auraSight = 1; this.auraNoDet = false;   // recomputed each pass by G.tickAuras; see the aura contract in js/data.js
     this.waitT = 0; this.moving = false; this.vx = 0; this.vy = 0; this.spawnT = G.frame; this.cloakT = 0; this.unpowered = false;
@@ -280,7 +286,7 @@ class Unit {
       this.creepR = Math.min(d.creep, this.creepR + CREEP_GROW);
       if (Math.floor(this.creepR) !== was) G.map.recomputeCreep(G.units);
     }
-    if (d.spawnsLarva) { if (this.larvae.length < 3) { if (--this.larvaT <= 0) { this.larvaT = LARVA_TIME; G.spawnLarva(this); } } else this.larvaT = LARVA_TIME; }
+    if (d.spawnsLarva) { if (this.larvae.length < LARVA_NATURAL) { if (--this.larvaT <= 0) { this.larvaT = LARVA_TIME; G.spawnLarva(this); } } else this.larvaT = LARVA_TIME; }
     if (this.addon && !this.addon.alive) this.addon = null;
     if (this.addon && !this.addon.done) return; // building addon
     this.tickProduction();

@@ -305,6 +305,10 @@ run(`(() => {
 }
 
 // ================================================================ 4. item 11: larva inject
+// M12 shipped inject as "fill the hall back to three, never past it". REVIEW-M17 task 25 (a user decision)
+// made it SC2's rule: +`per` (three) per cast, up to `cap` (twelve). This section pins the new rule the
+// way it pinned the old one, and the natural rule beside it: a hall left to itself still stops at three
+// (LARVA_NATURAL), so a Zerg who never injects plays the M12 game exactly. test/queens.js has the rest.
 {
   const inj = json(`(() => {
     this.fresh(11);
@@ -322,24 +326,39 @@ run(`(() => {
     const midway = hall.larvae.length;                               // the delay is the mechanic
     this.tick(ab.delay + 40);
     const after = hall.larvae.length;
-    // ...and again, on a hall that is now full
+    // ...and again, on a hall that now holds its natural three: the cast RAISES it
+    q.energy = 200; const cast2 = Abilities.issue(q, 'larva_inject', hall);
+    this.tick(ab.delay + 40);
+    const raised = hall.larvae.length;
+    // ...and on up to the cap, one cast at a time
+    let casts = 0; while (hall.larvae.length < ab.cap && casts < 10) { q.energy = 200; Abilities.issue(q, 'larva_inject', hall); this.tick(ab.delay + 40); casts++; }
+    const atCap = hall.larvae.length;
+    // ...and once more on a full hall: refused out loud, refunded, nothing arrives
     q.energy = 200; p.msgs = []; p.lastAlert = {};
-    const cast2 = Abilities.issue(q, 'larva_inject', hall);
+    Abilities.issue(q, 'larva_inject', hall); const eFull = q.energy;
     this.tick(ab.delay + 40);
     const capped = hall.larvae.length;
+    // natural spawning is untouched: a full hall left to itself spawns nothing more...
+    hall.larvaT = 1; this.tick(LARVA_TIME * 2); const idle = hall.larvae.length;
+    // ...and a hall cut down to two refills to three and stops there
+    while (hall.larvae.length > 2) G.kill(hall.larvae[hall.larvae.length - 1], null, true);
+    hall.larvaT = 1; this.tick(LARVA_TIME * 3); const natural = hall.larvae.length;
     // ...and on somebody else's hatchery
     const foeHall = G.units.find(u => u.alive && u.owner === 1 && u.isBuilding);
     q.energy = 200; const cast3 = Abilities.issue(q, 'larva_inject', foeHall);
     this.tick(60);
-    return { cap: ab.cap, delay: ab.delay, n0, cast, booked, midway, after, spent, cast2, capped, said: p.msgs.map(m => m.text), foeSpawn: G.fields.filter(f => f.kind === 'inject').length };
+    return { per: ab.per, cap: ab.cap, delay: ab.delay, n0, cast, booked, midway, after, spent, cast2, raised, casts, atCap, eFull, capped, idle, natural, said: p.msgs.map(m => m.text), foeSpawn: G.fields.filter(f => f.kind === 'inject').length };
   })()`);
   ok('the hall starts the measurement empty', inj.n0 === 0, String(inj.n0));
   ok('a Queen can inject one of its own hatcheries', inj.cast === true && inj.booked === 1, JSON.stringify(inj));
   ok('the larvae do NOT arrive immediately -- the delay is the decision', inj.midway === 0, String(inj.midway));
-  ok('...they arrive after the delay', inj.after === inj.cap, inj.after + ' of ' + inj.cap);
+  ok('...they arrive after the delay, `per` of them (three)', inj.after === inj.per && inj.per === 3, inj.after + ' of ' + inj.per);
   ok('...and it cost the Queen its energy', inj.spent >= 24 && inj.spent <= 26, 'spent ' + inj.spent);
-  ok('INJECT CANNOT EXCEED THE HATCHERY CAP: a full hall stays at the cap', inj.capped === inj.cap, inj.capped + ' vs cap ' + inj.cap);
-  ok('...and the second cast is refused out loud rather than silently', inj.cast2 === false || inj.said.length > 0, JSON.stringify(inj.said));
+  ok('INJECT RAISES A HALL PAST ITS NATURAL THREE: a second cast on a hall at three makes six (M12 filled it to three and stopped; REVIEW-M17 task 25)', inj.cast2 === true && inj.raised === 2 * inj.per, inj.raised + ' vs ' + 2 * inj.per);
+  ok('...up to a cap of twelve, two casts later', inj.cap === 12 && inj.atCap === inj.cap && inj.casts === 2, JSON.stringify([inj.atCap, inj.cap, inj.casts]));
+  ok('INJECT CANNOT EXCEED THE CAP: a cast on a full hall is refused out loud, refunded, and adds nothing', inj.eFull === 200 && inj.capped === inj.cap && inj.said.some(s => /larvae/.test(s)), JSON.stringify([inj.eFull, inj.capped, inj.said]));
+  ok('a full hall left to itself spawns nothing more: natural spawning is gated at three, not at the cap', inj.idle === inj.cap, String(inj.idle));
+  ok('...and a hall cut to two refills to exactly three on its own -- the M12 game for anyone who never injects', inj.natural === 3, String(inj.natural));
   ok('a Queen cannot inject an enemy hall', inj.foeSpawn === 0, String(inj.foeSpawn));
 }
 

@@ -639,6 +639,9 @@ const Abilities = {
         const ab = DATA.abilities.larva_inject;
         if (!t || t.owner !== u.owner || !t.isBuilding || !t.def.spawnsLarva || !t.done) { p.msg('Spawn Larva needs one of your hatcheries.', 'error'); u.energy += ab.energy; break; }
         if (G.fields.some(f => f.kind === 'inject' && f.hall === t)) { p.msg('That hatchery is already spawning larva.', 'error'); u.energy += ab.energy; break; }
+        // A full hall is refused and refunded rather than spending 25 energy on nothing; the cap is twelve
+        // now (REVIEW-M17 task 25), so a hall CAN be full in a way it never was at three-and-filled.
+        if (t.larvae.length >= ab.cap) { p.msg('That hatchery cannot hold any more larvae.', 'error'); u.energy += ab.energy; break; }
         G.fields.push({ kind: 'inject', x: t.x, y: t.y, r: 0, t: ab.delay, owner: u.owner, hall: t }); ring(1.4, '#c8f'); break;
       }
       // ---- M12 wave four, Protoss ------------------------------------------------------------------
@@ -872,13 +875,15 @@ const Abilities = {
         const a = DATA.abilities.corrosive_bile, src = f.src;
         if (src) Combat.splash(src, f.x, f.y, a.dmg + G.players[f.owner].upgLevel('missW') * 2, { type: 'normal', targets: 'ground', hits: 1, splash: [f.r * 0.5, f.r * 0.8, f.r] }, null);
       }
-      // M12 item 11: the injected larvae arrive. Capped at the same three Unit.tickBuilding allows, so
-      // inject fills a hatchery rather than raising its ceiling -- and the loop is bounded by that cap
-      // whatever state h.larvae is in. G.kill splices a dead larva out of it, so its length is live.
+      // M12 item 11: the injected larvae arrive -- `per` of them (three), and never past `cap` (twelve).
+      // Spawn Larva RAISES a hall's count rather than filling it to the natural three (REVIEW-M17 task 25,
+      // a user decision; the data comment says what changed and why). The loop is bounded by the cap
+      // whatever state h.larvae is in: G.kill splices a dead larva out of it, so its length is live.
       else if (f.kind === 'inject' && f.t <= 0) {
-        const h = f.hall, cap = DATA.abilities.larva_inject.cap;
+        const h = f.hall, ab = DATA.abilities.larva_inject;
         if (h && h.alive && h.done && h.def.spawnsLarva && h.owner === f.owner) {
-          for (let n = h.larvae.length; n < cap; n++) G.spawnLarva(h);
+          const add = Math.min(ab.per, ab.cap - h.larvae.length);
+          for (let n = 0; n < add; n++) G.spawnLarva(h);
           G.effects.push({ kind: 'ring', x: h.x, y: h.y, r: 26, t: 14, color: '#c8f' });
         }
       }

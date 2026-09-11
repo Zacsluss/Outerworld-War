@@ -125,6 +125,7 @@ const TESTS = [
   { name: 'cmdlog', args: ['cmdlog.js'], what: 'every order the interface can issue survives the command log: autocast, the ferry route, a dead target, a malformed log' },
   { name: 'review17', args: ['review17.js'], what: 'the simulation faults REVIEW-M17 measured and fixed: Carrier cooldown, status refresh, sieged tank, decloak, larva, worker poll, tick errors, Charon' },
   { name: 'review17ui', args: ['review17ui.js'], what: 'the interface faults REVIEW-M17 fixed: keys in text fields, zoom keys, F8, Tab, the last alert, net speed, rejoin input, the editor loop, per-sim-frame effects, the manual wheel' },
+  { name: 'queens', args: ['queens.js'], what: 'the REVIEW-M17 Zerg notes: Spawn Larva stacks a hall to twelve, a computer Zerg keeps a Queen at every hatchery, larvae come off the fullest hall' },
   // test/eightplayer.js was in the gate for one commit (022d0ce): green by 1% after the larva-starvation
   // clause in AI.macro, and red again as soon as the deterministic maths moved every position by a
   // rounding step and dealt a different game. The bank that crosses 2,500 is a Terran on full geysers

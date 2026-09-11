@@ -148,7 +148,7 @@ const G = {
   setupStart(p, base) {
     const hallDef = DATA.buildings[RACE_INFO[p.race].hall];
     const hall = this.placeBuilding(hallDef, base.x, base.y, p.id); hall.done = true; hall.hp = hall.maxHp; hall.sh = hall.maxSh; hall.progress = hallDef.time;
-    if (hallDef.spawnsLarva) for (let i = 0; i < 3; i++) this.spawnLarva(hall);
+    if (hallDef.spawnsLarva) for (let i = 0; i < LARVA_NATURAL; i++) this.spawnLarva(hall);
     const wd = RACE_INFO[p.race].worker;
     for (let i = 0; i < 4; i++) { const u = this.spawnUnit(wd, p.id, hall.x - 40 + i * 28, hall.y + hall.def.h / 2 * TILE + 24); const m = this.findNearestResource(u, 'mineral'); if (m) u.applyOrder({ type: 'gather', target: m, phase: 'goto' }); }
     // A Zerg player starts with a Queen as well as an Overlord (user decision, REVIEW-M17 second session).
@@ -966,7 +966,10 @@ const G = {
     else if (it.kind === 'morph') { const nd = DATA.buildings[it.id]; p.minerals += Math.floor(nd.min * 0.75); p.gas += Math.floor(nd.gas * 0.75); }
     b.prod.splice(i, 1);
     if (b.def.egg) { // cancel egg -> larva back
-      if (b.def.id === 'egg') { const ed = DATA.units.larva; b.def = ed; b.maxHp = ed.hp; b.hp = ed.hp; b.r = ed.r; b.hatch = b.rallyFrom; if (b.hatch && b.hatch.alive && b.hatch.larvae.length < 3) b.hatch.larvae.push(b); else this.kill(b, null, true); }
+      // ...if its hall can hold it. The bound is the hall's CEILING (larva_inject.cap, twelve), not the three
+      // it spawns on its own: the two were the same number until REVIEW-M17 task 25, and with the old
+      // literal an egg cancelled at an injected hall was refunded and then killed as soon as the hall held three.
+      if (b.def.id === 'egg') { const ed = DATA.units.larva; b.def = ed; b.maxHp = ed.hp; b.hp = ed.hp; b.r = ed.r; b.hatch = b.rallyFrom; if (b.hatch && b.hatch.alive && b.hatch.larvae.length < DATA.abilities.larva_inject.cap) b.hatch.larvae.push(b); else this.kill(b, null, true); }
       else { const back = b.def.id === 'lurker_egg' ? 'hydralisk' : 'mutalisk'; const ud = DATA.units[back]; b.def = ud; b.maxHp = ud.hp; b.hp = ud.hp; b.r = ud.r; b.fly = !!ud.fly; }
     }
     this.recomputeSupply();
