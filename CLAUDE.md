@@ -47,7 +47,7 @@ exist only in a chat transcript.
 
 ## Non-negotiable
 
-- **`node test/all.js` is the gate before any commit.** 74 suites, ~3 minutes. Green means green.
+- **`node test/all.js` is the gate before any commit.** 75 suites, ~3-4 minutes. Green means green.
 - **Determinism.** Never `Math.random()` in simulation code — use `G.rand()`. Anything a replay or a
   rejoining client must reproduce goes through `G.init` options or the command log.
 - **Every new behaviour gets a negative control.** A check that still passes with the feature deleted

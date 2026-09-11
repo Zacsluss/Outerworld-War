@@ -235,8 +235,9 @@ Ten questions were answered in `REVIEW-M17.md` section 2 and every one is in the
 ## 30. Zerg start with a Queen
 
 Start any Zerg game. **Working:** a Queen hovers by the Hatchery with `Energy 50/200`. Press her
-**Spawn Larva** key on the Hatchery once the first Drones have hatched: ten seconds later it is back to
-three larvae. Two casts from her starting energy, then one every ~33 seconds as she regenerates.
+**Spawn Larva** key on the Hatchery: ten seconds later it holds three more larvae (item 38 has the rest of
+that rule; until the third session it only ever refilled to three). Two casts from her starting energy,
+then one every ~33 seconds as she regenerates.
 **The AI does the same:** watch a computer Zerg's Hatchery in the first minute (`black sheep wall`) —
 the purple inject ring appears within a minute.
 
@@ -285,3 +286,52 @@ measures it.
 ## 37. Line endings
 
 Nothing to see in the game. `git status` on a fresh clone is clean on any machine.
+
+---
+
+# The Zerg notes (third session) — how to see each by hand
+
+Open tasks 25, 26 and 27 of `REVIEW-M17.md` (and 23 with them), plus a wedged geyser found on the way.
+Saves and replays from before these commits are refused: the stamp moved twice.
+
+## 38. Spawn Larva stacks a Hatchery to twelve larvae
+
+Zerg, `show me the money`. Select the Queen, press **Spawn Larva** (`L`) on the Hatchery, wait ten seconds:
+the hall's `Larvae` line on the card goes from 3 to 6. Cast again at 6: 9. Again: 12. Once more at 12:
+**"That hatchery cannot hold any more larvae."** and the 25 energy comes back. Hover the button: the text
+says three and twelve. **Before:** every cast topped the hall back up to three and never past it. **Still
+true, on purpose:** a Hatchery you never inject spawns to three on its own and stops there, exactly as
+before — leave one alone for a minute and watch the count sit at 3.
+
+## 39. A cancelled egg goes back to a Hatchery that already holds more than three
+
+With a Hatchery at six or more larvae (item 38), morph one larva into a Drone and cancel the egg at once
+(select it, **Escape**). **Working:** the larva is back under the hall and the `Larvae` count is what it
+was. **Before:** the 50 minerals came back and the larva died, because a hall "could not" hold a fourth.
+
+## 40. The computer keeps one Queen at every Hatchery
+
+Play against a **normal** computer Zerg, `black sheep wall`, and look at its bases from about minute six (it
+needs a Queen's Nest first; the starting Queen covers the main until then). **Working:** each Hatchery, Lair
+or Hive has its own Queen hovering beside it and each gets the purple inject ring; a Queen hatched at the
+main flies to the new hall she was made for; when the computer's army marches out, the Queens stay behind.
+**Before:** one Queen for the whole game, injecting only the two halls within 26 tiles of her, and she left
+with the army. Test-only detail: `node test/queens.js --verbose` prints the ten-minute count on the measured
+seed (Queens equal to halls from minute nine).
+
+## 41. Larvae come off the fullest Hatchery
+
+Invisible from play by design — it is the computer's choice of larva. `node test/queens.js` section 6:
+with two larvae at one hall and nine at another, the computer morphs from the nine. **Before:** the oldest
+larva in the game, which drained the oldest hall first while an injected one sat full.
+
+## 42. A geyser no longer dies when a worker inside it is re-ordered
+
+Any race. You cannot select a worker that is inside a Refinery, Extractor or Assimilator, so this is hard to
+provoke by hand; `node test/review17.js` section 18 does it directly. **Working:** the worker comes out on
+its new order, the next worker goes in, gas keeps arriving. **Before:** the worker never came out, the
+building counted it as its occupant for the rest of the game, and no gas was mined there again. The
+computer did this to itself whenever it rebalanced gas workers: in the eight-player test game one Zerg's two
+Extractors were dead from minute five with three Drones each standing outside, and it banked 3,376 minerals
+it had no gas to spend. To see it in play: watch a computer Zerg's Extractors for a few minutes — the geyser
+numbers keep falling now.

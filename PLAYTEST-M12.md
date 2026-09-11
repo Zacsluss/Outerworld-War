@@ -45,7 +45,7 @@ below feels remarkable in the first five minutes, that is the intended result.
 | race | ability | key | cost | what it does |
 |---|---|---|---|---|
 | Terran | **Call Down MULE** (Orbital Command) | `M` | 50 energy | A temporary worker that mines hard, then expires |
-| Zerg | **Spawn Larva** (Queen → hatchery) | `L` | 25 energy | Extra larvae after a delay, capped at 3 |
+| Zerg | **Spawn Larva** (Queen → hatchery) | `L` | 25 energy | Three more larvae after a delay, up to twelve (was: refilled to 3 — changed after REVIEW-M17, see PLAYTEST-M17 item 38) |
 | Protoss | **Chrono Boost** (Nexus) | `C` | 50 energy | Accelerates one structure for 20s; **cannot stack** on the same building |
 
 - **Warp gates.** Research **Warp Gate** at the Cybernetics Core, then morph a Gateway into a **Warp

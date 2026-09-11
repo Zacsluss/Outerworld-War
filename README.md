@@ -20,7 +20,7 @@ For a game over the internet, run `PLAY-ONLINE.bat` instead: it starts the same 
 - All three races with every Brood War unit, building, upgrade and research, using BW stats, costs, build times, ranges, cooldowns (with BW's -1..+2 frame jitter) and speeds, simulated at 24 ticks/s.
 - Fog of war that remembers: explored ground shows the last state one of your units saw of every enemy building, corrected only by looking again. With the high-ground rule, cloak/burrow and detection, Ensnare and Plague revealing cloaked units, damage types vs unit sizes, shields, splash rings, glaive bounce, lurker lines, Dark Swarm misses, friendly-fire rules per weapon.
 - Ground units have turn rates (tanks, vultures, dragoons rotate before moving); flyers accelerate, brake and drift.
-- Economy, supply, production queues, rally points, larva (a Zerg player starts with a Queen, whose Spawn Larva refills a hatchery), add-ons, lift-off, warp-in and psi power, creep, building and unit morphs, Archon merging, transports and bunkers, Nydus Canal transit, Infest Command Center, Terran buildings burning below one third health.
+- Economy, supply, production queues, rally points, larva (a Zerg player starts with a Queen, whose Spawn Larva adds three larvae to a hatchery, up to twelve), add-ons, lift-off, warp-in and psi power, creep, building and unit morphs, Archon merging, transports and bunkers, Nydus Canal transit, Infest Command Center, Terran buildings burning below one third health.
 - Killable Interceptors that launch, swoop and dock, and Scarabs that path to their target and can fizzle.
 - All 30 spells: Stim, Siege Mode, Cloak, Lockdown, Nuke, Spider Mines, Defensive Matrix, EMP, Irradiate, Yamato, Heal, Restoration, Optical Flare, Scanner Sweep, Burrow, Parasite, Ensnare, Spawn Broodlings, Dark Swarm, Plague, Consume, Psionic Storm, Hallucination, Feedback, Mind Control, Maelstrom, Disruption Web, Recall, Stasis Field, Shield Battery, Arbiter cloaking field.
 
@@ -57,7 +57,7 @@ Left click select, drag to box-select, right click for smart commands. `A` attac
 
 ```bash
 node broodwar/test/features.js      # 87 gameplay checks
-node broodwar/test/all.js                   # the gate: 74 fast deterministic checks, in parallel (~3 min); green before every commit
+node broodwar/test/all.js                   # the gate: 75 fast deterministic checks, in parallel (~3-4 min); green before every commit
 node broodwar/test/rates.js                 # every weapon's observed rate of fire matches its table entry
 node broodwar/test/cardsay.js               # every greyed command-card button explains itself when pressed
 node broodwar/test/wrongthing.js            # do the wrong thing on purpose: nothing crashes, nothing wedges

@@ -785,7 +785,7 @@ reverted. Zerg buys upgrades it does not live to use. Treat this lever as closed
 ```bash
 node test/serve.js 8765          # or double-click PLAY.bat; prints LAN URL
 node test/features.js            # 87 gameplay checks
-node test/all.js                   # the 74 fast deterministic checks, in parallel (~3 min)
+node test/all.js                   # the 75 fast deterministic checks, in parallel (~3-4 min)
 node test/rates.js                 # every weapon's observed rate of fire matches its table entry
 node test/cardsay.js               # every greyed command-card button explains itself when pressed
 node test/wrongthing.js            # do the wrong thing on purpose: nothing crashes, nothing wedges

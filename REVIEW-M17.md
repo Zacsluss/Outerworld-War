@@ -3,13 +3,16 @@
 **This file is the review's workspace and its deliverable.** It is committed at the baseline with the
 scope, the rules and the map already filled in; the review fills in the two lists at the bottom.
 
-> **OUTCOME (2026-09-11, two sessions).** The review is done and its ten questions are answered and carried
-> out: **16 commits** since `pre-review-m17`, every one gated. The four lists at the bottom are filled in —
-> 24 open tasks, 10 questions with a decisions table saying what each became, 17 things fixed, 13
-> deliberately not done. The gate is **74 suites**. Facts in the brief above that moved: the fourth known
-> red (`net_many`) is gone (the assertion was wrong and was replaced); `eightplayer` was never "19/19 by
-> 4%" at that tree, is 19/19 now, and stays out of the gate as a measurement; the gate's `aistyles` seed
-> is 1. The build stamp is `bb40caab900717ee` at the last simulation change; the appendix is regenerated.
+> **OUTCOME (2026-09-11, three sessions).** The review is done and its ten questions are answered and carried
+> out: **16 commits** since `pre-review-m17` in the first two sessions, every one gated; a third session took
+> the user's three Zerg notes (open tasks 25-27, and 23 with them) and fixed a wedged-geyser fault found while
+> measuring them (entries 18 and 19). The four lists at the bottom are filled in — 30 open tasks (4 of them
+> done since they were listed, 2 found by the third session), 10 questions with a decisions table saying what
+> each became, 19 things fixed, 15 deliberately not done. The gate is **75 suites**. Facts in the brief above
+> that moved: the fourth known red (`net_many`) is gone (the assertion was wrong and was replaced);
+> `eightplayer` was never "19/19 by 4%" at that tree and is 18/19 by hand now — its MONEY line green for
+> the first time since FIXLIST-M15 C3, its "nothing wedged" line red (open task 29); the gate's `aistyles`
+> seed is 1. The build stamp is `7f822858401946ae` at the last simulation change; the appendix is regenerated.
 > `HANDOFF-M17.md` carries the kickoff prompt; `PLAYTEST-M17.md` says how to see each fixed item by hand.
 
 ---
@@ -155,8 +158,9 @@ Fill in the two lists below, in this file, and commit it.
 
 # 1. Open tasks / to-dos
 
-**NEXT UP — the user's three Zerg notes (2026-09-11, end of the second session), measured and queued as
-tasks 25-27 below; take them first, then task 1 and task 23.** Then the Tauri relay question, task 28.
+**NEXT UP (2026-09-11, end of the third session): task 1 (the HUD overrides; needs the game open in a
+browser), then task 28 (the relay has to ship with the Tauri app), then the two faults the third session
+measured and left open, 29 and 30.** Tasks 23, 25, 26 and 27 are done — section 3, entry 18.
 
 Each entry names the file, what is wrong, the fix, and what it would cost. Everything measured says so;
 "reviewer" means one of the six read-only region reviews, whose claims were verified before they were
@@ -292,39 +296,26 @@ listed here. Ordered by what I would do first.
     vs 25) should read the ability; `HOVER` in `abilities.js` and `hover: true` in the data disagree
     on membership (six ids vs three); `seenSup` decays per call, not per frame; `AI_COMP` lists the
     Raven and Disruptor (see 7).
-23. **The AI's Queen follows the army.** `supportUnits()` lists `queen`, so once the army leaves the
-    base she goes with it, out of `injectHall`'s 26-tile reach, and stops injecting. Keep a Queen home
-    while any hatchery is short of larvae (or exclude her from `supportUnits()` until every hatchery is
-    full). Cost S; changes what the AI's army carries, so run the canaries.
+23. **The AI's Queen follows the army.** **DONE** with task 26 (entry 18): a Queen homed to a hall is not a
+    `supportUnits()` member, injects her own hall first, and flies back when idle away from it. (The fault
+    as listed: `supportUnits()` listed `queen`, so once the army left she went with it, out of
+    `injectHall`'s 26-tile reach, and stopped injecting.)
 24. **`tools/`:** `raster.js` exports `mesh`, `V`, `M` and `models.js` exports `C` with no consumer;
     `bake.js` writes `META.dirs` into `assets/atlas.js` (16) while five units bake at 32 and
     `js/atlas.js` never reads it. Cosmetic; a re-bake is not worth it for this alone.
-25. **Spawn Larva should raise a hatchery's larvae to 12; today it only refills to 3.** Measured in the
-    code: natural spawning stops at three (`Unit.tickBuilding`, `if (this.larvae.length < 3)`), and the
-    inject resolution in `Abilities.tickFields` spawns `for (n = larvae.length; n < cap; n++)` with
-    `larva_inject.cap = 3` — M12 item 11 chose "fill, don't raise". The user's rule: **with Spawn Larva a
-    hatchery, lair or hive may hold up to 12 larvae; without it, exactly as today (three, spawning one
-    per `LARVA_TIME`).** Fix: `larva_inject` gets `per: 3, cap: 12`; the resolution adds `per` larvae up
-    to `cap`; natural spawning keeps its `< 3` and is untouched; `AI.injectHall` skips a hall at the
-    new cap or already injecting (not one at three). `test/zerg12.js` asserts the M12 behaviour ("inject
-    fills a hatchery rather than raising its ceiling") and must change with it — read it first. Cost S.
-    Moves the stamp; changes Zerg macro for players and AI alike; on the balance list.
-26. **The AI has one Queen for the whole game and injects only the two hatcheries nearest her.** Measured
-    (`.claude/review/larva-probe.js`, a solo Zerg AI, normal and hard, ten minutes): Queens by minute =
-    1 throughout (the starting one; the AI never trains another though it ends with 227-355 gas), and
-    injects per hall = 8/10/0/0/0 (normal), 9/7/0/0/0 (hard) — `injectHall` reaches 26 tiles from where
-    she is, and the expansions are farther. The user's rule: **Queens are produced for all hatcheries,
-    lairs and hives, and each one is injected.** Fix: a macro rule `queens < halls → train a Queen` when
-    affordable (100/100; place it above the composition's top pick, as supply is), each Queen homes to
-    a hall (`queen.home`; `injectHall` prefers her home, and she flies there when idle), and
-    `supportUnits()` leaves a homed Queen out of the army (open task 23 is the same fault from the
-    other side). Measure with the probe: injects on every hall, larvae never sitting at cap while a
-    Queen has energy. Cost M. Changes what the AI builds and where its Queens are; run the canaries.
-27. **Are larvae used from every hatchery?** Yes — measured: at ten minutes every hall's larvae read 0
-    and the later hatcheries never sat at their cap (seconds at cap: 59/64/18/0/0 of 600). `AI.train`
-    takes `this.mine(u => u.def.larva)[0]`, the oldest larva in `G.units` order, which drains the
-    oldest hatchery first; with task 25's higher cap that becomes a real waste, so pick the larva from
-    the hatchery holding the most. Cost S, part of task 25.
+25. **Spawn Larva should raise a hatchery's larvae to 12; today it only refills to 3.** **DONE** (entry 18,
+    commit `6c2687e`): `larva_inject` is `per: 3, cap: 12`; a hall on its own still spawns to three
+    (`LARVA_NATURAL`, stamped); a cast on a full hall is refused and refunded; a cancelled egg returns to a
+    hall above three. `test/zerg12.js` section 4 pins the new rule. On the balance list.
+26. **The AI has one Queen for the whole game and injects only the two hatcheries nearest her.** **DONE**
+    (entry 18, commit `6c2687e`): measured cause — production() asked for her on 215 thinks and afford()
+    refused every one, because a unit that is not the top pick is not a claim. She is budget claim 5 now
+    (above the head step, by measurement), trained in `macro()` independently of the composition table,
+    homed to a hall (`u.home`), injecting her own hall first, flying back when idle, out of the army.
+    After: Queens equal to halls by minute nine on four of four measured arms, every finished hall injected.
+27. **Are larvae used from every hatchery?** **DONE** (entry 18, commit `6c2687e`): `AI.train` takes the
+    larva from the fullest hall (`pickLarva()`, ties in `G.units` order) instead of the oldest larva in
+    the game, which drained the oldest hall first.
 28. **Peer hosting in a Tauri build.** Decision (2026-09-11): multiplayer is peer-hosted only, no server
     of yours. `test/serve.js` is a Node process; a Tauri app ships a webview, not Node, so a sold copy
     cannot host a game until the relay ships with it — as a bundled Node sidecar, or as a port of
@@ -332,6 +323,21 @@ listed here. Ordered by what I would do first.
     protocol. Until then `PLAY.bat` / `PLAY-ONLINE.bat` on the host's machine is the way. Cost M for a
     sidecar, L for a port; the protocol is pinned by `test/rooms.js`, `test/net.js` and
     `test/net_many.js`, which a port would have to pass.
+29. **An uprooted Sunken Colony with a `land` order it cannot complete grinds forever.** Measured
+    (`.claude/review/ep-stuck.js`, the eight-player game at commit `bfee3d2`): Sunken Colony #274 of
+    player 7 at tile 58,38 (walkable) holds `order.type === 'land'` with `path` null and `moving` false,
+    and its `stuck` counter reaches 582 by 540 s — `moveTo` adds 3 per frame when no slide is passable
+    and returns before its watchdog, so nothing ever drops the order. `test/eightplayer.js`'s "nothing
+    wedged itself for good" (`maxStuck < 400`) is red on this deal because of it (it read 0 on the
+    previous deal). Fix: the `land` case in `Unit.tickOrder` should give up through `moveFailed` like
+    every other walk, or re-root where it stands when the spot is blocked; pin it beside the crawler
+    section of `test/zerg12.js`. Cost S; probe the root spot first (creep? a unit standing on it?).
+30. **The AI never rebuilds a destroyed tech building.** Measured in the same game: Zerg player 1 ends
+    with a Hive and no Queen's Nest (`hasReq(queen)` false, `scriptIdx` 19, head `greater_spire`) — the
+    nest was built at step 20, lost in a raid, and `script()` only walks forward, so task 26's Queen rule
+    can never fire for that player again and every Queen's Nest tech is gone for the game. Fix: when a
+    passed step's building is missing, put it back at the head (or a rebuild pass over `AI_SCRIPT`
+    entries whose `count()` is zero). Cost S-M; changes what the AI spends on after a raid — canaries.
 
 # 2. Questions and decisions for the user
 
@@ -777,6 +783,72 @@ The questions as they were put, kept for the record:
     alpha; while the tile is visible nothing comes from memory; the ghost is a proxy and the unit is
     untouched; plus two static checks on the draw list. **Negative control:** the memory pass returning
     nothing → two clean reds; the draw-list wiring dropped → one clean red. **Gate:** 74 of 74, 168 s.
+18. **The user's three Zerg notes: Spawn Larva stacks a hall to twelve, a Queen per hatchery kept at home,
+    larvae from the fullest hall.** *(commit `6c2687e`; tasks 25, 26, 27, and 23 with them; third session)*
+    **Measured first** (`.claude/review/larva-probe.js`, a solo Zerg AI, normal and hard, ten minutes):
+    Queens by minute = 1 throughout, 227-355 gas banked, injects on 8/10/0/0/0 of the halls, every hall's
+    larvae at zero. `queen-why.js`: production() asked for a Queen on 215 thinks and afford() refused every
+    one — 176 for the reserve, 39 flat broke — because she was never the composition's top pick and so
+    never a claim.
+    - **Spawn Larva adds three per cast, up to twelve** (`larva_inject: per 3, cap 12`, SC2's rule). A hall
+      on its own still spawns to three: `LARVA_NATURAL` (stamped) is what `tickBuilding` and `setupStart`
+      read now, so the natural count and the hall's ceiling are two named numbers. A cast on a full hall is
+      refused out loud and refunded. A cancelled egg returns to a hall holding more than three (the
+      egg-cancel read the literal 3 and killed it, refund and all). The card text says three and twelve.
+      `test/zerg12.js` section 4 pins the new rule the way it pinned the old.
+    - **A Queen per hatchery, lair and hive.** A budget claim of her own, placed by measurement
+      (`queen-pos.js`, normal and hard, seeds 3 and 5, fifteen minutes): below the head step and the next
+      upgrade ("above the top pick", as the task said) two of the four arms never reached one Queen per
+      hall — the head and the upgrade held her gas for the whole game; above the head step all four did by
+      minute nine, and the Lair, Spire and Hive landed at the same second on three arms and a minute later
+      on the fourth. The seven claims that existed keep their order. Trained in `macro()` independently of
+      the composition table (the rusher zeroes her weight there; control C9 showed the line is otherwise
+      redundant, which is what its comment says). Homed to a hall — `u.home`, a Unit reference the snapshot
+      tags like `hatch`; `homeQueens()` repairs the pairing (a Queen whose hall died is unhomed, a hall
+      with no living Queen takes the nearest unhomed one) rather than recomputing it. A homed Queen
+      injects her own hall first (`injectHall`), flies back when idle more than five tiles away (a micro
+      clause ahead of the tumour one), and is not a `supportUnits()` member — open task 23 from the
+      other side. A Queen with no hall to keep still follows the army as before.
+    - **`AI.train` takes the larva from the fullest hall** (`pickLarva()`), ties in `G.units` order.
+    **After:** Queens equal to halls by minute nine on four of four arms; every finished hall injected.
+    **Tests:** `test/queens.js`, 25 checks, in the gate (75): the data and the constant, the egg, the
+    ten-minute AI game (Queens, injects per settled hall, distinct homes, none in `supportUnits`),
+    `injectHall`'s home preference and its fall-backs, the fly-home clause with an unhomed control,
+    `train()` through the fullest hall, the snapshot round trip. **Negative controls** (`tools/control.js`,
+    nine, every one a clean red, every file restored byte-identical): cap 12→3 (2 reds zerg12, 4 queens —
+    the AI game falls to 4 Queens for 7 halls), the resolution capped at three (4), the egg-cancel literal
+    (1), the claim removed (4: Queens 1/5, the measured "before"), the oldest larva (4), the homed Queen
+    back in `supportUnits` (1), no home preference (1), no fly-home clause (2). **Canaries:** aistyles seed
+    1 clean (the gate's), seed 5 one red (the known economy line, 57 vs 61), seed 11 clean (was two reds);
+    eightplayer re-dealt to 340/3376/245/344/424/117/125/269 — the 3376 is what led to entry 19.
+    **Gate:** 75 of 75, 210 s. The stamp moved. On the balance run's list.
+    **Traps met:** a solo AI against an AI-less human wins in about nine minutes, after which `G.tick` is a
+    no-op and every reading freezes — a "stuck" Queen was a finished game; a probe that counts seconds at
+    the cap must read the new cap, not three.
+19. **A worker re-ordered inside a gas building never left it, and the geyser was dead for the game.**
+    *(commit `bfee3d2`)* Found measuring entry 18 in the eight-player game: one Zerg banked 3,376 minerals
+    with both extractors at 4,200 and 4,520 gas from minute five to the end, three drones on each
+    (`ep-gas.js`, `ep-gasdrones.js`). `Unit.tick` returns early for anything `inside` that is not
+    mid-gather, and `applyOrder` never cleared `inside`, so a drone re-ordered while inside stopped ticking
+    for good and stayed the building's `occupant` — alive, order `gather` — so no other drone could enter.
+    The trigger (`ep-gastrigger.js`): `AI.economy`'s gas rebalancing pulled a drone off gas at 291 s (want
+    fell to zero on gas over 400 with minerals under 150) and sent the nearest free drone back at 292 s —
+    the same one, still inside, at distance zero. The pre-change tree had the same wedge on one of the two
+    extractors in the same game; the re-deal made it both. **Fix:** `applyOrder` ejects a unit from a gas
+    building when its order changes — occupant freed, `inside` cleared, placed where the gather cycle puts
+    a finished worker; the cycle's own exit clears `inside` before it calls `applyOrder` and is untouched;
+    bunkers and transports are not gas buildings. **Test:** `test/review17.js` section 18 (4 checks): a
+    drone inside becomes the occupant; re-ordered, she comes out, the slot is free, she moves, the next
+    drone gets in and the geyser pays. **Control:** the eject line removed → three clean reds. **After:**
+    eight-player banks 337/286/454/496/196/28/49/260 — every AI under 500 minerals, the money line green for
+    the first time since FIXLIST-M15 C3; the suite stays out of the gate, and its "nothing wedged" line is
+    red on this deal (open task 29). **Also fixed here:** `test/alerts.js`'s live check matched the supply
+    message by text, and two mechanisms speak it — `tickAlerts` (the alert it is about) and
+    `G.supplyRefused` for an order refused for supply (one voice, on purpose). The re-dealt ZP game sampled
+    a refusal from a unit morph at 84.5/85 and called it a lie (`alert-lie.js`); bisected, reverting any
+    one of the three changes re-dealt it green, so the test model was the thing that was wrong. It notes
+    the refusal frames and judges those messages by the refusal's own truth. **Gate:** 75 of 75, 229 s.
+    The stamp moved.
 
 # 4. Considered and deliberately not done
 
@@ -819,6 +891,15 @@ The questions as they were put, kept for the record:
 13. **The AI reviewer's behaviour fixes** (open tasks 4, 5, 7, 8, 9): each changes what the computer
     does; `eightplayer` is already red and `aistyles` seeds 1 and 11 are known reds, so a behaviour
     change now would muddy the two canaries the balance work will need. Flagged with their probes.
+14. **The Queen claim below the head step** (position 7 — "above the composition's top pick", as task 26 was
+    written). Measured and rejected (entry 18): two of four arms never reached a Queen per hall in fifteen
+    minutes, the head step and the next upgrade holding her gas. Above the head step it costs at most a
+    minute of tech on one arm. Neither placement reorders the seven claims that existed; the gated claim
+    order is untouched.
+15. **Fixing the uprooted crawler's endless `land` order (task 29) and the AI's lost tech buildings (task
+    30) in the third session.** Both measured, both real, both outside the three notes that were asked
+    for; each changes unit or AI behaviour and re-deals every AI sample, so they are open tasks with their
+    probes named.
 
 ---
 
@@ -827,28 +908,28 @@ The questions as they were put, kept for the record:
 Regenerate at any time with `node tools/inventory.js --md`. Every description below is the file's own
 first comment line, so it cannot drift from the file.
 
-### js/ — the game  — 24 files, 17,736 lines
+### js/ — the game  — 24 files, 17,823 lines
 
 | file | lines | eol | what it is |
 |---|---:|---|---|
-| `abilities.js` | 932 | CRLF | Abilities & spells, status fields, auto-cast behaviours. |
-| `ai.js` | 1920 | CRLF | Computer opponent: scripted opening, macro loop, army control, basic micro. |
+| `abilities.js` | 937 | CRLF | Abilities & spells, status fields, auto-cast behaviours. |
+| `ai.js` | 1980 | CRLF | Computer opponent: scripted opening, macro loop, army control, basic micro. |
 | `atlas.js` | 65 | CRLF | Runtime loader for baked sprite sheets (assets/atlas.js + PNGs). |
 | `audio.js` | 254 | CRLF | Voice (Web Speech synthesis, original lines) and generative ambient music. |
 | `build.js` | 176 | CRLF | Build stamp. Saves and replays are a seed plus a command log, so they only |
 | `codex.js` | 579 | CRLF | CODEX -- the field manual (M11 wave two, idea 25). |
 | `combat.js` | 123 | CRLF | Combat: weapon firing, splash, special attack types, projectiles. |
 | `commands.js` | 166 | CRLF | Deterministic RNG, command interception/recording, replay + save/load. |
-| `data.js` | 2083 | CRLF | Brood War data tables. Times are in game frames (24/s = "Fastest"). |
+| `data.js` | 2086 | CRLF | Brood War data tables. Times are in game frames (24/s = "Fastest"). |
 | `editor.js` | 330 | CRLF | In-browser map editor. Paints the height grid (low / ramp / high) and rocks, |
 | `fx.js` | 369 | CRLF | FX: particles (render-side), ground decals (scorch, blood, corpses), |
-| `game.js` | 1203 | CRLF | Game state container G: units, players, spatial hash, vision, production, |
+| `game.js` | 1206 | CRLF | Game state container G: units, players, spatial hash, vision, production, |
 | `hud.js` | 1002 | CRLF | HUD: BW-style console (minimap, unit panel, command card), resource bar, |
 | `map.js` | 1792 | CRLF | Map: terrain grid, cliffs/ramps, resources, creep, psi power, placement. |
 | `missions.js` | 621 | CRLF | Scenario missions: scripted setups with custom objectives and briefings. |
 | `net.js` | 147 | CRLF | LAN multiplayer client: deterministic lockstep over a WebSocket relay. |
 | `render.js` | 1610 | CRLF | Renderer: composes terrain chunks, creep, decals, sprites, effects, fog. |
-| `sim.js` | 673 | CRLF | Simulation core: Game state, Player, Unit, orders, movement, combat, |
+| `sim.js` | 689 | CRLF | Simulation core: Game state, Player, Unit, orders, movement, combat, |
 | `snapshot.js` | 219 | CRLF | Simulation snapshots. A replay is a seed plus a command log, so seeking |
 | `sprites.js` | 102 | CRLF | Sprite cache: pre-renders unit painters per facing (16 dirs, 32 for a few) and building |
 | `sprites_buildings.js` | 346 | CRLF | Building sprite painters (static) + animated overlays. Origin = footprint |
@@ -856,7 +937,7 @@ first comment line, so it cannot drift from the file.
 | `terrain.js` | 625 | CRLF | Terrain renderer: procedural "Badlands"-style tileset. Chunk-cached. |
 | `ui.js` | 1998 | CRLF | UI: input, selection, command card, console panel, minimap, hotkeys, |
 
-### test/ — the suites  — 106 files, 21,069 lines
+### test/ — the suites  — 107 files, 21,340 lines
 
 | file | lines | eol | gate | what it is |
 |---|---:|---|---|---|
@@ -865,8 +946,8 @@ first comment line, so it cannot drift from the file.
 | `aiaudit.js` | 134 | CRLF | — | AI audit: watch AI-vs-AI games and count the things a human player would never do. |
 | `aiscripts.js` | 62 | CRLF | ✅ | The AI build scripts have one invariant that is easy to break and expensive to notice: the steps must |
 | `aistyles.js` | 302 | CRLF | ✅ | AI play styles: turtle, rusher, expander, harasser, and 'standard' -- which is the default and must |
-| `alerts.js` | 230 | CRLF | ✅ | Player alerts: idle production, supply block, an empty Carrier, an undefended expansion under attack. |
-| `all.js` | 217 | CRLF | — | The fast, deterministic checks, in one run, with one summary and a non-zero exit on any failure. |
+| `alerts.js` | 240 | CRLF | ✅ | Player alerts: idle production, supply block, an empty Carrier, an undefended expansion under attack. |
+| `all.js` | 218 | CRLF | — | The fast, deterministic checks, in one run, with one summary and a non-zero exit on any failure. |
 | `auras.js` | 92 | CRLF | ✅ | Building auras (M11 wave two, item 11). The data contract is documented at length in js/data.js above |
 | `baked.js` | 71 | CRLF | ✅ | Every unit and building has a baked sprite. |
 | `balance.js` | 81 | CRLF | — | AI-vs-AI balance matrix: every matchup on every layout, both sides, N seeds, run in parallel. |
@@ -938,11 +1019,12 @@ first comment line, so it cannot drift from the file.
 | `proxy_validate.js` | 107 | CRLF | — | Does the cheap proxy in test/proxy.js actually predict the balance number? |
 | `push.js` | 108 | CRLF | ✅ | Unit collision push. M12 wave three, item 14. |
 | `qol.js` | 173 | CRLF | ✅ | M12 wave one: the quality-of-life layer. |
+| `queens.js` | 203 | CRLF | ✅ | REVIEW-M17, the user's three Zerg notes (open tasks 25, 26, 27; task 23 is closed by 26): Spawn Larva |
 | `rates.js` | 255 | CRLF | ✅ | Rate of fire: does every weapon actually fire at the interval the table says? |
 | `refusals.js` | 175 | CRLF | ✅ | FIXLIST-M15 B2 -- a refused ability says WHY, and no ability refuses in silence. |
 | `rejoindiag.js` | 124 | CRLF | — | Diagnostic for the net.js rejoin desync: isolate which of the two things a rejoin does to a snapshot |
 | `renderfeel.js` | 552 | CRLF | ✅ | The three render changes of this commit, checked as far as render code can be checked. |
-| `review17.js` | 381 | CRLF | ✅ | REVIEW-M17 -- the simulation faults the review measured, fixed, and pinned. |
+| `review17.js` | 419 | CRLF | ✅ | REVIEW-M17 -- the simulation faults the review measured, fixed, and pinned. |
 | `review17ui.js` | 259 | CRLF | ✅ | REVIEW-M17 -- the interface faults the review found, fixed, and pinned. |
 | `rooms.js` | 335 | LF | ✅ | Rooms, the join code, the player cap and the configurable lockstep delay. |
 | `saveload.js` | 297 | CRLF | ✅ | Saving and restoring while something is halfway through happening. |
@@ -964,7 +1046,7 @@ first comment line, so it cannot drift from the file.
 | `veterancy.js` | 70 | CRLF | ✅ | Veterancy and scarring (M11 idea 2). Both are derived rather than stored -- rank comes from `kills`, |
 | `wavetarget.js` | 208 | CRLF | ✅ | FIXLIST-M14 D1 (item 6) -- what a wave walks at. |
 | `wrongthing.js` | 651 | CRLF | ✅ | Do the wrong thing on purpose, and require that the game neither crashes nor hangs. |
-| `zerg12.js` | 601 | CRLF | ✅ | M12 wave four, the Zerg half: ten new defs, two macro mechanics, and one promise. |
+| `zerg12.js` | 620 | CRLF | ✅ | M12 wave four, the Zerg half: ten new defs, two macro mechanics, and one promise. |
 | `zoom.js` | 574 | CRLF | ✅ | Strategic zoom, and the render half of day/night. |
 
 ### tools/ — build and diagnostics  — 7 files, 1,733 lines
@@ -983,11 +1065,11 @@ first comment line, so it cannot drift from the file.
 
 | | files | lines |
 |---|---:|---:|
-| `js/` (the game) | 24 | 17,736 |
-| `test/` | 106 | 21,069 |
+| `js/` (the game) | 24 | 17,823 |
+| `test/` | 107 | 21,340 |
 | `tools/` | 7 | 1,733 |
-| **all** | **137** | **40,538** |
+| **all** | **138** | **40,896** |
 
-**In the gate:** 74 of 106 suites.
+**In the gate:** 75 of 107 suites.
 
 **NOT in the gate** (32, deliberately — `test/all.js` says why at the top of the file): `aiaudit`, `all`, `balance`, `balance_ab`, `balance_stats`, `casters`, `diag`, `diverge`, `duel`, `editor`, `eightplayer`, `ledger`, `longgame`, `micro`, `missions`, `net`, `net_many`, `patch10`, `patch11`, `patch15`, `perf`, `perf_render`, `playtest`, `playtest_bot`, `playtest_scripts`, `proxy`, `proxy_validate`, `rejoindiag`, `serve`, `smoke`, `soak`, `techtime`.
