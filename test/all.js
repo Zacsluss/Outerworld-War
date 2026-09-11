@@ -124,6 +124,11 @@ const TESTS = [
   { name: 'cmdlog', args: ['cmdlog.js'], what: 'every order the interface can issue survives the command log: autocast, the ferry route, a dead target, a malformed log' },
   { name: 'review17', args: ['review17.js'], what: 'the simulation faults REVIEW-M17 measured and fixed: Carrier cooldown, status refresh, sieged tank, decloak, larva, worker poll, tick errors, Charon' },
   { name: 'review17ui', args: ['review17ui.js'], what: 'the interface faults REVIEW-M17 fixed: keys in text fields, zoom keys, F8, Tab, the last alert, net speed, rejoin input, the editor loop, per-sim-frame effects, the manual wheel' },
+  // REVIEW-M17 decision 2: green since the larva-starvation clause in AI.macro, and gated the day it went
+  // green, as the note above promised. Deterministic, 37 s. Its money assertion is the canary for AI
+  // spending changes and it passes by 1% (2475 against 2500), so it WILL flip on the next one -- that is
+  // the point of it. The exclusion note above is kept for the history.
+  { name: 'eightplayer', args: ['eightplayer.js'], what: 'eight AIs on a 192x192 map: distinct starts, sane expansion, no floating bank, faster than real time' },
 ];
 
 const argv = process.argv.slice(2);

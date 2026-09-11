@@ -504,7 +504,12 @@ class AI {
   enemies() { return G.players.filter(q => !G.allied(q.id, this.p.id) && !q.defeated && !q.neutral); }
   tick() {
     if (this.p.defeated) return;
-    if (G.frame - this.lastThink < this.thinkEvery) { if (G.frame % 12 === 0) this.micro(); return; }
+    // Micro every 12 frames FOR THIS PLAYER. G.tick runs player i's AI on frames == i (mod 4), and 12 is a
+    // multiple of 4, so `G.frame % 12 === 0` was true only for player 0: players 1-3 never landed on a
+    // multiple of 12, ran micro only on think frames, and turn()'s residues collapsed for them -- on
+    // normal, players 1-2 could never Comsat scan; on easy, no Chrono Boost and no MULE. The human is
+    // player 0, so every computer opponent was the degraded one. Measured in REVIEW-M17 (q8).
+    if (G.frame - this.lastThink < this.thinkEvery) { if ((G.frame - this.p.id) % 12 === 0) this.micro(); return; }
     this.lastThink = G.frame;
     this.budget();
     try { this.phase = 'economy'; this.economy(); this.phase = 'supply'; this.supply(); this.phase = 'script'; this.script(); this.phase = 'macro'; this.macro(); this.phase = 'production'; this.production(); this.phase = 'research'; this.research(); this.phase = 'army'; this.army(); this.scout(); this.drops(); this.micro(); this.phase = null; } catch (e) { G.tickErrors++; console.error('AI', e); }
@@ -702,7 +707,14 @@ class AI {
     // floor that grows with the clock so every race keeps taking ground.
     const st = this.sty(), exT = st.expandT || 1; // an expander runs the same clock faster and starts a base ahead of it; a turtle runs it slower and stays a base behind
     const wantHalls = Math.min(G.map.bases.length, 2 + (st.halls || 0) + Math.floor(G.frame / (24 * 60 * 3 * exT)));
-    if (G.frame - this.lastExpand > 24 * 45 * exT && (p.minerals > 500 || workers > halls.length * 16 || halls.length < wantHalls || ((this.armySup || 0) >= 30 && halls.length < 3)) && this.count(RACE_INFO[r].hall) <= halls.length) { const hd = DATA.buildings[RACE_INFO[r].hall]; if (this.build(RACE_INFO[r].hall, (st.halls || 0) > 0)) { this.lastExpand = G.frame; this.expandDef = null; } else this.expandDef = this.pickExpansion() ? hd : null; } else this.expandDef = null; // released the moment the rule stops asking, so an AI that is done expanding does not sit on a hall's worth of minerals -- but NOT cleared before the attempt above, or claimed() would not recognise the very claim budget() is holding and the expansion would be refused by its own reserved money // ...but an EXPANDER keeps its forced expansion: taking ground before teching is the whole style, and yielding it cost a base against standard // start saving as soon as a free base exists, or the army eats the money forever
+    // LARVA-STARVED. Every Zerg unit comes off a larva, so once income outruns what the hatcheries can
+    // hatch the bank grows and nothing spends it: test/eightplayer.js measured three Zerg AIs at 2,000-
+    // 2,600 minerals with ZERO larvae and six eggs each, on a map with no base left to take. The floor
+    // above was already met (six halls against five wanted); what held them was the 45-second cadence
+    // on a new hatchery. A Zerg with over a thousand minerals and no larva in hand may add one every
+    // fifteen seconds instead -- what a human does. Still one at a time (the count() guard). (REVIEW-M17, q2)
+    const larvaStarved = r === 'Z' && p.minerals > 1000 && !this.mine(u => u.def.larva).length;
+    if ((G.frame - this.lastExpand > 24 * 45 * exT || (larvaStarved && G.frame - this.lastExpand > 24 * 15)) && (p.minerals > 500 || workers > halls.length * 16 || halls.length < wantHalls || ((this.armySup || 0) >= 30 && halls.length < 3)) && this.count(RACE_INFO[r].hall) <= halls.length) { const hd = DATA.buildings[RACE_INFO[r].hall]; if (this.build(RACE_INFO[r].hall, (st.halls || 0) > 0)) { this.lastExpand = G.frame; this.expandDef = null; } else this.expandDef = this.pickExpansion() ? hd : null; } else this.expandDef = null; // released the moment the rule stops asking, so an AI that is done expanding does not sit on a hall's worth of minerals -- but NOT cleared before the attempt above, or claimed() would not recognise the very claim budget() is holding and the expansion would be refused by its own reserved money // ...but an EXPANDER keeps its forced expansion: taking ground before teching is the whole style, and yielding it cost a base against standard // start saving as soon as a free base exists, or the army eats the money forever
     // more production when floating
     // production capacity should track income: roughly one production building per 4 workers
     const prodWant = Math.min(10, Math.max(2, Math.floor(workers / 4)));
@@ -772,7 +784,7 @@ class AI {
       if (read === 'massing' && ((ud.gw && ud.gw.splash) || (ud.aw && ud.aw.splash))) w *= 1.8; // a big cheap army dies to splash
       if (read === 'massing' && (ud.min + ud.gas) <= 75 && !ud.worker) w *= 0.7;         // ...and trading cheap units into it is how you lose
       if (read === 'teching' && (ud.min + ud.gas) <= 125 && !ud.worker) w *= 1.5;        // they are buying something expensive: be there before it arrives
-      if (needDet && ud.detector) w *= 2.5;                                              // something we saw needs a detector to shoot at
+      if (needDet && ud.det) w *= 2.5;   // `det`, the key the data uses; this read `detector` and never fired (REVIEW-M17, q8)                                              // something we saw needs a detector to shoot at
       if (ud.from !== 'larva' && !this.mine(b => b.isBuilding && b.done && b.def.produces.includes(id)).length) continue;
       const sup = (ud.sup || 1) * (ud.pair ? 2 : 1); cands.push([((counts[id] || 0) * sup + sup) / w, id, w, sup]); // weights are a share of army supply, so cheap units cannot crowd out the rest; w and sup ride along so the score can be recomputed after a train
     }
@@ -1144,8 +1156,10 @@ class AI {
   // ...and anything we would need a detector to shoot at.
   sawCloak() {
     const I = this.observe();
-    for (const k of Object.keys(I.unit)) { const d = DATA.units[k]; if (d && (d.cloak || d.burrow || d.permaCloak)) return true; }
-    return ['covert_ops', 'control_tower', 'templar_archives', 'hydralisk_den'].some(b => I.bld[b]);
+    // Cloak and burrow are ABILITIES, not flags: `d.cloak || d.burrow` was true for no unit, so this could
+    // only go true off a Dark Templar, an Observer or the four buildings. (REVIEW-M17, q8)
+    for (const k of Object.keys(I.unit)) { const d = DATA.units[k]; if (d && (d.permaCloak || (d.abil || []).some(a => a === 'burrow' || a === 'cloak_ghost' || a === 'cloak_wraith'))) return true; }
+    return ['covert_ops', 'control_tower', 'templar_archives', 'hydralisk_den', 'observatory', 'arbiter_tribunal'].some(b => I.bld[b]);
   }
   // ARE WE ABOUT TO BE OVERRUN? The other half of "sometimes massing tier 1 is the right answer":
   // holding 200 minerals for a Spire is correct against an opponent who is teching too, and suicidal
@@ -1350,9 +1364,9 @@ class AI {
     return best;
   }
   // micro() does not run every frame. think() runs it on multiples of 12 and on each full think, so
-  // the only values G.frame % 16 ever takes in here are {0,4,8,12} -- measured, not reasoned, FOR PLAYER 0;
-  // players 1-3 tick on other residues and never on a multiple of 12, so for them micro runs only on
-  // think frames and this table collapses differently (REVIEW-M17 open task, measured there). Every
+  // the only values G.frame % 16 ever takes in here are {0,4,8,12} -- measured, not reasoned. (Until
+  // REVIEW-M17 that was true for player 0 only; think() keys the cadence on the player's own tick now,
+  // so every AI lands on a multiple of 12 of its own and the residues below cycle for all of them.) Every
   // stagger below was written as (G.frame + id) % N === 0, which therefore came true only for ids in a
   // quarter to an eighth of the residue classes, and did so for the whole life of the unit: a defiler
   // whose id was not a multiple of 4 could not cast dark swarm however long it lived. That is most of

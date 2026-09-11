@@ -104,7 +104,7 @@ const BUILD = {
   // Data, hashed by walking it (ser): tables, sets, and the objects of pure functions map generation runs.
   TABLES: ['DATA', 'RACE_INFO', 'TURN', 'ACCEL', 'MAP_LAYOUTS', 'NO_BROODLING', 'AI_SCRIPTS', 'AI_COMP', 'AI_RESEARCH',
     'DMG_MULT', 'MAP_SIZES', 'HAZARDS', 'MapModes', 'MAP_FEATURES', 'Archetypes', 'SIEGE_W', 'EQUIV', 'BURROW_SURFACES',
-    'SEP_DIRS', 'FACE_MULT', 'HOVER', 'Z12_ASPECTS',
+    'SEP_DIRS', 'FACE_MULT', 'HOVER', 'Z12_ASPECTS', 'ENERGY_TECH',
     'CMD.pack'],   // the packers decide the log format; fns() skips them because they are not functions of CMD itself
   // Scalars the simulation reads. A dotted name is a constant that lives on a singleton.
   TUNING: ['TILE', 'TPS', 'FEATURE_ID0', 'FEAT_BLOCKED', 'WRECK_BLOCKED', 'CHURN_SLOW', 'MINE_STRIP',

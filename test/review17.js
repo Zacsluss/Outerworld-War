@@ -25,6 +25,9 @@
 // 10. THE AI MARCHED ON THE WILDLIFE. pickTarget and seenEnemyArmy walked G.units without skipping the
 //     neutral owner; with derelicts on, the wave target was a derelict on three of three seeds.
 // 11. AN ALLIED AI STORMED ITS PARTNER. Twenty-six clauses in AI.micro tested an enemy by owner alone.
+// 12-16. THE DECISIONS (REVIEW-M17 section 2): bunkered infantry fired at double rate; eleven energy techs
+//     did nothing; the 12-frame micro cadence existed only for player 0 and the detector weight never
+//     fired; a larva-starved Zerg could add a hatchery only every 45 s.
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
 let pass = 0, fail = 0;
@@ -262,6 +265,92 @@ function DATA_NAME(c, id) { return R(c, 'return DATA.units[' + JSON.stringify(id
   ok('the slice found AI.micro (negative control for the anchor)', micro.length > 5000, micro.length + ' chars');
   ok('no clause in AI.micro tests an enemy by owner alone', !/o\.owner !== p\.id/.test(micro));
   ok('...and at least twenty-six test it with G.allied (was 26 by owner)', (micro.match(/!G\.allied\(o\.owner, p\.id\)/g) || []).length >= 26, String((micro.match(/!G\.allied\(o\.owner, p\.id\)/g) || []).length));
+}
+
+// ============================================================================
+// 12. bunkered infantry fire at their own rate (REVIEW-M17 decision 7)
+// ============================================================================
+// Unit.tick decremented `cooldown` and the bunker loop decremented it again: 7.5-frame gaps inside a
+// bunker against 15 for a Marine outside. One decrement now.
+{
+  const out = R(ctx, `
+    const p = fresh('T', 'Z'); const hx = p.startX, hy = p.startY;
+    const def = DATA.buildings.bunker; let bunker = null;
+    for (let r = 3; r < 30 && !bunker; r++) for (let k = 0; k < 24 && !bunker; k++) { const a = k / 24 * Math.PI * 2; const tx = Math.round((hx - 200) / TILE + Math.cos(a) * r - def.w / 2), ty = Math.round((hy + 250) / TILE + Math.sin(a) * r - def.h / 2); if (!G.map.canPlace(def, tx, ty, p, G.units, null)) { bunker = G.placeBuilding(def, tx, ty, 0); if (bunker) { bunker.done = true; bunker.hp = bunker.maxHp; bunker.progress = def.time; G.completeBuilding(bunker); } } }
+    if (!bunker) return { noBunker: true };
+    const m1 = sp('marine', 0, bunker.x, bunker.y + 60); m1.setOrder({ type: 'load', target: bunker }); run(200);
+    const [fx, fy] = freeNear(bunker.x + 8 * TILE, bunker.y); const m2 = sp('marine', 0, fx, fy);
+    const t1 = wall(1, bunker.x + 3 * TILE, bunker.y), t2 = wall(1, fx + 3 * TILE, fy);
+    m2.setOrder({ type: 'attack', target: t2 });
+    const gaps = { inside: [], outside: [] }; let li = -1, lo = -1;
+    for (let i = 0; i < 600; i++) { G.tick(); if (m1.lastFire === G.frame) { if (li >= 0) gaps.inside.push(G.frame - li); li = G.frame; } if (m2.lastFire === G.frame) { if (lo >= 0) gaps.outside.push(G.frame - lo); lo = G.frame; } }
+    const avg = a => a.length ? a.reduce((s, v) => s + v, 0) / a.length : null;
+    return { inside: m1.inside === bunker, cd: m1.wCd(m1.def.gw), inGap: avg(gaps.inside), outGap: avg(gaps.outside), nIn: gaps.inside.length, nOut: gaps.outside.length };`);
+  ok('the Marine is inside the bunker and both Marines fired more than once (scene check)', !out.noBunker && out.inside && out.nIn >= 1 && out.nOut >= 1, JSON.stringify(out));
+  ok('a bunkered Marine fires at the same interval as one outside (was 7.5 frames against 15)', out.inGap !== null && Math.abs(out.inGap - out.outGap) < 2 && out.inGap >= out.cd - 1, JSON.stringify(out));
+}
+
+// ============================================================================
+// 13. the eleven energy techs give +50 max energy (REVIEW-M17 decision 9)
+// ============================================================================
+{
+  const out = R(ctx, `
+    const p = fresh('T', 'P'); const [x, y] = freeNear(p.startX + 200, p.startY + 200);
+    const med = sp('medic', 0, x, y), ghost = sp('ghost', 0, x + 30, y), marine = sp('marine', 0, x + 60, y);
+    const before = { med: med.maxEnergy, ghost: ghost.maxEnergy, marine: marine.maxEnergy };
+    p.tech.add('caduceus');
+    const after = { med: med.maxEnergy, ghost: ghost.maxEnergy, marine: marine.maxEnergy };
+    med.energy = 240; run(1); const regen = med.energy;
+    const fresh2 = sp('medic', 0, x + 90, y);
+    return { before, after, regen, fresh2: fresh2.maxEnergy, techs: Object.keys(ENERGY_TECH).length };`);
+  ok('a Medic has 200 max energy before Caduceus Reactor and 250 after; the Ghost and Marine are unchanged', out.before.med === 200 && out.after.med === 250 && out.after.ghost === out.before.ghost && out.after.marine === 0, JSON.stringify(out));
+  ok('...energy regenerates up to the new maximum, and a Medic made after the research has it too', out.regen > 240 && out.fresh2 === 250, JSON.stringify({ regen: out.regen, fresh2: out.fresh2 }));
+  ok('eleven techs name a unit (negative control for the table)', out.techs === 11, String(out.techs));
+}
+
+// ============================================================================
+// 14. every AI runs micro on its own 12-frame cadence, not only player 0 (REVIEW-M17 decision 8)
+// ============================================================================
+{
+  const out = R(ctx, `
+    G.init({ players: [{ race: 'T', human: false, difficulty: 'normal', name: 'A', team: 1 }, { race: 'Z', human: false, difficulty: 'normal', name: 'B', team: 2 }, { race: 'P', human: false, difficulty: 'normal', name: 'C', team: 3 }, { race: 'T', human: false, difficulty: 'normal', name: 'D', team: 4 }], seed: 5, layout: 'temple' });
+    const counts = [0, 0, 0, 0]; const orig = AI.prototype.micro;
+    AI.prototype.micro = function () { counts[this.p.id]++; return orig.call(this); };
+    try { for (let i = 0; i < 1200; i++) G.tick(); } finally { AI.prototype.micro = orig; }
+    return counts;`);
+  const min = Math.min(...out), max = Math.max(...out);
+  ok('over 1,200 frames every player\'s AI ran micro about as often as player 0 did (was 100 for player 0 and ~17 for the rest)', min >= 60 && max - min <= 40, out.join('/'));
+}
+
+// ============================================================================
+// 15. the AI notices cloak: sawCloak reads abilities, and the detector weight reads `det`
+// ============================================================================
+{
+  const out = R(ctx, `
+    const p = fresh('T', 'T'); const ai = new AI(p); ai.intel = { bld: {}, unit: { ghost: 1 }, peak: {} };
+    const ghostSeen = ai.sawCloak();
+    ai.intel = { bld: {}, unit: { marine: 1 }, peak: {} }; const marineSeen = ai.sawCloak();
+    ai.intel = { bld: { observatory: 1 }, unit: {}, peak: {} }; const obsSeen = ai.sawCloak();
+    return { ghostSeen, marineSeen, obsSeen, detUnits: Object.values(DATA.units).filter(d => d.det).length, detectorKey: Object.values(DATA.units).filter(d => d.detector).length };`);
+  ok('having seen a Ghost counts as having seen cloak (was false: `d.cloak` is no unit\'s flag)', out.ghostSeen === true, JSON.stringify(out));
+  ok('having seen only Marines does not; an Observatory does', out.marineSeen === false && out.obsSeen === true, JSON.stringify(out));
+  ok('the detector weight reads the key the data actually uses (`det` on ' + out.detUnits + ' units; `detector` on none)', out.detUnits > 0 && out.detectorKey === 0 && /needDet && ud\.det\)/.test(fs.readFileSync(path.join(root, 'js', 'ai.js'), 'utf8')), JSON.stringify(out));
+}
+
+// ============================================================================
+// 16. a larva-starved Zerg adds a hatchery every fifteen seconds, not forty-five (REVIEW-M17 decision 2)
+// ============================================================================
+{
+  const out = R(ctx, `
+    G.init({ players: [{ race: 'Z', human: false, difficulty: 'normal', name: 'Z', team: 1 }, { race: 'T', human: true, name: 'H', team: 2 }], seed: 2, layout: 'temple' });
+    const p = G.players[0], ai = p.ai; p.minerals = 5000; p.gas = 0;
+    // no larvae, and none coming: kill every larva and stop the hatcheries spawning more
+    for (const l of G.units.filter(u => u.alive && u.owner === 0 && u.def.larva)) G.kill(l, null, true);
+    const halls0 = ai.halls().length; ai.lastExpand = G.frame; ai.scriptIdx = 99;   // past the build order, so macro() is what decides
+    let at = null; const spawnLarva = G.spawnLarva; G.spawnLarva = () => {};
+    try { for (let i = 0; i < 24 * 60 && at === null; i++) { G.tick(); if (ai.mine(u => u.def.worker && u.order.type === 'build' && u.order.def && u.order.def.depot).length) at = G.frame; } } finally { G.spawnLarva = spawnLarva; }
+    return { halls0, larvae: ai.mine(u => u.def.larva).length, minerals: Math.round(p.minerals), secondsToNewHall: at === null ? null : Math.round((at - 0) / 24) };`);
+  ok('with no larvae and a full bank, a drone is sent to build a hatchery inside twenty seconds (was forty-five)', out.secondsToNewHall !== null && out.secondsToNewHall <= 20, JSON.stringify(out));
 }
 
 ok('no JS errors', ctx.errors.length === 0, ctx.errors.slice(0, 3).join(' | '));

@@ -12,7 +12,9 @@ const EQUIV = { hatchery: ['lair', 'hive'], lair: ['hive'], spire: ['greater_spi
 const WIDE_BODY = TILE / 2;
 const MINE_TIME = 75, GAS_TIME = 37, LARVA_TIME = 342, MAX_QUEUE = 5;
 const WORKER_HAUL = 8, GAS_DEPLETED = 2;   // a trip's minerals or gas, and a depleted geyser's; MULE_HAUL in js/abilities.js sits on top of the eight (REVIEW-M17: four literals before)
-const MODE_TRANS = 40;                     // frames a mode change locks a unit: siege and unsiege, the Viking transform, an abducted tank's forced unsiege (three literals before)
+const MODE_TRANS = 40;
+// unit id -> the tech that gives it +50 max energy (each such tech carries `energy: '<unit>'` in js/data.js)
+const ENERGY_TECH = (() => { const m = {}; for (const [id, t] of Object.entries(DATA.techs)) if (t.energy) m[t.energy] = id; return m; })();                     // frames a mode change locks a unit: siege and unsiege, the Viking transform, an abducted tank's forced unsiege (three literals before)
 const MINERS_PER_PATCH = 2;   // Brood War saturates a mineral patch at two workers, not one
 // Creep does not appear, it spreads. A source starts with a small pad and reaches its full radius
 // over about a minute, which is roughly the Brood War rate. Growth is only ever read through
@@ -57,7 +59,7 @@ class Unit {
     this.id = UNIT_ID++; this.def = def; this.owner = owner; this.x = x; this.y = y; this.px = x; this.py = y;
     this.r = def.r || 12; this.isBuilding = !!def.isBuilding; this.alive = true;
     this.maxHp = def.hp; this.hp = def.hp; this.maxSh = def.sh || 0; this.sh = this.maxSh;
-    this.maxEnergy = def.energy || 0; this.energy = def.energy ? 50 : 0;
+    this._maxE = def.energy || 0; this.energy = def.energy ? 50 : 0;   // maxEnergy is an accessor over _maxE; see it below
     this.facing = G.rand() * Math.PI * 2; this.fly = !!def.fly; this.done = !this.isBuilding;
     this.order = { type: 'idle' }; this.queue = []; this.path = null; this.pathI = 0; this.stuck = 0; this.repathT = 0;
     this.cooldown = 0; this.cargo = []; this.inside = null; this.carrying = null; this.lastRes = null; this.heldOrder = false;
@@ -77,6 +79,13 @@ class Unit {
   }
   get player() { return G.players[this.owner]; }
   get name() { return this.def.name; }
+  // MAX ENERGY: the def's pool, +50 once the player owns the tech that names this unit -- Caduceus
+  // Reactor, Khaydarin Amulet, Gamete Meiosis and eight more, see ENERGY_TECH. Those eleven techs were
+  // bought by the AI and by players and did nothing at all: `maxEnergy = def.energy` was the only writer
+  // and nothing read a tech's `energy` key. Stored as _maxE with a setter, so a building morph (G.morph
+  // assigns maxEnergy) and a snapshot written before this accessor existed still land. (REVIEW-M17, q9)
+  get maxEnergy() { const b = this._maxE; if (!b) return 0; const t = ENERGY_TECH[this.def.id]; return t && this.player.hasTech(t) ? b + 50 : b; }
+  set maxEnergy(v) { this._maxE = v; }
   get speed() {
     let s = this.def.speed || 0; const p = this.player, d = this.def;
     if (this.def.speedTech && p.hasTech(this.def.speedTech[0])) s = this.def.speedTech[1];
@@ -278,7 +287,10 @@ class Unit {
     if (this.order.type === 'land') this.tickOrder();
     // defensive weapons
     if ((d.gw || d.aw) && !(this.fx.dweb > 0)) this.tickCombatBuilding();
-    if (d.bunker) { for (const c of this.cargo) { if (c.cooldown > 0) c.cooldown--; c.x = this.x; c.y = this.y; this.acquireFor(c); } }
+    // The cooldown is NOT decremented here. Unit.tick already decremented it before its `inside` return,
+    // so bunkered infantry fired at double rate: a Marine's shots came 7.5 frames apart inside a bunker
+    // against 15 outside (measured). Halving that is a balance consequence, decided in REVIEW-M17 (q7).
+    if (d.bunker) { for (const c of this.cargo) { c.x = this.x; c.y = this.y; this.acquireFor(c); } }
     if (d.battery && this.energy >= 1) Abilities.batteryAuto(this);
   }
   tickCombatBuilding() {

@@ -621,6 +621,32 @@ listed here. Ordered by what I would do first.
     73 suites; README, `HANDOFF.md` and the appendix below (regenerated from `tools/inventory.js`) agree.
     The two worktrees the review made (`review-base`, `review-bisect`) are removed; the 23 older ones
     are question 5.
+12. **Decisions 2, 7, 8 and 9: the eight-player bank, the bunker, the AI cadence and detector, the
+    energy techs.** *(commit: decisions)* Pinned in `test/review17.js` sections 12-16 (44 checks now).
+    - **Question 2, measured first.** The test's own message blamed `wantHalls`; the probe said
+      otherwise: no AI had a base left to take (16 bases, 8 players), every AI was out of gas, and the
+      three Zerg AIs sat at 2,000-2,600 minerals with **zero larvae and six eggs each** — income outran
+      what six hatcheries hatch, and the hall rule allowed one new hatchery per 45 s. A Zerg with over a
+      thousand minerals and no larva may now add one every 15 s (still one at a time). Control: with
+      the clause removed a drone is sent at 45 s, with it at 16 s. **`eightplayer` is 19/19 and in the
+      gate** (74 suites); banks went 2054/2630/108/1749/2092/397/1092/2139 → 234/1198/405/2088/2077/
+      352/1093/2475 — one Zerg still at 2475 against 2500, bounded by hatchery placement room rather
+      than the cadence, so the assertion **passes by 1% and will flip on the next AI change**, which is
+      what a canary is for.
+    - **Bunkered infantry fired at double rate** (`Unit.tick` and the bunker loop both decremented
+      `cooldown`): 7.5-frame gaps against 15, measured; one decrement now, 15 against 15.
+    - **The 12-frame micro cadence existed only for player 0.** `G.tick` runs AI *i* on frames ≡ *i*
+      (mod 4) and 12 is a multiple of 4, so `G.frame % 12 === 0` never came true for players 1-3. Keyed
+      on the player's own tick now; measured over 1,200 frames: 100/17/17/17 micro calls → about equal.
+      **The detector weight had never fired**: it read `ud.detector` (the data says `det`) and
+      `sawCloak` tested `d.cloak || d.burrow`, flags no unit has (they are abilities). Both read the
+      real keys; an Observatory and an Arbiter Tribunal count as cloak tech too.
+    - **Eleven energy techs give +50 max energy** to the unit each names (`ENERGY_TECH`, stamped);
+      `maxEnergy` is an accessor over `_maxE` so a building morph and an older snapshot still assign
+      through it. A Medic is 200 before Caduceus Reactor and 250 after; regen fills to the new cap.
+    **Canaries:** `aistyles` seed 5 green (131), seeds 1 and 11 at their same four known reds — the
+    cadence change did not create a fifth anywhere. **Gate:** 73 of 73, 192 s, before `eightplayer`
+    joined.
 
 # 4. Considered and deliberately not done
 
