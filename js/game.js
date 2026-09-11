@@ -151,7 +151,12 @@ const G = {
     if (hallDef.spawnsLarva) for (let i = 0; i < 3; i++) this.spawnLarva(hall);
     const wd = RACE_INFO[p.race].worker;
     for (let i = 0; i < 4; i++) { const u = this.spawnUnit(wd, p.id, hall.x - 40 + i * 28, hall.y + hall.def.h / 2 * TILE + 24); const m = this.findNearestResource(u, 'mineral'); if (m) u.applyOrder({ type: 'gather', target: m, phase: 'goto' }); }
-    if (p.race === 'Z') this.spawnUnit('overlord', p.id, hall.x, hall.y - 60);
+    // A Zerg player starts with a Queen as well as an Overlord (user decision, REVIEW-M17 second session).
+    // Her 50 starting energy is two Spawn Larva casts the moment a hatchery is short of larvae, which is
+    // the constraint a Zerg economy runs into first: test/eightplayer.js measured three Zerg AIs banking
+    // 2,000+ minerals with zero larvae and no gas to buy a Queen with. Free, so the AI (which trains
+    // Queens only from gas it rarely has) injects from the first minute too.
+    if (p.race === 'Z') { this.spawnUnit('overlord', p.id, hall.x, hall.y - 60); this.spawnUnit('queen', p.id, hall.x + 48, hall.y + 40); }
   },
 
   // ---------------- spatial ----------------

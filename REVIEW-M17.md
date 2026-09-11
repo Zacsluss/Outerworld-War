@@ -289,7 +289,11 @@ listed here. Ordered by what I would do first.
     vs 25) should read the ability; `HOVER` in `abilities.js` and `hover: true` in the data disagree
     on membership (six ids vs three); `seenSup` decays per call, not per frame; `AI_COMP` lists the
     Raven and Disruptor (see 7).
-23. **`tools/`:** `raster.js` exports `mesh`, `V`, `M` and `models.js` exports `C` with no consumer;
+23. **The AI's Queen follows the army.** `supportUnits()` lists `queen`, so once the army leaves the
+    base she goes with it, out of `injectHall`'s 26-tile reach, and stops injecting. Keep a Queen home
+    while any hatchery is short of larvae (or exclude her from `supportUnits()` until every hatchery is
+    full). Cost S; changes what the AI's army carries, so run the canaries.
+24. **`tools/`:** `raster.js` exports `mesh`, `V`, `M` and `models.js` exports `C` with no consumer;
     `bake.js` writes `META.dirs` into `assets/atlas.js` (16) while five units bake at 32 and
     `js/atlas.js` never reads it. Cosmetic; a re-bake is not worth it for this alone.
 
@@ -681,6 +685,27 @@ listed here. Ordered by what I would do first.
     hash after 2,400 frames. Negative control: one `Math.hypot` put back in `sim.js` → two clean reds.
     The `version.js` audit refused a stale edit anchor on the way, which is the guard working. The
     stamp moved; results change by ulps, which is why entry 12's canary re-dealt. **Gate:** 74 of 74, 180 s (with `dmath` in and `eightplayer` out).
+16. **A Zerg player starts with a Queen** (user decision, second session), **and the AI injects with her
+    from the first minute.** *(commit: the starting Queen)* Measured first: Zerg started with a hall, four
+    drones, three larvae and an Overlord; the AI's Queen clause already casts Spawn Larva whenever her
+    energy allows and a hatchery within 26 tiles is short of larvae — it simply had no Queen, because
+    she costs 100 gas and the gas went on tech. Spawn Larva refills a hatchery to its three larvae after
+    ten seconds (M12 item 11 keeps that ceiling on purpose); a starting Queen with 50 energy is two casts
+    as soon as the first drones come off the larvae, and energy regeneration then bounds her to one cast
+    per 33 s. **Eight-player banks with her:** 296/1397/241/2000/926/90/24/1440 (the Zerg AIs were
+    1798/2091/569 the run before; every player under 2,500 for the first time).
+    **What it cost, measured:** the Queen's random starting facing shifts the RNG stream, so every
+    `aistyles` arm is a fresh sample, and seed 5 — the gate's — went red on the four first-wave
+    comparisons. The dump showed why they were fragile: without her they rested on one Protoss arm
+    attacking at frame 10,944 of a 12,000 window, while the test's own comment calls the window "ten
+    minutes" (14,400). The constant now says what the comment says. At ten minutes with the Queen:
+    **seed 1 is clean (131), seed 5 fails one economy line** (expander vs turtle workers at five minutes,
+    54 vs 61 — the Protoss expander arm re-dealt from 42 workers to 17), **seed 11 fails two.** Before:
+    seed 5 clean, seeds 1 and 11 four reds each. The gate runs seed 1 now; 5 and 11 are the known reds
+    (HANDOFF-M17). `test/review17.js` section 17: one Queen at 50 energy inside the starting supply, a
+    Terran gets none, and a Zerg AI casts Spawn Larva at least twice in its first minute (before the
+    change: zero Queens, zero casts). **Gate:** 74 of 74, 169 s. Not done, and listed as an open task: the AI's
+    Queen is a `supportUnits()` member and follows the army, so once the army leaves she stops injecting.
 
 # 4. Considered and deliberately not done
 

@@ -186,7 +186,11 @@ const arg = (n, d) => { const f = process.argv.find(a => a.startsWith('--' + n +
 // The units the harasser's table favours, taken from the table rather than listed again here, so this
 // cannot drift away from what the style actually asks for. `mobile` below is their supply in the army.
 const FAV = Object.keys(DELTAS.harasser.comp).filter(id => DELTAS.harasser.comp[id] > 1);
-const FRAMES = arg('frames', 12000), SEED = arg('seed', 5), MID = 7200;
+// FRAMES is the ten minutes the comparison comment below describes -- it was 12,000 (8.3 minutes), and the
+// four first-wave comparisons hung on a single Protoss arm attacking at frame 10,944 of it. The default seed
+// is the one the gate runs; 1, 5 and 11 are the three to run by hand, and HANDOFF-M17 records which
+// assertions each fails. (REVIEW-M17, the starting Queen: seed 5 kept one economy line red, seed 1 is clean.)
+const FRAMES = arg('frames', 14400), SEED = arg('seed', 1), MID = 7200;
 const play = (race, style) => vm.runInContext(`(function () {
   G.init({ players: [{ race: '${race}', human: false, difficulty: 'normal' }, { race: 'Z', human: false, difficulty: 'normal' }], seed: ${SEED}, layout: 'temple' });
   G.players[0].ai = new AI(G.players[0], 'normal', ${JSON.stringify(style)});

@@ -353,6 +353,28 @@ function DATA_NAME(c, id) { return R(c, 'return DATA.units[' + JSON.stringify(id
   ok('with no larvae and a full bank, a drone is sent to build a hatchery inside twenty seconds (was forty-five)', out.secondsToNewHall !== null && out.secondsToNewHall <= 20, JSON.stringify(out));
 }
 
+// ============================================================================
+// 17. a Zerg player starts with a Queen, and the AI injects with her from the first minute
+// ============================================================================
+// User decision (REVIEW-M17 second session). Spawn Larva refills a hatchery to its three larvae after
+// ten seconds (M12 item 11 keeps the ceiling); a starting Queen with 50 energy is two casts as soon as
+// the first drones come off the larvae. The AI's Queen clause already casts whenever energy allows and a
+// hatchery is short; it simply never had a Queen while its gas went on tech.
+{
+  const out = R(ctx, `
+    G.init({ players: [{ race: 'Z', human: true, name: 'H' }, { race: 'T', human: false, difficulty: 'easy', name: 'C' }], seed: 6, layout: 'temple' });
+    const q = G.units.filter(u => u.alive && u.owner === 0 && u.def.id === 'queen');
+    const human = { queens: q.length, energy: q[0] && q[0].energy, supUsed: G.players[0].supUsed, supMax: G.players[0].supMax, terranQueens: G.units.filter(u => u.alive && u.owner === 1 && u.def.id === 'queen').length };
+    G.init({ players: [{ race: 'Z', human: false, difficulty: 'normal', name: 'Z' }, { race: 'T', human: true, name: 'H' }], seed: 6, layout: 'temple' }); G.players[1].ai = null;
+    let injects = 0, seen = new Set();
+    for (let i = 0; i < 24 * 60; i++) { G.tick(); for (const f of G.fields) if (f.kind === 'inject' && f.owner === 0 && !seen.has(f)) { seen.add(f); injects++; } }
+    const ai = { queens: G.units.filter(u => u.alive && u.owner === 0 && u.def.id === 'queen').length, injectsInFirstMinute: injects };
+    return { human, ai };`);
+  ok('a Zerg player starts with one Queen at 50 energy, and a Terran does not', out.human.queens === 1 && out.human.energy === 50 && out.human.terranQueens === 0, JSON.stringify(out.human));
+  ok('...within the starting supply (the Queen is 2 of ' + out.human.supMax + ')', out.human.supUsed <= out.human.supMax, JSON.stringify(out.human));
+  ok('a Zerg AI casts Spawn Larva at least twice in its first minute (was never: it had no Queen until it could spare 100 gas)', out.ai.queens >= 1 && out.ai.injectsInFirstMinute >= 2, JSON.stringify(out.ai));
+}
+
 ok('no JS errors', ctx.errors.length === 0, ctx.errors.slice(0, 3).join(' | '));
 ok('nothing threw inside a tick across every scene', R(ctx, 'return G.tickErrors;') === 0, String(R(ctx, 'return G.tickErrors;')));
 console.log(`\n${fail ? 'FAIL' : 'ALL PASS'}  ${pass} passed, ${fail} failed`);
