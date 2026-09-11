@@ -315,6 +315,39 @@ Each entry names the file, what is wrong, the fix, and what it would cost. Anyth
    seven clean reds across autocast, ferry and deref; with the log check removed, five clean reds
    (the malformed logs reach `start()`); all restored byte-identical. **Gate:** 71 of 71, 166 s. The stamp
    moved again (`CMD`, `G.setAutocast`'s wrapper and the packers are hashed).
+7. **Eight simulation faults, each measured by probe before it was touched.** *(commit: simulation
+   bugs)* Every one is pinned in `test/review17.js` (28 checks, in the gate), which was run against the
+   old tree first: **21 clean reds**, no crash — that run is the negative control for the lot.
+   - **The Carrier's launch cooldown froze.** It ticked only while `launched[]` was non-empty, so if
+     the only Interceptor out died within its eight frames the Carrier never launched again — bricked
+     for the game with ammo aboard. Measured: one launch, then none in 400 frames of attack orders,
+     cooldown stuck at 7. Now it ticks unconditionally.
+   - **A field cured a longer status.** Jam, Time Warp, Fungal and Disruption Web *assigned* their
+     status (`blind = 3`) each frame, so an Optical Flare (`blind = 1e9`) under a Jam ended with the
+     Jam; measured for all three pairs (576→0, 1e9→0, 144→0). `Math.max` at the four sites.
+   - **A sieged tank walked.** move/attackmove/patrol were refused at order time; follow, load, gather,
+     repair and construct reached `moveTo` and walked it, siege and all — 275 px on a follow order,
+     which a right-click on a friendly unit issues. Refused in `moveTo` the way burrow is, so every
+     caller drops the order through the existing `moveFailed` paths.
+   - **A cloaked unit below 25 energy could not decloak.** The energy gate ran before the free
+     toggle-off branch; "Not enough energy" until it regenerated. Decloaking skips the gate.
+   - **A larva could become an SCV.** `larvaMorph` checked requirements, money and supply and never
+     `from`; measured: accepted, one Zerg-owned SCV. Gated by the data now (FIXLIST-M14 A4 class).
+   - **A worker with no hall scanned every frame, forever.** `tickReturn` reset `waitT` to 24 and
+     decremented it once, so it never expired and `G.nearestDepot` walked `G.units` 638 times in 240
+     frames. It polls every 24 frames and keeps the order, so a hall under construction still resumes it.
+   - **An exception inside a unit's or AI's tick was invisible.** Caught, logged to a console most
+     suites stub to silence, and forgotten. `G.tickErrors` counts them; `review17` asserts zero and
+     proves the counter with a unit whose tick throws.
+   - **Charon Boosters shortened the Goliath's air range.** `rangeTech` is absolute everywhere else in
+     the file; this one read `['charon', 3]` against a base of 5, so the research cut it. Brood War's
+     8 now. *Balance-relevant: the AI buys Charon. Veto it if you want the old number back, but the sign
+     was a bug either way.*
+   - Data: the Infested Command Center (a repairable building) had no `min`, so its repair cost was
+     NaN; `needsNuke` was a flag nothing read; four ability descriptions stated the wrong fact (Stim
+     omitted the Marauder and Reaper, the MULE said 90 s for a 75 s lifetime, Blink named a Stalker
+     that does not exist, the Mothership was "two Dark Templar" rather than two Arbiters).
+   **Gate:** 72 of 72, 165 s. The stamp moved (`sim`, `game`, `abilities`, `combat`, `data`).
 
 # 4. Considered and deliberately not done
 
@@ -332,6 +365,20 @@ Each entry names the file, what is wrong, the fix, and what it would cost. Anyth
    and the references were true when written. Living documents are a different matter.
 5. **Deleting the 23 stale worktrees.** Not without an answer to question 5.
 6. **Migrating the 90 suites to a shared harness inside this review.** No: open task 2 says why.
+7. **Defaulting `min: 0` in the def constructors** so no def could ever be priced NaN. Done, gated,
+   **reverted**: `test/veterancy.js` pins "a spider mine is a munition with no `min` key" as the project's
+   own definition of a munition (the mine's missing price was the original NaN bug, fixed by refusing to
+   repair munitions), and the constructor default turned that assertion red. The rule says revert, so
+   the narrow fix stands instead: an explicit zero on the one repairable def that lacked one, and a
+   check that every def `repairableDef()` admits carries a number.
+8. **Bunkered infantry fire at double rate** (`Unit.tick` decrements `cooldown`, then the bunker loop
+   decrements it again; measured 7.5-frame gaps against 15 for a free Marine). A one-line fix that
+   halves bunker DPS — a balance consequence, so it is gated. Question 7.
+9. **The seven hand-copied supply-block tests** (`queueUnit`, `larvaMorph`, `warpIn`, `tickProduction`,
+   `tickAlerts`…) that disagree on `notUnit` and `pair`, and leave a nuke queued at the supply cap never
+   starting while the alert reports "supply blocked". A `G.supplyBlocked(p, def)` helper at all seven
+   sites is the fix; it touches production for every race, so it is an open task with a probe, not a
+   review-time change.
 
 ---
 

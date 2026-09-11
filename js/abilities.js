@@ -97,7 +97,11 @@ const Abilities = {
   issue(u, id, target, x, y, shift) {
     const ab = DATA.abilities[id], p = u.player; if (!u.alive || !this.available(u, id)) return false;
     if (u.disabled) return false;
-    if (ab.energy && u.energy < ab.energy) { p.msg('Not enough energy.', 'error'); return false; }
+    // Decloaking is free -- the toggle-off branch in instant() charges nothing -- but this gate read the
+    // ability's 25 first, so a cloaked Ghost or Wraith between 0 and 25 energy was told "Not enough
+    // energy" and could not decloak until it regenerated. Measured. (REVIEW-M17)
+    const decloaking = u.cloaked && (id === 'cloak_ghost' || id === 'cloak_wraith');
+    if (ab.energy && u.energy < ab.energy && !decloaking) { p.msg('Not enough energy.', 'error'); return false; }
     switch (ab.kind) {
       case 'toggle': case 'instant': return this.instant(u, id);
       case 'morph': return this.morph(u, ab.unit);
@@ -731,7 +735,6 @@ const Abilities = {
     }
   },
   changeOwner(t, pid) { if (t.order.type === 'gather' && t.order.target && t.order.target.miner === t) t.order.target.miner = null; if (t.order.type === 'gather' && t.order.phase === 'inside' && t.order.target) { t.order.target.occupant = null; t.inside = null; } if (t.order.type === 'construct' && t.order.target && t.order.target.builder === t) t.order.target.builder = null; t.owner = pid; t.order = { type: 'idle' }; t.queue = []; t.path = null; t.target = null; t.carrying = null; t.wave = 0; if (typeof UI !== 'undefined' && UI.onUnitDied) UI.onUnitDied(t); G.recomputeSupply(); if (t.player.human) t.player.msg('Unit mind controlled.'); },
-  nukeImpact(p) { },
   // ================= M12 wave four: the Terran per-frame pass =================
   // Three things that have no other home in the files this branch owns, in ONE walk of G.units.
   //
@@ -839,7 +842,7 @@ const Abilities = {
     for (let i = fs.length - 1; i >= 0; i--) {
       const f = fs[i]; f.t--;
       if (f.kind === 'storm') { if (++f.tickT % 8 === 0) for (const o of G.near(f.x, f.y, f.r * TILE)) if (!o.isBuilding) G.damageRaw(o, 14, null); }
-      else if (f.kind === 'dweb') { for (const o of G.near(f.x, f.y, f.r * TILE)) if (!o.fly) o.fx.dweb = 3; }
+      else if (f.kind === 'dweb') { for (const o of G.near(f.x, f.y, f.r * TILE)) if (!o.fly) o.fx.dweb = Math.max(o.fx.dweb || 0, 3); }
       // The Raven's Jamming Field. Buildings are included on purpose and are most of the point: the
       // things a cloaked Terran army actually has to get past are a Missile Turret, a Spore Colony and
       // a Photon Cannon, and every one of those is a building whose `isDetector` reads `fx.blind`.
@@ -849,14 +852,17 @@ const Abilities = {
       // is frame-gated and not random, so it reproduces in a replay; see the handoff for the one-line
       // FX.drawField branch that would replace it.
       else if (f.kind === 'jam') {
-        for (const o of G.near(f.x, f.y, f.r * TILE)) if (!G.allied(o.owner, f.owner)) o.fx.blind = 3;
+        // Math.max, not assignment, at every field that refreshes a status per frame: a Jam over an
+        // Optical Flare used to CURE the flare when the jam ended (blind 1e9 -> 3 -> 0), a Time Warp
+        // cured an Ensnare, a Fungal cured a Maelstrom. Measured, all three. (REVIEW-M17)
+        for (const o of G.near(f.x, f.y, f.r * TILE)) if (!G.allied(o.owner, f.owner)) o.fx.blind = Math.max(o.fx.blind || 0, 3);
         if (f.t % 12 === 0) G.effects.push({ kind: 'ring', x: f.x, y: f.y, r: f.r * TILE, t: 12, color: '#7ae' });
       }
       // M12: the Infestor's cloud. Refreshed to 2 every frame so it decays two frames after the field
       // ends rather than needing an expiry pass of its own, and the damage rides the same eight-frame
       // cadence a Psionic Storm uses so the two read as the same kind of thing.
       else if (f.kind === 'fungal') {
-        for (const o of G.near(f.x, f.y, f.r * TILE)) { if (!o.alive || o.isBuilding || o.fly || o.inside || o.def.larva || o.def.egg || G.allied(o.owner, f.owner)) continue; o.fx.maelstrom = 2; o.path = null; }
+        for (const o of G.near(f.x, f.y, f.r * TILE)) { if (!o.alive || o.isBuilding || o.fly || o.inside || o.def.larva || o.def.egg || G.allied(o.owner, f.owner)) continue; o.fx.maelstrom = Math.max(o.fx.maelstrom || 0, 2); o.path = null; }
         if (++f.tickT % 8 === 0) for (const o of G.near(f.x, f.y, f.r * TILE)) { if (!o.alive || o.isBuilding || o.fly || o.inside || G.allied(o.owner, f.owner)) continue; G.damageRaw(o, 6, null); }
       }
       // M12: the Ravager's shell lands. `ff: false` so it does not eat the army that walked in behind
@@ -903,7 +909,7 @@ const Abilities = {
       else if (f.kind === 'time_warp') {
         for (const o of G.near(f.x, f.y, f.r * TILE)) {
           if (!o.alive || o.isBuilding || o.fly || o.inside || o.def.larva || o.def.egg || G.allied(o.owner, f.owner)) continue;
-          o.fx.ensnare = 3;
+          o.fx.ensnare = Math.max(o.fx.ensnare || 0, 3);
         }
         if (f.t % 12 === 0) G.effects.push({ kind: 'ring', x: f.x, y: f.y, r: f.r * TILE, t: 12, color: '#9cf' });
       }

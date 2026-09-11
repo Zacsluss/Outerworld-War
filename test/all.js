@@ -122,6 +122,7 @@ const TESTS = [
   // thing a seed-plus-log save cannot fake: a nuke, a morph and a Recall all halfway through.
   { name: 'saveload', args: ['saveload.js'], what: 'a save taken mid-nuke, mid-morph and mid-Recall reloads byte-identically; a rejoin restores the donor\'s state' },
   { name: 'cmdlog', args: ['cmdlog.js'], what: 'every order the interface can issue survives the command log: autocast, the ferry route, a dead target, a malformed log' },
+  { name: 'review17', args: ['review17.js'], what: 'the simulation faults REVIEW-M17 measured and fixed: Carrier cooldown, status refresh, sieged tank, decloak, larva, worker poll, tick errors, Charon' },
 ];
 
 const argv = process.argv.slice(2);

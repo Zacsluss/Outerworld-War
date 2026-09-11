@@ -87,11 +87,11 @@ const ALERTS = {
 
 const G = {
   map: null, pf: null, players: [], units: [], byId: new Map(), effects: [], projectiles: [], fields: [], frame: 0,
-  pathBudget: PATH_BUDGET, over: false, winner: -1, speed: 1, paused: false, human: 0, cell: 64, grid: null, gw: 0, gh: 0, alliances: null,
-  nukeAlerts: [],
+  pathBudget: PATH_BUDGET, over: false, winner: -1, speed: 1, paused: false, human: 0, cell: 64, grid: null, gw: 0, gh: 0,
+  tickErrors: 0,   // units and AIs whose tick() threw this game (the try/catch in tick() counts them); alliances and nukeAlerts used to sit here and nothing read them
 
   init(opts) {
-    UNIT_ID = 1; this.seed = opts.seed || 1; this.layout = opts.layout || 'temple'; this.setup = opts; this.cheats = {}; this.log = []; this.pendingCmds = null; RNG.seed((this.seed * 7919 + 17) >>> 0); this._allVis = null; this.freePlay = false; this.mission = null;
+    UNIT_ID = 1; this.seed = opts.seed || 1; this.layout = opts.layout || 'temple'; this.setup = opts; this.cheats = {}; this.tickErrors = 0; this.log = []; this.pendingCmds = null; RNG.seed((this.seed * 7919 + 17) >>> 0); this._allVis = null; this.freePlay = false; this.mission = null;
     this.map = new GameMap(opts.seed || 1, opts.layout || 'temple'); this.pf = new Pathfinder(this.map);
     this.units = []; this.byId = new Map(); this.effects = []; this.projectiles = []; this.fields = []; this.frame = 0; this.over = false; this.winner = -1;
     this.gw = Math.ceil(this.map.w * TILE / this.cell); this.gh = Math.ceil(this.map.h * TILE / this.cell);
@@ -900,6 +900,10 @@ const G = {
   larvaMorph(l, uid) {
     const p = this.players[l.owner], ud = DATA.units[uid];
     if (!l.alive || !l.def.larva) return false;
+    // Only what a larva can become. Nothing here asked, so a hand-edited log or a modified client could
+    // morph a larva into an SCV (measured: accepted, one Zerg-owned SCV). The FIXLIST-M14 A4 class:
+    // gated by the data, not by the card. (REVIEW-M17)
+    if (!ud || ud.from !== 'larva') return false;
     if (!p.hasReq(ud)) { p.msg('Requires ' + p.missingReq(ud), 'error'); return false; }
     if (!p.canAfford(ud.min, ud.gas)) return false;
     if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax && !(this.cheats.food && p.human)) { this.supplyRefused(p); return false; }
@@ -1063,7 +1067,10 @@ const G = {
     this.tickAutocast();
     if (this.signals && this.signals.length) { for (let i = this.signals.length - 1; i >= 0; i--) if (--this.signals[i].t <= 0) this.signals.splice(i, 1); }
     for (const u of this.units) { if (u.alive) { u.px = u.x; u.py = u.y; } }
-    for (const u of this.units) { if (u.alive) { try { u.tick(); } catch (e) { console.error(e, u.def.id); } } }
+    // A unit that throws is skipped for the frame rather than taking the game down, and COUNTED: most
+    // headless suites stub console.error to silence, which made an exception here invisible to the gate.
+    // (REVIEW-M17)
+    for (const u of this.units) { if (u.alive) { try { u.tick(); } catch (e) { this.tickErrors++; console.error(e, u.def.id); } } }
     this.separate();
     // self-heal: a ground unit whose centre tile ended up inside a building footprint is pushed out
     if (this.frame % 16 === 0) for (const u of this.units) {

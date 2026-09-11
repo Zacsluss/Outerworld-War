@@ -113,7 +113,6 @@ const Combat = {
       p.life--; const t = p.target;
       if (!t || !t.alive || p.life <= 0) { ps.splice(i, 1); continue; }
       const dx = t.x - p.x, dy = t.y - p.y, d = Math.hypot(dx, dy);
-      if (p.kind === 'nuke') { if (--p.timer <= 0) { Abilities.nukeImpact(p); ps.splice(i, 1); } continue; }
       if (d <= p.spd + t.r * 0.5) {
         if (p.kind === 'yamato') { G.damage(t, 260, 'explosive', p.src); G.effects.push({ kind: 'boom', x: t.x, y: t.y, t: 20, r: 30 }); }
         ps.splice(i, 1); continue;

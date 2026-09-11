@@ -73,7 +73,10 @@ const DATA = (() => {
   U('siege_tank', { name: 'Siege Tank', race: 'T', hp: 150, armor: 1, size: 'large', min: 150, gas: 100, sup: 2, time: 750, speed: 4, sight: 10, r: 16, hk: 'T', from: 'factory', req: ['machine_shop'], mech: true, cargoSize: 4,
     gw: W(30, 'explosive', 7, 37, { upgKey: 'vehW', upgDmg: 3 }), abil: ['siege_mode'], upgA: 'vehA' });
   U('goliath', { name: 'Goliath', race: 'T', hp: 125, armor: 1, size: 'large', min: 100, gas: 50, sup: 2, time: 600, speed: 4.57, sight: 8, r: 14, hk: 'G', from: 'factory', req: ['armory'], mech: true, cargoSize: 2,
-    gw: W(12, 'normal', 5, 22, { upgKey: 'vehW', upgDmg: 2 }), aw: W(10, 'explosive', 5, 22, { hits: 2, upgKey: 'vehW', upgDmg: 2, targets: 'air', rangeTech: ['charon', 3] }), upgA: 'vehA' });
+    // rangeTech is an ABSOLUTE range, like every other pair in this file (hydralisk 4 -> 5, dragoon 4 -> 6),
+    // and this one read ['charon', 3]: researching Charon Boosters cut the air range from 5 to 3. Brood
+    // War's number is 8. (REVIEW-M17; the AI buys charon, so this is on the balance list too)
+    gw: W(12, 'normal', 5, 22, { upgKey: 'vehW', upgDmg: 2 }), aw: W(10, 'explosive', 5, 22, { hits: 2, upgKey: 'vehW', upgDmg: 2, targets: 'air', rangeTech: ['charon', 8] }), upgA: 'vehA' });
   U('wraith', { name: 'Wraith', race: 'T', hp: 120, size: 'large', min: 150, gas: 100, sup: 2, time: 900, speed: 6.67, sight: 7, r: 14, hk: 'W', from: 'starport', mech: true, fly: true, energy: 200,
     gw: W(8, 'normal', 5, 30, { upgKey: 'shipW' }), aw: W(20, 'explosive', 5, 22, { upgKey: 'shipW', upgDmg: 2, targets: 'air' }), abil: ['cloak_wraith'], upgA: 'shipA' });
   U('dropship', { name: 'Dropship', race: 'T', hp: 150, armor: 1, size: 'large', min: 100, gas: 100, sup: 2, time: 750, speed: 5.47, sight: 8, r: 16, hk: 'D', from: 'starport', req: ['control_tower'], mech: true, fly: true, cargo: 8,
@@ -880,7 +883,7 @@ const DATA = (() => {
   // Hive put Zerg's only answer to healed bio four minutes past the end of an average AI game.
   B('defiler_mound', { name: 'Defiler Mound', race: 'Z', hp: 850, w: 4, h: 2, min: 100, gas: 100, time: 900, hk: 'D', tier: 'adv', req: ['lair'], needsCreep: true, tech: ['plague_tech', 'consume_tech', 'metasynaptic'] });
   B('nydus_canal', { name: 'Nydus Canal', race: 'Z', hp: 250, w: 2, h: 2, min: 150, time: 600, hk: 'N', tier: 'adv', req: ['hive'], needsCreep: true, nydus: true, abil: ['nydus_exit', 'nydus_worm'] });
-  B('infested_command_center', { name: 'Infested Command Center', race: 'Z', hp: 1500, w: 4, h: 3, time: 1, tier: 'none', produces: ['infested_terran'], sight: 10 });
+  B('infested_command_center', { name: 'Infested Command Center', race: 'Z', hp: 1500, w: 4, h: 3, min: 0, gas: 0, time: 1, tier: 'none', produces: ['infested_terran'], sight: 10 });
   // Zerg's three. All three need creep, like every other Zerg structure, which is the natural limit on
   // where a Zerg player may wall or mend: on ground the swarm already holds. The ridge goes on the Basic
   // page (six entries, two spare) and the other two on Advanced (five, three spare).
@@ -1284,7 +1287,7 @@ const DATA = (() => {
   A('lockdown', 'Lockdown', 'L', 'unit', { energy: 100, tech: 'lockdown_tech', range: 8 });
   A('cloak_ghost', 'Personnel Cloaking', 'C', 'toggle', { energy: 25, tech: 'personnel_cloaking' });
   A('cloak_wraith', 'Cloaking Field', 'C', 'toggle', { energy: 25, tech: 'cloaking_field' });
-  A('nuke', 'Nuclear Strike', 'N', 'point', { range: 8, needsNuke: true });
+  A('nuke', 'Nuclear Strike', 'N', 'point', { range: 8 });   // the silo check is in Abilities.available (p.nukes), not a flag
   A('spider_mine', 'Spider Mines', 'I', 'point', { tech: 'spider_mines_tech', range: 1 });
   A('siege_mode', 'Siege Mode', 'O', 'toggle', { tech: 'siege_tech' });
   A('defensive_matrix', 'Defensive Matrix', 'D', 'unit', { energy: 100, range: 10 });
@@ -1713,7 +1716,7 @@ const DATA = (() => {
     morph_menu: 'Open the list of things this unit can turn into. Morphing consumes the unit.',
     unload: 'Unload every passenger at once. Click a spot to choose where they come out.',
     // ---- Terran
-    stim: 'Costs 10 HP and makes this unit fire and move much faster for a short time. Works on Marines and Firebats, and stacks with nothing.',
+    stim: 'Costs 10 HP and makes this unit fire and move much faster for a short time. Works on Marines, Firebats, Marauders and Reapers, and stacks with nothing.',
     heal: 'Restore health to a friendly organic unit, a little at a time, for 1 energy per point. Mechanical units cannot be healed.',
     restoration: 'Strip a friendly unit of Lockdown, Irradiate, Optical Flare, Ensnare, Plague, Parasite and Maelstrom.',
     optical_flare: 'Blind an organic unit: its sight collapses to one tile, so it can still shoot but can no longer see for itself or spot for others.',
@@ -1728,7 +1731,7 @@ const DATA = (() => {
     irradiate: 'Poison a unit so that it and everything organic near it takes damage for 25 seconds. A mechanical host takes none itself but still carries it.',
     yamato: 'Charge a shot for about two seconds and deal 260 damage to a single target, unit or building. Cancelled if the Battlecruiser is interrupted.',
     scanner_sweep: 'Reveal an area anywhere on the map for a few seconds, detectors included, so cloaked and burrowed units show up. Costs a Comsat\'s energy.',
-    mule: 'Call down a MULE anywhere you can see. It mines minerals much faster than an SCV and expires after about 90 seconds.',
+    mule: 'Call down a MULE anywhere you can see. It mines minerals much faster than an SCV and expires after 75 seconds.',
     viking_mode: 'Switch between fighter mode, which flies and shoots only air, and assault mode, which walks and shoots only ground.',
     jam_field: 'Scramble enemy detection in an area so cloaked and burrowed units stay hidden inside it.',
     // ---- Zerg
@@ -1782,8 +1785,8 @@ const DATA = (() => {
     revelation: 'Reveal a wide area for a while, cloaked and burrowed units included.',
     purification_nova: 'Launch a slow nova that detonates after a moment for heavy splash damage. Anything that moves can leave before it lands.',
     time_warp: 'Slow every enemy unit inside the field, ground and air, for a long while. Does no damage.',
-    blink: 'Teleport the Stalker a short distance instantly, through terrain and past anything in the way.',
-    summon_mothership: 'Merge two Dark Templar into a Mothership. Only one Mothership may exist at a time.',
+    blink: 'Teleport the Dragoon a short distance instantly, through terrain and past anything in the way.',
+    summon_mothership: 'Merge two Arbiters into a Mothership. Only one Mothership may exist at a time.',
     warp_zealot: 'Warp a Zealot straight onto the psi grid, anywhere a Pylon powers, instead of walking it out of a Gateway.',
     warp_dragoon: 'Warp a Dragoon straight onto the psi grid, anywhere a Pylon powers.',
     warp_sentry: 'Warp a Sentry straight onto the psi grid, anywhere a Pylon powers.',

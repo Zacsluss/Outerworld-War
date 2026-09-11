@@ -503,7 +503,7 @@ class AI {
     if (G.frame - this.lastThink < this.thinkEvery) { if (G.frame % 12 === 0) this.micro(); return; }
     this.lastThink = G.frame;
     this.budget();
-    try { this.phase = 'economy'; this.economy(); this.phase = 'supply'; this.supply(); this.phase = 'script'; this.script(); this.phase = 'macro'; this.macro(); this.phase = 'production'; this.production(); this.phase = 'research'; this.research(); this.phase = 'army'; this.army(); this.scout(); this.drops(); this.micro(); this.phase = null; } catch (e) { console.error('AI', e); }
+    try { this.phase = 'economy'; this.economy(); this.phase = 'supply'; this.supply(); this.phase = 'script'; this.script(); this.phase = 'macro'; this.macro(); this.phase = 'production'; this.production(); this.phase = 'research'; this.research(); this.phase = 'army'; this.army(); this.scout(); this.drops(); this.micro(); this.phase = null; } catch (e) { G.tickErrors++; console.error('AI', e); }
   }
   // ---------------- economy ----------------
   economy() {

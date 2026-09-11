@@ -237,7 +237,12 @@ class Unit {
     if (this.prod.length) this.tickProduction();
     this.tickOrder();
     if (d.id === 'medic' && this.order.type !== 'ability' && (G.frame + this.id) % 8 === 0) Abilities.medicAuto(this);
-    if (d.id === 'carrier' && this.launched && this.launched.length) { if (this.launchCd > 0) this.launchCd--; const fighting = this.order.type === 'attack' || (this.order.type === 'attackmove' && this.order.target) || this.order.type === 'hold' && this.target; if (!fighting && (G.frame + this.id) % 24 === 0) for (const ic of this.launched) if (ic.alive && ic.order.type === 'intercept') ic.applyOrder({ type: 'dock' }); this.launched = this.launched.filter(ic => ic.alive); }
+    // The launch cooldown ticks whether or not anything is out. It used to tick only inside the
+    // launched.length guard below, so if the only Interceptor out died within its eight frames the list
+    // emptied, the cooldown froze at 7, and the Carrier never launched again -- bricked for the game
+    // with ammo aboard. Measured: one launch, then none in 400 frames of attack orders. (REVIEW-M17)
+    if (d.id === 'carrier' && this.launchCd > 0) this.launchCd--;
+    if (d.id === 'carrier' && this.launched && this.launched.length) { const fighting = this.order.type === 'attack' || (this.order.type === 'attackmove' && this.order.target) || this.order.type === 'hold' && this.target; if (!fighting && (G.frame + this.id) % 24 === 0) for (const ic of this.launched) if (ic.alive && ic.order.type === 'intercept') ic.applyOrder({ type: 'dock' }); this.launched = this.launched.filter(ic => ic.alive); }
     if (d.id === 'science_vessel' && this.order.type === 'idle') { /* nothing auto */ }
   }
 
@@ -511,7 +516,12 @@ class Unit {
   // ---------------- movement ----------------
   moveTo(x, y, targetUnit) {
     if (!this.canMove || this.speed <= 0 || this.transT > 0 && this.def.id === 'siege_tank') return distPt(this.x, this.y, x, y) < 8;
-    if (this.burrowed && !this.def.mine) { this.moveFailed = true; return false; }
+    // A sieged tank does not walk either. applyOrder refuses move/attackmove/patrol for one, but follow,
+    // load, gather, repair, construct and the rest reached here and walked it, siege and all (measured:
+    // 275 px on a follow order; a right-click on a friendly unit is the everyday trigger). Refusing here
+    // the way burrow does lets every caller drop the order through the existing moveFailed paths.
+    // (REVIEW-M17)
+    if ((this.burrowed && !this.def.mine) || this.sieged) { this.moveFailed = true; return false; }
     const m = G.map; const spd = this.speed;
     this.moveFailed = false; // set when we return true without actually arriving, so callers can drop the order
     const dd = distPt(this.x, this.y, x, y);
@@ -613,7 +623,14 @@ class Unit {
   tickReturn() {
     const o = this.order;
     if (!this.carrying) { if (o.then) this.applyOrder({ type: 'gather', target: o.then, phase: 'goto' }); else this.nextOrder(); return; }
-    if (!o.depot || !o.depot.alive || !o.depot.done) { o.depot = G.nearestDepot(this); if (!o.depot) { this.waitT = 24; if (--this.waitT <= 0) this.nextOrder(); return; } this.path = null; }
+    if (!o.depot || !o.depot.alive || !o.depot.done) {
+      // No hall to return to: look again every 24 frames, not every frame, and keep the order -- a hall
+      // under construction will finish. The old line reset waitT to 24 and then decremented it once, so
+      // it never expired and G.nearestDepot walked G.units every frame (measured: 638 calls in 240
+      // frames with the only hall dead). (REVIEW-M17)
+      if (this.waitT > 0) { this.waitT--; return; }
+      o.depot = G.nearestDepot(this); if (!o.depot) { this.waitT = 24; return; } this.path = null;
+    }
     if (this.moveToRect(o.depot, 6)) {
       const p = this.player; if (this.carrying.type === 'mineral') { p.minerals += this.carrying.amt; p.stats.mined += this.carrying.amt; } else { p.gas += this.carrying.amt; p.stats.gassed += this.carrying.amt; }
       this.carrying = null;
