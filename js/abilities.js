@@ -261,11 +261,11 @@ const Abilities = {
     if (u.energy < ab.energy) { p.msg('Not enough energy.', 'error'); return false; }
     u.energy -= ab.energy;
     const n = p.hasTech('pressurised_glands') ? 3 : 2;
-    let tx = u.x + Math.cos(u.facing) * 8 * TILE, ty = u.y + Math.sin(u.facing) * 8 * TILE, bd = 1e9;
+    let tx = u.x + DMath.cos(u.facing) * 8 * TILE, ty = u.y + DMath.sin(u.facing) * 8 * TILE, bd = 1e9;
     for (const o of G.near(u.x, u.y, 14 * TILE)) { if (!o.alive || G.allied(o.owner, u.owner) || o.def.notUnit) continue; const d = dist(u, o); if (d < bd) { bd = d; tx = o.x; ty = o.y; } }
     for (let i = 0; i < n; i++) {
       const a = u.facing + (i - (n - 1) / 2) * 0.7;
-      const l = G.spawnUnit('locust', u.owner, u.x + Math.cos(a) * (u.r + 12), u.y + Math.sin(a) * (u.r + 12));
+      const l = G.spawnUnit('locust', u.owner, u.x + DMath.cos(a) * (u.r + 12), u.y + DMath.sin(a) * (u.r + 12));
       l.facing = a; l.applyOrder({ type: 'attackmove', x: tx, y: ty });
     }
     G.effects.push({ kind: 'ring', x: u.x, y: u.y, r: u.r + 12, t: 12, color: '#8c4' });
@@ -430,7 +430,7 @@ const Abilities = {
       if (!u.canMove || u.sieged || u.burrowed) { u.nextOrder(); return; }
       u.moveTo(tx, ty, t); return;
     }
-    u.facing = Math.atan2(ty - u.y, tx - u.x); u.path = null;
+    u.facing = DMath.atan2(ty - u.y, tx - u.x); u.path = null;
     if (ab.energy && u.energy < ab.energy) { p.msg('Not enough energy.', 'error'); u.nextOrder(); return; }
     if (o.abil === 'heal') { this.healTick(u, t); return; }
     if (o.abil === 'yamato' || o.abil === 'nuke' || o.abil === 'recall') { o.phase = 'channel'; o.t = o.abil === 'yamato' ? 50 : o.abil === 'nuke' ? 336 : 30; if (o.abil === 'nuke') { if (p.nukes <= 0) { u.nextOrder(); return; } p.nukes--; const silo = G.units.find(b => b.alive && b.owner === u.owner && b.def.id === 'nuclear_silo' && b.hasNuke); if (silo) silo.hasNuke = false; G.fields.push({ kind: 'nuke_target', x: o.x, y: o.y, r: 8, t: 336, owner: u.owner, ghost: u }); for (const q of G.players) if (q.id !== u.owner) { q.msg('Nuclear launch detected.', 'nuke'); if (q.human && typeof UI !== 'undefined') UI.ping(o.x, o.y); } if (typeof Sound !== 'undefined') Sound.nuke(); } if (o.abil === 'recall') { u.energy -= ab.energy; G.fields.push({ kind: 'recall', x: o.x, y: o.y, r: 2.5, t: 30, owner: u.owner, src: u }); u.nextOrder(); } return; }
@@ -508,7 +508,7 @@ const Abilities = {
     }
     const t = u.target; if (!t || !t.alive) { u.burrowed = true; u.armT = 0; return; }
     if (dist(u, t) <= u.r + t.r + 4) { Combat.explode(u, t, u.def.gw); return; }
-    const ang = Math.atan2(t.y - u.y, t.x - u.x); u.x += Math.cos(ang) * 16; u.y += Math.sin(ang) * 16; u.facing = ang;
+    const ang = DMath.atan2(t.y - u.y, t.x - u.x); u.x += DMath.cos(ang) * 16; u.y += DMath.sin(ang) * 16; u.facing = ang;
   },
   scarabTick(u) { const t = u.order.target, p = u.parent; if (!t || !t.alive || !p) { G.kill(u, null, true); return; } if (dist(u, t) <= u.r + t.r + 10) { const w = p.def.gw; Combat.splash(p.alive ? p : u, t.x, t.y, (p.alive ? p.wDmg(w) : w.dmg), w, t); G.kill(u, null, true); return; } u.moveTo(t.x, t.y, t); },
   interceptTick(u) {
@@ -517,7 +517,7 @@ const Abilities = {
     if (!t || !t.alive || !G.targetable(u, t) || dist(u, p) > 14 * TILE) { u.applyOrder({ type: 'dock' }); return; }
     if (o.pass) { if (u.moveTo(o.pass.x, o.pass.y)) o.pass = null; return; }
     const w = u.def.gw; const dd = dist(u, t) - t.r - u.r;
-    if (dd <= u.wRange(w) * TILE) { if (u.cooldown <= 0) { u.fireAt(t); const a = Math.atan2(t.y - u.y, t.x - u.x) + (G.rand() - .5) * 0.8; o.pass = { x: t.x + Math.cos(a) * 130, y: t.y + Math.sin(a) * 130 }; } else u.moveTo(t.x + Math.cos(u.facing + 1.2) * 60, t.y + Math.sin(u.facing + 1.2) * 60); }
+    if (dd <= u.wRange(w) * TILE) { if (u.cooldown <= 0) { u.fireAt(t); const a = DMath.atan2(t.y - u.y, t.x - u.x) + (G.rand() - .5) * 0.8; o.pass = { x: t.x + DMath.cos(a) * 130, y: t.y + DMath.sin(a) * 130 }; } else u.moveTo(t.x + DMath.cos(u.facing + 1.2) * 60, t.y + DMath.sin(u.facing + 1.2) * 60); }
     else u.moveTo(t.x, t.y, t);
   },
   dockTick(u) { const p = u.parent; if (!p || !p.alive) { G.kill(u, null, true); return; } if (dist(u, p) <= p.r) { p.interceptors = Math.min(p.interceptors + 1, 8); G.kill(u, null, true); return; } u.moveTo(p.x, p.y, p); },

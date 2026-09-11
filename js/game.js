@@ -55,7 +55,7 @@ const FERRY_PICKUP = 5, FERRY_WAIT = 24 * 2;
 function daylightAt(frame) {
   const t = ((frame % DAY_CYCLE) + DAY_CYCLE) % DAY_CYCLE / DAY_CYCLE;   // 0..1 through the cycle
   // A raised cosine: flat-ish day, flat-ish night, and a real dusk between them rather than a ramp.
-  const c = (Math.cos(t * Math.PI * 2) + 1) / 2;
+  const c = (DMath.cos(t * Math.PI * 2) + 1) / 2;
   return c * c * (3 - 2 * c);                                            // smoothstep, so dusk eases
 }
 // Directional armour. A hit that lands behind or beside a unit hurts more than one it is facing, so
@@ -74,8 +74,8 @@ const FACE_MULT = { front: 1, flank: 1.15, rear: 1.35 };
 const FACE_FLANK = Math.PI * 0.5, FACE_REAR = Math.PI * 0.75;   // half-angles from the unit's facing
 function hitFacing(t, src) {
   if (!src || t.isBuilding || t.def.larva || t.def.egg || t.burrowed) return 'front';
-  const a = Math.atan2(src.y - t.y, src.x - t.x) - t.facing;
-  const off = Math.abs(Math.atan2(Math.sin(a), Math.cos(a)));   // wrapped to [0, PI]
+  const a = DMath.atan2(src.y - t.y, src.x - t.x) - t.facing;
+  const off = Math.abs(DMath.atan2(DMath.sin(a), DMath.cos(a)));   // wrapped to [0, PI]
   return off <= FACE_FLANK ? 'front' : off <= FACE_REAR ? 'flank' : 'rear';
 }
 const ALERTS = {
@@ -188,7 +188,7 @@ const G = {
           // number of overlords could sit on one pixel. Note this is a deliberate departure from Brood
           // War, where air units do not collide at all and stacking mutalisks is a real technique.
           if (!!a.fly !== !!b.fly) return;
-          const dx = b.x - a.x, dy = b.y - a.y; let d = Math.hypot(dx, dy); const min = (a.r + b.r) * 0.85;
+          const dx = b.x - a.x, dy = b.y - a.y; let d = DMath.hypot(dx, dy); const min = (a.r + b.r) * 0.85;
           if (d >= min) return;
           let ux, uy;
           if (d < 0.01) {
@@ -677,7 +677,7 @@ const G = {
           // Fanned out around the site by index rather than at random: a pack has to look like a pack,
           // and two grubs on one pixel is what SEP_DIRS spends every frame afterwards unpicking.
           const a = (k / Math.max(1, w.pack)) * Math.PI * 2;
-          const u = this.spawnUnit(w.id, np.id, (w.tx + 0.5) * TILE + Math.cos(a) * 18, (w.ty + 0.5) * TILE + Math.sin(a) * 18);
+          const u = this.spawnUnit(w.id, np.id, (w.tx + 0.5) * TILE + DMath.cos(a) * 18, (w.ty + 0.5) * TILE + DMath.sin(a) * 18);
           u.buried = !!(def.wake && def.wake.buried); u.lair = { x: (w.tx + 0.5) * TILE, y: (w.ty + 0.5) * TILE };
         }
       }
@@ -706,7 +706,7 @@ const G = {
       let tgt = null, td = 1e9;
       for (const t of this.near(u.x, u.y, (wk.aggro || 8) * TILE)) {
         if (!t.alive || t.owner === np.id || t.inside || t.def.notUnit) continue;
-        if (Math.hypot(t.x - lair.x, t.y - lair.y) > (wk.leash || 12) * TILE) continue;
+        if (DMath.hypot(t.x - lair.x, t.y - lair.y) > (wk.leash || 12) * TILE) continue;
         const d = distPt(u.x, u.y, t.x, t.y); if (d < td) { td = d; tgt = t; }
       }
       if (tgt) {
@@ -714,7 +714,7 @@ const G = {
         if (u.hasWeapon() && (u.order.type !== 'attack' || u.order.target !== tgt)) u.applyOrder({ type: 'attack', target: tgt, auto: true });
       } else {
         // Nothing in reach: walk home, and once home and quiet for `rebury` frames, go back under.
-        const home = Math.hypot(u.x - lair.x, u.y - lair.y);
+        const home = DMath.hypot(u.x - lair.x, u.y - lair.y);
         if (home > 2 * TILE && u.canMove && u.order.type === 'idle') u.moveTo(lair.x, lair.y);
         if (wk.rebury && this.frame - (u.lastSaw || u.woke || 0) > wk.rebury && home <= 2 * TILE) { u.buried = true; u.waking = 0; }
       }

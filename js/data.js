@@ -3,6 +3,46 @@
 // Brood War data tables. Times are in game frames (24/s = "Fastest").
 // Distances: ranges/sight in tiles (32px). Speeds in px/frame.
 // ============================================================================
+// DETERMINISTIC TRANSCENDENTALS. Math.sin, Math.cos, Math.atan2 and Math.hypot are not required to be
+// correctly rounded, and the engines differ in the last bit: V8 and SpiderMonkey carry fdlibm ports,
+// JavaScriptCore calls the platform libm. Lockstep hashes positions at 1/16 px, so two DIFFERENT engines
+// -- Chrome against Firefox, or a Tauri build on Windows (WebView2, V8) against one on macOS (WebKit) --
+// drift apart over minutes and call it a desync. Everything below uses only +, -, *, /, sqrt and floor,
+// which IEEE 754 requires to be correctly rounded everywhere, so every engine computes the same bits.
+// Range reduction by whole turns and a fold to [-pi/2, pi/2], then a Taylor series to ~1e-16; atan by
+// argument reduction to |x| <= tan(pi/12) and a series to the same. About twice the cost of the natives
+// on some eighty call sites. Presentation code keeps the natives. test/dmath.js measures the error
+// against Math and scrapes the stamped files for a native that crept back in. (REVIEW-M17 decision 1)
+const DMath = {
+  // x folded into [-pi, pi]; anything non-finite becomes 0 rather than NaN
+  wrap(x) { if (!(x < 1e15 && x > -1e15)) return 0; return x - Math.floor((x + Math.PI) / (2 * Math.PI)) * (2 * Math.PI); },
+  sin(x) {
+    x = this.wrap(x); if (x > Math.PI / 2) x = Math.PI - x; else if (x < -Math.PI / 2) x = -Math.PI - x;   // sin(pi - x) = sin(x)
+    const x2 = x * x; let term = x, sum = x;
+    for (let n = 1; n <= 12; n++) { term *= -x2 / ((2 * n) * (2 * n + 1)); sum += term; }
+    return sum;
+  },
+  cos(x) {   // its own series, not sin(x + pi/2): that shift rounds and cos(0) came out 1.0000000000000002
+    x = this.wrap(x); if (x < 0) x = -x; let neg = false; if (x > Math.PI / 2) { x = Math.PI - x; neg = true; }   // cos(pi - x) = -cos(x)
+    const x2 = x * x; let term = 1, sum = 1;
+    for (let n = 1; n <= 12; n++) { term *= -x2 / ((2 * n - 1) * (2 * n)); sum += term; }
+    return neg ? -sum : sum;
+  },
+  hypot(a, b) { return Math.sqrt(a * a + b * b); },
+  atan(x) {
+    let neg = false, big = false, shift = 0;
+    if (x < 0) { x = -x; neg = true; } if (x > 1) { x = 1 / x; big = true; }                  // atan(x) = pi/2 - atan(1/x)
+    if (x > 0.2679491924311227) { x = (x * 1.7320508075688772 - 1) / (x + 1.7320508075688772); shift = Math.PI / 6; }   // atan(x) = pi/6 + atan((x*sqrt3 - 1)/(x + sqrt3)); tan(pi/12) = 2 - sqrt3
+    const x2 = x * x; let term = x, sum = x;
+    for (let n = 1; n <= 14; n++) { term *= -x2; sum += term / (2 * n + 1); }
+    let r = sum + shift; if (big) r = Math.PI / 2 - r; return neg ? -r : r;
+  },
+  atan2(y, x) {
+    if (x > 0) return this.atan(y / x);
+    if (x < 0) return y >= 0 ? this.atan(y / x) + Math.PI : this.atan(y / x) - Math.PI;
+    return y > 0 ? Math.PI / 2 : y < 0 ? -Math.PI / 2 : 0;
+  },
+};
 const TILE = 32;
 const TPS = 24;
 // The ceiling on a def's `desc`, in characters. A description is a sentence or two about what the

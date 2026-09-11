@@ -399,7 +399,7 @@ const Missions = {
         // The ridge sits a third of the way down the road the pursuit has to use; the loading ground is
         // the same distance again beyond the hive, away from them. Anything that gets past the ridge
         // walks over the hive to reach the drones.
-        const dx = h.x - es.startX, dy = h.y - es.startY, L = Math.hypot(dx, dy) || 1;
+        const dx = h.x - es.startX, dy = h.y - es.startY, L = DMath.hypot(dx, dy) || 1;
         const ridge = G.spot(h.x - dx * 0.34, h.y - dy * 0.34);
         const exit = G.spot(h.x + (dx / L) * 16 * TILE, h.y + (dy / L) * 16 * TILE);
         G.mission.state.ridge = ridge; G.mission.state.exit = exit;

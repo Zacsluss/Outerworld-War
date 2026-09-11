@@ -116,7 +116,7 @@ const BUILD = {
   HELPERS: ['repairableDef', 'dist', 'distPt', 'clamp', 'setUnitId', 'daylightAt', 'hitFacing', 'gasBuildings',
     'Replay.applyPending'],   // the one method of Replay that decides simulation order; the rest is save/load plumbing
   // Objects of methods: their own FUNCTIONS are hashed (fns), their state is not.
-  SINGLETONS: ['G', 'CMD', 'Abilities', 'Missions', 'RNG', 'MapCodec', 'Combat'],
+  SINGLETONS: ['G', 'CMD', 'Abilities', 'Missions', 'RNG', 'MapCodec', 'Combat', 'DMath'],   // DMath: the simulation's transcendentals, by source
   // Classes: every prototype method and accessor, and `constructor` carries the whole class body.
   CLASSES: ['Unit', 'Player', 'AI', 'GameMap', 'Pathfinder'],
   // Declared in a stamped file, deliberately not hashed. Presentation is left out on purpose -- the

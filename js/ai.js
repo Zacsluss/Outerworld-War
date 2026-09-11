@@ -1043,7 +1043,7 @@ class AI {
     const m = G.map, p = this.p; const isProd = def.produces.length > 0 || def.addons.length > 0;
     for (let r = (def.race === 'Z' ? 4 : 2); r < 24; r++) {
       for (let k = 0; k < 24; k++) {
-        const ang = (k / 24) * Math.PI * 2 + r * 0.3; const tx = Math.round(cx + Math.cos(ang) * r - def.w / 2), ty = Math.round(cy + Math.sin(ang) * r * 0.8 - def.h / 2);
+        const ang = (k / 24) * Math.PI * 2 + r * 0.3; const tx = Math.round(cx + DMath.cos(ang) * r - def.w / 2), ty = Math.round(cy + DMath.sin(ang) * r * 0.8 - def.h / 2);
         if (m.canPlace(def, tx, ty, p, G.units, null)) continue;
         if (this.nearResources(tx, ty, def.w, def.h)) continue;
         // keep a free tile all around (units must never get walled in) and the addon slot free for Terran production buildings
@@ -1450,11 +1450,11 @@ class AI {
   creepEdge(fx, fy, range) {
     const p = this.p, m = G.map, en = this.enemies()[0];
     const tox = en && en.startX != null ? en.startX : m.w * TILE / 2, toy = en && en.startY != null ? en.startY : m.h * TILE / 2;
-    const base = Math.atan2(toy - fy, tox - fx), cx = Math.floor(fx / TILE), cy = Math.floor(fy / TILE);
+    const base = DMath.atan2(toy - fy, tox - fx), cx = Math.floor(fx / TILE), cy = Math.floor(fy / TILE);
     for (let r = Math.floor(range); r >= 2; r--) {
       for (let k = 0; k < 11; k++) {
         const a = base + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.45;
-        const tx = Math.round(cx + Math.cos(a) * r), ty = Math.round(cy + Math.sin(a) * r * 0.8);
+        const tx = Math.round(cx + DMath.cos(a) * r), ty = Math.round(cy + DMath.sin(a) * r * 0.8);
         if (!m.hasCreep(tx, ty)) continue;
         if (m.canPlace(DATA.buildings.creep_tumour, tx, ty, p, G.units, null)) continue;
         return [(tx + 0.5) * TILE, (ty + 0.5) * TILE];
@@ -1611,8 +1611,8 @@ class AI {
         const t = u.order.target, gap = distPt(u.x, u.y, t.x, t.y) / TILE, reach = u.maxRange();
         if (gap > reach + 1.5 && gap < DATA.abilities.blink.range
             && this.mine(o => o !== u && !o.isBuilding && o.hasWeapon() && distPt(o.x, o.y, u.x, u.y) < 6 * TILE).length >= 2) {
-          const a = Math.atan2(t.y - u.y, t.x - u.x), hop = (gap - reach * 0.8) * TILE;
-          Abilities.issue(u, 'blink', null, u.x + Math.cos(a) * hop, u.y + Math.sin(a) * hop);
+          const a = DMath.atan2(t.y - u.y, t.x - u.x), hop = (gap - reach * 0.8) * TILE;
+          Abilities.issue(u, 'blink', null, u.x + DMath.cos(a) * hop, u.y + DMath.sin(a) * hop);
         }
       }
       else if ((d === 'vulture' || d === 'mutalisk' || d === 'dragoon') && u.order.type === 'attack' && this.turn(u.id, 1)) this.kite(u);
@@ -1903,13 +1903,13 @@ class AI {
     if (this.state !== 'gather' || G.frame < 24 * 60 * 6 * dT || G.frame - this.lastDrop < 24 * 180 * dT || !this.rally) return;
     const t = this.mine(u => !u.isBuilding && (u.def.cargo || (u.def.cargoTech && p.hasTech(u.def.cargoTech))) && !u.cargo.length && u.order.type === 'idle' && u.def.id !== 'overlord')[0] || this.mine(u => u.def.id === 'overlord' && p.hasTech('ventral_sacs') && !u.cargo.length)[0]; if (!t) return;
     const cargo = this.armyUnits().filter(u => !u.fly && u.def.cargoSize && u.def.cargoSize <= 2 && distPt(u.x, u.y, this.rally.x, this.rally.y) < 8 * TILE && u.order.type !== 'attack'); let slots = 8; const chosen = []; for (const u of cargo) { if (u.def.cargoSize <= slots) { chosen.push(u); slots -= u.def.cargoSize; } if (slots <= 0) break; } if (chosen.length < 4) return;
-    const en = this.enemies()[0]; if (!en) return; const eb = en.startBase; const cx = G.map.w * TILE / 2, cy = G.map.h * TILE / 2; const away = Math.atan2(eb.cy - cy, eb.cx - cx); const x = clamp(eb.cx + Math.cos(away) * 5 * TILE, 64, G.map.w * TILE - 64), y = clamp(eb.cy + Math.sin(away) * 5 * TILE, 64, G.map.h * TILE - 64);
+    const en = this.enemies()[0]; if (!en) return; const eb = en.startBase; const cx = G.map.w * TILE / 2, cy = G.map.h * TILE / 2; const away = DMath.atan2(eb.cy - cy, eb.cx - cx); const x = clamp(eb.cx + DMath.cos(away) * 5 * TILE, 64, G.map.w * TILE - 64), y = clamp(eb.cy + DMath.sin(away) * 5 * TILE, 64, G.map.h * TILE - 64);
     this.dropOp = { transport: t, units: chosen, phase: 'load', x, y, tx: eb.cx, ty: eb.cy, t0: G.frame }; t.setOrder({ type: 'move', x: this.rally.x, y: this.rally.y });
   }
   kite(u) {
     const t = u.order.target; if (!t || !t.alive || t.fly) return; const tw = t.def.gw; if (!tw || tw.range > 1.5) return; if (u.cooldown < 6) return;
     const d = dist(u, t); const myR = u.maxRange() * TILE; if (d > myR * 0.7) return;
-    const a = Math.atan2(u.y - t.y, u.x - t.x); const x = u.x + Math.cos(a) * 80, y = u.y + Math.sin(a) * 80; if (!G.map.walkable(Math.floor(x / TILE), Math.floor(y / TILE)) && !u.fly) return;
+    const a = DMath.atan2(u.y - t.y, u.x - t.x); const x = u.x + DMath.cos(a) * 80, y = u.y + DMath.sin(a) * 80; if (!G.map.walkable(Math.floor(x / TILE), Math.floor(y / TILE)) && !u.fly) return;
     const tgt = t; u.applyOrder({ type: 'move', x, y }); u.queue = [{ type: 'attack', target: tgt }];
   }
   cluster(u, rangeT, min, pred) {

@@ -725,7 +725,7 @@ class GameMap {
 
     const halls = this.bases.map(b => (b.hall ? b.hall : [b.x, b.y]));
     const resPts = this.resources.map(r => [r.x, r.y]);
-    const D = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+    const D = (ax, ay, bx, by) => DMath.hypot(ax - bx, ay - by);
     const taken = [];
     // A site must be somewhere a unit could stand, clear of everything that already owns ground, and
     // clear of what the preset says to keep away from. Those clearances are the whole difference

@@ -26,8 +26,8 @@ const CREEP_SEED = 2, CREEP_GROW = 9 / (24 * 60);
 const BURROW_SURFACES = new Set(['move', 'attackmove', 'patrol', 'follow', 'load', 'pickup', 'gather', 'return', 'build', 'construct', 'repair', 'land', 'nydus', 'merge']);
 const TURN = { vulture: 0.22, siege_tank: 0.12, goliath: 0.28, dragoon: 0.25, reaver: 0.15, ultralisk: 0.2, archon: 0.3, dark_archon: 0.3, lurker: 0.3, hydralisk: 0.4, defiler: 0.35 };
 const ACCEL = { wraith: 0.35, scout: 0.35, corsair: 0.5, mutalisk: 0.6, scourge: 0.9, queen: 0.5, guardian: 0.15, devourer: 0.3, overlord: 0.05, battlecruiser: 0.06, carrier: 0.1, arbiter: 0.2, valkyrie: 0.35, dropship: 0.3, shuttle: 0.3, observer: 0.3, science_vessel: 0.25, interceptor: 1.5, cocoon: 0.1 };
-const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-const distPt = (x1, y1, x2, y2) => Math.hypot(x1 - x2, y1 - y2);
+const dist = (a, b) => DMath.hypot(a.x - b.x, a.y - b.y);
+const distPt = (x1, y1, x2, y2) => DMath.hypot(x1 - x2, y1 - y2);
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 
 class Player {
@@ -312,8 +312,8 @@ class Unit {
   // ---------------- larva ----------------
   tickLarva() {
     if (!this.hatch || !this.hatch.alive) { G.kill(this, null, true); return; }
-    if ((G.frame + this.id) % 60 === 0) { const a = G.rand() * Math.PI * 2; this.wx = this.hatch.x + Math.cos(a) * 60; this.wy = this.hatch.y + (this.hatch.def.h / 2) * TILE + 14 + G.rand() * 18; }
-    if (this.wx !== undefined) { const dx = this.wx - this.x, dy = this.wy - this.y, dd = Math.hypot(dx, dy); if (dd > 2) { this.x += dx / dd * 0.3; this.y += dy / dd * 0.3; } }
+    if ((G.frame + this.id) % 60 === 0) { const a = G.rand() * Math.PI * 2; this.wx = this.hatch.x + DMath.cos(a) * 60; this.wy = this.hatch.y + (this.hatch.def.h / 2) * TILE + 14 + G.rand() * 18; }
+    if (this.wx !== undefined) { const dx = this.wx - this.x, dy = this.wy - this.y, dd = DMath.hypot(dx, dy); if (dd > 2) { this.x += dx / dd * 0.3; this.y += dy / dd * 0.3; } }
   }
 
   // Come up, out of turn. Three orders force it -- one that means "go somewhere", a hold with nothing
@@ -396,7 +396,7 @@ class Unit {
       case 'gather': this.tickGather(); break;
       case 'return': this.tickReturn(); break;
       case 'build': this.tickBuild(); break;
-      case 'construct': { const b = o.target; if (!b || !b.alive || b.done) { this.nextOrder(); break; } if (b.builder && b.builder !== this && b.builder.alive && b.builder.order.target === b) { this.nextOrder(); break; } b.builder = this; if (this.moveToRect(b, 4)) { if (this.moveFailed) { if (b.builder === this) b.builder = null; this.nextOrder(); break; } this.facing = Math.atan2(b.y - this.y, b.x - this.x); } break; }
+      case 'construct': { const b = o.target; if (!b || !b.alive || b.done) { this.nextOrder(); break; } if (b.builder && b.builder !== this && b.builder.alive && b.builder.order.target === b) { this.nextOrder(); break; } b.builder = this; if (this.moveToRect(b, 4)) { if (this.moveFailed) { if (b.builder === this) b.builder = null; this.nextOrder(); break; } this.facing = DMath.atan2(b.y - this.y, b.x - this.x); } break; }
       case 'repair': Abilities.repairTick(this); break;
       case 'ability': Abilities.orderTick(this); break;
       case 'load': { const t = o.target; if (!t || !t.alive || t.owner !== this.owner || this.fly || t.inside) { this.nextOrder(); break; }
@@ -504,7 +504,7 @@ class Unit {
     const dd = dist(this, t) - t.r - this.r;
     if (dd <= this.wRangeAt(w, t) * TILE) {
       if (w.minRange && dd < w.minRange * TILE) { if (this.canMove && !this.sieged) this.moveTo(this.x + (this.x - t.x), this.y + (this.y - t.y)); return; }
-      this.facing = Math.atan2(t.y - this.y, t.x - this.x);
+      this.facing = DMath.atan2(t.y - this.y, t.x - this.x);
       if (this.cooldown <= 0) this.fireAt(t);
       // THE HALT, and the one weapon that is exempt from it. Clearing the path is what makes every unit
       // in this game stand still the moment something walks into range -- it is the engine's default and
@@ -520,7 +520,7 @@ class Unit {
   fireAt(t) {
     const w = this.weaponFor(t); if (!w) return;
     if (this.fx.dweb > 0 && !this.fly) return;
-    this.cooldown = this.wCd(w) + Math.floor(G.rand() * 3) - 1; this.facing = Math.atan2(t.y - this.y, t.x - this.x); this.lastFire = G.frame;
+    this.cooldown = this.wCd(w) + Math.floor(G.rand() * 3) - 1; this.facing = DMath.atan2(t.y - this.y, t.x - this.x); this.lastFire = G.frame;
     if (this.def.worker && !this.isBuilding) this.cooldown = 22;
     Combat.fire(this, t, w);
   }
@@ -565,20 +565,20 @@ class Unit {
       if (this.path && this.pathI < this.path.length) { const wp = this.path[this.pathI]; gx = (wp[0] + 0.5) * TILE; gy = (wp[1] + 0.5) * TILE; }
       else if (this.path && this.path.length) { const wp = this.path[this.path.length - 1]; if (distPt(this.x, this.y, (wp[0] + .5) * TILE, (wp[1] + .5) * TILE) < TILE && distPt(this.x, this.y, x, y) > TILE * 1.5) { /* path ended short (unreachable) */ this.stuck = 0; this.moveFailed = true; return true; } }
     }
-    const want = Math.atan2(gy - this.y, gx - this.x); let ang = want; let step = Math.min(spd, dd);
+    const want = DMath.atan2(gy - this.y, gx - this.x); let ang = want; let step = Math.min(spd, dd);
     if (!this.lifted) {
-      const turn = TURN[this.def.id] || (this.fly ? 0.3 : 0.7); let diff = want - this.facing; diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      const turn = TURN[this.def.id] || (this.fly ? 0.3 : 0.7); let diff = want - this.facing; diff = DMath.atan2(DMath.sin(diff), DMath.cos(diff));
       if (Math.abs(diff) <= turn || dd < 20) this.facing = want; else this.facing += Math.sign(diff) * turn;
-      this.facing = Math.atan2(Math.sin(this.facing), Math.cos(this.facing)); ang = this.facing;
+      this.facing = DMath.atan2(DMath.sin(this.facing), DMath.cos(this.facing)); ang = this.facing;
       if (!this.fly) { if (Math.abs(diff) > 1.2) step *= TURN[this.def.id] ? 0.15 : 0.45; }
       else { const acc = ACCEL[this.def.id] || 0.4; this.spdCur = Math.min(spd, (this.spdCur || 0) + acc); const brake = (this.spdCur * this.spdCur) / (2 * acc); if (dd < brake) this.spdCur = Math.max(Math.min(spd, 1.5), this.spdCur - acc); step = Math.min(this.spdCur, dd); }
     } else this.facing = ang;
-    let nx = this.x + Math.cos(ang) * step, ny = this.y + Math.sin(ang) * step;
+    let nx = this.x + DMath.cos(ang) * step, ny = this.y + DMath.sin(ang) * step;
     if (!this.fly) {
       if (!G.passable(nx, ny, this) && G.passable(this.x, this.y, this)) {
         // slide along the obstacle at full speed (axis-aligned first, then diagonals)
         const sx = Math.sign(nx - this.x) || 1, sy = Math.sign(ny - this.y) || 1;
-        const tries = Math.abs(nx - this.x) >= Math.abs(ny - this.y) ? [[this.x + sx * step, this.y], [this.x, this.y + sy * step], [this.x + Math.cos(ang + 0.8) * step, this.y + Math.sin(ang + 0.8) * step], [this.x + Math.cos(ang - 0.8) * step, this.y + Math.sin(ang - 0.8) * step]] : [[this.x, this.y + sy * step], [this.x + sx * step, this.y], [this.x + Math.cos(ang + 0.8) * step, this.y + Math.sin(ang + 0.8) * step], [this.x + Math.cos(ang - 0.8) * step, this.y + Math.sin(ang - 0.8) * step]];
+        const tries = Math.abs(nx - this.x) >= Math.abs(ny - this.y) ? [[this.x + sx * step, this.y], [this.x, this.y + sy * step], [this.x + DMath.cos(ang + 0.8) * step, this.y + DMath.sin(ang + 0.8) * step], [this.x + DMath.cos(ang - 0.8) * step, this.y + DMath.sin(ang - 0.8) * step]] : [[this.x, this.y + sy * step], [this.x + sx * step, this.y], [this.x + DMath.cos(ang + 0.8) * step, this.y + DMath.sin(ang + 0.8) * step], [this.x + DMath.cos(ang - 0.8) * step, this.y + DMath.sin(ang - 0.8) * step]];
         let ok = false; for (const [ax, ay] of tries) if (G.passable(ax, ay, this)) { nx = ax; ny = ay; ok = true; break; }
         if (!ok) { this.stuck += 3; this.repathT = 0; if (this.stuck > 30) this.path = null; return false; }
       }

@@ -58,13 +58,13 @@ exist only in a chat transcript.
   first time and every fix that started from a hypothesis had to be reverted. Build the probe first.
 - **Read the constant, never the literal.** Stale constants have caused real bugs here (`AI.supply()`
   returning early at 200 when `SUPPLY_CAP` had been 500 for a milestone).
-- **LINE ENDINGS ARE MIXED, so DETECT PER FILE.** The old rule here said "every file in this repo is
-  CRLF" and that is measured false: **71 files are CRLF, 77 are LF-only and two (`HANDOFF.md`,
-  `HANDOFF-M13.md`) are already mixed.** `js/net.js`, `index.html`, `test/serve.js` and most of `test/`
-  are LF. A patch script that assumes CRLF silently matches nothing and reports a zero anchor count,
-  which is how this was found. Detect the ending the file already has, reuse it, and build every
-  multi-line anchor as an ARRAY joined with it rather than as a literal.
-  `git show <rev>:file` emits LF regardless. `core.autocrlf` is true, so git normalises on commit and
-  a working-copy mismatch usually produces no diff at all -- do not chase one.
+- **DETECT LINE ENDINGS PER FILE, even now that they are uniform.** `.gitattributes` (REVIEW-M17,
+  decision 3) normalises to LF in the repository and checks out with the platform ending, so a fresh
+  checkout on Windows is CRLF throughout (134 of 134 files, measured after the re-checkout). Before
+  that it was 71 CRLF, 77 LF-only and 2 mixed, because tools write LF after checkout -- and they still
+  can, so a patch script must detect the ending the file already has, reuse it, build every multi-line
+  anchor as an ARRAY joined with it, and refuse to write on a zero anchor count (that count is how the
+  mixture was found). `git show <rev>:file` emits LF regardless. A working-copy ending mismatch produces
+  no diff at all -- do not chase one. `tools/patch.js` is the reference patch runner and `tools/control.js` applies a negative control and restores.
 - **`test/patch10.js`, `patch11.js`, `patch15.js` are NOT tests** — they are one-off codemods that
   rewrite `js/`. They refuse to run without a flag. Leave it that way.

@@ -628,11 +628,13 @@ listed here. Ordered by what I would do first.
       three Zerg AIs sat at 2,000-2,600 minerals with **zero larvae and six eggs each** — income outran
       what six hatcheries hatch, and the hall rule allowed one new hatchery per 45 s. A Zerg with over a
       thousand minerals and no larva may now add one every 15 s (still one at a time). Control: with
-      the clause removed a drone is sent at 45 s, with it at 16 s. **`eightplayer` is 19/19 and in the
-      gate** (74 suites); banks went 2054/2630/108/1749/2092/397/1092/2139 → 234/1198/405/2088/2077/
-      352/1093/2475 — one Zerg still at 2475 against 2500, bounded by hatchery placement room rather
-      than the cadence, so the assertion **passes by 1% and will flip on the next AI change**, which is
-      what a canary is for.
+      the clause removed a drone is sent at 45 s, with it at 16 s. Banks went 2054/2630/108/1749/2092/
+      397/1092/2139 → 234/1198/405/2088/2077/352/1093/2475: the Zerg banks fell, one to 2475 against
+      2500. **It was gated for one commit and taken out again** — the deterministic maths (entry 15)
+      moved every position by a rounding step, dealt a different game, and a *Terran* crossed 2,500 on
+      full geysers with eight production buildings: the flat-3 production rule `AI.macro` keeps on
+      purpose ("THE FLAT 3 STAYS", measured twice), which is gated. The money line is AI variance on
+      this map, not a check; it stays a hand-run measurement, and the note in `test/all.js` says so.
     - **Bunkered infantry fired at double rate** (`Unit.tick` and the bunker loop both decremented
       `cooldown`): 7.5-frame gaps against 15, measured; one decrement now, 15 against 15.
     - **The 12-frame micro cadence existed only for player 0.** `G.tick` runs AI *i* on frames ≡ *i*
@@ -664,6 +666,21 @@ listed here. Ordered by what I would do first.
     while the rest of the batch arrives, a `BW_CHEATS=1` relay forwarding it, and the fourth join from
     one address refused when the limit is three (53 checks). The re-stamp check in section 9 now uses
     an ordinary command, since a cheat is dropped outright. **Gate:** 74 of 74, 217 s.
+15. **Decision 1: the simulation's transcendentals are the same bits on every engine.** *(commit:
+    deterministic maths)* `Math.sin`, `cos`, `atan2` and `hypot` are not required to be correctly
+    rounded and engines differ in the last bit (V8 and SpiderMonkey carry fdlibm ports; JavaScriptCore
+    calls the platform libm), so a Tauri build on Windows (WebView2) against one on macOS (WebKit), or
+    Chrome against Firefox, drifted apart over minutes. `DMath` in `js/data.js` computes the four with
+    +, −, ×, ÷, `sqrt` and `floor` only (all correctly rounded by IEEE 754): range reduction by whole
+    turns, a fold, and a Taylor series to ~1e-16; `atan` by argument reduction to |x| ≤ tan(π/12).
+    **75 call sites** in the stamped files (66 trig, 9 hypot) now read it; presentation keeps the
+    natives. `test/dmath.js` (14 checks, in the gate): sin/cos/atan2 within 4e-15 of Math over 100,000
+    points and hypot within 1e-15 relative, the edges (exact zeros, the axes, a million radians, a
+    non-finite angle is 0 not NaN), DMath's own source calls no native transcendental, no stamped file
+    calls one in code (a scrape with a count guard: 75 DMath calls), and two contexts reach the same
+    hash after 2,400 frames. Negative control: one `Math.hypot` put back in `sim.js` → two clean reds.
+    The `version.js` audit refused a stale edit anchor on the way, which is the guard working. The
+    stamp moved; results change by ulps, which is why entry 12's canary re-dealt. **Gate:** 74 of 74, 180 s (with `dmath` in and `eightplayer` out).
 
 # 4. Considered and deliberately not done
 

@@ -11,7 +11,7 @@ const Combat = {
     // Dark Swarm: ranged non-splash attacks against ground units under swarm miss
     const swarmed = ranged && !t.fly && !w.splash && !w.line && !w.glaive && Abilities.inField(t.x, t.y, 'swarm');
     if (w.suicide) { this.explode(a, t, w); return; }
-    if (w.scarab) { if (a.scarabs <= 0) { a.cooldown = 8; return; } a.scarabs--; const s = G.spawnUnit('scarab', a.owner, a.x + Math.cos(a.facing) * a.r, a.y + Math.sin(a.facing) * a.r); s.parent = a; s.lifetime = 110; s.facing = a.facing; s.applyOrder({ type: 'scarab', target: t }); return; }
+    if (w.scarab) { if (a.scarabs <= 0) { a.cooldown = 8; return; } a.scarabs--; const s = G.spawnUnit('scarab', a.owner, a.x + DMath.cos(a.facing) * a.r, a.y + DMath.sin(a.facing) * a.r); s.parent = a; s.lifetime = 110; s.facing = a.facing; s.applyOrder({ type: 'scarab', target: t }); return; }
     if (w.interceptor) { a.launched = a.launched || []; for (const ic of a.launched) if (ic.alive) { ic.order.target = t; if (ic.order.type === 'dock') ic.applyOrder({ type: 'intercept', target: t }); } if (a.interceptors > 0 && !(a.launchCd > 0)) { const ic = G.spawnUnit('interceptor', a.owner, a.x, a.y + 6); ic.parent = a; ic.facing = a.facing; ic.applyOrder({ type: 'intercept', target: t }); a.interceptors--; a.launched.push(ic); a.launchCd = 8; } a.cooldown = 6; return; }
     if (w.glaive) { this.visual(a, t, 'glaive'); let cur = t, d = dmg; const hit = [t]; for (let b = 0; b < 3 && cur; b++) { G.damage(cur, d, w.type, a);   /* a glaive is never `swarmed` (the test above excludes w.glaive), so every bounce lands */ d = Math.max(1, Math.floor(d / 3)); let nx = null, nd = 1e9; for (const o of G.near(cur.x, cur.y, 3 * TILE)) { if (hit.includes(o) || o.owner === a.owner || !G.targetable(a, o)) continue; const dd = dist(o, cur); if (dd < nd) { nd = dd; nx = o; } } if (nx) { hit.push(nx); G.effects.push({ kind: 'line', x: cur.x, y: cur.y, tx: nx.x, ty: nx.y, t: 6, color: '#8f8' }); } cur = nx; } return; }
     // A LINE HITS EVERYTHING ALONG IT AT ONCE. Two weapons use this: the Lurker's spines and the
@@ -40,16 +40,16 @@ const Combat = {
     //   reads is deliberately not set. A flame that cooked your own marines would make the Hellion
     //   unusable in the bio ball it is built to escort, and no part of the report asked for it.
     if (w.line) {
-      const ang = Math.atan2(t.y - a.y, t.x - a.x);
+      const ang = DMath.atan2(t.y - a.y, t.x - a.x);
       const len = a.wRange(w) * TILE;
-      G.effects.push({ kind: w.fx || 'spines', x: a.x, y: a.y, tx: a.x + Math.cos(ang) * len, ty: a.y + Math.sin(ang) * len, t: 12 });
+      G.effects.push({ kind: w.fx || 'spines', x: a.x, y: a.y, tx: a.x + DMath.cos(ang) * len, ty: a.y + DMath.sin(ang) * len, t: 12 });
       const hitsAir = w.targets === 'air' || w.targets === 'both';
-      for (const o of G.near(a.x + Math.cos(ang) * len / 2, a.y + Math.sin(ang) * len / 2, len / 2 + 16)) {
+      for (const o of G.near(a.x + DMath.cos(ang) * len / 2, a.y + DMath.sin(ang) * len / 2, len / 2 + 16)) {
         if (o.owner === a.owner || !o.alive || o.inside) continue;
         if (o.fly ? !hitsAir : w.targets === 'air') continue;
         const rx = o.x - a.x, ry = o.y - a.y;
-        const proj = rx * Math.cos(ang) + ry * Math.sin(ang); if (proj < 0 || proj > len) continue;
-        const perp = Math.abs(-rx * Math.sin(ang) + ry * Math.cos(ang));
+        const proj = rx * DMath.cos(ang) + ry * DMath.sin(ang); if (proj < 0 || proj > len) continue;
+        const perp = Math.abs(-rx * DMath.sin(ang) + ry * DMath.cos(ang));
         if (perp <= o.r + 8) G.damage(o, dmg, w.type, a, { splash: true });
       }
       return;
@@ -112,7 +112,7 @@ const Combat = {
       const p = ps[i]; if (p.delay > 0) { p.delay--; continue; }
       p.life--; const t = p.target;
       if (!t || !t.alive || p.life <= 0) { ps.splice(i, 1); continue; }
-      const dx = t.x - p.x, dy = t.y - p.y, d = Math.hypot(dx, dy);
+      const dx = t.x - p.x, dy = t.y - p.y, d = DMath.hypot(dx, dy);
       if (d <= p.spd + t.r * 0.5) {
         if (p.kind === 'yamato') { G.damage(t, 260, 'explosive', p.src); G.effects.push({ kind: 'boom', x: t.x, y: t.y, t: 20, r: 30 }); }
         ps.splice(i, 1); continue;
