@@ -825,6 +825,13 @@ Object.assign(UI, {
     if (Render.fogCanvas) { ctx.globalAlpha = 0.85; ctx.imageSmoothingEnabled = false; ctx.drawImage(Render.fogCanvas, mr.x, mr.y, mr.s, mr.s); ctx.imageSmoothingEnabled = true; ctx.globalAlpha = 1; }
     for (const r of m.resources) { if (vis[r.y * m.w + r.x] === 0) continue; ctx.fillStyle = r.type === 'mineral' ? '#6fe0ff' : '#7ee07a'; ctx.fillRect(mr.x + r.x * sc * TILE, mr.y + r.y * sc * TILE, Math.max(2, r.w * sc * TILE), Math.max(1.5, r.h * sc * TILE)); }
     for (const u of G.units) { if (!u.alive || u.inside || u.def.larva || u.def.notUnit) continue; if (u.owner !== G.human && !G.canSee(G.human, u) && !(u.isBuilding && G.explored(G.human, Math.floor(u.x / TILE), Math.floor(u.y / TILE)))) continue; ctx.fillStyle = u.owner === G.human ? '#3fe83f' : G.players[u.owner].color; const s = u.isBuilding ? Math.max(3, u.def.w * TILE * sc) : 2.5; ctx.fillRect(mr.x + u.x * sc - s / 2, mr.y + u.y * sc - s / 2, s, s); }
+    // Sensor Tower contacts (FIXLIST-M14 C2), AFTER the fog and after the units. A blip is something
+    // you know about ground you cannot see, so painting it under the fog would hide the one thing it
+    // exists to tell you. Drawn as a hollow amber ring and never in a player's colour: a contact has no
+    // owner as far as you are concerned, and a coloured dot would be claiming to know whose it is.
+    { const cs = G.contacts(G.human);
+      if (cs.length) { ctx.strokeStyle = 'rgba(255,190,60,0.9)'; ctx.lineWidth = 1;
+        for (const c of cs) { ctx.beginPath(); ctx.arc(mr.x + c.x * sc, mr.y + c.y * sc, 2.2, 0, 7); ctx.stroke(); } } }
     for (const pg of this.pings) { ctx.strokeStyle = `rgba(255,60,60,${pg.t / 90})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(mr.x + pg.x * sc, mr.y + pg.y * sc, 4 + (90 - pg.t) % 30 / 3, 0, 7); ctx.stroke(); }
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(mr.x + Render.camX * sc + .5, mr.y + Render.camY * sc + .5, Render.viewWorldW() * sc, Render.viewWorldH() * sc);   // world units, so the box tracks the zoom
     // ---- unit panel ----

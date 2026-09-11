@@ -66,6 +66,7 @@ const TESTS = [
   { name: 'defeat', args: ['defeat.js'], what: 'the result screen actually appears when you lose, and Restart replays the same game' },
   { name: 'addons', args: ['addons.js'], what: 'an add-on keeps its own card, and the page turn has a slot nothing else is on' },
   { name: 'fogbuild', args: ['fogbuild.js'], what: 'you cannot build on ground you have never seen, and the AI still can' },
+  { name: 'sensor', args: ['sensor.js'], what: 'the Sensor Tower reports movement as contacts and reveals nothing' },
   { name: 'fognight', args: ['fognight.js'], what: 'explored ground remembers, and night shortens sight on maps that have one' },
   { name: 'formation', args: ['formation.js'], what: 'a right-drag spreads the selection evenly along the line' },
   { name: 'mapmodes', args: ['mapmodes.js'], what: 'the four map sizes are different rules, and the sandstorm is deterministic' },

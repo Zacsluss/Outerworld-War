@@ -405,7 +405,15 @@ ok(D.u.medivac.cargo === D.u.dropship.cargo && (D.u.medivac.abil || []).includes
 ok(D.u.raven.det === true && (D.u.raven.abil || []).includes('jam_field') && !D.u.raven.abil.includes('irradiate'),
   'the Raven detects and jams, and does not take anything off the Science Vessel');
 { const maxOther = Math.max(...Object.values(D.b).filter(b => b.race === 'T' && b.id !== 'sensor_tower').map(b => b.sight || 0));
-  ok(D.b.sensor_tower.sight > maxOther, 'the Sensor Tower sees further than anything else Terran builds', D.b.sensor_tower.sight + ' vs ' + maxOther);
+  // THIS ASSERTION USED TO SAY THE OPPOSITE, and the inversion is FIXLIST-M14 C2. M12 shipped the
+  // Sensor Tower as a plain 16-tile vision source and this line asserted it "sees further than anything
+  // else Terran builds" -- which is precisely what the player reported as wrong: they asked for enemy
+  // MOVEMENT as dots, not for sixteen tiles of floodlight. It now REPORTS rather than reveals, so its
+  // sight is its own footprint and its reach is `sensor`, which grants no vision at all.
+  ok(D.b.sensor_tower.sight < maxOther, 'the Sensor Tower no longer OUT-SEES anything -- it reports, it does not reveal', D.b.sensor_tower.sight + ' vs ' + maxOther);
+  ok(D.b.sensor_tower.sensor >= 16 && D.b.sensor_tower.sensor > D.b.sensor_tower.sight * 4,
+    '...and its reach is a contact radius far beyond its sight', JSON.stringify([D.b.sensor_tower.sight, D.b.sensor_tower.sensor]));
+  ok(Object.values(D.b).filter(b => b.sensor).map(b => b.id).join(',') === 'sensor_tower', 'it is the only thing in the game with one');
   ok(!D.b.sensor_tower.det, '...and is deliberately not a detector, which would answer every cloak in the game from home'); }
 ok(!!D.b.planetary_fortress.gw && !D.b.planetary_fortress.canLift,
   'the Planetary Fortress trades the Command Center\'s escape hatch for a gun', JSON.stringify([!!D.b.planetary_fortress.gw, !!D.b.planetary_fortress.canLift]));

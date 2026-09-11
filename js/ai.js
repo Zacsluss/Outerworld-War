@@ -135,6 +135,12 @@ const AI_COMP = {
   ZvP: [['zergling', 3], ['hydralisk', 6], ['roach', 3], ['mutalisk', 3], ['scourge', 1], ['ultralisk', 3], ['defiler', 2], ['queen', 2], ['infestor', 2]],
   P: [['zealot', 4], ['dragoon', 5], ['sentry', 2], ['high_templar', 2], ['dark_templar', 2], ['immortal', 3], ['colossus', 5], ['disruptor', 2], ['reaver', 3], ['shuttle', 1], ['warp_prism', 1], ['observer', 1], ['corsair', 2], ['phoenix', 2], ['oracle', 2], ['void_ray', 3], ['scout', 2], ['carrier', 5], ['tempest', 3], ['arbiter', 3]],
 };
+// How a Sensor Tower reaches a computer opponent (FIXLIST-M14 C2). Both are about the AI not being
+// led around by the nose by a single enemy scout: a blip only raises the alarm if it is within
+// SENSOR_NEAR tiles of one of my halls, and one alarm cannot follow another inside SENSOR_CALM frames.
+// Named here rather than written into AI.contactAlarm because every number the AI reacts to in this
+// file is named, and because the balance run will want to find them.
+const SENSOR_NEAR = 20, SENSOR_CALM = 24 * 25;
 const AI_RESEARCH = {
   T: ['stim', 'siege_tech', 'u238', 'infW', 'infA', 'ion_thrusters', 'spider_mines_tech', 'vehW', 'charon', 'vehA', 'irradiate_tech', 'emp_tech', 'personnel_cloaking', 'lockdown_tech', 'yamato_tech', 'shipW', 'shipA', 'cloaking_field', 'suppress_inf', 'suppress_veh', 'restoration_tech', 'optical_flare_tech', 'caduceus', 'moebius', 'ocular', 'apollo', 'titan', 'colossus', 'drilling_claws'],
   // M12's five Zerg researches, placed by what they unlock rather than appended. `volatile_bile` and
@@ -1085,6 +1091,33 @@ class AI {
     for (const k of Object.keys(now)) I.peak[k] = Math.max(I.peak[k] || 0, now[k]);
     return I;
   }
+  // WHAT A COMPUTER OPPONENT DOES WITH A BLIP -- FIXLIST-M14 C2.
+  //
+  // The user's decision was that the AI reads the Sensor Tower's contacts, which is what makes them
+  // simulation state rather than an overlay. The discipline that comes with it is that a contact is a
+  // POSITION AND NOTHING ELSE, so it must not reach `observe()` at all: `I.unit` and `I.peak` are keyed
+  // by def id, and anything a blip touched there would be the AI learning what is coming, from inside
+  // its own base, for 125 minerals. It is kept out deliberately, and that is the whole restraint.
+  //
+  // What a position CAN answer is the one question the tower exists for: is something coming. The
+  // `attacked` branch in army() is purely REACTIVE -- it fires once something of yours is already being
+  // hit -- so without this a Sensor Tower would change nothing at all for a computer opponent, which is
+  // the "present and inert" failure test/terran12.js was written about.
+  //
+  // Two guards, and both are about not being led around by the nose. A blip has to be near a hall, and
+  // one alarm is not allowed to follow another inside SENSOR_CALM frames -- otherwise a single enemy
+  // scout circling a base pins the whole army at home for the rest of the game, which is a worse
+  // outcome than not having the tower.
+  contactAlarm() {
+    const p = this.p;
+    if (G.frame - (this.contactT || -9999) < SENSOR_CALM) return null;
+    const cs = G.contacts(p.id); if (!cs.length) return null;
+    let best = null, bd = SENSOR_NEAR * TILE;
+    for (const h of this.halls()) for (const c of cs) { const d = distPt(c.x, c.y, h.x, h.y); if (d < bd) { bd = d; best = c; } }
+    if (!best) return null;
+    this.contactT = G.frame;
+    return { x: best.x, y: best.y };
+  }
   // Have we SEEN anything that flies and shoots, or anything that makes one? The building half matters
   // as much as the unit half: a Starport seen at six minutes is the warning, and the Wraith that comes
   // out of it at eight is too late to start building anti-air.
@@ -1152,6 +1185,10 @@ class AI {
       if (!t) { let bestN = -1; for (const u of attacked) { const n = attacked.reduce((c, o) => c + (distPt(o.x, o.y, u.x, u.y) < 12 * TILE ? 1 : 0), 0); if (n > bestN) { bestN = n; t = u; } } }
       this.state = 'defend'; this.defendPt = { x: t.x, y: t.y }; this.defendT = G.frame;
     }
+    // ...and the early half of the same question, from a Sensor Tower. See AI.contactAlarm: a blip says
+    // something is MOVING near a base and nothing else, which is all "go and look" needs. Only when
+    // nothing is being hit yet -- real damage always wins, because it knows where the fight actually is.
+    else if (this.state !== 'defend') { const c = this.contactAlarm(); if (c) { this.state = 'defend'; this.defendPt = c; this.defendT = G.frame; } }
     if (this.state === 'defend') { if (G.frame - this.defendT > 24 * 20) this.state = 'gather'; else { for (const u of army) if (u.order.type !== 'attack' && !u.burrowed && distPt(u.x, u.y, this.defendPt.x, this.defendPt.y) > 6 * TILE) u.setOrder({ type: 'attackmove', x: this.defendPt.x, y: this.defendPt.y }); for (const u of this.supportUnits()) if (u.order.type === 'idle') u.setOrder({ type: 'follow', target: army[0] || u }); return; } }
     if (this.state === 'gather') {
       for (const u of army) if (u.order.type === 'idle' && !u.burrowed && distPt(u.x, u.y, rally.x, rally.y) > 5 * TILE) u.setOrder({ type: 'attackmove', x: rally.x + (G.rand() - .5) * 96, y: rally.y + (G.rand() - .5) * 96 });

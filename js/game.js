@@ -321,6 +321,54 @@ const G = {
     for (const f of this.fields) if (f.kind === 'scan') for (const t of this.near(f.x, f.y, 10 * TILE)) if (t.isCloaked) t.detBy[f.owner] = this.frame;
   },
 
+  // ==========================================================================
+  // CONTACTS -- what a Sensor Tower reports. FIXLIST-M14 C2 (item 12).
+  // ==========================================================================
+  // The player asked for enemy MOVEMENT as dots, without the tower illuminating its whole sight range.
+  // Until now `sensor_tower` was a plain `sight: 16`, which is the opposite: it revealed sixteen tiles
+  // of map and told you nothing you would not have learned by walking there.
+  //
+  // A CONTACT IS A POSITION AND NOTHING ELSE. No identity, no owner, no health, no targetability -- the
+  // returned objects are plain {x, y} and deliberately do not carry the unit, so nothing downstream can
+  // reach through a blip to the thing that made it. That restraint is the feature: the AI reads these
+  // too (the user's decision), and an AI that could read a def id off a contact would be scouting for
+  // free from inside its own base.
+  //
+  // DERIVED, NEVER STORED, for exactly the reason GameMap.hazardState is: js/snapshot.js captures unit
+  // positions, so a function of unit positions survives a snapshot, a replay seek and a rejoin without
+  // snapshot.js knowing this exists. A remembered list of past blips would be dropped on a seek and the
+  // two sides would disagree about what the tower had seen. No G.rand, no clock, iteration order is
+  // G.units -- so two clients compute the same contacts on the same frame.
+  //
+  // WHAT DOES NOT PRODUCE ONE, and each is a decision:
+  //   * anything standing still     -- it is a MOVEMENT detector, so sitting still is a real answer
+  //   * burrowed                    -- ground is cover from it, the same way it is cover from a storm
+  //   * buildings                   -- they do not move, so they could only ever be revealed, not detected
+  //   * things inside a transport   -- the transport makes the blip, its passengers do not
+  //   * your own and your allies'   -- you know where your army is
+  //   * larvae, eggs and munitions  -- a scarab in flight is not an army moving
+  //
+  // Movement is `u.x !== u.px`, the interpolation source the renderer already keeps, rather than the
+  // `moving` flag: `moving` is set by the movement pass and is false on a unit being shoved along by
+  // collision, which is still something arriving.
+  contacts(pid) {
+    const out = [];
+    let any = null;
+    for (const u of this.units) if (u.alive && u.done && u.def.sensor && this.allied(u.owner, pid)) (any || (any = [])).push(u);
+    if (!any) return out;
+    for (const t of this.units) {
+      if (!t.alive || t.isBuilding || t.inside || t.burrowed) continue;
+      const d = t.def; if (!d || d.larva || d.egg || d.notUnit) continue;
+      if (this.allied(t.owner, pid)) continue;
+      if (this.players[t.owner] && this.players[t.owner].neutral) continue;
+      if (t.x === t.px && t.y === t.py) continue;
+      for (const w of any) {
+        const dx = w.x - t.x, dy = w.y - t.y, r = w.def.sensor * TILE;
+        if (dx * dx + dy * dy <= r * r) { out.push({ x: t.x, y: t.y }); break; }
+      }
+    }
+    return out;
+  },
   // ---------------- spawning ----------------
   spawnUnit(defId, owner, x, y) { const u = new Unit(defId, owner, x, y); this.units.push(u); this.byId.set(u.id, u); return u; },
   placeBuilding(def, tx, ty, owner) {

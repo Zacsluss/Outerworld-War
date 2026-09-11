@@ -751,20 +751,33 @@ const DATA = (() => {
   // things it exists to stop while leaving a siege line perfectly able to crack it.
   B('planetary_fortress', { name: 'Planetary Fortress', race: 'T', hp: 1750, armor: 3, w: 4, h: 3, min: 150, gas: 150, time: 1050, hk: 'P', tier: 'morph', req: ['engineering_bay'], produces: ['scv'], sup: 10, depot: true, addons: ['comsat_station', 'nuclear_silo'], sight: 10,
     gw: W(40, 'normal', 6, 22, { upgKey: null }) });
-  // SENSOR TOWER -- sixteen tiles of sight for 125/100 and no weapon at all.
+  // SENSOR TOWER -- sixteen tiles of CONTACTS, and almost no sight at all.
   //
-  // SC2's version shows enemy positions as blips beyond vision range. That needs a hook in the vision
-  // pass and a second render layer, both in files this branch does not own, and a half-built version of
-  // it would be worse than none. What it is instead is the honest version of the same idea in the
-  // machinery that already exists: raw sight radius, running through the same fog, the same night
-  // penalty and the same jamming auras as everything else. It is the mirror of the Scrambler Mast --
-  // one Terran mast takes sight away from the enemy, the other gives it to you -- and under M11's
-  // fog-that-lies it is worth more than the number suggests, because ground you can currently see is
-  // the only ground that is telling you the truth.
+  // It shipped in M12 as a plain 16-tile vision source, and the comment that used to sit here said why:
+  // SC2 shows enemy positions as blips beyond vision range, that needs a hook in the vision pass and a
+  // second render layer, and a half-built version would be worse than none. FIXLIST-M14 C2 is that hook.
+  //
+  // A CONTACT IS A BLIP: POSITION ONLY. You learn that something moved there. Not what it is, not how
+  // many, not how hurt -- and you cannot shoot it. The fog inside the radius stays fogged and the
+  // terrain stays as explored or unexplored as it already was, so the tower reveals NOTHING; it reports.
+  // That is the difference between an early-warning array and a floodlight, and it is the whole unit.
+  //
+  //   sensor    the contact radius, in tiles. Read by G.contacts.
+  //   sight     3, its own footprint and a little more, so it is not blind standing in its own base.
+  //             It WAS 16, and that number is the one the player reported.
+  //
+  // Stationary and burrowed things produce nothing: it is a movement detector, so a dug-in army is
+  // invisible to it and sitting still is a real answer to it.
+  //
+  // The user decided the AI reads the contacts too, which is what makes them simulation state rather
+  // than an overlay -- so this def moves the build stamp and G.contacts is a pure function of unit
+  // positions, with no stored history for a snapshot to lose.
   //
   // NOT a detector, on purpose. A 16-tile detector for 125 minerals would answer every cloak in the
-  // game from the safety of your own base.
-  B('sensor_tower', { name: 'Sensor Tower', race: 'T', hp: 300, armor: 0, w: 2, h: 2, min: 125, gas: 100, time: 600, hk: 'T', tier: 'adv', req: ['engineering_bay'], sight: 16 });
+  // game from the safety of your own base -- and a contact is emphatically not detection: a cloaked
+  // unit that is MOVING makes a blip like anything else, which tells you where it is and nothing about
+  // what you would need to kill it.
+  B('sensor_tower', { name: 'Sensor Tower', race: 'T', hp: 300, armor: 0, w: 2, h: 2, min: 125, gas: 100, time: 600, hk: 'T', tier: 'adv', req: ['engineering_bay'], sight: 3, sensor: 16 });
   // REACTOR -- the Barracks' first add-on, ever, in this game or in Brood War.
   //
   // Which parent it hangs off is the entire design. The Factory and the Starport already have add-ons

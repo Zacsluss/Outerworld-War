@@ -344,6 +344,10 @@ const Render = {
     }
     if (UI.placing) this.drawPlacement(ctx);
     this.drawFog(ctx, vis, cx, cy);
+    // Sensor Tower contacts (FIXLIST-M14 C2), deliberately AFTER the fog. A blip is knowledge about
+    // ground you cannot see, so drawing it underneath the thing that hides that ground would put out
+    // the one light the tower switches on.
+    this.drawContacts(ctx);
     for (const mk of UI.markers) {
       const a = mk.t / 20;
       // A marker carrying a resource is the acknowledgement for targeting a patch: it settles onto the
@@ -1046,6 +1050,27 @@ const Render = {
   },
   // The ring Brood War puts round a resource you have targeted: an ellipse on the ground matching the
   // patch's footprint, not a circle centred on the sprite, because the sprite overhangs the tiles.
+  // A contact: position, and nothing that could be mistaken for identity. A hollow amber ring with a
+  // faint pulse -- never a player colour, never a shape that reads as a unit, no health bar, no
+  // selection ring, and nothing here can be clicked because UI.unitAt walks G.units and a contact is
+  // not in it. The pulse is a function of G.frame and the position, so two clients draw it the same.
+  //
+  // On the minimap too; that half lives in js/hud.js beside the other minimap marks.
+  CONTACT_R: 7,
+  drawContacts(ctx) {
+    if (typeof G.contacts !== 'function') return;
+    const cs = G.contacts(G.human); if (!cs.length) return;
+    const z = this.zoom, wW = this.viewWorldW(), wH = this.viewWorldH();
+    ctx.save(); ctx.lineWidth = 1.6 / z;
+    for (const c of cs) {
+      if (c.x < this.camX - 40 || c.x > this.camX + wW + 40 || c.y < this.camY - 40 || c.y > this.camY + wH + 40) continue;
+      const k = 0.55 + 0.25 * Math.sin((G.frame + (c.x | 0)) * 0.14);
+      ctx.strokeStyle = 'rgba(255,190,60,' + k.toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(c.x, c.y, this.CONTACT_R, 0, 7); ctx.stroke();
+      ctx.beginPath(); ctx.arc(c.x, c.y, 1.6, 0, 7); ctx.stroke();
+    }
+    ctx.restore();
+  },
   drawResourceRing(ctx, r, alpha) {
     const cx = (r.x + r.w / 2) * TILE, cy = (r.y + r.h / 2) * TILE;
     const rx = r.w * TILE * 0.62, ry = r.h * TILE * 0.72, z = this.zoom;
