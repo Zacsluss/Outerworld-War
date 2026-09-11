@@ -1,8 +1,9 @@
 # Working agreement — Brood War remake
 
-Loaded automatically every session. Kept short on purpose; the detail lives in `HANDOFF-M14.md`
-(current state and plan), `FIXLIST-M14.md` (twenty-one locked player-reported items, which
-come first), `DESIGN-M13.md` (what was built and why), and `PLAYTEST-M13.md`.
+Loaded automatically every session. Kept short on purpose; the detail lives in `HANDOFF-M17.md`
+(current state, known reds, traps, the kickoff prompt), `REVIEW-M17.md` (the full codebase review:
+open tasks, questions, what was fixed, what was deliberately not), `DESIGN-M13.md` (what was built
+and why), and `PLAYTEST-M17.md`.
 
 ---
 
@@ -18,7 +19,7 @@ over to a fresh one. The prompt must stand alone — someone pasting it into an 
 nothing else:
 
 - repo path, branch, HEAD commit, whether the tree is clean
-- which file to read first for state (`HANDOFF-M14.md` or its successor)
+- which file to read first for state (`HANDOFF-M17.md` or its successor)
 - the single next action, stated as an action, not a topic
 - the test gate (`node test/all.js`)
 - any known reds and whether they block
@@ -46,7 +47,7 @@ exist only in a chat transcript.
 
 ## Non-negotiable
 
-- **`node test/all.js` is the gate before any commit.** ~2 minutes. Green means green.
+- **`node test/all.js` is the gate before any commit.** 73 suites, ~3 minutes. Green means green.
 - **Determinism.** Never `Math.random()` in simulation code — use `G.rand()`. Anything a replay or a
   rejoining client must reproduce goes through `G.init` options or the command log.
 - **Every new behaviour gets a negative control.** A check that still passes with the feature deleted

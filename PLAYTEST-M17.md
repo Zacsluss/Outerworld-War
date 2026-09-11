@@ -1,0 +1,227 @@
+# M17 playtest guide — what the review changed, and how to see each one by hand
+
+`REVIEW-M17.md` is the review: its four lists say what was found, what was fixed, what is open and what
+was deliberately left alone. This guide is how to *see* the fixed things in a running game, written to
+be used with the game open beside it. Where a change is invisible from normal play it says so and says
+what to run instead.
+
+`PLAYTEST-M12.md` to `PLAYTEST-M15.md` are all still true.
+
+---
+
+## Set-up
+
+Start the server with **`PLAY.bat`** (or `node test/serve.js 8765`) and open `http://localhost:8765`.
+Unless an item says otherwise: **Play** → one opponent, **Easy**, and start.
+
+Cheats are typed into chat with **`Enter`**: `show me the money`, `power overwhelming`,
+`modify the phase variance`, `the gathering` (a toggle; several items below need it **off**).
+
+---
+
+# The quick pass — ten minutes
+
+1. **Click into the Name box on the main menu and press Enter, Backspace, F5.** Nothing happens to the
+   game; the field behaves like a text field. Before the review, Enter opened an invisible chat buffer
+   that ate every key until Escape.
+2. **In a game, press Shift+=.** The view zooms in. Shift+- zooms out. Bare `=` and `-` change the game
+   speed. Before, Shift+= sped the game up and nothing zoomed.
+3. **Select a Medic, right-click its Heal button (autocast on), heal something, save a replay (menu),
+   watch it.** The Medic heals in the replay. Before, the arm never entered the command log and the
+   replay played without the heals.
+4. **Siege a tank, then right-click a friendly unit.** The tank stays put and the order is dropped.
+   Before, it walked to the unit, siege and all.
+5. **Fly a Carrier with four Interceptors at a target and kill the first Interceptor out** (or let a
+   turret do it). The Carrier keeps launching. Before, it never launched again.
+
+---
+
+# Simulation (build stamp moved: saves and replays from before the review are refused, with the reason)
+
+## 1. The Carrier keeps launching after its first Interceptor dies young
+
+`show me the money`, `modify the phase variance`; build a Carrier with four Interceptors (Protoss), attack
+an enemy Missile Turret or a Spore Colony. **Working:** Interceptors keep coming out after the first one
+dies. **Before:** one launch, then the Carrier sat with three aboard for the rest of the game.
+
+## 2. A field no longer cures a longer status
+
+Hard to arrange by hand: it needs an Optical Flare (Medic) on a unit that is then Jammed (a jamming
+tower's field), or an Ensnare under a Time Warp. Asserted directly in `test/review17.js` section 2 (an
+Ensnare of 576 frames survives a ten-frame Time Warp; it used to end with it).
+
+## 3. A sieged tank does not walk on follow, load, repair or gather
+
+Siege a tank (`O`), then **right-click a friendly Marine**. **Working:** the tank stays sieged and still;
+the follow order is dropped. Try right-clicking a Dropship (load), an SCV (repair) and a mineral patch:
+same. **Before:** it walked there, sieged.
+
+## 4. A cloaked unit below 25 energy can decloak
+
+`the gathering` **off**. Cloak a Ghost (`C`) at 30+ energy, let it drain below 25 (or set it low by
+waiting), press `C` again. **Working:** it decloaks; pressing `C` once more says "Not enough energy"
+(the way in still costs 25). **Before:** it could not decloak until it regenerated.
+
+## 5. A larva becomes only what a larva can become
+
+Invisible from play — the card only offers legal morphs. It closes a hole for a hand-edited save:
+`test/review17.js` section 5 asks `G.larvaMorph(larva, 'scv')` and is refused (it used to make a
+Zerg-owned SCV).
+
+## 6. A worker with no hall stops scanning every frame
+
+Invisible from play (a performance fix). Lose your only hall with a worker carrying minerals: it keeps
+its return order and resumes when a new hall finishes; it asks for a hall once a second rather than 638
+times in ten seconds. Section 6 of the same test.
+
+## 7. Exceptions inside a unit's tick are counted
+
+Invisible: `G.tickErrors` in the console. It is 0 in every gate suite now; a unit or AI that throws is
+skipped for the frame, counted, and the game goes on.
+
+## 8. Charon Boosters lengthen the Goliath's air range
+
+Terran, `show me the money`, `modify the phase variance`. Select a Goliath and note where it starts
+shooting at an Overlord; research Charon Boosters at the Armory; try again. **Working:** it shoots from
+further away (8 tiles). **Before:** the research *shortened* it, from 5 to 3. *This is on the balance
+list.*
+
+## 9. Four ability descriptions tell the truth
+
+Hover **Stim** (names Marines, Firebats, Marauders and Reapers), **MULE** (75 seconds), **Blink** (the
+Dragoon), and the Arbiter's **Mothership** merge (two Arbiters). Before: two of four named units that do
+not exist, one said 90 seconds.
+
+## 10. The AI does not march on the wildlife
+
+**Skirmish** → turn **Derelicts** and **Wildlife** on, hard opponent, `black sheep wall`. Watch the
+computer's first attack wave. **Working:** it walks at *your* base. **Before:** it attacked the nearest
+derelict on three of three seeds, and counted the grubs as your army.
+
+## 11. An allied AI does not storm you
+
+**Skirmish** → two teams, you and a computer on one team, two computers on the other. Fight next to
+your ally's High Templar or Science Vessel. **Working:** its storms and Irradiates land on the enemy,
+never on you. **Before:** twenty-six of its spell clauses tested "enemy" by owner alone.
+
+---
+
+# Command log
+
+## 12. Autocast arming is part of the replay
+
+Item 3 of the quick pass. Also try it over LAN: arm a Medic on one client; the other client's Medic
+heals too (before, only yours did, and the game desynced at the next hash).
+
+## 13. The ferry route works from the interface
+
+Select a Dropship, press its **Ferry** key, click a far point. **Working:** it shuttles between the two
+points picking up idle units. **Before:** the order packed as an empty `ferry` and the ship stayed
+idle; only the test could reach the feature, through a back door.
+
+## 14. A malformed save is refused with a sentence
+
+Save (F5), open the file, break the `cmds` list (delete a `c`, or put a later frame before an earlier
+one), load it. **Working:** "This save cannot be loaded: command N of its log is malformed." **Before:**
+it loaded, threw inside the tick or replayed nothing, in silence.
+
+---
+
+# Interface
+
+## 15. Keys in text fields and on the main menu
+
+Quick pass item 1. Also: with no game running, F5 does nothing (it used to throw).
+
+## 16. Zoom keys
+
+Quick pass item 2. **Esc → Settings → Hotkeys** shows Zoom in as `+` and Zoom out as `_`.
+
+## 17. F8 asks before loading the autosave over a game
+
+In a game, press **F8**. **Working:** a confirmation; "Cancel" leaves your game alone. **Before:** the
+game was replaced by the autosave with no warning. The F1 help now lists F2 F4 F6 F7 as camera slots and
+F8 as the autosave.
+
+## 18. Tab turns the card page
+
+Select a Starport with a Control Tower (or any unit whose card has a "More 1/2" button), Brood War
+hotkeys on. Press **Tab**. **Working:** the page turns. **Before:** Tab was swallowed by subgroup cycling
+even with one kind selected. With two kinds selected Tab still cycles the subgroup.
+
+## 19. Jump to last alert includes an ally's ping
+
+Team game with a human ally (LAN): they Alt-click the map; you press the last-alert key (Space by
+default). **Working:** the view jumps to their ping. **Before:** only your own alerts counted.
+
+## 20. Network games: one speed, and menus do not freeze peers
+
+LAN game. Press `+` or `-`: "The host sets the speed in a network game." Open the pause menu (F10) on
+one client: the other client keeps playing. **Before:** units stepped instead of gliding for the whole
+match (the draw pass paced on the wrong speed), and one client's menu froze everyone on "Waiting for
+other players".
+
+## 21. The editor draws on its second open
+
+Main menu → **Editor** → close → **Editor** again. **Working:** it draws. **Before:** blank.
+
+## 22. Effects fire once per simulation frame
+
+Watch a Hellion's flame or a Missile Turret's rockets on a fast machine: the same density as on a slow
+one. Scorch marks fade over their intended life rather than 2.5× faster. Hard to judge by eye; asserted
+in `test/review17ui.js` section 9 (a decal drawn three times in one frame ages 24, not 72).
+
+## 23. A non-square map draws all its rows; the minimap uses the tileset's colours
+
+**Editor**: make a 64×128 map, play it, scroll to the bottom. **Working:** ground all the way down.
+**Before:** the lower chunk rows were never drawn. Start a game on an ice or jungle map: the minimap is
+white or green, not brown.
+
+## 24. The manual scrolls with the wheel
+
+Press **F3**, scroll the wheel. **Before:** nothing.
+
+---
+
+# Multiplayer (`PLAY.bat` on one machine, two browser tabs, or two machines on the LAN)
+
+## 25. A room code is required over the internet, and no code means the shared room
+
+`PLAY-ONLINE.bat` + a tunnel: open the https link, leave Room blank, press Connect. **Working:** "Type a
+room code first". On a LAN (http) a blank room still means the shared LAN room, as before.
+
+## 26. The second game in the LAN room can change its settings
+
+Play a LAN game, leave, connect again, change your race. **Working:** the lobby shows the new race.
+**Before:** every setting was refused for the second game.
+
+## 27. A kicked player is told and hears no more
+
+Host kicks a player in the lobby. **Working:** the kicked client sees "The host removed you from the
+game" and stops receiving the lobby.
+
+## 28. The things you should NOT be able to do any more (need a modified client or a raw socket)
+
+Order another player's units by sending a command with their `p`; crash the relay with `GET /%`;
+download `/.git/HEAD` or a handoff from the game's URL; join a running game under a dropped player's
+name while already in it; send a race of `QQ`; claim a 2^40-byte frame; put `<svg/onload>` in your
+name. All are refused now and all are in `test/rooms.js` section 9; run it to see each one.
+
+## 29. A silent connection is dropped in 45 seconds
+
+Pull a client's network cable (or suspend the laptop). **Working:** within about 45 seconds the other
+players see "dropped; their units stop at …" and the game continues; the dropped player can rejoin.
+**Before:** everyone waited on the OS TCP timeout, and the rejoin was refused because the slot was not
+marked gone.
+
+---
+
+# What is still gated, and what the review left open
+
+- **The balance run** has not been run. Every number in `HANDOFF.md` is stale, and the review added
+  one item to its list: Charon Boosters (8, was an inverted 3).
+- **The AI's spending priorities** stay gated; the review added measured findings next to them (the
+  micro cadence that exists only for player 0, the dead detector weight, the research building that
+  cannot be found after a morph) — see `REVIEW-M17.md` questions 7-10.
+- **`test/eightplayer.js` has been red since FIXLIST-M15 C3**, not "passing by 4%": bisected in the
+  review, unchanged by any of it, and a decision for you (question 2).

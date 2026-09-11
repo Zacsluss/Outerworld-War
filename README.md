@@ -57,7 +57,7 @@ Left click select, drag to box-select, right click for smart commands. `A` attac
 
 ```bash
 node broodwar/test/features.js      # 87 gameplay checks
-node broodwar/test/all.js                   # the gate: 70 fast deterministic checks, in parallel (~3 min); green before every commit
+node broodwar/test/all.js                   # the gate: 73 fast deterministic checks, in parallel (~3 min); green before every commit
 node broodwar/test/rates.js                 # every weapon's observed rate of fire matches its table entry
 node broodwar/test/cardsay.js               # every greyed command-card button explains itself when pressed
 node broodwar/test/wrongthing.js            # do the wrong thing on purpose: nothing crashes, nothing wedges
