@@ -5,6 +5,11 @@
 // ============================================================================
 const SIEGE_W = { dmg: 70, type: 'explosive', range: 12, minRange: 2, cd: 75, hits: 1, upgDmg: 5, upgKey: 'vehW', targets: 'ground', splash: [0.3, 0.8, 1.25], ff: true };
 const EQUIV = { hatchery: ['lair', 'hive'], lair: ['hive'], spire: ['greater_spire'], command_center: [], nexus: [] };
+// A body wider than this needs a path with CLEARANCE rather than one found for a point -- see the
+// comment on Pathfinder.find (FIXLIST-M14 C6). Half a tile: a unit standing dead centre in a tile
+// pokes (r - 16) px into its neighbour, so 16 is exactly the radius at which that stops being zero.
+// Three defs are over it today: Thor and Ultralisk at 20, Reaver at 18.
+const WIDE_BODY = TILE / 2;
 const MINE_TIME = 75, GAS_TIME = 37, LARVA_TIME = 342, MAX_QUEUE = 5;
 const MINERS_PER_PATCH = 2;   // Brood War saturates a mineral patch at two workers, not one
 // Creep does not appear, it spreads. A source starts with a small pad and reaches its full radius
@@ -511,7 +516,7 @@ class Unit {
     if (!this.fly) {
       const [sx, sy] = this.tile(); const tx = clamp(Math.floor(x / TILE), 0, m.w - 1), ty = clamp(Math.floor(y / TILE), 0, m.h - 1);
       if (!this.path || this.pathGoal[0] !== tx || this.pathGoal[1] !== ty || this.repathT <= 0) {
-        if (G.pathBudget > 0 || !this.path) { G.pathBudget--; this.path = G.pf.find(sx, sy, tx, ty, 5000); this.pathI = 0; this.pathGoal = [tx, ty]; this.repathT = 90 + (this.id % 30); }
+        if (G.pathBudget > 0 || !this.path) { G.pathBudget--; this.path = G.pf.find(sx, sy, tx, ty, 5000, this.r > WIDE_BODY); this.pathI = 0; this.pathGoal = [tx, ty]; this.repathT = 90 + (this.id % 30); }
       } else this.repathT--;
       // advance along path
       while (this.path && this.pathI < this.path.length) { const wp = this.path[this.pathI]; const wx = (wp[0] + 0.5) * TILE, wy = (wp[1] + 0.5) * TILE; if (distPt(this.x, this.y, wx, wy) < Math.max(6, spd + 2)) this.pathI++; else break; }

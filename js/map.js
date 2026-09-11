@@ -1688,10 +1688,42 @@ class Pathfinder {
   // a search depends on nothing but its own generation, and the scratch is scratch again.
   constructor(map) { this.map = map; this.g = new Float32Array(map.w * map.h); this.closed = new Int32Array(map.w * map.h); this.parent = new Int32Array(map.w * map.h); this.stamp = new Int32Array(map.w * map.h); this.gen = 0; }
   // returns array of [tx,ty] from start (exclusive) to goal, or best-effort partial path
-  find(sx, sy, gx, gy, maxNodes = 6000) {
+  // `wide` asks for a path a BODY can walk rather than one a POINT can -- FIXLIST-M14 C6 (item 18).
+  //
+  // Measured before the change: every ground unit walks a two-tile gap cleanly and NONE of the 41 ever
+  // ends inside a footprint, so the reported "the Thor walks onto buildings" does not happen -- the
+  // self-heal pass in G.tick already covers it. What does happen is the fault the item hypothesised,
+  // wearing a different symptom. Through a ONE-tile gap in a wall:
+  //
+  //     thor       r 20   arrived: FALSE
+  //     ultralisk  r 20   arrived: FALSE
+  //     reaver     r 18   arrived: true    <- and only because 18 is under the threshold below
+  //     everything narrower: arrived
+  //
+  // A Thor is forty pixels across and the gap is thirty-two. The search handed it a route its body
+  // could not take, it ground against the corner, and the player saw "my Thor will not go where I told
+  // it" -- which reads as stuck.
+  //
+  // A TILE MUST HAVE ALL EIGHT NEIGHBOURS WALKABLE to carry a wide body. That is the whole rule, and it
+  // is deliberately the cheapest correct one: a unit standing dead centre in a tile pokes (r - 16) px
+  // into the neighbouring tile, so anything with r > 16 needs those neighbours and anything at or under
+  // it does not. Three defs qualify -- Thor, Ultralisk and Reaver -- so the nine-fold neighbour test
+  // costs nothing for the other thirty-eight, and nothing at all for the AI's workers and infantry.
+  //
+  // NO CLEARANCE MAP AND NO CACHE, on purpose: a precomputed one is faster and has to be invalidated
+  // by every writer of `walk` and `blocked` -- the two block calls, the feature ticks, the hulks -- and
+  // then again on a snapshot restore, which is four places to forget and a desync when one is missed.
+  // Tested on demand, it cannot go stale.
+  //
+  // THE START TILE IS EXEMPT. It is pushed before the loop and never tested, which matters: a Thor that
+  // has been shoved into a tight spot must still be able to path OUT of it.
+  find(sx, sy, gx, gy, maxNodes = 6000, wide = false) {
     const m = this.map, W = m.w, Hh = m.h;
     if (!m.inb(sx, sy)) return [];
     const goalWalk = m.walkable(gx, gy);
+    const fits = wide
+      ? (x, y) => { for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) if (!m.walkable(x + a, y + b)) return false; return true; }
+      : (x, y) => m.walkable(x, y);
     if (this.gen >= 0x7ffffffe) { this.gen = 0; this.stamp.fill(0); this.closed.fill(0); } // 2^31 searches is not reachable in a game, but a wrap would fail the same silent way
     this.gen++;
     const gen = this.gen, g = this.g, stamp = this.stamp, parent = this.parent, closed = this.closed;
@@ -1717,8 +1749,10 @@ class Pathfinder {
         const nx = cx + dx, ny = cy + dy;
         if (nx < 0 || ny < 0 || nx >= W || ny >= Hh) continue;
         const ni = ny * W + nx;
-        if (!m.walkable(nx, ny)) continue;
-        if (dx && dy && (!m.walkable(cx + dx, cy) || !m.walkable(cx, cy + dy))) continue;
+        if (!fits(nx, ny)) continue;
+        // No cutting a corner diagonally past two blocked tiles. For a wide body the same rule applies
+        // to the wider test, or a Thor would slip diagonally through a gap it cannot walk through.
+        if (dx && dy && (!fits(cx + dx, cy) || !fits(cx, cy + dy))) continue;
         if (closed[ni] === gen) continue;
         const ng = g[ci] + cost;
         if (stamp[ni] !== gen || ng < g[ni]) { stamp[ni] = gen; g[ni] = ng; parent[ni] = ci; push(ng + hfn(nx, ny), ni); }
