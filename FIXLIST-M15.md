@@ -30,7 +30,7 @@ says that too, plainly, and names the probe to build first.
 | 2 | tumours should cost energy; Overlords need an energy pool | **C1** | ☐ confirmed: `plant_tumour` has no energy cost and the Overlord has no energy at all |
 | 3 | tumours have unlimited range | **C2** | ⚠ confirmed but not for the reported reason — see the entry |
 | 4 | Spawn Broodlings is unexplained and says only "invalid target" | **A2** ✅ **+ B2** ☐ | A2 done — it was **0 of 80**, now 80 of 80, and two plumbing faults stopped any of it showing |
-| 5 | creep should look alive; Zerg should move faster on it | **A3 + C3** | ☐ confirmed: no creep animation, and **no creep speed bonus exists at all** |
+| 5 | creep should look alive; Zerg should move faster on it | **A3** ✅ **+ C3** ☐ | A3 done — an overlay, cache untouched, stamp unmoved. C3 (the speed) still open |
 | 6 | training a Drone at supply cap also says "Spire required" | **B1** | ⚠ **partly reproduced** — see the entry, it is two faults and I only found one |
 | — | found: the supply refusal fires once per selected larva | **B1** | ☐ 3 larvae selected = 3 identical errors |
 | — | found: Set Rally and Queen share slot 6 on the larva card | **B3** | ☐ same family as M14's B5 |
@@ -111,7 +111,7 @@ explains itself, and Spawn Broodlings is simply the one that got noticed.
 
 ---
 
-### ☐ A3 · (item 5, first half) Creep should look alive — RENDER ONLY
+### ✅ A3 · (item 5, first half) Creep should look alive — RENDER ONLY
 
 **Asked for:** "Creep should have some minor bubbling or ripples to make it look living".
 

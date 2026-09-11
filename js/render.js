@@ -242,6 +242,53 @@ const Render = {
     for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
       const cv = Terrain.creepChunk(cx, cy); if (cv) ctx.drawImage(cv, cx * CH - ox, cy * CH - oy);
     }
+    this.drawCreepLife(ctx, ox, oy);
+  },
+  // FIXLIST-M15 A3: creep that looks alive.
+  //
+  // THE CONSTRAINT IS THE CACHE. Creep is composed from chunk canvases baked at 8x8 tiles and keyed
+  // by the creep bits (Terrain.creepChunk), which is what took this from three full-viewport
+  // operations a frame down to a handful of opaque blits. Animating inside the bake would invalidate
+  // that key every frame and hand back exactly what the cache was built to win, so the motion is an
+  // OVERLAY over the finished blits instead. The chunks never learn that anything is moving.
+  //
+  // Nothing is stored. A site's position and its phase are derived from its own tile coordinates, so
+  // there is no particle list to keep, nothing to seed, and nothing to restore after a replay seek --
+  // the same tile bubbles the same way at the same frame every time the game is watched.
+  //
+  // It must never call G.rand(): that is the simulation's stream and drawing from it would desync a
+  // replay. This is also why the hash below is written out rather than borrowed from RNG.
+  //
+  // 'Minor' is the word the request used, and the numbers are chosen for that: one site per three
+  // tiles, radius about a third of a tile, and a peak alpha of 0.12 under 'lighter'. It should read
+  // as the ground breathing, not as weather.
+  CREEP_STEP: 3,          // one bubble site every N tiles -- about 120 in view at zoom 1
+  CREEP_R: 3.6,           // px at zoom 1, before the swell
+  CREEP_PERIOD: 170,      // frames for one swell and subside, about seven seconds
+  CREEP_ALPHA: 0.12,
+  CREEP_MIN_ZOOM: 0.55,   // below this the bubbles are sub-pixel and cost more than they show
+  drawCreepLife(ctx, ox, oy) {
+    if (this.zoom < this.CREEP_MIN_ZOOM) return;
+    const m = G.map, S = this.CREEP_STEP;
+    const t0x = Math.max(0, Math.floor(ox / TILE)), t0y = Math.max(0, Math.floor(oy / TILE));
+    const t1x = Math.min(m.w - 1, Math.ceil((ox + this.viewWorldW()) / TILE));
+    const t1y = Math.min(m.h - 1, Math.ceil((oy + this.viewWorldH()) / TILE));
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = '#b083c8';
+    for (let ty = t0y - (t0y % S); ty <= t1y; ty += S) {
+      if (ty < 0) continue;
+      for (let tx = t0x - (t0x % S); tx <= t1x; tx += S) {
+        if (tx < 0 || !m.hasCreep(tx, ty)) continue;
+        const h = (Math.imul(tx + 1, 0x9e3779b1) ^ Math.imul(ty + 1, 0x85ebca6b)) >>> 0;
+        const k = ((G.frame / this.CREEP_PERIOD) + (h % 997) / 997) % 1;
+        const a = Math.sin(k * Math.PI);          // swells from nothing and returns to nothing
+        if (a <= 0.03) continue;
+        const x = (tx + (h >>> 11 & 63) / 64) * TILE - ox, y = (ty + (h >>> 19 & 63) / 64) * TILE - oy;
+        const r = this.CREEP_R * (0.35 + a * 0.8);
+        ctx.globalAlpha = this.CREEP_ALPHA * a;
+        ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.72, 0, 0, 7); ctx.fill();
+      }
+    }
+    ctx.restore();
   },
   frame(alpha) {
     const ctx = this.ctx, m = G.map; if (!ctx) return; this.base(ctx);
