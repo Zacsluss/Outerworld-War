@@ -21,13 +21,20 @@ is the state M13 left behind and is still true except where this file says other
 1. **`test/soak.js`** still fails `every tier-1/2 M12 def is fielded` — 15/16, **Swarm Host** missing.
    Unchanged and deliberately not weakened. Its coverage numbers moved slightly better this session
    (units 69→70/85, abilities 34→35/80, techs 67→68/72).
-2. **`test/eightplayer.js` is now ONE red, not two.** `every one of the eight players built an economy
-   at some point` **now passes**. Something earlier in this session fixed it — it was already passing
-   at the pre-C6 HEAD, so it was not the clearance change. Worth five minutes to find out which item
-   did it, because it is a real improvement nobody aimed at.
-   The money-hoarding red (`no AI is left sitting on money it cannot spend`) is unchanged and
-   untouched. **The two rejected fixes for it are still written into `js/ai.js` at the line in
-   question. Read that comment before touching it.**
+2. **`test/eightplayer.js` HAS NO REDS LEFT -- 19 of 19 -- and that is worth reading carefully.**
+   It was two reds at the start of this session and is now none.
+   - `every one of the eight players built an economy at some point` started passing somewhere in
+     Group A/B/C. Still not attributed. Low value now that the suite is green, but it is a real
+     improvement nobody aimed at.
+   - `no AI is left sitting on money it cannot spend` **was fixed by D1**, verified rather than
+     assumed: the pre-D1 commit `8df36c5` scores 18/1 and D1's commit scores 19/0 on the same
+     deterministic game. The two rejected money fixes from last session were never applied and the
+     comment describing them is still in `js/ai.js`. Better target selection made the AI spend.
+   - **DO NOT TREAT IT AS SOLVED. The pass is marginal: the fattest bank is 2405 against a 2500
+     threshold, a 4% margin**, and the cause the assertion's own message names -- `AI.macro`'s
+     `wantHalls` floor asking for up to seven halls when only two bases per player exist
+     (`js/ai.js:141`) -- is untouched. Any change that moves the economy can flip this back, and if
+     it does, that is this floor and not a regression in whatever you were working on.
 3. **`test/aistyles.js` on seeds 1 and 11** fails four assertions — no style attacks inside its
    12,000-frame window. Pre-existing, documented in HANDOFF-M14 step 3, and **identical before and
    after every change this session**. Seed 5, the default and the one in the gate, is 131/0.
