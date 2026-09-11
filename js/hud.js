@@ -866,7 +866,12 @@ Object.assign(UI, {
       ctx.restore();
       HUD.hotLabel(ctx, b.label, this.gridKeys ? '' : b.hk, bx, by + cr.bh - Math.round(10 * cr.k), cr.bw, b.dim ? '#7a828c' : '#e6eaf0', Math.max(8, Math.round(10 * cr.k))); if (this.gridKeys && b.hk !== 'Escape') { ctx.font = HUD.font(9); ctx.fillStyle = '#ffe45a'; ctx.fillText(b.hk, bx + 3, by + 10); }
       if (b.hk === 'Escape') { ctx.font = HUD.font(8); ctx.fillStyle = '#ffe45a'; ctx.fillText('ESC', bx + cr.bw - 20, by + 10); }
-      if (hov && (b.cost || b.energy)) { const parts = [b.label]; if (b.cost && b.cost.min !== undefined) { parts.push(b.cost.min + ' minerals'); if (b.cost.gas) parts.push(b.cost.gas + ' gas'); if (b.cost.sup) parts.push(b.cost.sup + ' supply'); if (b.cost.time) parts.push(Math.round(b.cost.time / TPS) + 's'); } if (b.energy) parts.push(b.energy + ' energy'); this.tooltip = { lines: parts, desc: (b.cost && b.cost.desc) || null, x: bx, y: by }; }
+      // FIXLIST-M15 A2: `|| b.abil` is the whole of it. The tooltip only appeared for a button with a
+      // COST or an ENERGY price, so Burrow, Siege Mode, Stim, Blink, Unload and every merge -- which
+      // have neither -- showed nothing at all no matter what was written about them. And desc came
+      // only off b.cost, which an ability button does not have, so even a 75-energy spell showed its
+      // price and no explanation.
+      if (hov && (b.cost || b.energy || b.abil)) { const parts = [b.label]; if (b.cost && b.cost.min !== undefined) { parts.push(b.cost.min + ' minerals'); if (b.cost.gas) parts.push(b.cost.gas + ' gas'); if (b.cost.sup) parts.push(b.cost.sup + ' supply'); if (b.cost.time) parts.push(Math.round(b.cost.time / TPS) + 's'); } if (b.energy) parts.push(b.energy + ' energy'); this.tooltip = { lines: parts, desc: (b.abil && DATA.abilities[b.abil] && DATA.abilities[b.abil].desc) || (b.cost && b.cost.desc) || null, x: bx, y: by }; }
     }
     // The description hangs below the cost lines and is kept in its own field rather than pushed onto
     // `lines`, because the cost lines are coloured by SEARCHING THEM for the words "minerals", "gas"

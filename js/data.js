@@ -1627,6 +1627,107 @@ const DATA = (() => {
     'photon_cannon:gw': ['laser', '#8cf'],
   };
 
+  // WHAT EVERY ABILITY DOES, AND WHAT IT CAN BE USED ON. FIXLIST-M15 A2.
+  //
+  // M14's A1 gave a description to every unit and every building and stopped there, so 0 of the 80
+  // abilities in the game explained themselves. The reported symptom was Spawn Broodlings -- 'I'm not
+  // sure what it does and it only says invalid target' -- but Spawn Broodlings is simply the one that
+  // got noticed. Every ability had the same hole.
+  //
+  // THE SECOND HALF OF EACH SENTENCE IS THE POINT. 'What it does' was never the whole complaint; the
+  // complaint was not knowing what to click. So anything with a target rule that can refuse states the
+  // rule -- Lockdown says mechanical, Maelstrom says organic, Spawn Broodlings says ground organic and
+  // not robotic -- because that is the sentence that stops a player guessing at a red error message.
+  //
+  // Kept out of the def lines, exactly like DESC and SHOT: test/version.js reads this file's def lines
+  // as SOURCE TEXT to prove an edit moves the build stamp.
+  const ABIL_DESC = {
+    // ---- shared
+    gather: 'Send a worker to mine minerals or gas. Right-clicking a patch does the same thing.',
+    repair: 'Repair a damaged mechanical unit or any building, spending minerals as it works. Organic units cannot be repaired.',
+    build_basic: 'Open the list of basic structures this worker can put up.',
+    build_adv: 'Open the list of advanced structures, which need a tech building of their own first.',
+    morph_menu: 'Open the list of things this unit can turn into. Morphing consumes the unit.',
+    unload: 'Unload every passenger at once. Click a spot to choose where they come out.',
+    // ---- Terran
+    stim: 'Costs 10 HP and makes this unit fire and move much faster for a short time. Works on Marines and Firebats, and stacks with nothing.',
+    heal: 'Restore health to a friendly organic unit, a little at a time, for 1 energy per point. Mechanical units cannot be healed.',
+    restoration: 'Strip a friendly unit of Lockdown, Irradiate, Optical Flare, Ensnare, Plague, Parasite and Maelstrom.',
+    optical_flare: 'Blind an organic unit: its sight collapses to one tile, so it can still shoot but can no longer see for itself or spot for others.',
+    lockdown: 'Freeze an enemy MECHANICAL unit solid for about 50 seconds. It cannot move, shoot or cast. Organic units are immune.',
+    cloak_ghost: 'Turn invisibility on or off. While cloaked the Ghost drains energy and only detectors can see it.',
+    cloak_wraith: 'Turn invisibility on or off. While cloaked the Wraith drains energy and only detectors can see it.',
+    nuke: 'Paint a target spot for a nuclear missile from a Nuclear Silo. The Ghost must stand still and stay alive while it falls, and everyone on the map is warned.',
+    spider_mine: 'Bury a Spider Mine that waits underground and charges the first enemy ground unit to come near. Three per Vulture, and they do not come back.',
+    siege_mode: 'Anchor the tank into Siege Mode for much longer range and splash damage, at the cost of being unable to move, or unpack again.',
+    defensive_matrix: 'Cover a friendly unit in a shield that absorbs 250 damage of any kind for about 40 seconds. Works on any unit, including mechanical.',
+    emp: 'Strip every unit in the blast of ALL shields and ALL energy. Devastating against Protoss and against casters; harmless to a unit with neither.',
+    irradiate: 'Poison a unit so that it and everything organic near it takes damage for 25 seconds. A mechanical host takes none itself but still carries it.',
+    yamato: 'Charge a shot for about two seconds and deal 260 damage to a single target, unit or building. Cancelled if the Battlecruiser is interrupted.',
+    scanner_sweep: 'Reveal an area anywhere on the map for a few seconds, detectors included, so cloaked and burrowed units show up. Costs a Comsat\'s energy.',
+    mule: 'Call down a MULE anywhere you can see. It mines minerals much faster than an SCV and expires after about 90 seconds.',
+    viking_mode: 'Switch between fighter mode, which flies and shoots only air, and assault mode, which walks and shoots only ground.',
+    jam_field: 'Scramble enemy detection in an area so cloaked and burrowed units stay hidden inside it.',
+    // ---- Zerg
+    burrow: 'Dig in or dig out. A burrowed unit cannot move or be hit, and only a detector can see it. Most Zerg ground units can burrow once it is researched.',
+    lurker_aspect: 'Turn a Hydralisk into a Lurker, which attacks only while burrowed and hits everything in a line.',
+    guardian_aspect: 'Turn a Mutalisk into a Guardian: long-range, heavy damage, ground only, and slow.',
+    devourer_aspect: 'Turn a Mutalisk into a Devourer, an anti-air unit whose acid makes its target take more damage from everything.',
+    parasite: 'Attach to any enemy unit and see everything it sees, for the rest of its life. It does no damage and cannot be removed except by Restoration.',
+    ensnare: 'Slow every unit in the area, air or ground, and reveal cloaked ones. Does no damage.',
+    spawn_broodling: 'KILLS a ground organic unit outright and hatches two Broodlings from its corpse, which live about 75 seconds. Cannot target air, buildings, or Protoss robotic units.',
+    dark_swarm: 'Drop a cloud that blocks ALL ranged fire against ground units under it, friend and foe. Melee attacks and splash still work.',
+    plague: 'Damage everything in the area over time, down to a minimum of 1 HP. It cannot kill on its own, and it ignores whether a target is organic.',
+    consume: 'Eat one of your own units to restore 50 energy to the Defiler. Cannot eat larvae, eggs or itself.',
+    nydus_exit: 'Place the far end of a Nydus Canal at another base you hold. Until it has one, the canal does nothing at all.',
+    infest: 'Take over an enemy Terran Command Center that has been damaged below half health, turning it into an Infested Command Center.',
+    larva_inject: 'Fill one of your Hatcheries back up to three larvae after a short delay. It tops a hall up, it does not raise its ceiling.',
+    plant_tumour: 'Grow a Creep Tumour on creep you are standing over. It spreads creep around itself and can seed one more tumour of its own.',
+    spawn_tumour: 'Seed one more Creep Tumour anywhere within nine tiles that is already creep. Each tumour may do this exactly once, ever.',
+    uproot: 'Pull a Spine or Spore Crawler out of the ground so it can walk. It cannot attack until it roots again.',
+    volatile_burst: 'Detonate the Baneling, destroying it and dealing splash damage to ground units around it.',
+    corrosive_bile: 'Launch a shell that lands after a short delay and hits everything at that spot, including destructible terrain. Anything with legs can walk out of it.',
+    spawn_locusts: 'Release Locusts that fly out, land, attack ground targets for a while, then die. The Swarm Host keeps working from cover.',
+    fungal_growth: 'Root every enemy in the cloud in place and silence them: nothing inside moves, shoots or casts while it lasts. Your own units are unaffected.',
+    spawn_infested: 'Drop two Infested Terrans at a spot. They live for a short time and explode on whatever they reach.',
+    abduct: 'Drag an enemy unit across the map to the Viper. It arrives un-sieged and un-burrowed. Cannot take buildings, larvae, eggs or mines.',
+    consume_essence: 'Eat the health of one of your own finished buildings to restore the Viper\'s energy. The building must be above 120 HP.',
+    contaminate: 'Stop an enemy building producing anything at all for a while. It does no damage and does not stop what is already in progress.',
+    nydus_worm: 'Surface a Nydus Worm mouth anywhere on your creep, linked to the Nydus Network, so your army can cross the map underground.',
+    baneling_aspect: 'Turn a Zergling into a Baneling, which is a walking bomb.',
+    ravager_aspect: 'Turn a Roach into a Ravager, which gains the Corrosive Bile shell.',
+    swarm_host_aspect: 'Turn a Roach into a Swarm Host, which fights by sending free Locusts forward instead of attacking itself.',
+    viper_aspect: 'Turn a Mutalisk into a Viper, a flying caster that drags enemies out of position.',
+    overseer_aspect: 'Turn an Overlord into an Overseer: faster, a detector, and able to Contaminate.',
+    // ---- Protoss
+    psi_storm: 'Burn everything in the area, friend and foe, for heavy damage over about three seconds. Storms do not stack on the same spot.',
+    hallucination: 'Create two illusory copies of a friendly unit. They deal no damage, die to a couple of hits, and fade after a while.',
+    summon_archon: 'Merge two High Templar into an Archon. Both are consumed.',
+    summon_dark_archon: 'Merge two Dark Templar into a Dark Archon. Both are consumed.',
+    feedback: 'Burn away a target\'s entire energy pool and deal that much damage to it. Useless against anything with no energy.',
+    mind_control: 'Permanently take an enemy unit as your own. Costs the Dark Archon all of its shields. Cannot take buildings, larvae or eggs.',
+    maelstrom: 'Freeze every ORGANIC unit in the area for about six seconds. Mechanical and robotic units are immune.',
+    build_scarab: 'Load another Scarab into the Reaver. It carries a few at a time and fires one per attack.',
+    build_interceptor: 'Build another Interceptor for the Carrier, which is what actually does its fighting.',
+    disruption_web: 'Blanket an area so that ground units inside it cannot attack at all. They can still move, and air units are unaffected.',
+    recall: 'Teleport every unit you own near the target spot to the Arbiter, from anywhere on the map you can see.',
+    stasis_field: 'Freeze every unit in the area in unbreakable crystal: they cannot act, and NOTHING can damage them either. Use it to remove part of a fight.',
+    chrono_boost: 'Speed up everything a friendly building is producing or researching for a while. Cannot be stacked on the same building.',
+    guardian_shield: 'Reduce all ranged damage taken by friendly units around the Sentry while it lasts. Melee damage is unaffected.',
+    force_field: 'Drop a wall of energy that ground units simply cannot cross, for a while. Air units ignore it. It is terrain, not a weapon.',
+    graviton_beam: 'Lift an enemy ground unit into the air where it cannot move or attack, and can only be hit by anti-air.',
+    revelation: 'Reveal a wide area for a while, cloaked and burrowed units included.',
+    purification_nova: 'Launch a slow nova that detonates after a moment for heavy splash damage. Anything that moves can leave before it lands.',
+    time_warp: 'Slow every enemy unit inside the field, ground and air, for a long while. Does no damage.',
+    blink: 'Teleport the Stalker a short distance instantly, through terrain and past anything in the way.',
+    summon_mothership: 'Merge two Dark Templar into a Mothership. Only one Mothership may exist at a time.',
+    warp_zealot: 'Warp a Zealot straight onto the psi grid, anywhere a Pylon powers, instead of walking it out of a Gateway.',
+    warp_dragoon: 'Warp a Dragoon straight onto the psi grid, anywhere a Pylon powers.',
+    warp_sentry: 'Warp a Sentry straight onto the psi grid, anywhere a Pylon powers.',
+    warp_high_templar: 'Warp a High Templar straight onto the psi grid, anywhere a Pylon powers.',
+    warp_dark_templar: 'Warp a Dark Templar straight onto the psi grid, anywhere a Pylon powers.',
+  };
+
   const DESC = {
     command_center: 'The Terran main base. Trains SCVs, takes in everything they mine, and lifts off to move somewhere else when a base runs dry.',
     comsat_station: 'A Command Center add-on. Its scanner sweep reveals any patch of the map for a moment, cloaked units included -- the cheapest detection Terran has.',
@@ -1801,6 +1902,15 @@ const DATA = (() => {
   for (const src of [units, buildings]) for (const id of Object.keys(src))
     for (const slot of ['gw', 'aw'])
       if (src[id][slot] && !src[id][slot].fx) throw new Error('armed but no shot in SHOT: ' + id + ':' + slot);
+
+  // Both directions throw, for the same reason the SHOT table does: a typo here would silently drop a
+  // description, and an ability added later with no entry is exactly the hole this table exists to close.
+  for (const id of Object.keys(ABIL_DESC)) {
+    if (!abilities[id]) throw new Error('ABIL_DESC names something that is not an ability: ' + id);
+    abilities[id].desc = ABIL_DESC[id];
+  }
+  for (const id of Object.keys(abilities))
+    if (!abilities[id].desc) throw new Error('ability with no description: ' + id);
 
   for (const id of Object.keys(DESC)) {
     const d = units[id] || buildings[id];

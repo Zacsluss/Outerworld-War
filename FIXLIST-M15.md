@@ -29,7 +29,7 @@ says that too, plainly, and names the probe to build first.
 | 1 | were unit projectiles ever researched? make them varied | **A1** | ✅ done — **No, they never were.** All 67 weapon slots now carry their own shot, 20 kinds, races disjoint |
 | 2 | tumours should cost energy; Overlords need an energy pool | **C1** | ☐ confirmed: `plant_tumour` has no energy cost and the Overlord has no energy at all |
 | 3 | tumours have unlimited range | **C2** | ⚠ confirmed but not for the reported reason — see the entry |
-| 4 | Spawn Broodlings is unexplained and says only "invalid target" | **A2 + B2** | ☐ confirmed: **0 of 76 abilities have a description** |
+| 4 | Spawn Broodlings is unexplained and says only "invalid target" | **A2** ✅ **+ B2** ☐ | A2 done — it was **0 of 80**, now 80 of 80, and two plumbing faults stopped any of it showing |
 | 5 | creep should look alive; Zerg should move faster on it | **A3 + C3** | ☐ confirmed: no creep animation, and **no creep speed bonus exists at all** |
 | 6 | training a Drone at supply cap also says "Spire required" | **B1** | ⚠ **partly reproduced** — see the entry, it is two faults and I only found one |
 | — | found: the supply refusal fires once per selected larva | **B1** | ☐ 3 larvae selected = 3 identical errors |
@@ -88,7 +88,7 @@ the Mutalisk all fire the same small white dot.
 
 ---
 
-### ☐ A2 · (item 4, first half) Not one ability in the game says what it does
+### ✅ A2 · (item 4, first half) Not one ability in the game says what it does
 
 **Asked for:** "I'm not sure what Spawn Broodlings does".
 

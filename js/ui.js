@@ -966,7 +966,7 @@ const UI = {
       if (!u.addon) for (const id of d.addons) { const ad = DATA.buildings[id]; const ok = p.hasReq(ad); B(i++, ad.name, ad.hk, () => G.queueAddon(u, id), { cost: ad, enabled: ok, dim: !ok, why: why(ad) }); }
       if (d.morphTo) { const nd = DATA.buildings[d.morphTo]; const ok = p.hasReq(nd); B(i++, nd.name, nd.hk, () => G.queueMorph(u, d.morphTo), { cost: nd, enabled: ok, dim: !ok, why: why(nd) }); }
       if (d.morphOptions) for (const id of d.morphOptions) { const nd = DATA.buildings[id]; const ok = p.hasReq(nd); B(i++, nd.name, nd.hk, () => G.queueMorph(u, id), { cost: nd, enabled: ok, dim: !ok, why: why(nd) }); }
-      if (d.abil) for (const id of d.abil) { const ab = DATA.abilities[id]; if (!Abilities.available(u, id)) continue; if (ab.kind === 'instant') B(i++, ab.name, ab.hk, () => Abilities.issue(u, id)); else B(i++, ab.name, ab.hk, () => { this.pending = { kind: 'ability', abil: id }; }, { energy: ab.energy }); }
+      if (d.abil) for (const id of d.abil) { const ab = DATA.abilities[id]; if (!Abilities.available(u, id)) continue; if (ab.kind === 'instant') B(i++, ab.name, ab.hk, () => Abilities.issue(u, id), { abil: id }); else B(i++, ab.name, ab.hk, () => { this.pending = { kind: 'ability', abil: id }; }, { energy: ab.energy, abil: id }); }
       // Select Larvae, as Brood War has it on S. Without this the only way to morph is to click each
       // larva individually, which is not how anyone plays Zerg: you select the hall, take its larvae,
       // and press the morph key once per larva.
@@ -1013,10 +1013,10 @@ const UI = {
       // Ten and not eleven: slot 11 is the one UI.paginate reserves for a page turn, so leaving it free
       // means a seventh ability pages rather than colliding -- which is the bug B5 was about.
       if (i > 10) break; const ab = DATA.abilities[id]; const label = Abilities.label(mobile[0], id);
-      if (id === 'unload') B(i++, 'Unload', 'U', setPending('unload')); // targeted unload (click a spot); the cargo wireframes unload single units
-      else if (ab.kind === 'toggle' || ab.kind === 'instant') B(i++, label, ab.hk, () => mobile.forEach(x => Abilities.issue(x, id)));
-      else if (ab.kind === 'morph') B(i++, label, ab.hk, () => mobile.forEach(x => Abilities.issue(x, id)), { cost: DATA.units[ab.unit] });
-      else if (ab.kind === 'merge') B(i++, label, ab.hk, () => Abilities.merge(mobile, id));
+      if (id === 'unload') B(i++, 'Unload', 'U', setPending('unload'), { abil: id }); // targeted unload (click a spot); the cargo wireframes unload single units
+      else if (ab.kind === 'toggle' || ab.kind === 'instant') B(i++, label, ab.hk, () => mobile.forEach(x => Abilities.issue(x, id)), { abil: id });
+      else if (ab.kind === 'morph') B(i++, label, ab.hk, () => mobile.forEach(x => Abilities.issue(x, id)), { cost: DATA.units[ab.unit], abil: id });
+      else if (ab.kind === 'merge') B(i++, label, ab.hk, () => Abilities.merge(mobile, id), { abil: id });
       else if (ab.kind === 'produce') B(i++, label, ab.hk, () => mobile.forEach(x => G.queueUnit(x, ab.unit)), { cost: DATA.units[ab.unit], abil: id });
       else B(i++, label, ab.hk, () => { this.pending = { kind: 'ability', abil: id }; }, { energy: ab.energy, abil: id });
     }
@@ -1025,7 +1025,7 @@ const UI = {
     // point is to set it up BEFORE there is anything to move.
     if (mobile.some(x => x.def.cargo || (x.def.cargoTech && x.player.hasTech(x.def.cargoTech)))) B(i++, 'Ferry', 'Y', setPending('ferry'));
     // mixed selections still get the merge buttons when at least two templar of a kind are selected
-    for (const [id, want] of [['summon_archon', 'high_templar'], ['summon_dark_archon', 'dark_templar']]) if (!abils.includes(id) && i <= 8 && mobile.filter(x => x.def.id === want && !x.disabled).length >= 2) { const ab = DATA.abilities[id]; B(i++, ab.name, ab.hk, () => Abilities.merge(mobile, id)); }
+    for (const [id, want] of [['summon_archon', 'high_templar'], ['summon_dark_archon', 'dark_templar']]) if (!abils.includes(id) && i <= 8 && mobile.filter(x => x.def.id === want && !x.disabled).length >= 2) { const ab = DATA.abilities[id]; B(i++, ab.name, ab.hk, () => Abilities.merge(mobile, id), { abil: id }); }
     return btns;
   },
   cardRect() { const ch = this.consoleH, k = Math.min(1, (ch - 12) / 164); const bw = Math.round(66 * k), bh = Math.round(52 * k); const w = this.CARD_COLS * bw + 8, h = this.CARD_ROWS * bh + 8; return { x: Render.W - w - 10, y: Render.H - ch + 6, w, h, bw: bw - 4, bh: bh - 4 }; },

@@ -179,6 +179,62 @@ ok(cdx.thrown.length === 0, 'the codex draws the description without throwing', 
 ok(cdx.hits === cdx.checked, 'the codex detail pane shows the description (' + cdx.hits + '/' + cdx.checked + ', including the two buildings that were reported)');
 ok(cdx.negative === false, 'NEGATIVE CONTROL: delete the desc and the codex stops showing it');
 
+const JA = x => JSON.parse(vm.runInContext('JSON.stringify(' + x + ')', ctx));
+// =============================================================================
+// FIXLIST-M15 A2 -- and abilities, which this file used to skip entirely
+// =============================================================================
+// M14's A1 described every unit and every building and stopped there, so 0 of the 80 abilities in
+// the game explained themselves. The reported symptom was one ability -- 'I'm not sure what Spawn
+// Broodlings does' -- but it was every ability, and this file passing green throughout is exactly
+// why nobody noticed: it only ever asked about units and buildings.
+{
+  // this file uses run() for side effects; the ability checks want values back, so JSON across the
+  // context boundary, the same helper every other suite in the repo uses.
+  const J = x => JSON.parse(vm.runInContext('JSON.stringify(' + x + ')', ctx));
+  const A = J('Object.keys(DATA.abilities).map(k => ({ id: k, name: DATA.abilities[k].name, desc: DATA.abilities[k].desc || null, kind: DATA.abilities[k].kind }))');
+  ok(A.length >= 75, 'the scene is real: every ability in the game was found', String(A.length));
+  const none = A.filter(a => !a.desc);
+  ok(none.length === 0, 'EVERY ability has a description -- none of them did', none.map(a => a.id).join(', '));
+  const cap = J('typeof DESC_MAX === \'undefined\' ? 200 : DESC_MAX');
+  const tooLong = A.filter(a => a.desc.length > cap);
+  ok(tooLong.length === 0, '...and every one fits the tooltip', tooLong.map(a => a.id + ' ' + a.desc.length).join(', '));
+
+  // ANTI-VACUITY. 'Has a description' is satisfiable with one word, or with the same word 80 times.
+  const shrt = A.filter(a => a.desc.length < 40);
+  ok(shrt.length === 0, 'none of them is a stub', shrt.map(a => a.id).join(', '));
+  ok(new Set(A.map(a => a.desc)).size === A.length, 'and no two abilities share a description');
+  const echo = A.filter(a => a.desc.toLowerCase().replace(/[^a-z]/g, '') === a.name.toLowerCase().replace(/[^a-z]/g, ''));
+  ok(echo.length === 0, 'and none of them merely repeats the name back', echo.map(a => a.id).join(', '));
+
+  // THE SECOND HALF OF THE SENTENCE IS THE POINT. The complaint was not only 'what does it do' but
+  // 'what am I supposed to click' -- so the abilities whose target rule can REFUSE must state it.
+  // These are exactly the ones that say only 'Invalid target.' when they refuse (see B2).
+  const rule = { spawn_broodling: /organic/i, mind_control: /building|larva/i, abduct: /building|larva/i,
+    hallucination: /friendly/i, consume: /own/i, consume_essence: /own|building/i, lockdown: /mechanical/i,
+    maelstrom: /organic/i, feedback: /energy/i, heal: /organic|mechanical/i, repair: /mechanical/i };
+  const silent = Object.keys(rule).filter(id => { const a = A.find(x => x.id === id); return !a || !rule[id].test(a.desc); });
+  ok(silent.length === 0, 'ABILITIES THAT CAN REFUSE A TARGET SAY WHAT THEY ACCEPT -- which is the actual complaint', silent.join(', '));
+}
+
+// The description has to REACH the player. Two separate faults stopped it, and both are on the
+// button rather than in the data, so a full table would still have shown nothing.
+{
+  const src = fs.readFileSync(path.join(root, 'js', 'hud.js'), 'utf8');
+  ok(/b\.cost \|\| b\.energy \|\| b\.abil/.test(src),
+    'the tooltip appears for an ability button with NO cost and NO energy -- Burrow, Stim, Blink and every merge showed nothing at all');
+  ok(/DATA\.abilities\[b\.abil\]/.test(src), '...and it reads the description off the ability, not off a cost the button does not have');
+  const ui = fs.readFileSync(path.join(root, 'js', 'ui.js'), 'utf8');
+  const btns = ui.match(/B\(i\+\+, (?:label|ab\.name)[^\n]*?\);/g) || [];
+  const noId = btns.filter(b => !/abil: id/.test(b));
+  ok(noId.length === 0, 'and every ability button carries its id, or the tooltip could not find it', String(noId.length) + ' without');
+}
+
+// NEGATIVE CONTROL: strip a description and the checks above must go red rather than shrug.
+{
+  const gone = JA('(() => { const d = DATA.abilities.spawn_broodling.desc; DATA.abilities.spawn_broodling.desc = null; const bad = Object.keys(DATA.abilities).filter(k => !DATA.abilities[k].desc).length; DATA.abilities.spawn_broodling.desc = d; return bad; })()');
+  ok(gone === 1, 'NEGATIVE CONTROL: remove one ability description and the check finds exactly it', String(gone));
+}
+
 ok(errors.length === 0, 'no JS errors were logged along the way', errors.slice(0, 3).join(' | '));
 
 console.log(fail ? `FAIL  ${pass} passed, ${fail} failed` : `ALL PASS  ${pass} passed, 0 failed`);
