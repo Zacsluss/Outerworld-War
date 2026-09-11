@@ -29,12 +29,12 @@ says that too, plainly, and names the probe to build first.
 | 1 | were unit projectiles ever researched? make them varied | **A1** | ✅ done — **No, they never were.** All 67 weapon slots now carry their own shot, 20 kinds, races disjoint |
 | 2 | tumours should cost energy; Overlords need an energy pool | **C1** | ☐ confirmed: `plant_tumour` has no energy cost and the Overlord has no energy at all |
 | 3 | tumours have unlimited range | **C2** | ⚠ confirmed but not for the reported reason — see the entry |
-| 4 | Spawn Broodlings is unexplained and says only "invalid target" | **A2** ✅ **+ B2** ☐ | A2 done — it was **0 of 80**, now 80 of 80, and two plumbing faults stopped any of it showing |
+| 4 | Spawn Broodlings is unexplained and says only "invalid target" | **A2 + B2** ✅ | A2 done — it was **0 of 80**, now 80 of 80, and two plumbing faults stopped any of it showing |
 | 5 | creep should look alive; Zerg should move faster on it | **A3** ✅ **+ C3** ☐ | A3 done — an overlay, cache untouched, stamp unmoved. C3 (the speed) still open |
 | 6 | training a Drone at supply cap also says "Spire required" | **B1 + B3** | ✅ done — fully reproduced. It was **B3**: the card was shifted one slot, so grid-key D hit Scourge |
 | — | found: the supply refusal fires once per selected larva | **B1** | ✅ simplified — but NOT the reported fault; the alert cooldown already collapsed it |
 | — | found: Set Rally and Queen share slot 6 on the larva card | **B3** | ✅ done — this was the ROOT CAUSE of item 6 |
-| — | found: seven abilities say only "Invalid target." | **B2** | ☐ a class, not one case |
+| — | found: seven abilities say only "Invalid target." | **B2** | ✅ done — and the audit found an eighth that said nothing at all |
 
 ---
 
@@ -172,7 +172,7 @@ as one click producing two errors. If that is it, the two faults are unrelated a
 
 ---
 
-### ☐ B2 · (item 4, second half) "Invalid target." — seven times, and never a reason
+### ✅ B2 · (item 4, second half) "Invalid target." — seven times, and never a reason
 
 **True today, and it is a class.** `js/abilities.js` says the bare string `'Invalid target.'` in
 **seven** places (`spawn_broodling`, `consume`, `hallucination`, `mind_control`, `abduct`,

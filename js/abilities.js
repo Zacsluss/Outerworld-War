@@ -528,14 +528,22 @@ const Abilities = {
       case 'jam_field': G.fields.push({ kind: 'jam', x, y, r: 4, t: 480, owner: u.owner }); ring(4, '#7ae'); break;
       case 'parasite': t.fx.parasite = u.owner; ring(0.5, '#f8f'); break;
       case 'ensnare': for (const o of G.near(x, y, 2 * TILE)) if (!o.isBuilding) o.fx.ensnare = 576; ring(2, '#8f8'); break;
-      case 'spawn_broodling': if (t.fly || t.isBuilding || NO_BROODLING.has(t.def.id) || t.def.race === 'P' && t.def.mech) { p.msg('Invalid target.', 'error'); u.energy += 150; break; } G.kill(t, u); for (let i = 0; i < 2; i++) { const b = G.spawnUnit('broodling', u.owner, t.x + (i ? 10 : -10), t.y); b.lifetime = 1800; } break;
+      // FIXLIST-M15 B2. Every refusal below used to say the same three words, 'Invalid target.', in
+      // seven places -- which tells a player that they were wrong and nothing else. Each one now PICKS
+      // THE REASON from the condition that actually failed, because 'cannot target air units' says what
+      // to do next and 'only works on organic ground units' just makes them read it again.
+      //
+      // The audit the item asked for turned up an eighth, which was worse than generic: Psionic Storm
+      // refunded its 75 energy and said NOTHING when the spot was already burning, so the click looked
+      // like it had been swallowed by the game.
+      case 'spawn_broodling': if (t.fly || t.isBuilding || NO_BROODLING.has(t.def.id) || t.def.race === 'P' && t.def.mech) { p.msg(t.isBuilding ? 'Spawn Broodlings cannot target buildings.' : t.fly ? 'Spawn Broodlings cannot target air units.' : 'Spawn Broodlings only works on organic ground units -- not robotic ones.', 'error'); u.energy += 150; break; } G.kill(t, u); for (let i = 0; i < 2; i++) { const b = G.spawnUnit('broodling', u.owner, t.x + (i ? 10 : -10), t.y); b.lifetime = 1800; } break;
       case 'dark_swarm': G.fields.push({ kind: 'swarm', x, y, r: 3, t: 900, owner: u.owner }); break;
       case 'plague': for (const o of G.near(x, y, 2 * TILE)) o.fx.plague = 600; ring(2, '#f80'); break;
-      case 'consume': if (!t || t.owner !== u.owner || t.isBuilding || t.def.larva || t.def.egg || t === u) { p.msg('Invalid target.', 'error'); break; } G.kill(t, null, true); u.energy = Math.min(u.maxEnergy, u.energy + 50); break;
-      case 'psi_storm': if (this.inField(x, y, 'storm')) { u.energy += 75; break; } G.fields.push({ kind: 'storm', x, y, r: 1.5, t: 64, owner: u.owner, tickT: 0 }); break;
-      case 'hallucination': if (t.isBuilding || t.def.larva || t.def.egg || t.def.notUnit) { p.msg('Invalid target.', 'error'); u.energy += 100; break; } for (let i = 0; i < 2; i++) { const h = G.spawnUnit(t.def.id, u.owner, t.x + (i ? 20 : -20), t.y); h.halluc = true; h.lifetime = 1000; h.hp = t.maxHp; h.sh = t.maxSh; h.energy = 0; h.maxEnergy = 0; } break;
+      case 'consume': if (!t || t.owner !== u.owner || t.isBuilding || t.def.larva || t.def.egg || t === u) { p.msg(!t || t.owner !== u.owner ? 'Consume only works on your own units.' : t === u ? 'The Defiler cannot consume itself.' : t.isBuilding ? 'Consume cannot eat a building.' : 'Consume cannot eat larvae or eggs.', 'error'); break; } G.kill(t, null, true); u.energy = Math.min(u.maxEnergy, u.energy + 50); break;
+      case 'psi_storm': if (this.inField(x, y, 'storm')) { p.msg('A Psionic Storm is already burning there.', 'error'); u.energy += 75; break; } G.fields.push({ kind: 'storm', x, y, r: 1.5, t: 64, owner: u.owner, tickT: 0 }); break;
+      case 'hallucination': if (t.isBuilding || t.def.larva || t.def.egg || t.def.notUnit) { p.msg(t.isBuilding ? 'Hallucination cannot copy a building.' : 'Hallucination can only copy a unit.', 'error'); u.energy += 100; break; } for (let i = 0; i < 2; i++) { const h = G.spawnUnit(t.def.id, u.owner, t.x + (i ? 20 : -20), t.y); h.halluc = true; h.lifetime = 1000; h.hp = t.maxHp; h.sh = t.maxSh; h.energy = 0; h.maxEnergy = 0; } break;
       case 'feedback': if (!t.maxEnergy) { p.msg('Target has no energy.', 'error'); u.energy += 50; break; } { const e = t.energy; t.energy = 0; G.damageRaw(t, e, u); ring(0.5, '#f4f'); } break;
-      case 'mind_control': if (t.isBuilding || t.owner === u.owner || t.def.larva || t.def.egg) { p.msg('Invalid target.', 'error'); u.energy += 150; break; } this.changeOwner(t, u.owner); u.sh = 0; ring(0.6, '#f4f'); break;
+      case 'mind_control': if (t.isBuilding || t.owner === u.owner || t.def.larva || t.def.egg) { p.msg(t.isBuilding ? 'Mind Control cannot take a building.' : t.owner === u.owner ? 'Mind Control only works on enemy units.' : 'Mind Control cannot take larvae or eggs.', 'error'); u.energy += 150; break; } this.changeOwner(t, u.owner); u.sh = 0; ring(0.6, '#f4f'); break;
       case 'maelstrom': for (const o of G.near(x, y, 1.5 * TILE)) if (o.def.bio && !o.isBuilding) { o.fx.maelstrom = 144; o.path = null; } ring(1.5, '#f4f'); break;
       case 'disruption_web': G.fields.push({ kind: 'dweb', x, y, r: 2.5, t: 576, owner: u.owner }); break;
       case 'stasis_field': for (const o of G.near(x, y, 1.5 * TILE)) if (!o.isBuilding) { o.fx.stasis = 720; o.path = null; } ring(1.5, '#8cf'); break;
@@ -565,7 +573,7 @@ const Abilities = {
       // is most of the value: a tank pulled out of its line arrives in tank mode, in your army.
       case 'abduct': {
         const ab = DATA.abilities.abduct;
-        if (!t || t.isBuilding || t.def.larva || t.def.egg || t.def.notUnit || t.def.mine || t.fx.stasis > 0) { p.msg('Invalid target.', 'error'); u.energy += ab.energy; break; }
+        if (!t || t.isBuilding || t.def.larva || t.def.egg || t.def.notUnit || t.def.mine || t.fx.stasis > 0) { p.msg(!t || t.isBuilding ? 'Abduct cannot take a building.' : t.fx.stasis > 0 ? 'That unit is in stasis and cannot be moved.' : 'Abduct can only take a unit.', 'error'); u.energy += ab.energy; break; }
         let ax = u.x, ay = u.y;
         if (!t.fly) { const tl = G.map.findFreeTile(Math.floor(u.x / TILE), Math.floor(u.y / TILE), 6); if (!tl) { p.msg('No room to pull it to.', 'error'); u.energy += ab.energy; break; } ax = (tl[0] + .5) * TILE; ay = (tl[1] + .5) * TILE; }
         if (t.burrowed) { t.burrowed = false; t.transT = 24; }
@@ -576,7 +584,7 @@ const Abilities = {
       // The defiler eats your zerglings; the viper eats your buildings. Same idea, opposite cost, and
       // it means a viper parked over a hatchery sustains itself without spending army.
       case 'consume_essence': {
-        if (!t || t.owner !== u.owner || !t.isBuilding || !t.done || t.hp <= 120) { p.msg('Invalid target.', 'error'); break; }
+        if (!t || t.owner !== u.owner || !t.isBuilding || !t.done || t.hp <= 120) { p.msg(!t || !t.isBuilding ? 'Consume Essence only works on a building.' : t.owner !== u.owner ? 'Consume Essence only works on your OWN buildings.' : !t.done ? 'That building is not finished yet.' : 'That building is too damaged to drain -- it needs more than 120 health.', 'error'); break; }
         G.damageRaw(t, 100, null); u.energy = Math.min(u.maxEnergy, u.energy + 50); ring(0.8, '#8f8'); break;
       }
       // Contaminate reuses fx.maelstrom because Unit.tick returns on it BEFORE tickBuilding runs, so a
@@ -585,7 +593,7 @@ const Abilities = {
       // Restoration clears it, which is a counterplay this happens to get for free and is welcome.
       case 'contaminate': {
         const ab = DATA.abilities.contaminate;
-        if (!t || !t.isBuilding || !t.done || G.allied(t.owner, u.owner)) { p.msg('Invalid target.', 'error'); u.energy += ab.energy; break; }
+        if (!t || !t.isBuilding || !t.done || G.allied(t.owner, u.owner)) { p.msg(!t || !t.isBuilding ? 'Contaminate only works on a building.' : !t.done ? 'That building is not finished yet.' : 'Contaminate only works on ENEMY buildings.', 'error'); u.energy += ab.energy; break; }
         t.fx.maelstrom = 720; ring(1.2, '#a6f'); break;
       }
       // ITEM 11. The cast only books the delivery; tickFields hatches it, exactly the way the nuke and
