@@ -164,6 +164,10 @@ const MAP_SIZES = {
 // The consequence worth knowing about: a hazard map is now simulation-identical to the same map
 // without one. `test/mapmodes.js` asserts exactly that, and it is the negative control -- put `dps`
 // back and the two state hashes separate.
+// The refusal a player sees when they try to build in the black. Verbatim from FIXLIST-M14 C1, and a
+// named constant because two branches of GameMap.canPlace return it and test/fogbuild.js reads it --
+// three copies of a sentence is how one of them ends up saying something slightly different.
+const UNEXPLORED_MSG = 'You can\'t build here until it is explored';
 const HAZARD_SAYS = { sandstorm: 'A sandstorm is closing in.' };
 const HAZARDS = {
   // span is the map's extent along the sweep axis, in tiles.
@@ -1513,6 +1517,9 @@ class GameMap {
       const g = this.geyserAt(tx, ty);
       if (!g) return 'Must be placed on a Vespene Geyser';
       if (g.building && g.building.alive) return 'Geyser already has a building';
+      // A geyser on ground nobody has explored is a geyser nobody knows about. Same rule as the loop
+      // below, stated separately because this branch returns before reaching it.
+      if (player && player.vis && player.vis[this.idx(g.x, g.y)] === 0) return UNEXPLORED_MSG;
       return null;
     }
     let h0 = null;
@@ -1529,6 +1536,26 @@ class GameMap {
       if (h0 === null) h0 = hh; else if (h0 !== hh) return 'Uneven terrain';
       if (def.race !== 'Z' && this.creep[i]) return 'Cannot build on creep';
       if (def.needsCreep && !this.creep[i]) return 'Requires creep';
+      // FIXLIST-M14 C1 -- you may not build on ground you have never seen.
+      //
+      // There was no explored test here at all: terrain, occupancy, creep and psi, and nothing about
+      // whether the player had ever looked at the tile. So a Command Center could be dropped in the
+      // middle of the black, on ground that might be a cliff, a lake or the enemy's natural, and the
+      // first you knew of it was the building appearing.
+      //
+      // A FOOTPRINT THAT STRADDLES THE BOUNDARY IS REFUSED, deliberately, and it is worth saying why:
+      // this loop is per tile, so refusing on ANY unexplored tile is what falls out naturally, and it
+      // is also the right rule. A hall half on ground you have scouted and half on ground you have not
+      // is a hall you have not scouted -- the unexplored half is where the surprise would be.
+      //
+      // EXPLORED-BUT-FOGGED IS STILL ALLOWED. `vis` is 0 never seen, 1 seen before, 2 visible now, and
+      // this tests > 0 through G.explored. Those are different states and only the first is blocked:
+      // rebuilding on ground you scouted ten minutes ago is the normal way this game is played.
+      // Read straight off the player's own vision array rather than through G.explored, which indexes
+      // it identically -- canPlace is called from the map editor and from harnesses where G may not be
+      // the game this map belongs to, and `player` is already the argument that says whose question
+      // this is. A player without a `vis` (the editor's stand-in) is unrestricted, as it must be.
+      if (player && player.vis && player.vis[i] === 0) return UNEXPLORED_MSG;
     }
     if (def.needsPsi) { const cx = tx + Math.floor(def.w / 2), cy = ty + Math.floor(def.h / 2); if (!this.hasPsi(player.id, cx, cy) && !this.hasPsi(player.id, cx - 1, cy)) return 'Requires psi power'; }
     if (def.race === 'Z' && def.id === 'hatchery' && def.needsCreep) { /* hatcheries can go anywhere */ }

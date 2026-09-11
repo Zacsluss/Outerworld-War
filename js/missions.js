@@ -600,7 +600,13 @@ const Missions = {
 // helpers used by mission setups
 G.hallOf = function (pid) { return this.units.find(u => u.alive && u.owner === pid && u.isBuilding && u.def.depot) || null; };
 G.givePlayer = function (pid, o) { const p = this.players[pid]; if (o.minerals) p.minerals += o.minerals; if (o.gas) p.gas += o.gas; if (o.tech) for (const t of o.tech) p.tech.add(t); if (o.nukes) p.nukes += o.nukes; };
-G.placeDone = function (pid, id, tx, ty) { const def = DATA.buildings[id]; const p = this.players[pid]; let spot = null; for (let r = 0; r < 12 && !spot; r++) for (let dy = -r; dy <= r && !spot; dy++) for (let dx = -r; dx <= r && !spot; dx++) { if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; const x = tx + dx, y = ty + dy; const err = this.map.canPlace(def, x, y, p, this.units, null); if (!err || (err === 'Requires psi power') || (err === 'Requires creep')) spot = [x, y]; } if (!spot) return null; const b = this.placeBuilding(def, spot[0], spot[1], pid); this.completeBuilding(b); b.hp = b.maxHp; b.sh = b.maxSh; return b; };
+// A SCENARIO PLACES BUILDINGS BEFORE ANYBODY HAS VISION, so it is exempt from three of canPlace's
+// refusals rather than one. Psi power and creep were already listed -- a mission stands a Protoss base
+// up before its pylons exist -- and FIXLIST-M14 C1 added the third: the explored test. A scripted
+// placement is the DESIGNER putting a building on the map at frame 0, which is not the same act as a
+// player trying to build in the black, and gating it on vision nobody has yet would have quietly
+// returned null and left every scenario short of the buildings it was written around.
+G.placeDone = function (pid, id, tx, ty) { const def = DATA.buildings[id]; const p = this.players[pid]; let spot = null; for (let r = 0; r < 12 && !spot; r++) for (let dy = -r; dy <= r && !spot; dy++) for (let dx = -r; dx <= r && !spot; dx++) { if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; const x = tx + dx, y = ty + dy; const err = this.map.canPlace(def, x, y, p, this.units, null); if (!err || (err === 'Requires psi power') || (err === 'Requires creep') || (err === UNEXPLORED_MSG)) spot = [x, y]; } if (!spot) return null; const b = this.placeBuilding(def, spot[0], spot[1], pid); this.completeBuilding(b); b.hp = b.maxHp; b.sh = b.maxSh; return b; };
 // Nearest walkable point to a world position, so a mission can name a place without knowing the terrain.
 G.spot = function (x, y) { const tx = clamp(Math.floor(x / TILE), 1, this.map.w - 2), ty = clamp(Math.floor(y / TILE), 1, this.map.h - 2); const t = this.map.findFreeTile(tx, ty, 16, (a, b) => this.map.walkable(a, b)); return t ? { x: (t[0] + 0.5) * TILE, y: (t[1] + 0.5) * TILE } : { x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE }; };
 // Scripted pressure. The owning AI will fold these into its own waves within a think or two, which is

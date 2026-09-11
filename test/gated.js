@@ -33,6 +33,13 @@ let pass = 0, fail = 0;
 const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x !== undefined && x !== '' ? '  ' + x : '')); } };
 const J = src => JSON.parse(vm.runInContext('JSON.stringify(' + src + ')', ctx));
 
+// A NOTE ON G.updateVision IN EVERY put() BELOW, because it looks like noise and is not.
+// FIXLIST-M14 C1 made GameMap.canPlace refuse ground the player has never explored, and G.queueAddon
+// places the add-on through canPlace. These scenarios teleport buildings in with G.placeBuilding and
+// never advance a frame, so nothing had ever run a vision pass and the add-on slot beside a freshly
+// conjured Barracks was still black. In a real game that cannot happen -- a finished Barracks sees
+// eight tiles and its add-on slot is one of them -- so the vision pass is what makes the scenario
+// resemble the game rather than what makes the check pass.
 console.log('--- 1. the Reactor, which is the reported case ---');
 const RE = J('DATA.buildings.reactor');
 ok(Array.isArray(RE.req) && RE.req.length > 0, 'the Reactor has a req array at all -- it had none', JSON.stringify(RE.req || null));
@@ -41,7 +48,7 @@ ok((RE.req || []).length > 0 && RE.req.every(r => J('DATA.buildings')[r] || J('D
 const reactor = J(`(() => {
   G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'Z', human: false, difficulty: 'easy', name: 'B' }], seed: 3, layout: 'temple' });
   const p = G.players[0]; const st = G.map.starts[0]; let col = 0;
-  const put = id => { col += 6; const b = G.placeBuilding(DATA.buildings[id], Math.floor(st.cx / TILE) + col, Math.floor(st.cy / TILE) + 6, 0); if (b) { b.done = true; b.hp = b.maxHp; b.progress = b.def.time; } return b; };
+  const put = id => { col += 6; const b = G.placeBuilding(DATA.buildings[id], Math.floor(st.cx / TILE) + col, Math.floor(st.cy / TILE) + 6, 0); if (b) { b.done = true; b.hp = b.maxHp; b.progress = b.def.time; G.updateVision(); } return b; };
   const bar = put('barracks');
   p.minerals = 5000; p.gas = 5000; p.msgs.length = 0;
   const without = { got: G.queueAddon(bar, 'reactor'), said: p.msgs.map(m => m.kind + '|' + m.text) };
@@ -63,7 +70,7 @@ const addons = J(`(() => {
     G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'Z', human: false, difficulty: 'easy', name: 'B' }], seed: 3, layout: 'temple' });
     const ad = DATA.buildings[aid], p = G.players[0], st = G.map.starts[0];
     let col = 0;
-    const put = id => { col += 6; const b = G.placeBuilding(DATA.buildings[id], Math.floor(st.cx / TILE) + col, Math.floor(st.cy / TILE) + 6, 0); if (b) { b.done = true; b.hp = b.maxHp; b.progress = b.def.time; } return b; };
+    const put = id => { col += 6; const b = G.placeBuilding(DATA.buildings[id], Math.floor(st.cx / TILE) + col, Math.floor(st.cy / TILE) + 6, 0); if (b) { b.done = true; b.hp = b.maxHp; b.progress = b.def.time; G.updateVision(); } return b; };
     const parent = put(ad.parent);
     p.minerals = 5000; p.gas = 5000; p.msgs.length = 0;
     const bare = { got: G.queueAddon(parent, aid), said: p.msgs.map(m => m.text) };
@@ -91,7 +98,7 @@ const states = J(`(() => {
   const attempt = (label, prep) => {
     G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'Z', human: false, difficulty: 'easy', name: 'B' }], seed: 3, layout: 'temple' });
     const p = G.players[0], st = G.map.starts[0]; let col = 0;
-    const put = id => { col += 6; const b = G.placeBuilding(DATA.buildings[id], Math.floor(st.cx / TILE) + col, Math.floor(st.cy / TILE) + 6, 0); if (b) { b.done = true; b.hp = b.maxHp; b.progress = b.def.time; } return b; };
+    const put = id => { col += 6; const b = G.placeBuilding(DATA.buildings[id], Math.floor(st.cx / TILE) + col, Math.floor(st.cy / TILE) + 6, 0); if (b) { b.done = true; b.hp = b.maxHp; b.progress = b.def.time; G.updateVision(); } return b; };
     const bar = put('barracks');
     for (const r of (DATA.buildings.reactor.req || [])) { if (DATA.buildings[r]) put(r); else p.tech.add(r); }
     p.minerals = 5000; p.gas = 5000;
@@ -117,7 +124,7 @@ console.log('\n--- 4. the class: a command may not be asked for what the buildin
 const cross = J(`(() => {
   G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'Z', human: false, difficulty: 'easy', name: 'B' }], seed: 3, layout: 'temple' });
   const p = G.players[0], st = G.map.starts[0]; let col = 0;
-  const put = id => { col += 6; const b = G.placeBuilding(DATA.buildings[id], Math.floor(st.cx / TILE) + col, Math.floor(st.cy / TILE) + 10, 0); if (b) { b.done = true; b.hp = b.maxHp; b.progress = b.def.time; } return b; };
+  const put = id => { col += 6; const b = G.placeBuilding(DATA.buildings[id], Math.floor(st.cx / TILE) + col, Math.floor(st.cy / TILE) + 10, 0); if (b) { b.done = true; b.hp = b.maxHp; b.progress = b.def.time; G.updateVision(); } return b; };
   const bar = put('barracks'), fac = put('factory'), arm = put('armory'), ms = put('machine_shop'), ac = put('academy');
   for (const t of Object.keys(DATA.techs)) p.tech.add(t);
   const out = [];
@@ -144,7 +151,7 @@ console.log('\n--- 5. and the legal versions all still work (this is the half th
 const legal = J(`(() => {
   G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'Z', human: false, difficulty: 'easy', name: 'B' }], seed: 3, layout: 'temple' });
   const p = G.players[0], st = G.map.starts[0]; let col = 0;
-  const put = id => { col += 6; const b = G.placeBuilding(DATA.buildings[id], Math.floor(st.cx / TILE) + col, Math.floor(st.cy / TILE) + 14, 0); if (b) { b.done = true; b.hp = b.maxHp; b.progress = b.def.time; } return b; };
+  const put = id => { col += 6; const b = G.placeBuilding(DATA.buildings[id], Math.floor(st.cx / TILE) + col, Math.floor(st.cy / TILE) + 14, 0); if (b) { b.done = true; b.hp = b.maxHp; b.progress = b.def.time; G.updateVision(); } return b; };
   const bar = put('barracks'), fac = put('factory'), arm = put('armory'), ms = put('machine_shop'), cc = G.units.find(u => u.owner === 0 && u.def.id === 'command_center');
   const out = {};
   p.minerals = 9000; p.gas = 9000; p.supMax = 400;
@@ -164,7 +171,7 @@ for (const [k, v] of Object.entries(legal)) ok(v === true, 'the legal call still
 const inherit = J(`(() => {
   G.init({ players: [{ race: 'Z', human: true, name: 'A' }, { race: 'T', human: false, difficulty: 'easy', name: 'B' }], seed: 3, layout: 'temple' });
   const p = G.players[0], st = G.map.starts[0]; let col = 0;
-  const put = id => { col += 6; const b = G.placeBuilding(DATA.buildings[id], Math.floor(st.cx / TILE) + col, Math.floor(st.cy / TILE) + 14, 0); if (b) { b.done = true; b.hp = b.maxHp; b.progress = b.def.time; } return b; };
+  const put = id => { col += 6; const b = G.placeBuilding(DATA.buildings[id], Math.floor(st.cx / TILE) + col, Math.floor(st.cy / TILE) + 14, 0); if (b) { b.done = true; b.hp = b.maxHp; b.progress = b.def.time; G.updateVision(); } return b; };
   put('spawning_pool');
   const lair = put('lair'), gs = put('greater_spire');
   p.minerals = 9000; p.gas = 9000;
