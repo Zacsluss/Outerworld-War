@@ -50,7 +50,11 @@ const Net = {
       case 'error': this.lastError = m.msg; this.status(m.msg); break;
       case 'start': this.startGame(m); break;
       case 'rejoin': this.rejoinGame(m); break;
-      case 'needsnap': if (this.active && typeof Snapshot !== 'undefined') { try { this.send({ t: 'snap', req: m.req, frame: G.frame, snap: Snapshot.take() }); } catch (e) { console.error('snapshot for rejoin failed', e); } } break;
+      // `applied`: whether this frame's batch is already in the state being snapshotted. Between ticks it
+      // never is (beforeTick applied frame F, G.tick moved to F + 1); once the game is over or paused,
+      // G.tick no-ops and the frame stays on the batch it applied, so a rejoiner that assumed the usual
+      // case applied that batch twice. (REVIEW-M17 task 14)
+      case 'needsnap': if (this.active && typeof Snapshot !== 'undefined') { try { this.send({ t: 'snap', req: m.req, frame: G.frame, applied: this.appliedFrame === G.frame, snap: Snapshot.take() }); } catch (e) { console.error('snapshot for rejoin failed', e); } } break;
       case 'cmds': if (this.active && m.f >= G.frame) { if (!this.inbox[m.f]) this.inbox[m.f] = {}; this.inbox[m.f][m.p] = Array.isArray(m.c) ? m.c : []; } break;   // a batch that is not a list counts as an empty one that ARRIVED, so the frame is not blocked forever
       case 'hash': this.onHash(m); break;
       case 'left': { this.gone[m.p] = { from: m.f, to: Infinity }; if (typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg(this.playerName(m.p) + ' dropped. Their units stop at ' + this.clock(m.f) + '; the game continues.', 'info'); break; }
@@ -99,7 +103,7 @@ const Net = {
     // Without one this re-simulates the whole game, which gets slower the longer the game has run.
     let from = 0;
     if (m.snap && typeof Snapshot !== 'undefined') {
-      try { Snapshot.restore(m.snap); from = G.frame; this.appliedFrame = G.frame - 1; }
+      try { Snapshot.restore(m.snap); from = G.frame; this.appliedFrame = m.snapApplied ? G.frame : G.frame - 1; }   // the donor said whether its frame's batch is already in this state (task 14)
       catch (e) { console.error('rejoin snapshot rejected, re-simulating instead', e); }
     }
     UI.loading = { target: this.catchTarget, start: from, label: m.snap ? 'Rejoining... catching up' : 'Rejoining... re-simulating' };

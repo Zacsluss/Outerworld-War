@@ -255,11 +255,15 @@ listed here. Ordered by what I would do first.
     a 64×128 editor map drawn through the recorder harness in `test/zoom.js` would prove the clamp.
     `test/rooms.js` checks the keepalive by regex; a 45-second silence is too long for the gate, so it
     stays a hand check. Cost S each.
-13. **Relay: a batch frame far in the future poisons rejoins.** `case 'cmds'` takes `m.f | 0` with no
+13. **Relay: a batch frame far in the future poisons rejoins.** **DONE** (entry 25): a window of
+    `2 * DELAY + 24` frames over the room's newest batch, chosen after measuring the lead. As listed:
+    `case 'cmds'` takes `m.f | 0` with no
     window; a batch at `f: 2147483647` sets `maxFrame`, and every later rejoin's catch target and stop
     frame come from it. Fix: drop batches with `f > maxFrame(L) + 2 * DELAY + 24` (a client is never more
     than DELAY ahead). Measure the window against `test/net_many.js` before committing it. Cost S.
-14. **Relay: a rejoin after game over applies one batch twice.** `G.tick()` no-ops once `G.over`, so
+14. **Relay: a rejoin after game over applies one batch twice.** **DONE** (entry 25): the donor says
+    whether its frame's batch is already in its snapshot and the rejoiner starts after it. As listed:
+    `G.tick()` no-ops once `G.over`, so
     `appliedFrame === G.frame` with that frame's batch already applied; a donor snapshot taken then
     carries `frame: G.frame`, the rejoiner sets `appliedFrame = G.frame - 1` and re-applies it. Only
     matters if "Continue playing" follows. Cost S.
@@ -1006,6 +1010,29 @@ The questions as they were put, kept for the record:
     queue time); the morph charged its full price -> one red. **Canaries:** aistyles seed 1 clean (131, the gate's); seed 5 the known economy line only (57 vs 61); seed 11 clean (131). **Eight-player
     banks:** 377/804/147/222/302/392/221/303 -- byte-identical to task 30's, the identity check a computer player never sees the cheat clause. **Gate:** 75 of 75, 258 s. The stamp moved (`game.js`, `sim.js`, `abilities.js`,
     `ai.js`): `f5ab8a213468977c`.
+25. **The relay, before it ships: a window on `cmds` frames, and no double apply after game over (tasks 13,
+    14).** *(commit: relay; fourth session)* No stamp move: `test/serve.js` and `js/net.js` are not
+    simulation. **Measured first** (`.claude/review/lead-measure.js`, a logging line applied to the relay and
+    restored): the lead `f - maxFrame(L)` of every batch that reached the relay during `test/net_many.js`
+    and `test/net.js` -- **65,256 batches, lead -2 to 4; 36,411 batches, lead -2 to 4**, the 4s being each
+    game's first batch against an empty room. A client is at frame F only once every other player's batch
+    for F is in, and sends its own for F + DELAY, so an honest lead is at most DELAY (DELAY + 1 for the
+    first); the window is `CMD_LEAD = 2 * DELAY + 24` (30 frames at the default delay, 64 at the maximum),
+    and a batch past it is dropped with a log line, its sender's `lastF` untouched. Before, `f = 2147483647`
+    set that slot's `lastF`, `maxFrame()` with it, and every later rejoin's catch target and stop frame
+    came from it (the pin's control read a catch target of 2147483644). **Task 14:** between ticks a
+    donor's `appliedFrame` is `G.frame - 1` (beforeTick applied F, `G.tick` moved on); once the game is
+    over or paused `G.tick` no-ops and the frame stays on the batch it applied, so a snapshot taken then
+    already holds it -- and the rejoiner, assuming the usual case, set `appliedFrame = G.frame - 1` and
+    applied it again. The donor now sends `applied: appliedFrame === G.frame` with its snapshot, the relay
+    passes it on as `snapApplied`, and the rejoiner starts after the batch when it is set. **Test:**
+    `test/rooms.js` section 11 (8 checks): batches inside the window forwarded; a batch at frame 2147483647
+    dropped and the next honest one still forwarded; a rejoin served from a raw donor's snapshot carries a
+    catch target from the honest batches and `snapApplied: true`; the client half in a VM -- the donor
+    writes the flag from `appliedFrame`, the rejoiner reads it into `appliedFrame`. **Negative controls**
+    (restored byte-identical): the window removed -> two clean reds (the batch forwarded, catch target
+    2147483644); the flag not forwarded -> one red; the rejoiner ignoring it -> one red (`rejoinOver 49`).
+    **By hand:** `test/net.js` all pass (phase 4's injected divergence detected by both clients at 19248); `test/net_many.js` 51 of 51. **Gate:** 75 of 75, 252 s.
 
 # 4. Considered and deliberately not done
 
@@ -1039,7 +1066,8 @@ The questions as they were put, kept for the record:
    review-time change. (Done in the fourth session with the probe, entry 24.)
 10. **A frame window on the relay's `cmds`** (open task 13) and **the rejoin-after-game-over double
     apply** (open task 14): both S, both untested against `test/net_many.js`'s timing, and the review
-    already changed enough of the relay for one pass. Measure the window first.
+    already changed enough of the relay for one pass. Measure the window first. (Measured and done in
+    the fourth session, entry 25.)
 11. **Refusing cheats in multiplayer.** `test/net.js` uses the cheat stream for god mode, and whether a
     friends' game should allow cheats at all is a product call (question 4). Not changed.
 12. **Wiring `drawSelGrid` and `drawDayDial` into the HUD** (open task 1). Two shipped features that

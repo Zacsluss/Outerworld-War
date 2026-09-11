@@ -328,8 +328,55 @@ function client(port, tag) {
   ok(!!R3.lobby && /too many join/i.test(String(R4.error)) && !R4.lobby, 'the fourth join from one address inside a minute is refused when the limit is three (60 by default)', 'third: ' + !!R3.lobby + ', fourth: ' + String(R4.error));
   DA.close(); DB.close(); R3.close(); R4.close();
 
+  // =========================================================================
+  // 11. a batch from the far future is dropped, and a rejoin after game over applies nothing twice (REVIEW-M17 tasks 13, 14)
+  // =========================================================================
+  const P6 = PORT + 5;
+  serve(P6, 3);
+  await sleep(500);
+  const WA = client(P6, 'WA'), WB = client(P6, 'WB'); await WA.open; await WB.open;
+  WA.send({ t: 'join', name: 'Wren', race: 'T', room: 'WNDW' }); await sleep(200);
+  WB.send({ t: 'join', name: 'Wyn', race: 'Z', room: 'WNDW' }); await sleep(200);
+  WA.send({ t: 'start' }); await sleep(300);
+  ok(WA.started && WB.started, 'the WNDW game starts');
+  // an honest opening batch (frame DELAY against an empty room) and one a few frames ahead both arrive
+  WA.send({ t: 'cmds', f: 3, c: [] }); WB.send({ t: 'cmds', f: 3, c: [] }); WA.send({ t: 'cmds', f: 9, c: [] }); await sleep(200);
+  ok(WB.cmds.some(m => m.f === 3) && WB.cmds.some(m => m.f === 9), 'batches inside the window are forwarded', WB.cmds.map(m => m.f).join(','));
+  // a batch claiming the far future is dropped: not forwarded, and not poisoning the room's clock
+  WA.send({ t: 'cmds', f: 2147483647, c: [] }); WA.send({ t: 'cmds', f: 10, c: [] }); await sleep(200);
+  ok(!WB.cmds.some(m => m.f === 2147483647) && WB.cmds.some(m => m.f === 10), 'a batch at frame 2147483647 is dropped and the next honest one still arrives (was forwarded, and set the room\'s newest frame)', WB.cmds.map(m => m.f).join(','));
+  WB.close(); await sleep(300);
+  const WB2 = client(P6, 'WB2'); await WB2.open;
+  // Wren answers the snapshot request the way a live client does once the game is over: its own frame's
+  // batch already applied (G.tick no-ops after G.over, so the frame never moves past it)
+  WB2.send({ t: 'join', name: 'Wyn', race: 'Z', room: 'WNDW' });
+  let req = null; for (let i = 0; i < 40 && req === null; i++) { await sleep(100); const ns = WA.msgs.find(m => m.t === 'needsnap'); if (ns) req = ns.req; }
+  ok(req !== null, 'the relay asks the live player for a snapshot');
+  WA.send({ t: 'snap', req, frame: 10, applied: true, snap: { frame: 10, fake: true } });
+  let rj = null; for (let i = 0; i < 40 && !rj; i++) { await sleep(100); rj = WB2.msgs.find(m => m.t === 'rejoin'); }
+  ok(!!rj && rj.frame < 1000, 'the rejoin\'s catch target comes from the honest batches, not the dropped one (was ~2147483644)', rj && rj.frame);
+  ok(!!rj && rj.snap && rj.snapFrame === 10 && rj.snapApplied === true, 'the rejoin carries the donor\'s snapshot and says its frame\'s batch is already applied', JSON.stringify(rj && { snapFrame: rj.snapFrame, snapApplied: rj.snapApplied }));
+  WA.close(); WB2.close(); await sleep(300);
+  // the client half, in a VM: the donor writes the flag, the rejoiner reads it
+  {
+    const cx = { console: { log() { }, warn() { }, error() { } }, Math, performance, setTimeout, clearTimeout, sent: [] };
+    cx.window = cx; cx.WebSocket = function () { }; cx.location = { protocol: 'http:', host: 'localhost' }; cx.document = { getElementById: () => ({ style: {}, addEventListener() { }, value: '' }), addEventListener() { } };
+    vm.createContext(cx);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', 'net.js'), 'utf8'), cx, { filename: 'net.js' });
+    const r = vm.runInContext(`(() => {
+      const out = {}; G = { frame: 50, over: true, log: [] }; Snapshot = { take: () => ({ frame: G.frame }), restore(s) { G.frame = s.frame; } }; UI = { start() { }, loading: null };
+      Net.active = true; Net.send = m => sent.push(m);
+      Net.appliedFrame = 50; Net.handle({ t: 'needsnap', req: 1 }); out.overApplied = sent[0] && sent[0].applied;
+      Net.appliedFrame = 49; Net.handle({ t: 'needsnap', req: 2 }); out.midApplied = sent[1] && sent[1].applied;
+      const base = { t: 'rejoin', history: [], frame: 60, players: [], seed: 1, layout: 'temple', you: 0, delay: 3, gone: {}, snapFrame: 50 };
+      Net.handle(Object.assign({ snap: { frame: 50 }, snapApplied: true }, base)); out.rejoinOver = Net.appliedFrame;
+      Net.handle(Object.assign({ snap: { frame: 50 }, snapApplied: false }, base)); out.rejoinMid = Net.appliedFrame;
+      return out; })()`, cx);
+    ok(r.overApplied === true && r.midApplied === false, 'the donor says whether its frame\'s batch is already in the snapshot (over: yes; between ticks: no)', JSON.stringify(r));
+    ok(r.rejoinOver === 50 && r.rejoinMid === 49, 'the rejoiner starts from the frame after an applied batch, and from the batch itself otherwise (was always the batch: applied twice after game over)', JSON.stringify(r));
+  }
+
   await sleep(200);
   killAll();
-  console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');
-  process.exit(fail ? 1 : 0);
+  console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');  process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); killAll(); process.exit(1); });

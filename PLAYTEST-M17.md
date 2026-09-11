@@ -420,3 +420,15 @@ sat at 0% for ever, and the game told you to build depots you did not need. Ever
 exactly as it did: a Marine at the cap says "Additional supply depots required.", a Hydralisk at the
 cap cannot become a Lurker (it costs one more), `food for thought` still lifts all of it. Saves and
 replays from before this commit are refused (the stamp moved).
+
+## 51. Rejoining a finished game does not replay its last frame twice, and a forged frame cannot wreck rejoins (tasks 13, 14)
+
+LAN game, two browsers. Let the game end (or `game over man` in one client's chat with `BW_CHEATS=1` on
+the relay), leave the VICTORY / DEFEAT screen up on one client and close the other; reconnect it with
+the same name; on the first client choose **Continue playing** and issue a few orders. **Working:** both
+clients keep agreeing -- no "DESYNC DETECTED" banner. **Before:** the rejoiner applied the final
+frame's commands a second time on top of a state that already held them, and the two diverged the
+moment play continued. The other half needs a raw socket: a client sending a command batch stamped
+with frame 2147483647 is now ignored by the relay (its log says "dropped a batch ... claiming frame
+2147483647"), where before every later rejoin was told to catch up to that frame. `node test/rooms.js`
+section 11 does both.

@@ -27,6 +27,13 @@ const root = path.join(__dirname, '..'); const port = parseInt(process.argv[2] |
 // must use the same number or the lockstep is not lockstep. Clamped because 0 would schedule commands
 // into a frame that has already been simulated.
 const DELAY = Math.max(1, Math.min(20, parseInt(process.argv[3] || process.env.BW_DELAY || '3')));
+// How far ahead of the room's newest batch a client's batch may claim to be. A client sends its batch
+// for frame F + DELAY when it is at F, and it can only be at F once every other player's batch for F is
+// in, so an honest lead over maxFrame(L) is at most DELAY (the first batch of a game reads DELAY + 1
+// against an empty room). Measured against test/net_many.js and test/net.js before this number was
+// chosen: net_many.js 65,256 batches, lead -2 to 4; net.js 36,411 batches, lead -2 to 4 (the 4s are each game's first batch). Without a window a batch at f = 2147483647 set that slot's lastF, maxFrame()
+// with it, and every later rejoin's catch target and stop frame came from it. (REVIEW-M17 task 13)
+const CMD_LEAD = 2 * DELAY + 24;
 const MAX_PLAYERS = 8;          // humans + AI, the same ceiling `addai` has always had. `join` had none.
 // REVIEW-M17 decision 4. A code shorter than four characters is refused (the code is the only lock, and
 // "AB" is not one); an address may join JOIN_LIMIT times a minute; and cheats are refused in a network
@@ -76,10 +83,14 @@ function broadcast(L, msg, except) { for (const c of inRoom(L)) if (c !== except
 function hostOf(L) { return L.players.find(q => !q.ai && !q.gone) || null; }
 function lobbyState(L) { const host = hostOf(L); return { t: 'lobby', room: L.code, players: L.players.map(p => ({ id: p.id, name: p.name, race: p.race, team: p.team, ai: !!p.ai, difficulty: p.difficulty, gone: !!p.gone, host: host ? p.id === host.id : false })), layout: L.layout, state: L.state, speed: L.speed == null ? 6 : L.speed }; }
 function maxFrame(L) { let m = -1; for (const f of Object.values(L.lastF)) if (f > m) m = f; return m; }
-function sendRejoin(L, c, idx, snap, snapFrame) {
+// `snapApplied`: the donor took its snapshot with its own frame's batch already applied -- which is the
+// case once G.over (G.tick no-ops, so the frame never moves past the batch it applied) or paused. The
+// rejoiner must not apply that batch a second time; without the flag it did, and a game continued after
+// "Continue playing" diverged on the rejoiner. (REVIEW-M17 task 14)
+function sendRejoin(L, c, idx, snap, snapFrame, snapApplied) {
   // only the commands the snapshot has not already accounted for
   const hist = snap ? L.history.filter(h => h.f >= snapFrame) : L.history;
-  send(c, Object.assign({ t: 'rejoin', history: hist, frame: Math.max(0, maxFrame(L) - DELAY), snap, snapFrame }, startMsg(L, idx)));
+  send(c, Object.assign({ t: 'rejoin', history: hist, frame: Math.max(0, maxFrame(L) - DELAY), snap, snapFrame, snapApplied: !!snapApplied }, startMsg(L, idx)));
   console.log('  ' + tag(L) + 'rejoin sent ' + (snap ? 'from a snapshot at frame ' + snapFrame + ' plus ' + hist.length + ' commands' : 'as ' + hist.length + ' commands from frame 0'));
 }
 function startMsg(L, idx) { return { room: L.code, seed: L.seed, layout: L.layout, players: L.started, you: idx, delay: DELAY, gone: L.gone, speed: L.speed == null ? 6 : L.speed, cheats: CHEATS }; }
@@ -158,7 +169,7 @@ function onMessage(c, m) {
     case 'snap': {
       const ps = L.pendingSnaps && L.pendingSnaps.get(m.req); if (!ps || ps.donor !== c.id) break;
       const target = clients.get(ps.want); L.pendingSnaps.delete(m.req);
-      if (target) sendRejoin(L, target, ps.idx, m.snap, m.frame | 0);
+      if (target) sendRejoin(L, target, ps.idx, m.snap, m.frame | 0, m.applied === true);
       break;
     }
     // THE SENDER IS STAMPED ON EVERY COMMAND. The envelope carried the slot the relay knew; the commands
@@ -166,7 +177,7 @@ function onMessage(c, m) {
     // another player's units, cancel their production or `game over man` them, deterministically, on
     // every client, with no desync to show for it. A batch that is not an array is dropped: forwarded, it
     // threw inside every receiver's beforeTick. (REVIEW-M17)
-    case 'cmds': { const idx = L.players.findIndex(p => p.id === c.id); if (idx >= 0 && L.state === 'playing' && Array.isArray(m.c)) { const cs = m.c.filter(x => x && typeof x === 'object' && (CHEATS || x.t !== 'cheat')).map(x => Object.assign({}, x, { p: idx })); const f = m.f | 0; L.history.push({ p: idx, f, c: cs }); if (!(L.lastF[idx] >= f)) L.lastF[idx] = f; broadcast(L, { t: 'cmds', p: idx, f, c: cs }, c); } break; }
+    case 'cmds': { const idx = L.players.findIndex(p => p.id === c.id); if (idx >= 0 && L.state === 'playing' && Array.isArray(m.c)) { const cs = m.c.filter(x => x && typeof x === 'object' && (CHEATS || x.t !== 'cheat')).map(x => Object.assign({}, x, { p: idx })); const f = m.f | 0; if (f > maxFrame(L) + CMD_LEAD) { console.log(tag(L) + 'dropped a batch from ' + L.players[idx].name + ' claiming frame ' + f + ' (' + (f - maxFrame(L)) + ' ahead of the room, window ' + CMD_LEAD + ')'); break; } L.history.push({ p: idx, f, c: cs }); if (!(L.lastF[idx] >= f)) L.lastF[idx] = f; broadcast(L, { t: 'cmds', p: idx, f, c: cs }, c); } break; }
     case 'hash': { const idx = L.players.findIndex(p => p.id === c.id); if (idx >= 0) broadcast(L, { t: 'hash', p: idx, f: m.f, h: m.h }, c); break; }
     case 'chat': if (me) broadcast(L, { t: 'chat', from: me.name, text: String(m.text).slice(0, 200) }); break;
     case 'ping': send(c, { t: 'pong' }); break;
