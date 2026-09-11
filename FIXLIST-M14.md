@@ -44,7 +44,7 @@ done as one. **Every reported number appears in this table exactly once.**
 | 2 | double-click selects all of that building | **B2** | ✅ done |
 | 3 | click a geyser / extractor to see gas left | **B1** | ✅ done |
 | 4 | do Queens have Spawn Larva | **V1** | ✅ they do — verify by hand |
-| 5 | creep tumours should come from the Queen | **C3** | ⚠ they come from the **Overlord** |
+| 5 | creep tumours should come from the Queen | **C3** | ✅ done — two sources now |
 | 6 | AI raids expansions, never pushes the main | **D1** | ☐ retreat exists; targeting is the fault |
 | 7 | units are hard to click | **B3** | ✅ done |
 | 8 | game over screen with menu / restart | **B4** | ✅ done — it was never appearing in a FFA |
@@ -55,11 +55,11 @@ done as one. **Every reported number appears in this table exactly once.**
 | 13 | Reactor gives no prerequisite error | **A4** | ✅ done |
 | 14 | hover ring on minerals and gas | **B1** | ✅ done |
 | 15 | Starport shows add-on tech, dead page button | **B5** | ✅ done — one cause |
-| 16 | freehand formation shapes | **C7** | ☐ |
+| 16 | freehand formation shapes | **C7** | ✅ done |
 | 17 | every building needs a description | **A1** | ✅ done |
-| 18 | Thor walks onto buildings | **C6** | ☐ |
-| 19 | Cyclone should fire while moving | **C4** | ☐ |
-| 20 | Hellion beam hits everything in its path | **C5** | ⚠ it does — it is **drawn as Lurker spines** |
+| 18 | Thor walks onto buildings | **C6** | ✅ done — it never did; it could not FIT |
+| 19 | Cyclone should fire while moving | **C4** | ✅ done |
+| 20 | Hellion beam hits everything in its path | **C5** | ✅ done — it did; three defects around it fixed |
 | 21 | Widow Mine burrow time should match SC2 | **A3** | ✅ done |
 
 ---
@@ -368,7 +368,7 @@ when the thing stops.
 
 ---
 
-### ⚠ C3 · (item 5) Creep tumours come from the Overlord — the Queen should have it too
+### ✅ C3 · (item 5) Creep tumours come from the Overlord — the Queen should have it too
 
 **Asked for:** "how are creep tumors made? from our queen unit? this is how it should be."
 **Decision: the Queen gains it and the Overlord keeps it — two sources on purpose.**
@@ -395,7 +395,7 @@ ability on the tumour building itself ([js/data.js:824](js/data.js:824)).
 
 ---
 
-### ☐ C4 · (item 19) The Cyclone should fire while moving
+### ✅ C4 · (item 19) The Cyclone should fire while moving
 
 **Decision: keep the current numbers.** Mobility only.
 
@@ -415,7 +415,7 @@ engine halts a unit to shoot.
 
 ---
 
-### ⚠ C5 · (item 20) The Hellion's line attack works — it is drawn as Lurker spines
+### ✅ C5 · (item 20) The Hellion's line attack works — it is drawn as Lurker spines
 
 **Asked for:** the hellion's shot is a beam that hits all units in its path.
 
@@ -452,7 +452,7 @@ Two real defects sit in that same branch:
 
 ---
 
-### ☐ C6 · (item 18) The Thor walks onto buildings — audit pathing for all units
+### ✅ C6 · (item 18) The Thor walks onto buildings — audit pathing for all units
 
 **Asked for:** the Thor gets stuck walking on buildings; check pathing for all units and ensure they
 path around.
@@ -474,7 +474,7 @@ for a point is not traversable by a body forty units wide.
 
 ---
 
-### ☐ C7 · (item 16) Freehand formation shapes
+### ✅ C7 · (item 16) Freehand formation shapes
 
 **Asked for:** enhance the right-drag formation line so the exact path of the mouse forms any shape —
 parabolas, arcs, curves.
