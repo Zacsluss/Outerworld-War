@@ -99,10 +99,29 @@ const UI = {
     // drifts away silently. Refuse it with the reason instead.
     const bad = Replay.versionError(data, mode === 'watch' ? 'replay' : 'save');
     if (bad) { this.loading = null; if (typeof alert === 'function') alert(bad); else console.error(bad); return false; }
+    // The log itself is checked before anything starts. Nothing used to look at it: an entry without a
+    // command threw out of G.tick, and an out-of-order frame stalled applyPending so every later command
+    // was dropped in silence -- a game that looks loaded and plays nothing. Same alert path as the stamp.
+    // (REVIEW-M17)
+    const shape = this.logError(data);
+    if (shape) { this.loading = null; const msg = 'This ' + (mode === 'watch' ? 'replay' : 'save') + ' cannot be loaded: ' + shape + '.'; if (typeof alert === 'function') alert(msg); else console.error(msg); return false; }
     const opts = { players: data.players, seed: data.seed, layout: data.layout, mission: data.mission || null, mode: mode === 'watch' ? 'replay' : 'play' };
     this.start(opts); G.pendingCmds = { list: data.cmds || [], i: 0 }; G.recording = mode === 'load';
     if (mode === 'watch') { this.replayData = data; this.replayOpts = opts; this.viewAll = true; this.prodOverlay = true; this.snaps = []; } // an observer wants to see everything by default
     if (mode === 'load') this.fastForward(data.frame, () => { G.pendingCmds = null; if (data.cam) { Render.camX = data.cam.x; Render.camY = data.cam.y; this.clampCam(); } });
+  },
+  // null when the log can be replayed, otherwise what is wrong with it, in a sentence fragment
+  logError(data) {
+    if (!data || !Array.isArray(data.players) || !data.players.length) return 'it names no players';
+    const cmds = data.cmds === undefined ? [] : data.cmds;
+    if (!Array.isArray(cmds)) return 'its command log is not a list';
+    let last = -Infinity;
+    for (let i = 0; i < cmds.length; i++) {
+      const e = cmds[i];
+      if (!e || typeof e.f !== 'number' || !(e.f >= last) || !e.c || typeof e.c !== 'object' || typeof e.c.t !== 'string') return 'command ' + i + ' of its log is malformed';
+      last = e.f;
+    }
+    return null;
   },
   fastForward(target, done) {
     this.loading = { target, start: G.frame };
@@ -1073,7 +1092,10 @@ const UI = {
         if (!ab || !ab.autocast) return;
         const units = this.ownSel().filter(u => (u.def.abil || []).includes(id) || (u.def.produces || []).includes(ab.unit));
         if (!units.length) return;
-        const on = G.setAutocast(units, id);
+        // Decided here rather than read back from setAutocast: it goes through the command log now, and in
+        // a net game the wrapper queues the command and returns true before anything has changed.
+        const on = !units.every(u => u.armed && u.armed.has(id));
+        G.setAutocast(units, id, on);
         G.players[G.human].msg(ab.name + (on ? ' autocast ON' : ' autocast OFF'), 'info');
         Sound.click(); return;
       }

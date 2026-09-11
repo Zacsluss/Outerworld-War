@@ -104,7 +104,8 @@ const BUILD = {
   // Data, hashed by walking it (ser): tables, sets, and the objects of pure functions map generation runs.
   TABLES: ['DATA', 'RACE_INFO', 'TURN', 'ACCEL', 'MAP_LAYOUTS', 'NO_BROODLING', 'AI_SCRIPTS', 'AI_COMP', 'AI_RESEARCH',
     'DMG_MULT', 'MAP_SIZES', 'HAZARDS', 'MapModes', 'MAP_FEATURES', 'Archetypes', 'SIEGE_W', 'EQUIV', 'BURROW_SURFACES',
-    'SEP_DIRS', 'FACE_MULT', 'HOVER', 'Z12_ASPECTS'],
+    'SEP_DIRS', 'FACE_MULT', 'HOVER', 'Z12_ASPECTS',
+    'CMD.pack'],   // the packers decide the log format; fns() skips them because they are not functions of CMD itself
   // Scalars the simulation reads. A dotted name is a constant that lives on a singleton.
   TUNING: ['TILE', 'TPS', 'FEATURE_ID0', 'FEAT_BLOCKED', 'WRECK_BLOCKED', 'CHURN_SLOW', 'MINE_STRIP',
     'WIDE_BODY', 'MINE_TIME', 'GAS_TIME', 'LARVA_TIME', 'MAX_QUEUE', 'MINERS_PER_PATCH', 'CREEP_SEED', 'CREEP_GROW',
@@ -112,10 +113,10 @@ const BUILD = {
     'FERRY_PICKUP', 'FERRY_WAIT', 'FACE_FLANK', 'FACE_REAR', 'MULE_HAUL', 'BLINK_ESCAPE',
     'HALL_PULL', 'ANCHOR_PULL', 'ANCHOR_CAP', 'GUARD_COST', 'BASE_PULL', 'BASE_R', 'SENSOR_NEAR', 'SENSOR_CALM', 'G.cell'],
   // Top-level functions, hashed by source.
-  HELPERS: ['repairableDef', 'dist', 'distPt', 'clamp', 'setUnitId', 'daylightAt', 'hitFacing', 'gasBuildings'],
-  // Objects of methods: their own FUNCTIONS are hashed (fns), their state is not. Replay is here for
-  // applyPending, which decides the order logged commands run in on a frame.
-  SINGLETONS: ['G', 'CMD', 'Abilities', 'Missions', 'RNG', 'MapCodec', 'Combat', 'Replay'],
+  HELPERS: ['repairableDef', 'dist', 'distPt', 'clamp', 'setUnitId', 'daylightAt', 'hitFacing', 'gasBuildings',
+    'Replay.applyPending'],   // the one method of Replay that decides simulation order; the rest is save/load plumbing
+  // Objects of methods: their own FUNCTIONS are hashed (fns), their state is not.
+  SINGLETONS: ['G', 'CMD', 'Abilities', 'Missions', 'RNG', 'MapCodec', 'Combat'],
   // Classes: every prototype method and accessor, and `constructor` carries the whole class body.
   CLASSES: ['Unit', 'Player', 'AI', 'GameMap', 'Pathfinder'],
   // Declared in a stamped file, deliberately not hashed. Presentation is left out on purpose -- the
@@ -132,6 +133,7 @@ const BUILD = {
     UNIT_ID: 'runtime counter; snapshots restore it',
     AI_STYLE_CACHE: 'a cache of AI_SCRIPTS derivations, which are stamped',
     BUILD: 'the stamp itself',
+    Replay: 'save/load plumbing (download, autosave, file reading); Replay.applyPending is named in HELPERS',
   },
 
   // Every global that can change what the simulation does. Missing ones are skipped so

@@ -10,9 +10,18 @@ G.inTick = false; G.applying = false; G.recording = false; G.log = []; G.pending
 
 const CMD = {
   ref(x) { if (!x) return null; if (x.def) return 'u' + x.id; if (x.type === 'mineral' || x.type === 'geyser') return 'r' + x.id; return null; },
-  deref(s) { if (!s) return null; if (s[0] === 'u') return G.byId.get(+s.slice(1)) || null; if (s[0] === 'r') return G.map.resById.get(+s.slice(1)) || null; return null; },
-  packOrder(o) { const p = { type: o.type }; for (const k of ['x', 'y', 'tx', 'ty', 'phase', 'unit', 'abil']) if (o[k] !== undefined) p[k] = o[k]; if (o.target) p.tg = this.ref(o.target); if (o.then) p.then = this.ref(o.then); if (o.depot) p.depot = this.ref(o.depot); if (o.partner) p.partner = this.ref(o.partner); if (o.def) p.def = o.def.id; return p; },
-  unpackOrder(p) { const o = { type: p.type }; for (const k of ['x', 'y', 'tx', 'ty', 'phase', 'unit', 'abil']) if (p[k] !== undefined) o[k] = p[k]; if (p.tg) o.target = this.deref(p.tg); if (p.then) o.then = this.deref(p.then); if (p.depot) o.depot = this.deref(p.depot); if (p.partner) o.partner = this.deref(p.partner); if (p.def) o.def = DATA.buildings[p.def]; return o; },
+  // A dead unit dereferences to null. G.byId never forgets a unit (see bldg below), so `get` returns a
+  // corpse; a rejoiner restored from a snapshot has no corpses that nothing else references, so its
+  // `get` returned null for the same command and the two clients disagreed on whether an order issued
+  // at F against a unit that died before F+delay was applied. Both drop it now. (REVIEW-M17)
+  deref(s) { if (!s) return null; if (s[0] === 'u') { const u = G.byId.get(+s.slice(1)); return u && u.alive ? u : null; } if (s[0] === 'r') return G.map.resById.get(+s.slice(1)) || null; return null; },
+  // ORDER_KEYS is every plain field an order can carry through the log. The ferry route (ax..since) was
+  // missing, so a transport given a ferry from the UI packed as a bare {type:'ferry'}, failed the
+  // target-less allow-list in apply(), and stayed idle -- the feature was unreachable except from
+  // test/ferry.js, which used applyOrder and never noticed. (REVIEW-M17)
+  ORDER_KEYS: ['x', 'y', 'tx', 'ty', 'phase', 'unit', 'abil', 'ax', 'ay', 'bx', 'by', 'leg', 'since'],
+  packOrder(o) { const p = { type: o.type }; for (const k of this.ORDER_KEYS) if (o[k] !== undefined) p[k] = o[k]; if (o.target) p.tg = this.ref(o.target); if (o.then) p.then = this.ref(o.then); if (o.depot) p.depot = this.ref(o.depot); if (o.partner) p.partner = this.ref(o.partner); if (o.def) p.def = o.def.id; return p; },
+  unpackOrder(p) { const o = { type: p.type }; for (const k of this.ORDER_KEYS) if (p[k] !== undefined) o[k] = p[k]; if (p.tg) o.target = this.deref(p.tg); if (p.then) o.then = this.deref(p.then); if (p.depot) o.depot = this.deref(p.depot); if (p.partner) o.partner = this.deref(p.partner); if (p.def) o.def = DATA.buildings[p.def]; return o; },
   ids(units) { return units.map(u => u.id); },
   units(ids, p) { const out = []; for (const id of ids) { const u = G.byId.get(id); if (u && u.alive && (p === undefined || u.owner === p || G.allied(u.owner, p))) out.push(u); } return out; },
   // -------- dispatcher: applies a command with original (unwrapped) functions --------
@@ -31,7 +40,7 @@ const CMD = {
   apply(c) {
     const O = CMD.orig; const own = c.p;
     switch (c.t) {
-      case 'order': { const o = this.unpackOrder(c.o); if (o.type === 'build' && !o.def) return false; if (o.type !== 'idle' && o.type !== 'hold' && o.type !== 'move' && o.type !== 'attackmove' && o.type !== 'patrol' && o.type !== 'unload' && o.type !== 'land' && !o.target && !o.def && !o.then && o.type !== 'return') return false; let ok = false; for (const u of this.units(c.u, own)) { O.setOrder.call(u, o, c.s); ok = true; } return ok; }
+      case 'order': { const o = this.unpackOrder(c.o); if (o.type === 'build' && !o.def) return false; if (o.type !== 'idle' && o.type !== 'hold' && o.type !== 'move' && o.type !== 'attackmove' && o.type !== 'patrol' && o.type !== 'unload' && o.type !== 'land' && o.type !== 'ferry' && !o.target && !o.def && !o.then && o.type !== 'return') return false; let ok = false; for (const u of this.units(c.u, own)) { O.setOrder.call(u, o, c.s); ok = true; } return ok; }
       case 'stop': for (const u of this.units(c.u, own)) O.stop.call(u); return true;
       case 'signal': return O.signal.call(G, own, c.k, c.x, c.y, c.pts);
       case 'train': { const b = CMD.bldg(c.b, own); return b ? O.queueUnit.call(G, b, c.id) : false; }
@@ -40,12 +49,18 @@ const CMD = {
       case 'tech': { const b = CMD.bldg(c.b, own); return b ? O.queueTech.call(G, b, c.id) : false; }
       case 'addon': { const b = CMD.bldg(c.b, own); return b ? O.queueAddon.call(G, b, c.id) : false; }
       case 'morphB': { const b = CMD.bldg(c.b, own); return b ? O.queueMorph.call(G, b, c.id) : false; }
-      case 'cancel': { const b = CMD.bldg(c.b, own); if (b && b.owner === own) O.cancelProd.call(G, b, c.i); return true; }
-      case 'cancelB': { const b = CMD.bldg(c.b, own); if (b && b.owner === own) O.cancelBuilding.call(G, b); return true; }
-      case 'rally': { const b = CMD.bldg(c.b, own); if (b && b.owner === own) O.setRally.call(G, b, c.x, c.y, this.deref(c.tg)); return true; }
-      case 'lift': { const b = CMD.bldg(c.b, own); if (b && b.owner === own) O.liftBuilding.call(G, b); return true; }
-      case 'unloadAll': { const b = CMD.bldg(c.b, own); if (b && b.owner === own) O.unloadAll.call(G, b); return true; }
-      case 'unloadCargo': { const b = CMD.bldg(c.b, own), u = G.byId.get(c.c); if (b && b.owner === own && u) O.unloadCargo.call(G, b, u); return true; }
+      case 'cancel': { const b = CMD.bldg(c.b, own); if (b) O.cancelProd.call(G, b, c.i); return true; }
+      case 'cancelB': { const b = CMD.bldg(c.b, own); if (b) O.cancelBuilding.call(G, b); return true; }
+      case 'rally': { const b = CMD.bldg(c.b, own); if (b) O.setRally.call(G, b, c.x, c.y, this.deref(c.tg)); return true; }
+      case 'lift': { const b = CMD.bldg(c.b, own); if (b) O.liftBuilding.call(G, b); return true; }
+      case 'unloadAll': { const b = CMD.bldg(c.b, own); if (b) O.unloadAll.call(G, b); return true; }
+      case 'unloadCargo': { const b = CMD.bldg(c.b, own), u = G.byId.get(c.c); if (b && u) O.unloadCargo.call(G, b, u); return true; }
+      // Autocast arming was the one thing the card could do to a unit without going through here: u.armed
+      // is read inside the tick by G.tickAutocast, so a replay of a game where a Medic was armed re-ran
+      // without the heals, and a LAN peer never received the arm at all. Three reviewers found it
+      // independently. `on` is null for the toggle the button sends, so the wrapper's return value is
+      // not the truth in a net game -- the UI works out the new state itself. (REVIEW-M17)
+      case 'autocast': { const us = this.units(c.u, own); if (!us.length) return false; return O.setAutocast.call(G, us, c.a, c.on === null || c.on === undefined ? undefined : !!c.on); }
       case 'ability': { let ok = false; const tg = this.deref(c.tg); for (const u of this.units(c.u, own)) if (O.issue.call(Abilities, u, c.a, tg, c.x, c.y, c.s)) ok = true; return ok; }
       case 'merge': return O.merge.call(Abilities, this.units(c.u, own), c.a);
       case 'cheat': return O.cheat.call(G, c.code, own);
@@ -73,6 +88,7 @@ const CMD = {
     issue: (a, u, id, tg, x, y, shift) => ({ t: 'ability', u: [u.id], a: id, tg: CMD.ref(tg), x, y, s: !!shift }),
     merge: (a, units, id) => ({ t: 'merge', u: CMD.ids(units), a: id }),
     cheat: (g, code) => ({ t: 'cheat', code }),
+    setAutocast: (g, units, id, on) => ({ t: 'autocast', u: CMD.ids(units), a: id, on: on === undefined ? null : !!on }),
   },
   orig: {},
   install() {
@@ -87,7 +103,7 @@ const CMD = {
       };
     };
     wrap(Unit.prototype, 'setOrder', 'setOrder'); wrap(Unit.prototype, 'stop', 'stop');
-    for (const n of ['queueUnit', 'larvaMorph', 'queueUpgrade', 'queueTech', 'queueAddon', 'queueMorph', 'cancelProd', 'cancelBuilding', 'setRally', 'liftBuilding', 'unloadAll', 'unloadCargo', 'cheat', 'signal']) wrap(G, n, n);
+    for (const n of ['queueUnit', 'larvaMorph', 'queueUpgrade', 'queueTech', 'queueAddon', 'queueMorph', 'cancelProd', 'cancelBuilding', 'setRally', 'liftBuilding', 'unloadAll', 'unloadCargo', 'cheat', 'signal', 'setAutocast']) wrap(G, n, n);
     wrap(Abilities, 'issue', 'issue'); wrap(Abilities, 'merge', 'merge');
   },
 };

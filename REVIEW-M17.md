@@ -287,6 +287,34 @@ Each entry names the file, what is wrong, the fix, and what it would cost. Anyth
      repo total) and its header said fourteen suites are outside the gate (32). `test/patch15.js`
      carried `patch10.js`'s header verbatim. Two more stale comments in non-gate files, one dead helper.
    **Gate:** 70 of 70, 167 s.
+6. **Every order the interface can issue now survives the command log.** *(commit: command log)*
+   Three reviewers found the first of these independently.
+   - **Autocast arming never entered the log.** `G.setAutocast` was not in `CMD.install`'s wrap list;
+     `u.armed` is read inside the tick by `G.tickAutocast`, so a replay of any game where a Medic was
+     armed re-ran without the heals, and a LAN peer never received the arm at all — a guaranteed
+     desync the moment anyone pressed the button. **Measured before:** arming logged 0 commands; a
+     400-frame scene with an armed Medic and a wounded Marine replayed from its log to a different
+     state hash (Marine at 10 hp live vs unhealed in the replay). Wrapped now, with a packer and an
+     `apply` case; the card works out ON/OFF locally because in a net game the wrapper returns before
+     anything has changed.
+   - **The ferry route was unreachable from the interface.** `packOrder` kept seven fields and not the
+     route, so a ferry order from `js/ui.js` packed as `{type:'ferry'}`, failed `apply`'s target-less
+     allow-list and left the ship idle. `test/ferry.js` drove the feature through `applyOrder`, which
+     bypasses the packer, so it passed with the feature dead. `ORDER_KEYS` now names every plain field
+     an order can carry and `ferry` is on the allow-list.
+   - **A dead target dereferenced to its corpse on a live client and to null on a rejoiner** (a restored
+     snapshot has no unreferenced corpses), so the two disagreed on one command in the drop window.
+     `CMD.deref` returns null for a dead unit; both drop it.
+   - **A malformed log was replayed anyway.** An entry without a command threw out of `G.tick`; frames
+     out of order stalled `applyPending` so every later command was dropped in silence. `UI.logError`
+     checks the shape and `startFromLog` refuses with a sentence on the stamp's alert path.
+   - **The packers are stamped** (`CMD.pack` in `BUILD.TABLES`; `fns` had skipped it because it is not a
+     function), and `Replay` is no longer hashed whole — only `Replay.applyPending` decides simulation
+     order; the rest is download and autosave plumbing whose wording should not refuse a save.
+   **Test:** `test/cmdlog.js`, 20 checks, in the gate (71). **Negative controls:** run before the fix,
+   seven clean reds across autocast, ferry and deref; with the log check removed, five clean reds
+   (the malformed logs reach `start()`); all restored byte-identical. **Gate:** 71 of 71, 166 s. The stamp
+   moved again (`CMD`, `G.setAutocast`'s wrapper and the packers are hashed).
 
 # 4. Considered and deliberately not done
 
