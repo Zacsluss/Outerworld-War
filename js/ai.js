@@ -140,6 +140,16 @@ const AI_COMP = {
 // SENSOR_NEAR tiles of one of my halls, and one alarm cannot follow another inside SENSOR_CALM frames.
 // Named here rather than written into AI.contactAlarm because every number the AI reacts to in this
 // file is named, and because the balance run will want to find them.
+// What a wave walks at (FIXLIST-M14 D1). All in TILES, all named here rather than written into
+// AI.pickTarget, because the balance run will want to find them and because the measurement that
+// produced them is quoted above that function.
+//   HALL_PULL    a town hall is worth walking past other things for
+//   ANCHOR_PULL  per production building standing near that hall -- what makes a base worth killing
+//   ANCHOR_CAP   so one enormous base cannot outweigh the whole rest of the map
+//   GUARD_COST   per static defence near the target. Was 10, which was a veto rather than a cost.
+//   BASE_PULL    finish the base you are standing in before walking to the next one
+//   BASE_R       how far around a hall counts as "that base"
+const HALL_PULL = 8, ANCHOR_PULL = 6, ANCHOR_CAP = 6, GUARD_COST = 4, BASE_PULL = 40, BASE_R = 14;
 const SENSOR_NEAR = 20, SENSOR_CALM = 24 * 25;
 const AI_RESEARCH = {
   T: ['stim', 'siege_tech', 'u238', 'infW', 'infA', 'ion_thrusters', 'spider_mines_tech', 'vehW', 'charon', 'vehA', 'irradiate_tech', 'emp_tech', 'personnel_cloaking', 'lockdown_tech', 'yamato_tech', 'shipW', 'shipA', 'cloaking_field', 'suppress_inf', 'suppress_veh', 'restoration_tech', 'optical_flare_tech', 'caduceus', 'moebius', 'ocular', 'apollo', 'titan', 'colossus', 'drilling_claws'],
@@ -1210,7 +1220,15 @@ class AI {
       }
     }
     if (this.state === 'attack') {
-      if (!this.target || !this.target.alive || (this.target.probe && this.hasSeen(this.target.x, this.target.y))) this.target = this.pickTarget(rally);
+      // Re-picking mid-attack passes where the old target STOOD, so BASE_PULL keeps the wave in the
+      // base it has broken into. `from` is the wave's own position rather than the rally, or a wave
+      // deep in the enemy base would score everything from home and walk back out of it.
+      if (!this.target || !this.target.alive || (this.target.probe && this.hasSeen(this.target.x, this.target.y))) {
+        const wasAt = this.target && this.target.def ? { x: this.target.x, y: this.target.y } : this.lastKill;
+        const head0 = this.centroid(army.filter(u => u.wave === this.waves));
+        this.target = this.pickTarget(head0 || rally, wasAt);
+        if (wasAt) this.lastKill = wasAt;
+      }
       if (!this.target) { this.state = 'gather'; return; }
       const waveUnits = army.filter(u => u.wave === this.waves), rest = army.filter(u => u.wave !== this.waves);
       const waveSup = waveUnits.reduce((a, u) => a + (u.def.sup || 0), 0);
@@ -1268,10 +1286,53 @@ class AI {
   // directly and pick the least defended enemy building anywhere, counting defenders it had never laid
   // eyes on -- perfect map knowledge, and the largest way in which the AI was not playing the same game
   // as the player. It scouted at supply 9 purely for show, because it already knew everything.
-  pickTarget(from) {
+  // WHAT A WAVE WALKS AT -- FIXLIST-M14 D1 (item 6), and every number below came out of a measurement
+  // rather than an argument. Forty waves, nine games, three seeds, twenty minutes each, before any edit:
+  //
+  //     first target was THE ENEMY MAIN        0 of 40   (0%)
+  //     first target was a town hall          36 of 40   (90%)  -- always an EXPANSION hall
+  //     re-targeted mid-wave at least once     7 of 40   (18%)
+  //     retreated                             37 of 40   (93%)
+  //
+  // The report -- "it raids expansions and never pushes the main" -- is exactly right. The fixlist's
+  // guess at the mechanism was half right: it said the army never commits to a base, and 82% of waves
+  // never re-target at all, so commitment was never the fault. The ones that DO re-target are the ones
+  // that are winning (one wave re-targeted fifteen times and razed fifty buildings, which is a wave
+  // rampaging through a base and is correct). TARGET SELECTION was the whole of it.
+  //
+  // The old score was `distance - (depot ? 8 tiles : 0) + defenders * 10 tiles`. An expansion sits
+  // BETWEEN the two armies, so it wins on distance by about thirty tiles, and the main is the better
+  // defended of the two, so it loses another ten tiles per defender on top. Nothing else in the
+  // expression could ever make that up. Four weights replace it, and each answers one line of the item:
+  //
+  //   HALL_PULL   a town hall is worth walking past other things for. Unchanged in spirit from the old
+  //               8-tile depot bonus, and still not enough on its own to reach a main.
+  //   ANCHOR_PULL "the main is a legitimate target rather than one that loses to distance for ever".
+  //               Not a flag for "the first hall" -- what makes a base worth killing is the PRODUCTION
+  //               standing around it, so a hall is pulled toward by what it anchors. A bare expansion
+  //               anchors nothing and keeps only HALL_PULL; a main with a tech tree round it is worth
+  //               crossing the map for, which is what razing a base to win the game actually means.
+  //   GUARD_COST  "guarded targets should cost something, not be effectively excluded". Was ten tiles
+  //               per defender, which is a veto. Four still makes the AI prefer the soft side of a
+  //               base, and no longer rules the main out on its own.
+  //   BASE_PULL   "once a wave commits to a base it finishes that base before re-targeting". When a
+  //               target dies, whatever stands near where it stood is strongly preferred, so the wave
+  //               finishes the base it is standing in rather than walking off to the next nearest
+  //               thing. `from` is the wave's own position when it is attacking, not the rally.
+  //
+  // The retreat rule -- `gutted` / `outgunned` -- is NOT touched. Those carry measured numbers and the
+  // item says mixing the two makes the result unreadable.
+  pickTarget(from, near) {
     let best = null, bd = 1e9;
     const defenders = G.units.filter(u => u.alive && u.isBuilding && (u.def.gw || u.def.aw) && !G.allied(u.owner, this.p.id) && this.hasSeen(u.x, u.y));
-    for (const u of G.units) { if (!u.alive || G.allied(u.owner, this.p.id) || !u.isBuilding || u.def.tier === 'addon') continue; if (G.players[u.owner].defeated) continue; if (!this.hasSeen(u.x, u.y)) continue; const guarded = defenders.filter(d => distPt(d.x, d.y, u.x, u.y) < 8 * TILE).length; const d = distPt(u.x, u.y, from.x, from.y) - (u.def.depot ? 8 * TILE : 0) + guarded * 10 * TILE; if (d < bd) { bd = d; best = u; } } // prefer targets without static defence around them
+    const prod = G.units.filter(u => u.alive && u.isBuilding && u.done && !G.allied(u.owner, this.p.id) && this.hasSeen(u.x, u.y)
+      && ((u.def.produces && u.def.produces.length) || (u.def.tech && u.def.tech.length) || (u.def.upg && u.def.upg.length)));
+    for (const u of G.units) { if (!u.alive || G.allied(u.owner, this.p.id) || !u.isBuilding || u.def.tier === 'addon') continue; if (G.players[u.owner].defeated) continue; if (!this.hasSeen(u.x, u.y)) continue;
+      const guarded = defenders.filter(d => distPt(d.x, d.y, u.x, u.y) < 8 * TILE).length;
+      const anchors = u.def.depot ? Math.min(ANCHOR_CAP, prod.filter(b => distPt(b.x, b.y, u.x, u.y) < BASE_R * TILE).length) : 0;
+      const sameBase = near && distPt(u.x, u.y, near.x, near.y) < BASE_R * TILE ? BASE_PULL : 0;
+      const d = distPt(u.x, u.y, from.x, from.y) - (u.def.depot ? HALL_PULL * TILE : 0) - anchors * ANCHOR_PULL * TILE - sameBase * TILE + guarded * GUARD_COST * TILE;
+      if (d < bd) { bd = d; best = u; } }
     if (!best) { for (const u of G.units) { if (u.alive && !G.allied(u.owner, this.p.id) && !G.players[u.owner].defeated && !u.def.larva && this.hasSeen(u.x, u.y)) { const d = distPt(u.x, u.y, from.x, from.y); if (d < bd) { bd = d; best = u; } } } }
     // Go looking whenever no enemy TOWN HALL has been seen, even if some forward building has been.
     // Without this clause the fog version won zero games of eight where the omniscient one won seven:

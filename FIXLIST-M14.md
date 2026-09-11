@@ -45,7 +45,7 @@ done as one. **Every reported number appears in this table exactly once.**
 | 3 | click a geyser / extractor to see gas left | **B1** | ✅ done |
 | 4 | do Queens have Spawn Larva | **V1** | ✅ verified by hand in a running game |
 | 5 | creep tumours should come from the Queen | **C3** | ✅ done — two sources now |
-| 6 | AI raids expansions, never pushes the main | **D1** | ☐ retreat exists; targeting is the fault |
+| 6 | AI raids expansions, never pushes the main | **D1** | ⚠ retreat already existed; targeting was the fault. Partial — waves reaching the main 5% → 20%, but the first target is still never the main |
 | 7 | units are hard to click | **B3** | ✅ done |
 | 8 | game over screen with menu / restart | **B4** | ✅ done — it was never appearing in a FFA |
 | 9 | cannot build in undiscovered blackness | **C1** | ✅ done — soak and techtime both flat |
@@ -501,7 +501,7 @@ parabolas, arcs, curves.
 
 # Group D — AI behaviour
 
-### ☐ D1 · (item 6) The AI raids expansions and never commits to the main
+### ✅ D1 · (item 6) The AI raids expansions and never commits to the main
 
 **Asked for:** if they attack, they should push until they believe they will lose, then retreat.
 
@@ -531,6 +531,49 @@ timer. The comment records that 0.8 beat 0.7 and 0.55 outright.
   for a stated reason. Use the reveal recipe in `PLAYTEST-M13.md`.
 
 **Where:** `js/ai.js` (`pickTarget`, `army`), `test/aistyles.js`, `test/aiaudit.js`.
+
+**Done.** Measured first, forty waves over nine games (three seeds x three races, twenty minutes),
+before any edit. The report was right and the diagnosis above was half right:
+
+| | | |
+|---|---|---|
+| first target was the enemy MAIN | 0 of 40 | 0% |
+| first target was a town hall | 36 of 40 | 90% -- always an EXPANSION hall |
+| re-targeted mid-wave at least once | 7 of 40 | 18% |
+
+**"It never commits to a base" was not the fault.** Eighty-two per cent of waves never re-target at
+all, and the ones that do are the ones that are winning -- one re-targeted fifteen times and razed
+fifty buildings, which is a wave rampaging through a base and is correct. **Target selection was the
+whole of it.** Four named weights replace the old expression, one per line of "done means":
+`HALL_PULL` (8, unchanged), `ANCHOR_PULL`/`ANCHOR_CAP` (a hall is pulled toward by the production it
+anchors, capped at 36 tiles so no single base owns the army), `GUARD_COST` (10 -> 4: a price, not a
+veto) and `BASE_PULL` (finish the base you are standing in).
+
+**The A/B, both sides in isolated worktrees so neither could contaminate the other:**
+
+| | before | after |
+|---|---|---|
+| waves that picked a target | 40 | 46 |
+| first target was the enemy main | 0 (0%) | 0 (0%) |
+| **ever targeted the main** | 2 (5%) | **5 (11%)** |
+| **got within 8 tiles of the main** | 2 (5%) | **9 (20%)** |
+| median closest approach | 33 tiles | 31 tiles |
+| razed three or more buildings | 7 (18%) | 7 (15%) |
+| re-targeted mid-wave | 7 (18%) | 5 (11%) |
+| retreated | 37 (93%) | 40 (87%) |
+
+**Reported in both directions, because it is a partial fix.** Waves reaching the enemy main went from
+5% to 20% and that is the number the item is about. But **the first target is still never the main**
+(0% either way), the median wave still turns around 31 tiles out, and razed-three-or-more went
+slightly the wrong way. The AI raids less and commits more; it does not yet march on the main from the
+rally. Doing that is a different change -- it needs the wave to be sized against what it is walking
+into -- and it belongs after the composition ratchet, not bundled here.
+
+`gutted` and `outgunned` are untouched, as the item requires, and `test/wavetarget.js` asserts that.
+`test/aistyles.js` is byte-identical before and after on seeds 1, 5 and 11 (127/4, 131/0, 127/4).
+
+**Test:** `test/wavetarget.js`, 21 checks, in the gate. Its negative control produces a clean red
+(7 failures, no crash) against pre-D1 `js/ai.js`.
 
 ---
 
