@@ -200,7 +200,7 @@ const Abilities = {
     const p = u.player, ud = DATA.units[toId];
     if (!p.hasReq(ud)) { p.msg('Requires ' + p.missingReq(ud), 'error'); return false; }
     if (!p.canAfford(ud.min, ud.gas)) return false;
-    const extra = ud.sup - u.def.sup; if (extra > 0 && p.supUsed + extra > p.supMax && !(G.cheats.food && p.human)) { G.supplyRefused(p); return false; } // one voice for being supply blocked; see G.supplyRefused
+    if (G.supplyBlocked(p, ud, ud.sup - u.def.sup)) { G.supplyRefused(p); return false; } // pays only the difference; one voice for being supply blocked, see G.supplyRefused
     p.minerals -= ud.min; p.gas -= ud.gas; G.morphUnit(u, toId);
     // G.morphUnit picks `lurker_egg` for a Lurker and the FLYING `cocoon` for everything else, which
     // was correct while every other morph in the game was a mutalisk turning into another flyer. M12
@@ -323,7 +323,7 @@ const Abilities = {
     if (!m.walkable(tx, ty)) { p.msg('Cannot warp in there.', 'error'); return false; }
     if (!p.hasReq(ud)) { p.msg('Requires ' + p.missingReq(ud), 'error'); return false; }
     if (!p.canAfford(ud.min, ud.gas)) return false;
-    if (ud.sup && p.supUsed + ud.sup > p.supMax && !(G.cheats.food && p.human)) { G.supplyRefused(p); return false; }
+    if (G.supplyBlocked(p, ud)) { G.supplyRefused(p); return false; }
     p.minerals -= ud.min; p.gas -= ud.gas;
     const u = G.spawnUnit(ab.unit, gate.owner, (tx + 0.5) * TILE, (ty + 0.5) * TILE);
     u.morphT = ab.form;
@@ -803,7 +803,7 @@ const Abilities = {
     if (b.prod[0].kind !== 'unit' || b.prod[1].kind !== 'unit') return;
     const it = b.prod[1], p = b.player, ud = DATA.units[it.id];
     if (!it.started) {
-      if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax && !it.reserved && !(G.cheats.food && p.human)) return;
+      if (!it.reserved && G.supplyBlocked(p, ud)) return;
       it.started = true;
     }
     it.progress += (G.cheats.cwal && p.human) ? 10 : 1;

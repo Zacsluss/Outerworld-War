@@ -320,7 +320,7 @@ class Unit {
   tickProduction() {
     if (!this.prod.length) return;
     const it = this.prod[0]; const d = this.def;
-    if (it.kind === 'unit' && !d.egg && !it.started) { const ud = DATA.units[it.id]; if (ud.sup && this.player.supUsed + ud.sup * (ud.pair ? 2 : 1) > this.player.supMax && !it.reserved && !(G.cheats.food && this.player.human)) return; /* G.tickAlerts says this once on its own cooldown, rather than every 72 frames until a depot goes up */ it.started = true; }
+    if (it.kind === 'unit' && !d.egg && !it.started) { const ud = DATA.units[it.id]; if (!it.reserved && G.supplyBlocked(this.player, ud)) return; /* G.tickAlerts says this once on its own cooldown, rather than every 72 frames until a depot goes up */ it.started = true; }
     it.progress += (G.cheats.cwal && this.player.human) ? 10 : 1;
     if (it.progress >= it.total) { this.prod.shift(); G.finishProduction(this, it); }
   }

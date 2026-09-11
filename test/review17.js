@@ -39,6 +39,8 @@
 // 20. THE AI NEVER REBUILT A DESTROYED TECH BUILDING (task 30): script() only walked forward, so a Queen's
 //     Nest lost in a raid was lost for the game -- the head went null (the Hive requires the nest) and no
 //     Queen could be made again. Measured: a finished nest killed at 335 s, nothing sent to rebuild it in 240 s.
+// 21. SEVEN HAND-COPIED SUPPLY CHECKS DISAGREED (task 6): only queueUnit honoured notUnit, so a nuke queued
+//     at the cap was accepted, never started, and reported as "supply blocked". One G.supplyBlocked now.
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
 let pass = 0, fail = 0;
@@ -510,6 +512,42 @@ function DATA_NAME(c, id) { return R(c, 'return DATA.units[' + JSON.stringify(id
   ok('THE ORDER GOES BACK TO THE LOST STEP and a drone is sent to rebuild the nest (before: never, in 240 s)', out.rewound !== null && out.sent !== null && out.sent <= 200, JSON.stringify(out));
   ok('...and a Queen\'s Nest stands again', out.rebuilt !== null, JSON.stringify(out));
   ok('...but a step the 200-second hatch gave up on is left alone', out.skippedRewound === false, JSON.stringify(out));
+}
+
+// ============================================================================
+// 21. one supply test: the nuke at the cap starts, a Marine at the cap is still refused, the cheat still lifts it
+// ============================================================================
+// Measured before (.claude/review/nuke-probe.js): at 10/10 the nuke was accepted, sat at 0/1800 for thirty
+// seconds, and the alert said "Additional supply depots required."
+{
+  const out = R(ctx, `
+    const scene = (free = 0) => { const p = this.fresh('T', 'Z'); G.recording = false; G.applying = true; const cc = G.units.find(u => u.alive && u.owner === 0 && u.def.depot);
+      const ad = DATA.buildings.nuclear_silo; const silo = G.placeBuilding(ad, cc.tx + cc.def.w, cc.ty + cc.def.h - 2, 0); silo.done = true; silo.progress = ad.time; silo.hp = silo.maxHp; silo.parent = cc; cc.addon = silo;
+      for (const t of ['science_facility', 'covert_ops']) { const b = G.placeBuilding(DATA.buildings[t], cc.tx - 8, cc.ty + (t === 'covert_ops' ? 4 : 0), 0); b.done = true; b.progress = b.def.time; b.hp = b.maxHp; }
+      const bar = G.placeBuilding(DATA.buildings.barracks, cc.tx + 2, cc.ty + 6, 0); bar.done = true; bar.progress = bar.def.time; bar.hp = bar.maxHp;
+      while (p.supUsed < p.supMax - free) { G.spawnUnit('marine', 0, cc.x + 120, cc.y + 120); G.recomputeSupply(); }
+      p.msgs = []; p.alertAt = {}; p.alertT = {}; return { p, silo, bar }; };
+    const said = p => p.msgs.map(m => m.text).filter(t => /supply/i.test(t));
+    // the nuke, with two supply free: at the cap itself the alert is right to fire, for the cap
+    const a = scene(2); const acceptedNuke = G.queueUnit(a.silo, 'nuke'); this.run(24 * 30); const it = a.silo.prod[0];
+    const nuke = { free: a.p.supMax - a.p.supUsed, accepted: acceptedNuke, started: !!(it && it.started), progress: it ? it.progress : null, supplyAlert: !!(a.p.alertT && a.p.alertT.supply > 0), said: said(a.p) };
+    // a Marine at the cap is still refused, out loud
+    const b = scene(); const acceptedMarine = G.queueUnit(b.bar, 'marine'); const marine = { accepted: acceptedMarine, said: said(b.p) };
+    // ...and the food cheat still lifts it for a human
+    const c = scene(); G.cheats.food = true; const cheat = { accepted: G.queueUnit(c.bar, 'marine') }; this.run(24); cheat.started = !!(c.bar.prod[0] && c.bar.prod[0].started); G.cheats.food = false;
+    // a unit morph pays only the difference: a Hydralisk at the cap cannot become a Lurker (one more supply), and can with one free
+    const d = this.fresh('Z', 'T'); G.recording = false; G.applying = true; const hy = G.spawnUnit('hydralisk', 0, d.startX + 100, d.startY + 100); d.tech.add('lurker_aspect');
+    while (d.supUsed < d.supMax) { G.spawnUnit('zergling', 0, d.startX + 100, d.startY + 100); G.recomputeSupply(); }
+    const morphAtCap = Abilities.morph(hy, 'lurker'); d.supMax += 1; const morphWithOne = Abilities.morph(hy, 'lurker');
+    return { nuke, marine, cheat, morph: { atCap: morphAtCap, withOne: morphWithOne, extra: DATA.units.lurker.sup - DATA.units.hydralisk.sup } };`);
+  ok('a nuke (8 supply, notUnit) queued with two supply free is accepted and STARTS (before: accepted, 0/1800 after thirty seconds)', out.nuke.free === 2 && out.nuke.accepted && out.nuke.started && out.nuke.progress > 0, JSON.stringify(out.nuke));
+  ok('...and no supply alert is raised for it (before: "Additional supply depots required.", with two supply free and nothing that needed them)', out.nuke.supplyAlert === false && out.nuke.said.length === 0, JSON.stringify(out.nuke));
+  ok('a Marine at the cap is still refused, and says so', out.marine.accepted === false && out.marine.said.length === 1, JSON.stringify(out.marine));
+  ok('the food cheat still lifts the block for a human', out.cheat.accepted === true && out.cheat.started === true, JSON.stringify(out.cheat));
+  ok('a unit morph pays only the difference: refused at the cap, allowed with one supply free', out.morph.extra === 1 && out.morph.atCap === false && out.morph.withOne === true, JSON.stringify(out.morph));
+  const srcOf = f => fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'); const handCopies = f => (srcOf(f).match(/supUsed \+ /g) || []).length;
+  ok('the hand-copied tests are gone: game.js keeps the one inside supplyBlocked, sim.js and abilities.js none', handCopies('game') === 1 && handCopies('sim') === 0 && handCopies('abilities') === 0, JSON.stringify([handCopies('game'), handCopies('sim'), handCopies('abilities')]));
+  ok('...and ai.js keeps only the warp-in candidate estimate (`ud.sup || 1`, a heuristic, not a refusal)', handCopies('ai') === 1 && /const sup = ud\.sup \|\| 1; if \(p\.supUsed \+ sup > p\.supMax\) continue;/.test(srcOf('ai')), String(handCopies('ai')));
 }
 
 ok('no JS errors', ctx.errors.length === 0, ctx.errors.slice(0, 3).join(' | '));

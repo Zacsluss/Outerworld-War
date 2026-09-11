@@ -217,7 +217,8 @@ listed here. Ordered by what I would do first.
    Hive, `pneumatized`, `ventral_sacs` and `antennae` are unresearchable for the AI (the harasser style
    fronts one of them). Fix: select by `(u.def.tech || []).includes(id)`, the test `queueTech` already
    makes. Cost S; changes Zerg late research spend, so run aistyles seeds 1/5/11 and eightplayer first.
-6. **Seven hand-copied supply-block tests disagree** (`queueUnit`, `larvaMorph`, `warpIn`,
+6. **Seven hand-copied supply-block tests disagree** **DONE** (entry 24): one `G.supplyBlocked(p, def, need)`
+   at ten sites; the nuke starts. As listed: (`queueUnit`, `larvaMorph`, `warpIn`,
    `tickProduction`, `tickAlerts`, and two more): only `queueUnit` honours `notUnit`, `warpIn` omits
    `pair`, and a nuke (`sup: 8, notUnit: true`) queued at the cap is accepted, never starts, and is
    reported as "supply blocked" (measured). One `G.supplyBlocked(p, def)` at all seven sites. Cost S-M;
@@ -983,6 +984,28 @@ The questions as they were put, kept for the record:
     destroyed, and the head does not return. **Negative controls** (restored byte-identical): the rewind
     removed -> two clean reds (`rewound null, sent null, rebuilt null`, the measured before); the skipped guard removed -> one clean red (`skippedRewound true`). **Canaries:** aistyles seed 1 clean (131, the gate's); seed 5 the known economy line only (57 vs 61 -- its first-wave line went green on this re-deal); seed 11 clean (131; its first-wave line went green too). **Eight-player
     banks:** 377/804/147/222/302/392/221/303 (re-dealt; every AI under the 2,500 line, one at 804). **Gate:** 75 of 75, 258 s. The stamp moved (`ai.js`): `d782195f5590ca44`.
+24. **One supply test (task 6).** *(commit: task 6; fourth session)* **Measured first**
+    (`.claude/review/nuke-probe.js`): a Terran at 8/10 with a Nuclear Silo queues a nuke (sup 8, `notUnit`):
+    `queueUnit` accepts it (the one site that honoured `notUnit`), the production tick never starts it
+    (**0/1800 after thirty seconds**), and the alert says **"Additional supply depots required."** with two
+    supply free and nothing that needed them; the same at 10/10. Eleven hand-written tests of the shape
+    `supUsed + sup * (pair ? 2 : 1) > supMax` disagreed on `notUnit` (one of eleven), `pair` (`warpIn` and the
+    Reactor lacked it) and the food cheat (the alert lacked it). **Fix:** `G.supplyBlocked(p, def, need)` in
+    `game.js` beside `supplyRefused` -- `notUnit` costs nothing, `pair` doubles, the food cheat exempts a
+    human, `need` overrides the cost for a unit morph that pays only the difference -- at `queueUnit`,
+    `larvaMorph`, both `tickAlerts` tests, the production tick, the Reactor's second slot, `Abilities.morph`,
+    `Abilities.warpIn`, and the AI's `train()` and `canTrainSoon()` (a computer player is never human, so
+    the cheat clause is inert there and its results are unchanged). `ai.js`'s warp-in candidate filter
+    (`ud.sup || 1`) is a heuristic, not a refusal, and stays as it is, named in the test. **Test:**
+    `test/review17.js` section 21 (7 checks): the nuke with two supply free starts and raises no alert; a
+    Marine at the cap is still refused out loud; the food cheat still lifts it; a Hydralisk at the cap
+    cannot become a Lurker and can with one supply free; a scrape counts the hand copies -- one left in
+    `game.js` (inside the helper), none in `sim.js` and `abilities.js`, one in `ai.js` (the filter).
+    **Negative controls** (restored byte-identical): the production tick's old copy back -> two clean reds
+    (the nuke at 0, and the scrape); `notUnit` dropped from the helper -> two reds (the nuke refused at
+    queue time); the morph charged its full price -> one red. **Canaries:** aistyles seed 1 clean (131, the gate's); seed 5 the known economy line only (57 vs 61); seed 11 clean (131). **Eight-player
+    banks:** 377/804/147/222/302/392/221/303 -- byte-identical to task 30's, the identity check a computer player never sees the cheat clause. **Gate:** 75 of 75, 258 s. The stamp moved (`game.js`, `sim.js`, `abilities.js`,
+    `ai.js`): `f5ab8a213468977c`.
 
 # 4. Considered and deliberately not done
 
@@ -1013,7 +1036,7 @@ The questions as they were put, kept for the record:
    `tickAlerts`…) that disagree on `notUnit` and `pair`, and leave a nuke queued at the supply cap never
    starting while the alert reports "supply blocked". A `G.supplyBlocked(p, def)` helper at all seven
    sites is the fix; it touches production for every race, so it is an open task with a probe, not a
-   review-time change.
+   review-time change. (Done in the fourth session with the probe, entry 24.)
 10. **A frame window on the relay's `cmds`** (open task 13) and **the rejoin-after-game-over double
     apply** (open task 14): both S, both untested against `test/net_many.js`'s timing, and the review
     already changed enough of the relay for one pass. Measure the window first.

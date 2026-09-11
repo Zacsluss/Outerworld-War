@@ -1017,7 +1017,7 @@ class AI {
     // head of the script on one mineral. Supply keeps its exemption unconditionally, because blocking
     // it trades a tech stall for a supply block, which is worse.
     if (!this.claimed(ud) && !this.afford(ud.min, ud.gas)) return this.note(false, 'trainReserve', id, ud.min, ud.gas);
-    if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) return this.note(false, 'trainSupply', id, ud.min, ud.gas);
+    if (G.supplyBlocked(p, ud)) return this.note(false, 'trainSupply', id, ud.min, ud.gas);
     if (ud.from === 'larva') { const l = this.pickLarva(); if (!l) return false; if (!G.larvaMorph(l, id)) return false; this.release(ud); return true; }
     const bs = this.mine(u => u.isBuilding && u.done && !u.lifted && u.def.produces.includes(id) && u.prod.length < (maxQ || 2) && !(u.addon && !u.addon.done)); if (!bs.length) return this.note(false, 'trainNoProd', id, ud.min, ud.gas);
     bs.sort((a, b) => a.prod.length - b.prod.length); if (!G.queueUnit(bs[0], id)) return false; this.release(ud); return true;
@@ -1038,7 +1038,7 @@ class AI {
   // zerglings against 17 hydralisks and 3 roaches in a 20-minute game. A hatchery that spawns larva
   // is the Zerg equivalent of a gateway with a free slot, and it is what this function's own comment
   // has always described.
-  canTrainSoon(id) { const p = this.p, ud = DATA.units[id]; if (!ud || !p.hasReq(ud)) return false; if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) return false; if (ud.from === 'larva') return !!this.mine(u => u.def.spawnsLarva && u.done).length; return !!this.mine(u => u.isBuilding && u.done && !u.lifted && u.def.produces.includes(id) && u.prod.length < 3 && !(u.addon && !u.addon.done)).length; }
+  canTrainSoon(id) { const p = this.p, ud = DATA.units[id]; if (!ud || !p.hasReq(ud)) return false; if (G.supplyBlocked(p, ud)) return false; if (ud.from === 'larva') return !!this.mine(u => u.def.spawnsLarva && u.done).length; return !!this.mine(u => u.isBuilding && u.done && !u.lifted && u.def.produces.includes(id) && u.prod.length < 3 && !(u.addon && !u.addon.done)).length; }
   // Both consume their claim the way train() and research() do: G.queueAddon and G.queueMorph debit the
   // bank at once, so a claim left standing is money counted twice for the rest of the think (REVIEW-M17
   // task 8; measured: after morph('lair') commitMin still held the Lair's 150/100 and afford(150, 100)

@@ -408,3 +408,15 @@ computer's order only walked forward, so the building and everything that needed
 later Queen) were gone for the game. Not rebuilt on purpose: a step the computer gave up on because it
 could not be started for 200 seconds (it skips those and does not go back). Quicker:
 `node test/review17.js` section 20. Saves and replays from before this commit are refused (the stamp moved).
+
+## 50. A nuke builds when supply is short (task 6)
+
+Terran, `show me the money`, `modify the phase variance`: a Science Facility with a Covert Ops, a Nuclear
+Silo on the Command Center, and build Marines until the top bar reads two supply short of your cap (or
+exactly at it). Click the Silo, press **N**. **Working:** the Nuclear Missile's progress bar moves and the
+warhead is ready 75 seconds later; at two free supply no "Additional supply depots required." appears
+for it (at the cap itself that message is right, for the cap). **Before:** the missile was accepted,
+sat at 0% for ever, and the game told you to build depots you did not need. Everything else refuses
+exactly as it did: a Marine at the cap says "Additional supply depots required.", a Hydralisk at the
+cap cannot become a Lurker (it costs one more), `food for thought` still lifts all of it. Saves and
+replays from before this commit are refused (the stamp moved).

@@ -896,7 +896,7 @@ const G = {
     if (!p.hasReq(ud)) { p.msg('Requires ' + p.missingReq(ud), 'error'); return false; }
     if (uid === 'nuke' && b.hasNuke) return false;
     if (!p.canAfford(ud.min, ud.gas)) return false;
-    if (ud.sup && !ud.notUnit && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax && !(this.cheats.food && p.human)) { this.supplyRefused(p); return false; }
+    if (this.supplyBlocked(p, ud)) { this.supplyRefused(p); return false; }
     p.minerals -= ud.min; p.gas -= ud.gas;
     b.prod.push({ kind: 'unit', id: uid, progress: 0, total: ud.time }); this.recomputeSupply(); return true;
   },
@@ -909,7 +909,7 @@ const G = {
     if (!ud || ud.from !== 'larva') return false;
     if (!p.hasReq(ud)) { p.msg('Requires ' + p.missingReq(ud), 'error'); return false; }
     if (!p.canAfford(ud.min, ud.gas)) return false;
-    if (ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax && !(this.cheats.food && p.human)) { this.supplyRefused(p); return false; }
+    if (this.supplyBlocked(p, ud)) { this.supplyRefused(p); return false; }
     p.minerals -= ud.min; p.gas -= ud.gas;
     const h = l.hatch; if (h) { const i = h.larvae.indexOf(l); if (i >= 0) h.larvae.splice(i, 1); }
     l.hatch = null; l.rallyFrom = h; const ed = DATA.units.egg; l.def = ed; l.maxHp = ed.hp; l.hp = ed.hp; l.r = ed.r; l.prod = [{ kind: 'unit', id: uid, progress: 0, total: ud.time, reserved: true }];
@@ -1126,6 +1126,17 @@ const G = {
   // At the 200 cap there is no depot, overlord or pylon that would help, and tickAlerts knows it -- its
   // `blocked` test is gated on supMax < SUPPLY_CAP. The refusal has to know it too, or a player at maximum
   // supply is told to build something that cannot exist, which is the one thing an alert must never do.
+  // ONE SUPPLY TEST. Seven hand-copied ones disagreed (REVIEW-M17 task 6): only queueUnit honoured
+  // notUnit, warpIn omitted pair, and the alert had neither -- so a nuke (sup 8, notUnit) queued at
+  // the cap was accepted, never started, and reported as "supply blocked": measured thirty seconds at
+  // 0/1800 under "Additional supply depots required." `need` overrides the def's cost for a unit morph,
+  // which pays only the difference. The food cheat is a human's exemption, as at every site before.
+  supplyBlocked(p, def, need) {
+    if (need === undefined) need = def.notUnit ? 0 : (def.sup || 0) * (def.pair ? 2 : 1);
+    if (need <= 0) return false;
+    if (this.cheats.food && p.human) return false;
+    return p.supUsed + need > p.supMax;
+  },
   supplyRefused(p) {
     const A = p.alertAt || (p.alertAt = {});
     if (this.frame - (A.supply || -9999) < ALERTS.supply.cool) return false;
@@ -1142,7 +1153,7 @@ const G = {
       if (p.supMax < SUPPLY_CAP && p.supUsed < p.supMax) for (const u of this.units) {
         if (!u.alive || u.owner !== p.id || !u.prod.length) continue;
         const it = u.prod[0]; if (it.kind !== 'unit' || it.started || it.reserved) continue;
-        const ud = DATA.units[it.id]; if (ud && ud.sup && p.supUsed + ud.sup * (ud.pair ? 2 : 1) > p.supMax) { stalled = true; break; }
+        const ud = DATA.units[it.id]; if (ud && this.supplyBlocked(p, ud)) { stalled = true; break; }
       }
       const blocked = p.supMax < SUPPLY_CAP && (p.supUsed >= p.supMax || stalled);
       // 1. supply blocked. Checked first because it also explains away idle production: a barracks with
@@ -1157,7 +1168,7 @@ const G = {
         for (const id of u.def.produces) {
           const d = DATA.units[id]; if (!d || !p.hasReq(d)) continue;
           if (p.minerals < d.min || p.gas < d.gas) continue;
-          if (d.sup && p.supUsed + d.sup * (d.pair ? 2 : 1) > p.supMax) continue;
+          if (this.supplyBlocked(p, d)) continue;
           idle = u; break;
         }
         if (idle) break;
