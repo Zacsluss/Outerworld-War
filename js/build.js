@@ -85,13 +85,62 @@ const BUILD = {
     }
   },
 
+  // ==========================================================================================
+  // WHAT IS STAMPED, BY NAME. A top-level `const`, `let`, `function` or `class` in a classic script is
+  // NOT a property of the global object, so nothing can enumerate it: every one has to be named here,
+  // and `look` below reaches it with eval. The old list named nine tables and six singletons and
+  // nothing else, and REVIEW-M17 measured what that missed: 56 of the 76 top-level bindings in the
+  // stamped files, among them the WHOLE of Combat (weapon firing and splash), DMG_MULT, MINE_TIME,
+  // MINERS_PER_PATCH, SUPPLY_CAP, CHURN_SLOW, FACE_MULT, HOVER, and the helpers dist, distPt, clamp,
+  // daylightAt and hitFacing. Seventeen of seventeen simulation edits tried left the hash unchanged,
+  // so a save from before any of them loaded into the build after it and drifted -- the exact failure
+  // this file exists to refuse. test/version.js parses every stamped file for its top-level
+  // declarations and fails if one is missing from these lists, so they cannot rot the way that one did.
+  //
+  // Every top-level binding of a stamped file is in exactly one list. Two rules for a new one:
+  //   - if the simulation reads it, it goes in TABLES, TUNING, HELPERS, SINGLETONS or CLASSES;
+  //   - if it does not, it goes in NOT_SIM with the reason, so the omission is a decision and not a hole.
+  // ==========================================================================================
+  // Data, hashed by walking it (ser): tables, sets, and the objects of pure functions map generation runs.
+  TABLES: ['DATA', 'RACE_INFO', 'TURN', 'ACCEL', 'MAP_LAYOUTS', 'NO_BROODLING', 'AI_SCRIPTS', 'AI_COMP', 'AI_RESEARCH',
+    'DMG_MULT', 'MAP_SIZES', 'HAZARDS', 'MapModes', 'MAP_FEATURES', 'Archetypes', 'SIEGE_W', 'EQUIV', 'BURROW_SURFACES',
+    'SEP_DIRS', 'FACE_MULT', 'HOVER', 'Z12_ASPECTS'],
+  // Scalars the simulation reads. A dotted name is a constant that lives on a singleton.
+  TUNING: ['TILE', 'TPS', 'FEATURE_ID0', 'FEAT_BLOCKED', 'WRECK_BLOCKED', 'CHURN_SLOW', 'MINE_STRIP',
+    'WIDE_BODY', 'MINE_TIME', 'GAS_TIME', 'LARVA_TIME', 'MAX_QUEUE', 'MINERS_PER_PATCH', 'CREEP_SEED', 'CREEP_GROW',
+    'D', 'SUPPLY_CAP', 'DAY_CYCLE', 'NIGHT_SIGHT', 'NIGHT_DET', 'NIGHT_AIR', 'WRECK_LIFE_BUILDING', 'WRECK_LIFE_UNIT',
+    'FERRY_PICKUP', 'FERRY_WAIT', 'FACE_FLANK', 'FACE_REAR', 'MULE_HAUL', 'BLINK_ESCAPE',
+    'HALL_PULL', 'ANCHOR_PULL', 'ANCHOR_CAP', 'GUARD_COST', 'BASE_PULL', 'BASE_R', 'SENSOR_NEAR', 'SENSOR_CALM', 'G.cell'],
+  // Top-level functions, hashed by source.
+  HELPERS: ['repairableDef', 'dist', 'distPt', 'clamp', 'setUnitId', 'daylightAt', 'hitFacing', 'gasBuildings'],
+  // Objects of methods: their own FUNCTIONS are hashed (fns), their state is not. Replay is here for
+  // applyPending, which decides the order logged commands run in on a frame.
+  SINGLETONS: ['G', 'CMD', 'Abilities', 'Missions', 'RNG', 'MapCodec', 'Combat', 'Replay'],
+  // Classes: every prototype method and accessor, and `constructor` carries the whole class body.
+  CLASSES: ['Unit', 'Player', 'AI', 'GameMap', 'Pathfinder'],
+  // Declared in a stamped file, deliberately not hashed. Presentation is left out on purpose -- the
+  // header comment says why: stamping it would refuse a save for a wording or colour tweak.
+  NOT_SIM: {
+    DESC_MAX: 'tooltip length cap; presentation',
+    PLAYER_COLORS: 'paint',
+    TILESET_IDS: 'the tileset is paint; the layout id in the save names it',
+    TILESET_NAMES: 'menu labels',
+    UNEXPLORED_MSG: 'a message', HAZARD_SAYS: 'messages', FEATURE_SAYS: 'messages',
+    ALERTS: 'alert cooldowns gate whether a message is said, never what the simulation does',
+    ARCH_CACHE: 'a cache; generation is pure and Archetypes is stamped',
+    HEIGHT_BONUS: 'a cache of GameMap.heightBonusTable, which is stamped',
+    UNIT_ID: 'runtime counter; snapshots restore it',
+    AI_STYLE_CACHE: 'a cache of AI_SCRIPTS derivations, which are stamped',
+    BUILD: 'the stamp itself',
+  },
+
   // Every global that can change what the simulation does. Missing ones are skipped so
   // this still works in the headless harnesses, which load a subset of the files.
   parts() {
     const out = [], seen = new Set();
     const g = typeof globalThis !== 'undefined' ? globalThis : window;
     const look = n => { try { return typeof eval(n) !== 'undefined' ? eval(n) : g[n]; } catch (e) { return g[n]; } };
-    for (const n of ['DATA', 'RACE_INFO', 'TURN', 'ACCEL', 'MAP_LAYOUTS', 'NO_BROODLING', 'AI_SCRIPTS', 'AI_COMP', 'AI_RESEARCH']) {
+    for (const n of this.TABLES.concat(this.TUNING, this.HELPERS)) {
       const v = look(n); if (v !== undefined) { out.push('$' + n); this.ser(v, out, seen, 0); }
     }
     // Missions.list, explicitly. `fns` below hashes an object's own FUNCTIONS, and a scenario's setup
@@ -100,10 +149,8 @@ const BUILD = {
     // The list only, not the whole object: fns already covers the methods, and ser walks a function by
     // its source, so hashing both would count every method twice for nothing.
     { const M = look('Missions'); if (M && M.list) { out.push('$Missions.list'); this.ser(M.list, out, seen, 0); } }
-    for (const [n, o] of [['G', look('G')], ['CMD', look('CMD')], ['Abilities', look('Abilities')], ['Missions', look('Missions')], ['RNG', look('RNG')],
-    ['Unit', look('Unit') && look('Unit').prototype], ['Player', look('Player') && look('Player').prototype],
-    ['AI', look('AI') && look('AI').prototype], ['GameMap', look('GameMap') && look('GameMap').prototype],
-    ['Pathfinder', look('Pathfinder') && look('Pathfinder').prototype], ['MapCodec', look('MapCodec')]]) this.fns(n, o, out);
+    for (const n of this.SINGLETONS) this.fns(n, look(n), out);
+    for (const n of this.CLASSES) { const c = look(n); this.fns(n, c && c.prototype, out); }
     return out;
   },
 

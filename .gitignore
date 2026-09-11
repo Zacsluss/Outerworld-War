@@ -1,3 +1,6 @@
 
 # agent worktrees: git worktrees live here, they are not repo content
 .claude/worktrees/
+
+# REVIEW-M17 scratch probes and logs
+.claude/review/

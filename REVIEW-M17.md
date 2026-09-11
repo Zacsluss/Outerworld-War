@@ -146,19 +146,116 @@ Fill in the two lists below, in this file, and commit it.
 
 # 1. Open tasks / to-dos
 
-*(to be filled in by the review)*
+Each entry names the file, what is wrong, the fix, and what it would cost. Anything measured says so.
+
+1. **Cross-engine floating point in the simulation.** `js/sim.js`, `js/game.js`, `js/combat.js`,
+   `js/abilities.js`, `js/ai.js` make **75 transcendental calls** (26 `Math.cos`, 24 `Math.sin`,
+   16 `Math.atan2`, 9 `Math.hypot`); `Math.sqrt` is IEEE-correctly-rounded, those four are not
+   required to be, and V8, SpiderMonkey and JavaScriptCore differ in the last bit on some inputs.
+   Lockstep hashes positions at 1/16 px, so a last-bit difference in a facing or a step can, over
+   minutes, become a desync between two *different browsers* on the same build. Same-browser play is
+   unaffected. Fix: route the five through one deterministic table (quantised angle in, fixed-precision
+   out) in a stamped file, and turn `hypot` into `sqrt(dx*dx+dy*dy)`. Cost M (one helper, ~80 call
+   sites, a replay test across two engines that this repo cannot run headlessly). Moves the stamp and
+   changes results by a hair. **Blocked on question 1** — it is only worth doing if mixed-browser
+   multiplayer is a target.
+2. **`G.pathBudget` is set to a literal `40` in two places.** `js/game.js` declares `pathBudget: 40` on
+   `G` and `tick()` resets it to `40` every frame, so the declared value is dead and the literal is the
+   rule. A `PATH_BUDGET` constant in `BUILD.TUNING` would make it one number. Cost S. *(Will be done in
+   this review's small-fixes commit.)*
+3. **Seven dead definitions**, found by cross-referencing every definition in `js/` against every
+   identifier in `js/`, `index.html`, `test/`, `tools/` and `assets/` — each has exactly one hit, its own
+   definition: `Abilities.needsTarget` (`js/abilities.js:78`), `HUD.spacedWidth` (`js/hud.js:561`),
+   `GameMap.wreckAt` (`js/map.js:977`), `GameMap.walkableTerrain` (`js/map.js:1434`), `Unit.supCost`
+   (`js/sim.js:134`), `AI_KEEP` (`js/snapshot.js:199`, declared and then the literal `'__ai'` is used
+   on the next line instead), `Terrain.getChunk` (`js/terrain.js:218` — the render loop at line 412
+   inlines its own budgeted version). Cost S. *(Will be done in the small-fixes commit.)*
+4. **Four stale `file:line` references in test messages** point at comments or unrelated code today:
+   `test/eightplayer.js:162` says `js/ai.js:141`, `test/net_many.js:329` and `test/saveload.js:244,280`
+   say `js/snapshot.js:121`, `test/saveload.js:245` says `js/game.js:221`, `test/refusals.js:120` says
+   `js/abilities.js:240`. The project's own rule is "search the identifier, not the line". Cost S.
+   *(Will be done in the small-fixes commit.)*
+5. **`HANDOFF.md` still says the gate is "the 49 fast deterministic checks"** and its banner points at
+   `HANDOFF-M13.md`. It is 69 (70 once `saveload` joins, below) and the current file is `HANDOFF-M16.md` / this review. Cost S.
+6. **Test-harness duplication.** 90 of 102 suites build their own `document` stub, through 11 differently
+   named builders (`makeCtx` ×8, `mkCtx` ×7, `mk` ×5, `mkCtx` const ×4, `mkCanvas` ×3, `fakeCtx` ×3,
+   `mkCtx2` ×2, `makeClient` ×2, `mkContext`, `makeCtxNoAudio`, `loadSim`), ~300 lines of near-identical
+   stubs. A `test/_harness.js` exposing one builder with options (which files, canvas recorder or not,
+   UI stub or not) would remove most of it. Cost L — a 90-file diff, every suite re-run — and it is
+   the kind of change that should be its own milestone, not a review. Not started.
 
 # 2. Questions and decisions for the user
 
-*(to be filled in by the review)*
+1. **Is mixed-browser multiplayer a target?** If yes, open task 1 is real work and should be scheduled;
+   if the answer is "everyone uses the same browser", it is a documented limitation and nothing else.
+2. **`test/eightplayer.js` has been RED since FIXLIST-M15 C3, not "19/19 passing by 4%".** Measured
+   three times at the baseline tag (deterministic: identical banks each run) and bisected: 19/19 with
+   the handoff's 2405 at `57d61d2`, 19/19 at C1 and C2, **18/19 from `89f2e40` (C3, the creep speed
+   bonus) onward** — one AI ends with 2630 minerals against the 2500 threshold. The test's own message
+   names the cause (`AI.macro`'s `wantHalls` floor), which is AI spending, which is gated. The
+   threshold is the canary the handoffs rely on, so I have not moved it. Decision: accept it as the
+   fifth known red until the balance work, or authorise a change. It is now documented in
+   `test/all.js`'s exclusion list either way.
+3. **Line endings.** 71 CRLF, 77 LF-only, 2 mixed in the working copy; the index is LF throughout
+   (`core.autocrlf=true`), so this is purely a working-copy artefact of tools writing LF after
+   checkout. Two options: (a) leave it and keep the detect-per-file rule in `CLAUDE.md`; (b) add a
+   `.gitattributes` (`* text=auto`, `*.bat text eol=crlf`) so every clone normalises the same way,
+   then re-check out the working copy once (`git rm --cached -r . && git reset --hard`) to make it
+   uniform — no history rewrite, no blame pollution, no commit beyond the one-line `.gitattributes`.
+   I recommend (b). Say which.
+4. **The relay has no TLS and no auth beyond the room code** (seed finding 5). `PLAY-ONLINE.bat`
+   already answers TLS by putting a tunnel in front, and the client picks `wss://` on an https page.
+   Auth is the room code alone. My recommendation is to keep the relay plain and tunnel-only for
+   internet play, and to harden what exists (minimum code length, a join rate limit, input validation —
+   the networking findings below say exactly what). Anything more is a product decision.
+5. **22 stale agent worktrees** under `.claude/worktrees/` plus one at `%TEMP%\pre-m12`, all on old
+   commits. I did not create them and have not touched them. May I `git worktree remove` each one that
+   reports a clean tree, and list the ones that do not?
+6. **The balance run and the AI claim order** stay gated, as briefed. Nothing in this review touches
+   either; they are recorded here so the list is complete.
 
 # 3. Fixed / changed / updated
 
-*(to be filled in by the review)*
+1. **The build stamp now covers the simulation.** *(commit: build stamp)* `js/build.js` named nine
+   tables and six singletons and nothing else; a top-level `const`, `function` or `class` in a classic
+   script is not a property of the global object, so nothing else was reachable.
+   **Measured before:** a probe over the ten stamped files found **76 top-level bindings, 56 not reached**
+   — among them the whole of `Combat`, `DMG_MULT`, `MINE_TIME`, `MINERS_PER_PATCH`, `SUPPLY_CAP`,
+   `CHURN_SLOW`, `FACE_MULT`, `HOVER`, `MAP_SIZES`, `Archetypes`, `MapModes`, `Replay.applyPending`, and
+   the helpers `dist`, `distPt`, `clamp`, `daylightAt`, `hitFacing`, `repairableDef`. A second probe
+   applied **17 simulation edits** (a `Combat.fire` body change, `DMG_MULT`, `MINE_TIME` 75→76,
+   `MINERS_PER_PATCH` 2→3, `SUPPLY_CAP` 500→400, `CHURN_SLOW`, `HOVER`, `HALL_PULL`, …) and **17 of 17
+   left the hash unchanged.** Every one would have loaded an old save and drifted.
+   **Fix:** `BUILD` now carries explicit lists — `TABLES`, `TUNING`, `HELPERS`, `SINGLETONS`, `CLASSES`
+   — and a `NOT_SIM` map naming every top-level binding that is deliberately not hashed, with the reason
+   (presentation strings, colours, caches, the id counter). `parts()` walks the lists.
+   **The list cannot rot:** `test/version.js` parses every stamped file for its top-level declarations
+   (multi-name lines included) and fails if a name is in no list, in two lists, or in a list but no
+   longer declared; plus ten new edit checks, one per class of thing that was blind.
+   **Measured after:** the 17-edit probe reports 0 blind (the one edit still inert is `G.pathBudget`'s
+   initial value, which `tick()` overwrites with a hashed literal — open task 2).
+   **Negative controls:** removing `CHURN_SLOW` from `TUNING` → two clean reds (`editing map.js …
+   changes the hash` and `every top-level binding … is in a BUILD list  map.js:288 CHURN_SLOW`);
+   adding a name that no file declares → two clean reds. Both restored byte-identical.
+   **Gate:** 69 of 69, 176.7 s. **The stamp moved: `c4fe57ceca68627b` → `14ec639729837842`.** Every
+   save and replay from before this commit is refused, which is the stamp doing its job.
+2. **`.gitignore` ignores `.claude/review/`**, where this review's probes and logs live.
 
 # 4. Considered and deliberately not done
 
-*(to be filled in by the review)*
+1. **Hashing every own property of `G`** (which would have caught `G.cell` without naming it). No:
+   almost all of them are runtime state, and `BUILD.hash()` is lazy — the first call can happen
+   mid-game, so the stamp would depend on *when* it was first computed. `G.cell` is named in `TUNING`
+   instead; `G.pathBudget` is covered by the literal in `tick()`.
+2. **Stamping the presentation strings that live in stamped files** (`UNEXPLORED_MSG`, `HAZARD_SAYS`,
+   `FEATURE_SAYS`, `PLAYER_COLORS`, `TILESET_NAMES`, `DESC_MAX`, `ALERTS`). No: the header comment's
+   rule is that stamping presentation would refuse a save for a wording tweak. Each is in `NOT_SIM`
+   with its reason, and the audit makes the omission a decision rather than a hole.
+3. **Moving the `eightplayer` money threshold** to make it green. No: it is the canary every handoff
+   points at, and the cause is gated (question 2).
+4. **Updating `file:line` references inside the closed `FIXLIST-M14.md`.** No: it is a frozen record
+   and the references were true when written. Living documents are a different matter (open task 5).
+5. **Deleting the 23 stale worktrees.** Not without an answer to question 5.
 
 ---
 
