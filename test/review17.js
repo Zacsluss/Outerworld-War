@@ -20,8 +20,11 @@
 //     silence, and forgotten. G.tickErrors counts them now, and this file asserts zero.
 //  8. CHARON BOOSTERS SHORTENED THE GOLIATH'S AIR RANGE. rangeTech is absolute; it read 3 against a base
 //     of 5. Brood War's number is 8.
-//  9. THREE DEFS HAD NO PRICE AT ALL (min undefined -> NaN the moment anything did arithmetic on it), and
-//     four ability descriptions stated the wrong fact.
+//  9. A REPAIRABLE BUILDING HAD NO PRICE (min undefined -> a NaN repair cost), and four ability
+//     descriptions stated the wrong fact.
+// 10. THE AI MARCHED ON THE WILDLIFE. pickTarget and seenEnemyArmy walked G.units without skipping the
+//     neutral owner; with derelicts on, the wave target was a derelict on three of three seeds.
+// 11. AN ALLIED AI STORMED ITS PARTNER. Twenty-six clauses in AI.micro tested an enemy by owner alone.
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
 let pass = 0, fail = 0;
@@ -213,6 +216,53 @@ const ctx = makeCtx();
   ok('the Mothership\'s description names what it is merged from', new RegExp(DATA_NAME(ctx, out.mothershipFrom)).test(out.mothership), out.mothershipFrom + ' -- ' + out.mothership);
 }
 function DATA_NAME(c, id) { return R(c, 'return DATA.units[' + JSON.stringify(id) + '].name;'); }
+
+// ============================================================================
+// 10. the AI does not march on the wildlife: a derelict is nobody's base
+// ============================================================================
+// AI.enemies() excluded the neutral owner; pickTarget, seenEnemyArmy and the fallback target loop walked
+// G.units themselves and did not. With derelicts and wildlife on (a skirmish-screen option; no shipped
+// layout sets either, which is why nothing saw it), the hard AI's attack wave chose a derelict on three
+// of three seeds and counted the armed grubs as enemy army. Measured by the AI reviewer's probe.
+{
+  const out = R(ctx, `
+    const L = JSON.parse(JSON.stringify(MAP_LAYOUTS.temple)); L.derelicts = 'standard'; L.wildlife = 'standard'; MAP_LAYOUTS.__review17 = L;
+    const res = {};
+    for (const seed of [3, 7, 11]) {
+      G.init({ players: [{ race: 'T', human: false, difficulty: 'hard', name: 'A', team: 1 }, { race: 'Z', human: false, difficulty: 'hard', name: 'B', team: 2 }], seed, layout: '__review17' });
+      const p = G.players[0], ai = p.ai, n = G.neutral;
+      const neutralB = G.units.filter(u => u.alive && u.isBuilding && u.owner === n.id).length;
+      // everything visible: the enemy base and the derelicts both qualify, and the derelicts are nearer
+      p.vis.fill(2); G._allVis = null;
+      const t = ai.pickTarget({ x: p.startX, y: p.startY });
+      // then only the neutrals in sight: what counts as enemy army?
+      p.vis.fill(0); for (const u of G.units) if (u.alive && u.owner === n.id) { const tx = Math.floor(u.x / TILE), ty = Math.floor(u.y / TILE); for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (G.map.inb(tx + dx, ty + dy)) p.vis[(ty + dy) * G.map.w + tx + dx] = 2; }
+      G._allVis = null;
+      ai.seenSup = 0; const seen = ai.seenEnemyArmy();
+      res['seed' + seed] = { neutralB, pickedNeutral: !!(t && t.def && t.owner === n.id), picked: t && t.def ? t.def.id : (t ? 'probe' : null), seenArmy: Math.round(seen) };
+    }
+    delete MAP_LAYOUTS.__review17;
+    return res;`);
+  const seeds = Object.values(out);
+  ok('the scene has neutral buildings on every seed (negative control for the scene)', seeds.every(s => s.neutralB > 0), JSON.stringify(out));
+  ok('with everything in sight, the wave targets the enemy and never a derelict (was: a derelict on three of three seeds)', seeds.every(s => !s.pickedNeutral), JSON.stringify(out));
+  ok('...and the wildlife counts as no enemy army (was 11-14 supply of grubs)', seeds.every(s => s.seenArmy === 0), JSON.stringify(out));
+}
+
+// ============================================================================
+// 11. AI.micro tells enemy from ally with G.allied, never by owner
+// ============================================================================
+// Twenty-six clauses in micro() tested `o.owner !== p.id` and so an allied AI stormed, irradiated and
+// locked down its partner's units in a team game. Static, because a team game with every caster at full
+// energy is a long scene for a one-word predicate: no clause may say it the old way, and the count of the
+// right way is the guard against a scrape that matches nothing.
+{
+  const src = fs.readFileSync(path.join(root, 'js', 'ai.js'), 'utf8');
+  const micro = src.slice(src.indexOf('  micro()'), src.indexOf('\n  }', src.indexOf('  micro()')));
+  ok('the slice found AI.micro (negative control for the anchor)', micro.length > 5000, micro.length + ' chars');
+  ok('no clause in AI.micro tests an enemy by owner alone', !/o\.owner !== p\.id/.test(micro));
+  ok('...and at least twenty-six test it with G.allied (was 26 by owner)', (micro.match(/!G\.allied\(o\.owner, p\.id\)/g) || []).length >= 26, String((micro.match(/!G\.allied\(o\.owner, p\.id\)/g) || []).length));
+}
 
 ok('no JS errors', ctx.errors.length === 0, ctx.errors.slice(0, 3).join(' | '));
 ok('nothing threw inside a tick across every scene', R(ctx, 'return G.tickErrors;') === 0, String(R(ctx, 'return G.tickErrors;')));

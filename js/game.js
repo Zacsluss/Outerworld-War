@@ -379,7 +379,7 @@ const G = {
     const b = new Unit(def.id, owner, (tx + def.w / 2) * TILE, (ty + def.h / 2) * TILE); b.tx = tx; b.ty = ty; b.hp = Math.max(1, def.hp * 0.1); b.sh = 0; b.done = false; b.progress = 0;
     this.units.push(b); this.byId.set(b.id, b); this.map.block(tx, ty, def.w, def.h, b.id);
     if (def.onGeyser) { const g = this.map.geyserAt(tx, ty); b.geyser = g; g.building = b; }
-    if (def.tier === 'addon') { } // parent set by caller
+    // an add-on's parent is set by the caller
     for (const u of this.units) if (u.alive && !u.isBuilding && !u.fly && u !== b) this.nudgeOut(u, b);
     return b;
   },
@@ -437,7 +437,6 @@ const G = {
         }
       }
       if (b.def.egg) { this.kill(b, null, true); }
-      if (b.def.id === 'lurker_egg' || b.def.id === 'cocoon') { }
     } else if (it.kind === 'upg') { p.upg[it.id] = it.level; p.researching.delete(it.id); p.msg(DATA.upgrades[it.id].name + ' Level ' + it.level + ' complete.'); }
     else if (it.kind === 'tech') { p.tech.add(it.id); p.researching.delete(it.id); p.msg(DATA.techs[it.id].name + ' research complete.'); }
     else if (it.kind === 'morph') { this.morphBuilding(b, it.id); }
@@ -626,7 +625,6 @@ const G = {
     if (killer && killer.owner !== u.owner && !silent) { killer.kills++; const kp = this.players[killer.owner]; if (u.isBuilding) kp.stats.buildingsKilled++; else kp.stats.unitsKilled++; }
     if (!silent) { if (u.isBuilding) p.stats.buildingsLost++; else p.stats.unitsLost++; }
     if (!silent && !u.halluc) { this.effects.push({ kind: u.isBuilding ? 'bigboom' : (u.def.race === 'Z' ? 'blood' : 'boom'), x: u.x, y: u.y, t: u.isBuilding ? 40 : 18, r: u.r, def: u.isBuilding ? null : u.def.id, owner: u.owner, facing: u.facing, fly: u.fly }); if (typeof Sound !== 'undefined' && this.visibleAt(this.human, u.x, u.y)) Sound.death(u); }
-    if (u.def.id === 'nuke_ghost') { }
     // What it leaves behind. See the CRATERS block in js/map.js for why the crater is permanent and the
     // hulk is not. Hallucinations leave nothing -- there was never anything there -- and neither does
     // anything that was flying, inside a transport, or too small to be worth a scorch mark.
@@ -980,7 +978,7 @@ const G = {
     // The Zerg drone still comes back, because the drone IS the building -- taking that would delete a
     // unit rather than decline a refund.
     if (b.done) return; const p = this.players[b.owner];
-    if (b.def.race === 'Z' && !b.def.onGeyser && b.def.tier !== 'addon') { const d = this.spawnUnit('drone', b.owner, b.x, b.y + b.r); }
+    if (b.def.race === 'Z' && !b.def.onGeyser && b.def.tier !== 'addon') this.spawnUnit('drone', b.owner, b.x, b.y + b.r);
     this.kill(b, null, true);
   },
   // A larva or an egg may carry its own rally, which overrides the hall's. The resolution half of this

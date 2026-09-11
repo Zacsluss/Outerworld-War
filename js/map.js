@@ -267,7 +267,8 @@ MAP_LAYOUTS.nightfall = MapModes.layout('large', { name: 'Nightfall', tileset: '
 // Two consequences of that choice, written down because they are not obvious:
 //   * `walk` and `blocked` are captured by the snapshot as well, so after a restore they are already
 //     right and the feature's own state agrees with them.
-//   * `height` and `cliff` are NOT captured, so they have to be re-derived. `broken` is therefore an
+//   * `cliff` is NOT captured (`height` is, since the crater rule gave the snapshot a height grid), so
+//     `cliff` has to be re-derived. `broken` is therefore an
 //     ACCESSOR: writing it -- which is exactly what `Snapshot.restore`'s `_apply` does -- repaints
 //     that feature's tiles. `syncFeature` is idempotent and reads no clock, so doing it during a
 //     restore is safe, and a backward replay seek onto a map whose bridge was dropped comes back with
@@ -341,8 +342,10 @@ const FEATURE_SAYS = { bridge: 'A bridge has collapsed.', rocks: 'A rock formati
 // that is connected in that worst case is connected in all 2^n of them -- which is what makes
 // "destroying everything never strands a player" a property rather than a hope.
 //
-// A NOTE ON THE BUILD STAMP. js/build.js hashes MAP_LAYOUTS and the source of GameMap's methods; it
-// does not know this object exists, exactly as it does not know MapModes or HAZARDS exist. The four
+// A NOTE ON THE BUILD STAMP. js/build.js hashes MAP_LAYOUTS and the source of GameMap's methods, and
+// since REVIEW-M17 this object, MapModes and HAZARDS too (BUILD.TABLES). Before that it did not know
+// any of the three existed, which is why the digest below was built, and it stays: the source hash
+// says the generators' text is unchanged, the digest says what they PRODUCE is unchanged. The four
 // registered sample layouts below carry a digest of eight seeds of every generator, so changing a
 // generator moves the stamp and two clients cannot disagree about what `arch:islands:97` means while
 // agreeing about the build.
@@ -807,8 +810,9 @@ class GameMap {
   //   map.featureOpen(f)        can ground units cross it right now.
   //
   // WHAT IS NOT WIRED, and where it goes. A feature has hit points and `map.damageFeature(f, amount)`
-  // takes them off, but nothing in this build calls it, because every file that fires a weapon belongs
-  // to another change. Three call sites finish it:
+  // takes them off. Wired since M13 -- Combat.splash and the storm in js/abilities.js call
+  // damageFeatureAt -- so a siege tank, a reaver or a nuke opens a lane. Written when every file that
+  // fires a weapon belonged to another change; the three call sites it named are kept for the record:
   //   * js/combat.js Combat.splash(), after the unit loop:
   //       G.map.damageFeatureAt(x, y, dmg);
   //     That alone makes siege tanks, reavers and nukes able to open a lane, which is most of it.
@@ -855,7 +859,8 @@ class GameMap {
   // Math.random. `scar` is captured by js/snapshot.js as a SPARSE pair list rather than a dense 16k
   // array like creep/walk/blocked: craters are sparse by nature and a fourth dense grid in every
   // checkpoint is real bytes for no reason. `wrecks` is captured whole; `syncWrecks` puts height, cliff
-  // and blocked back afterwards, because -- as with features -- the snapshot does not carry height.
+  // and blocked back afterwards: the snapshot restores `height` but not `cliff`, and Snapshot.restore
+// repaints the hulk's tiles on top of the restored grid so the two agree.
   crater(px, py, rTiles, amount) {
     const cx = Math.floor(px / TILE), cy = Math.floor(py / TILE), r = Math.max(0, rTiles);
     const r2 = r * r, ri = Math.ceil(r);
@@ -925,7 +930,8 @@ class GameMap {
     }
   }
   // Idempotent and clock-free, exactly like syncFeature and called for the same reason: a snapshot
-  // restores `wrecks`, `walk` and `blocked` but not `height`, so something has to put height back, and
+  // restores `wrecks`, `walk`, `blocked` and (since the crater rule) `height`, but not `cliff`, so
+  // something has to repaint the hulk's tiles so cliff and blocked agree with the height underneath, and
   // this is safe to run halfway through a restore.
   syncWrecks() { for (const wk of this.wrecks) this.paintWreck(wk, true); return this.wrecks.length; }
 
@@ -1010,8 +1016,8 @@ class GameMap {
       Object.defineProperty(f, 'baseH', { value: Uint8Array.from(tiles, i => this.height[i]), enumerable: false });
       Object.defineProperty(f, '_m', { value: this, enumerable: false });
       // `broken` is an accessor on purpose: Snapshot.restore assigns straight through it, and that
-      // assignment is the only chance the map gets to put `height` and `cliff` back -- neither of
-      // which the snapshot carries. See the MAP_FEATURES comment.
+      // assignment is the only chance the map gets to put `cliff` back and repaint `height` on top of
+      // the restored grid -- `cliff` is the one the snapshot does not carry. See the MAP_FEATURES comment.
       let brk = false;
       Object.defineProperty(f, 'broken', { enumerable: true, configurable: true, get() { return brk; }, set(v) { brk = !!v; f._m.syncFeature(f); } });
       for (const i of tiles) this.featTile[i] = fi;
@@ -1481,11 +1487,13 @@ class GameMap {
   // for significance. Both are offered below; take one, not both, or a shot uphill is punished twice.
   HEIGHT_TIERS() { return 2; }
   // The table. Written as literals INSIDE a method on purpose: js/build.js hashes the source text of
-  // GameMap's methods and does not walk this file's module-level constants, so numbers that live out
-  // there can be retuned without moving the build stamp -- and a save made before the retune would
-  // then be accepted and quietly re-simulate into a different game. In here, changing a 1.15 refuses
-  // the old save, which is the entire job of the stamp. Built once and frozen, so the per-shot path
-  // allocates nothing.
+  // GameMap's methods, and when this was written it did not walk this file's module-level constants,
+  // so numbers that lived out there could be retuned without moving the build stamp -- and a save made
+  // before the retune would then be accepted and quietly re-simulate into a different game. (Since
+  // REVIEW-M17 the module-level constants are named in BUILD.TUNING and stamped too; the table stays
+  // here because inside a hashed method is still the simplest place to be sure of it.) In here,
+  // changing a 1.15 refuses the old save, which is the entire job of the stamp. Built once and frozen,
+  // so the per-shot path allocates nothing.
   heightBonusTable() {
     return HEIGHT_BONUS || (HEIGHT_BONUS = Object.freeze([
       // index 0: advantage -1, the attacker is shooting UP at a target on high ground
@@ -1556,7 +1564,6 @@ class GameMap {
       if (player && player.vis && player.vis[i] === 0) return UNEXPLORED_MSG;
     }
     if (def.needsPsi) { const cx = tx + Math.floor(def.w / 2), cy = ty + Math.floor(def.h / 2); if (!this.hasPsi(player.id, cx, cy) && !this.hasPsi(player.id, cx - 1, cy)) return 'Requires psi power'; }
-    if (def.race === 'Z' && def.id === 'hatchery' && def.needsCreep) { /* hatcheries can go anywhere */ }
     // units in the way (ground, non-builder)
     const x0 = tx * TILE, y0 = ty * TILE, x1 = (tx + def.w) * TILE, y1 = (ty + def.h) * TILE;
     for (const u of units) {
@@ -1623,9 +1630,9 @@ class GameMap {
   }
 
   // ---------------- hazard ----------------
-  // WIRING CONTRACT. The hazard needs one call a frame and it is not made yet, because js/game.js
-  // belongs to another change. To turn hazard maps on, add exactly this line to G.tick(), next to the
-  // other per-frame sim passes (after Abilities.tickFields(), before the AI loop):
+  // WIRING CONTRACT. The hazard needs one call a frame, and G.tick() makes it (js/game.js, next to the
+  // other per-frame sim passes, after Abilities.tickFields() and before the AI loop). Written when
+  // js/game.js belonged to another change; the line is:
   //
   //     this.map.tickHazard(this.frame, this.units);
   //

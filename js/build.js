@@ -108,7 +108,7 @@ const BUILD = {
     'CMD.pack'],   // the packers decide the log format; fns() skips them because they are not functions of CMD itself
   // Scalars the simulation reads. A dotted name is a constant that lives on a singleton.
   TUNING: ['TILE', 'TPS', 'FEATURE_ID0', 'FEAT_BLOCKED', 'WRECK_BLOCKED', 'CHURN_SLOW', 'MINE_STRIP',
-    'WIDE_BODY', 'MINE_TIME', 'GAS_TIME', 'LARVA_TIME', 'MAX_QUEUE', 'MINERS_PER_PATCH', 'CREEP_SEED', 'CREEP_GROW',
+    'WIDE_BODY', 'MINE_TIME', 'GAS_TIME', 'LARVA_TIME', 'MAX_QUEUE', 'WORKER_HAUL', 'GAS_DEPLETED', 'MODE_TRANS', 'MINERS_PER_PATCH', 'CREEP_SEED', 'CREEP_GROW',
     'D', 'SUPPLY_CAP', 'PATH_BUDGET', 'DAY_CYCLE', 'NIGHT_SIGHT', 'NIGHT_DET', 'NIGHT_AIR', 'WRECK_LIFE_BUILDING', 'WRECK_LIFE_UNIT',
     'FERRY_PICKUP', 'FERRY_WAIT', 'FACE_FLANK', 'FACE_REAR', 'MULE_HAUL', 'BLINK_ESCAPE',
     'HALL_PULL', 'ANCHOR_PULL', 'ANCHOR_CAP', 'GUARD_COST', 'BASE_PULL', 'BASE_R', 'SENSOR_NEAR', 'SENSOR_CALM', 'G.cell'],

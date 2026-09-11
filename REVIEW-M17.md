@@ -348,6 +348,39 @@ Each entry names the file, what is wrong, the fix, and what it would cost. Anyth
      omitted the Marauder and Reaper, the MULE said 90 s for a 75 s lifetime, Blink named a Stalker
      that does not exist, the Mothership was "two Dark Templar" rather than two Arbiters).
    **Gate:** 72 of 72, 165 s. The stamp moved (`sim`, `game`, `abilities`, `combat`, `data`).
+8. **Literals that duplicated a constant, dead code, comments that contradicted the code, and four AI
+   faults that change nothing in a game without teams or neutrals.** *(commit: literals and comments)*
+   **Identity check:** `test/eightplayer.js` (a deterministic eight-AI game) prints byte-identical banks
+   before and after the batch, so nothing here changed a plain game.
+   - Three techs (`u238`, `ion_thrusters`, `ocular`) carried an `effect` key nothing read while
+     `js/sim.js` applied each by unit id with the number repeated as a literal. The effect lives on the
+     Marine's weapon, the Vulture and the Ghost now, through the `rangeTech`/`speedTech`/`sightTech`
+     fields twenty other defs already use; the three special cases are gone.
+   - `WORKER_HAUL` (four literal 8s), `GAS_DEPLETED`, `MODE_TRANS` (three literal 40s for siege, the
+     Viking transform and an abducted tank), the sieged tank's range now reads `SIEGE_W.range`, and
+     abduct un-burrows through `Unit.surface()` so a Widow Mine's own timing is honoured. All stamped.
+   - Dead: an empty Science Vessel branch, `if (d.suicide) { }`, an unreachable larva/egg score, a
+     no-op fallthrough, three empty branches in `game.js`, an unused `const d`, two always-true tests in
+     the glaive bounce (`o.isBuilding && false`; `!swarmed || b > 0` where a glaive is never swarmed), an
+     empty hatchery branch in `map.js`, `workers.length < 18 ? 3 : 3`, `!(id === 'lurker' && false)`.
+   - Comments: six in `map.js`/`snapshot.js` still said the snapshot does not carry `height` (it has
+     since the crater rule) or that the stamp does not know Archetypes/MapModes/HAZARDS (it does now) or
+     that the hazard tick "is not made yet" (it is, in `G.tick`) or that feature damage "is not wired"
+     (it is); one in `sim.js` said being shot at turns hold into attack (`G.onHit` only retaliates when
+     idle); `ai.js`'s budget comment listed four claimants (there are seven), named the wrong claimant
+     number, and said "turn() holds money" (`budget()` does). Fixed in place, reasoning kept.
+   - AI, verified identical in a plain game: **26 clauses in `AI.micro` tested an enemy by
+     `o.owner !== p.id`**, so an allied AI stormed, irradiated and locked down its partner's units in a
+     team game — all use `G.allied` now, like the M12 clauses; **the wave target could be a derelict and
+     the wildlife counted as enemy army** when the skirmish screen turns neutrals on (measured: a
+     derelict on three of three seeds, 11-14 supply of grubs) — `pickTarget`, its fallback and
+     `seenEnemyArmy` skip the neutral owner; a hall on the exact map centre divided by zero for its
+     rally; a style name from a payload was looked up with inherited keys (`'constructor'` was a style).
+   - The Terran tech called `colossus` (Colossus Reactor) shared its id with the Protoss unit; it is
+     `colossus_reactor` in the data, the Physics Lab and `AI_RESEARCH`.
+   **Tests:** `test/review17.js` gained the neutral scene (three seeds; two negative controls run — the
+   `pickTarget` guard removed picks `derelict_foundry`, the `seenEnemyArmy` guard removed counts 11) and a
+   static guard on `micro` (no owner-only clause, ≥ 26 `G.allied` ones). **Gate:** 72 of 72, 199 s.
 
 # 4. Considered and deliberately not done
 

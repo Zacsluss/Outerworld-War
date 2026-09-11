@@ -11,6 +11,8 @@ const EQUIV = { hatchery: ['lair', 'hive'], lair: ['hive'], spire: ['greater_spi
 // Three defs are over it today: Thor and Ultralisk at 20, Reaver at 18.
 const WIDE_BODY = TILE / 2;
 const MINE_TIME = 75, GAS_TIME = 37, LARVA_TIME = 342, MAX_QUEUE = 5;
+const WORKER_HAUL = 8, GAS_DEPLETED = 2;   // a trip's minerals or gas, and a depleted geyser's; MULE_HAUL in js/abilities.js sits on top of the eight (REVIEW-M17: four literals before)
+const MODE_TRANS = 40;                     // frames a mode change locks a unit: siege and unsiege, the Viking transform, an abducted tank's forced unsiege (three literals before)
 const MINERS_PER_PATCH = 2;   // Brood War saturates a mineral patch at two workers, not one
 // Creep does not appear, it spreads. A source starts with a small pad and reaches its full radius
 // over about a minute, which is roughly the Brood War rate. Growth is only ever read through
@@ -78,7 +80,6 @@ class Unit {
   get speed() {
     let s = this.def.speed || 0; const p = this.player, d = this.def;
     if (this.def.speedTech && p.hasTech(this.def.speedTech[0])) s = this.def.speedTech[1];
-    if (this.def.id === 'vulture' && p.hasTech('ion_thrusters')) s = 8.53;
     if (this.stim > 0) s *= 1.5; if (this.fx.ensnare > 0) s *= 0.5;
     if (this.fx.suppress > 0) s *= 0.45;   // pinned by sustained fire; see DATA.techs suppress_*
     if (this.lifted) s = 1;
@@ -112,7 +113,7 @@ class Unit {
     }
     return s;
   }
-  get sight() { let s = this.def.sight || 7; const p = this.player; if (this.def.sightTech && p.hasTech(this.def.sightTech[0])) s = this.def.sightTech[1]; if (this.def.id === 'ghost' && p.hasTech('ocular')) s = 11; if (this.fx.blind > 0) s = 2; if (this.isBuilding && !this.done) s = 4;
+  get sight() { let s = this.def.sight || 7; const p = this.player; if (this.def.sightTech && p.hasTech(this.def.sightTech[0])) s = this.def.sightTech[1]; if (this.fx.blind > 0) s = 2; if (this.isBuilding && !this.done) s = 4;
     // A jamming field shortens sight while the unit stands in it. Clamped at one tile, per the aura
     // contract in js/data.js: short-sighted, never blind.
     if (this.auraSight > 0 && this.auraSight < 1) s = Math.max(1, s * this.auraSight);
@@ -149,7 +150,7 @@ class Unit {
     return null;
   }
   hasWeapon() { return !!(this.def.gw || this.def.aw) && !this.def.worker; }
-  wRange(w) { let r = w.range; const p = this.player; if (w.rangeTech && p.hasTech(w.rangeTech[0])) r = w.rangeTech[1]; if (this.def.id === 'marine' && p.hasTech('u238')) r = 5; if (this.inside && this.inside.def.bunker) r += 1; return r; }
+  wRange(w) { let r = w.range; const p = this.player; if (w.rangeTech && p.hasTech(w.rangeTech[0])) r = w.rangeTech[1]; if (this.inside && this.inside.def.bunker) r += 1; return r; }
   // Veterancy. Derived from kills rather than stored, which is the whole reason it costs nothing: kills
   // is already a field, already snapshotted and already deterministic, so ranks survive a save, a rejoin
   // and a replay seek without another line of code anywhere.
@@ -179,7 +180,7 @@ class Unit {
     if (!this.fly && t && !t.fly) r *= G.map.heightBonus(this.x, this.y, t.x, t.y).range;
     return r;
   }
-  maxRange() { let m = 0; for (const w of [this.def.gw, this.def.aw]) if (w) m = Math.max(m, this.wRange(w)); if (this.def.id === 'siege_tank' && this.sieged) m = 12; return m; }
+  maxRange() { let m = 0; for (const w of [this.def.gw, this.def.aw]) if (w) m = Math.max(m, this.wRange(w)); if (this.def.id === 'siege_tank' && this.sieged) m = SIEGE_W.range; return m; }
 
   // ---------------- orders ----------------
   setOrder(o, shift) {
@@ -243,7 +244,6 @@ class Unit {
     // with ammo aboard. Measured: one launch, then none in 400 frames of attack orders. (REVIEW-M17)
     if (d.id === 'carrier' && this.launchCd > 0) this.launchCd--;
     if (d.id === 'carrier' && this.launched && this.launched.length) { const fighting = this.order.type === 'attack' || (this.order.type === 'attackmove' && this.order.target) || this.order.type === 'hold' && this.target; if (!fighting && (G.frame + this.id) % 24 === 0) for (const ic of this.launched) if (ic.alive && ic.order.type === 'intercept') ic.applyOrder({ type: 'dock' }); this.launched = this.launched.filter(ic => ic.alive); }
-    if (d.id === 'science_vessel' && this.order.type === 'idle') { /* nothing auto */ }
   }
 
   // ---------------- buildings ----------------
@@ -370,8 +370,9 @@ class Unit {
           // called fireAt directly instead of going through engage(), which is where the `cooldown <= 0`
           // test lives, so a sieged tank re-acquiring a new target fired every frame: 75 shots in the
           // time it is allowed one. Reported from play as "one tank, 81 kills in seconds", and it is
-          // reachable whenever a held tank is shot at, because being shot at turns hold into an attack
-          // order (G.onHit) whose target then dies or walks out of range.
+          // reachable whenever a held tank is given an attack order (the AI does it, and so does a
+          // right-click) whose target then dies or walks out of range. Being shot at alone does not do
+          // it: G.onHit retaliates only for an idle unit, and a held tank stays on hold.
           const t = this.autoTarget(true); if (t) { if (this.cooldown <= 0) this.fireAt(t); break; }
           // Nothing in range. A Lurker's weapon is burrowOnly so staying down is the whole point, but any
           // other burrowed unit cannot shoot at all and was just sitting on the order forever: surface.
@@ -437,7 +438,6 @@ class Unit {
     const d = this.def;
     if (this.def.worker) { if (this.carrying && !this.heldOrder && (G.frame + this.id) % 24 === 0) { this.applyOrder({ type: 'return' }); } return; }
     if (this.hasWeapon() && !this.def.notUnit && (G.frame + this.id) % 6 === 0) { const t = this.autoTarget(false); if (t) { this.applyOrder({ type: 'attack', target: t, auto: true, ox: this.x, oy: this.y }); } }
-    if (d.suicide) { }
   }
   autoTarget(holdOnly) {
     if (!this.hasWeapon()) return null;
@@ -463,7 +463,7 @@ class Unit {
       if (w.minRange && dd < w.minRange * TILE) continue;
       let s = dd;
       if (t.isBuilding) s += 400 + (t.hasWeapon() ? -300 : 0);
-      else if (!t.hasWeapon() && !t.def.worker) s += 160; if (t.def.larva || t.def.egg) s += 800; if (t.def.worker) s += 60;
+      else if (!t.hasWeapon() && !t.def.worker) s += 160; if (t.def.worker) s += 60;
       if (t.halluc) s += 50;
       // What is shooting at ME comes first. Scoring purely by distance means a unit will walk past the
       // thing killing it to shoot whatever happens to be a few pixels nearer, which is the single most
@@ -597,14 +597,13 @@ class Unit {
   // ---------------- gathering ----------------
   tickGather() {
     const o = this.order, res = o.target;
-    if (this.carrying && (this.carrying.type === 'gas') !== (res && res.type === 'gas')) { /* fallthrough */ }
     if (!res || (res.type === 'mineral' && res.amount <= 0) || (res.type === 'gas' && !res.alive)) { const n = G.findNearestResource(this, res && res.type === 'gas' ? 'gas' : 'mineral'); if (!n) { this.nextOrder(); return; } o.target = n; o.phase = 'goto'; return; }
     if (this.carrying) { this.applyOrder({ type: 'return', then: res }); return; }
     this.lastRes = res;
     if (res.type === 'mineral') {
-      if (o.phase === 'mine') { if (--o.t <= 0) { res.miner = null; res.amount -= 8;
+      if (o.phase === 'mine') { if (--o.t <= 0) { res.miner = null; res.amount -= WORKER_HAUL;
         G.map.crater(res.cx, res.cy, 1.8, MINE_STRIP);   // the attrition economy: working a patch strips the ground around it, for good
- this.carrying = { type: 'mineral', amt: res.amount >= 0 ? 8 : 8 + res.amount }; if (res.amount <= 0) G.removeResource(res); this.applyOrder({ type: 'return', then: res }); } return; }
+ this.carrying = { type: 'mineral', amt: res.amount >= 0 ? WORKER_HAUL : WORKER_HAUL + res.amount }; if (res.amount <= 0) G.removeResource(res); this.applyOrder({ type: 'return', then: res }); } return; }
       if (this.moveToRect(res, 6)) {
         // Brood War puts TWO workers on a patch, not one. This used to hand the patch to a single
         // claimant and send everyone else looking elsewhere, so a second worker right-clicked onto a
@@ -616,7 +615,7 @@ class Unit {
       }
     } else { // gas building
       const g = res; if (!g.done || g.owner !== this.owner) { this.nextOrder(); return; }
-      if (o.phase === 'inside') { if (--o.t <= 0) { g.occupant = null; this.inside = null; g.geyser.amount -= 8; const amt = g.geyser.amount > 0 ? 8 : 2; if (g.geyser.amount < 0) g.geyser.amount = 0; this.carrying = { type: 'gas', amt }; this.x = g.x; this.y = g.y + g.r + this.r; this.applyOrder({ type: 'return', then: g }); } return; }
+      if (o.phase === 'inside') { if (--o.t <= 0) { g.occupant = null; this.inside = null; g.geyser.amount -= WORKER_HAUL; const amt = g.geyser.amount > 0 ? WORKER_HAUL : GAS_DEPLETED; if (g.geyser.amount < 0) g.geyser.amount = 0; this.carrying = { type: 'gas', amt }; this.x = g.x; this.y = g.y + g.r + this.r; this.applyOrder({ type: 'return', then: g }); } return; }
       if (this.moveToRect(g, 6)) { if (!g.occupant || !g.occupant.alive || g.occupant.order.type !== 'gather') { g.occupant = this; o.phase = 'inside'; o.t = GAS_TIME; this.inside = g; } }
     }
   }

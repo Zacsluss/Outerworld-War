@@ -152,7 +152,7 @@ const AI_COMP = {
 const HALL_PULL = 8, ANCHOR_PULL = 6, ANCHOR_CAP = 6, GUARD_COST = 4, BASE_PULL = 40, BASE_R = 14;
 const SENSOR_NEAR = 20, SENSOR_CALM = 24 * 25;
 const AI_RESEARCH = {
-  T: ['stim', 'siege_tech', 'u238', 'infW', 'infA', 'ion_thrusters', 'spider_mines_tech', 'vehW', 'charon', 'vehA', 'irradiate_tech', 'emp_tech', 'personnel_cloaking', 'lockdown_tech', 'yamato_tech', 'shipW', 'shipA', 'cloaking_field', 'suppress_inf', 'suppress_veh', 'restoration_tech', 'optical_flare_tech', 'caduceus', 'moebius', 'ocular', 'apollo', 'titan', 'colossus', 'drilling_claws'],
+  T: ['stim', 'siege_tech', 'u238', 'infW', 'infA', 'ion_thrusters', 'spider_mines_tech', 'vehW', 'charon', 'vehA', 'irradiate_tech', 'emp_tech', 'personnel_cloaking', 'lockdown_tech', 'yamato_tech', 'shipW', 'shipA', 'cloaking_field', 'suppress_inf', 'suppress_veh', 'restoration_tech', 'optical_flare_tech', 'caduceus', 'moebius', 'ocular', 'apollo', 'titan', 'colossus_reactor', 'drilling_claws'],
   // M12's five Zerg researches, placed by what they unlock rather than appended. `volatile_bile` and
   // `ravager_aspect` gate whole units and sit with lurker_aspect near the front; `glial_reconstitution`
   // is a speed upgrade and sits with the other two; the two Infestation Pit techs go late, next to the
@@ -192,7 +192,7 @@ class AI {
     // setting and no new field for the snapshot to carry.
     const opt = (typeof G !== 'undefined' && G.setup && G.setup.players && G.setup.players[p.id]) || {};
     const want = style || opt.style;
-    this.style = this.styleDeltas()[want] ? want : 'standard';
+    this.style = Object.prototype.hasOwnProperty.call(this.styleDeltas(), want) ? want : 'standard';   // own keys only: 'constructor' is not a style
     this.p = p; const st = this.sty();       // p first: sty() is per race as well as per style
     this.diff = diff; this.step = 0; this.pending = {}; this.lastThink = 0; this.lastArmy = 0; this.state = 'gather'; this.target = null; this.attackN = 0; this.attackThreshold = Math.max(10, (diff === 'easy' ? 40 : diff === 'hard' ? 24 : 30) + 4 + (st.atk || 0)); this.waves = 0; this.scouted = false; this.dropOp = null; this.lastDrop = 0;
     this.thinkEvery = diff === 'easy' ? 72 : diff === 'hard' ? 20 : 32; this.scriptIdx = 0; this.lastExpand = 0; this.rally = null; this.startedAttack = 0; this.commitMin = 0; this.commitGas = 0; this.claims = []; this.researchDef = null; this.topDef = null; this.headDef = null; this.workerDef = null; this.expandDef = null;
@@ -357,11 +357,15 @@ class AI {
   //
   // WHAT IS HERE NOW. Two budgets, recomputed once per think, and no overrides at all.
   //
-  //   COMMITTED -- money already spoken for. Four claimants, honoured in this order:
+  //   COMMITTED -- money already spoken for. Seven claimants, honoured in this order (budget() below
+  //   numbers them the same way):
   //       1. buildings a worker is already walking to   (the site payment is not optional)
   //       2. supply, when it is about to block          (everything else stalls otherwise)
-  //       3. the head of the build order                (the tech tree)
-  //       4. the composition's top pick                 (the shape of the army)
+  //       3. one worker                                 (the economy; measured, see budget())
+  //       4. an expansion                               (same measurement)
+  //       5. the head of the build order                (the tech tree)
+  //       6. the next upgrade
+  //       7. the composition's top pick                 (the shape of the army)
   //     Claims are SUMMED and the running total is clipped at the bank, so priority is real: if the
   //     head step eats everything, the top pick gets nothing this think and waits its turn.
   //
@@ -377,7 +381,7 @@ class AI {
   // EVERY CLAIM IS ARMED ONLY WHEN MONEY IS THE ONLY THING MISSING. A claim held for something that
   // cannot be bought for another reason -- no free base left, requirements not met, no production
   // slot -- is never spent and therefore never released, so it becomes a permanent tax on free.
-  // Measured with that guard missing on two of the five: commitMin sat within 3% of the entire bank
+  // Measured with that guard missing on two of the seven: commitMin sat within 3% of the entire bank
   // for the whole game and 500-900 minerals floated unspent while the AI stopped at 49 workers.
   budget() {
     const p = this.p; let cm = 0, cg = 0; const claims = [];
@@ -524,7 +528,7 @@ class AI {
     const gasB = this.mine(u => u.def.onGeyser && u.done && u.geyser.amount > 0);
     gasB.forEach((g, gi) => {
       const on = workers.filter(w => (w.order.type === 'gather' && w.order.target === g) || (w.order.type === 'return' && w.order.then === g));
-      let want = workers.length < 11 ? (gi === 0 ? 2 : 0) : workers.length < 18 ? 3 : 3;
+      let want = workers.length < 11 ? (gi === 0 ? 2 : 0) : 3;
       if (p.gas > 800 && p.minerals < 300) want = Math.min(want, 1); if ((p.gas > 400 && p.minerals < 150) || p.gas > 1500) want = 0;
       // A GEYSER WITH NOBODY NEAR IT IS STILL WORTH STAFFING. The candidate list was restricted to
       // workers already within 20 tiles, so a geyser at a base the AI had just taken -- where there are
@@ -623,7 +627,7 @@ class AI {
     if (this.scriptIdx >= s.length) return;
     if (this.stepT === undefined) this.stepT = G.frame;
     if (p.supUsed < s[this.scriptIdx][0]) { this.stepT = G.frame; return; }
-    // Remember what the head of the order is, so turn() can hold money for it BEFORE economy() and
+    // Remember what the head of the order is, so budget() can hold money for it BEFORE economy() and
     // supply() get to spend next think. Cleared when the script runs out.
     // ...and only while it could be started if the money were there. A step whose requirements are
     // not met yet cannot be bought at any price, so holding its cost buys nothing and starves
@@ -662,7 +666,7 @@ class AI {
       // stopped mattering. It reserved for the head step UNCONDITIONALLY, for Zerg only, with a
       // half-cost softener against Protoss -- worth 15 points in TvZ and 27 in PvZ when it landed,
       // and the reason Zerg needed an exemption from the research brake that no other race needed.
-      // Claimant 3 in budget() now holds the head step's cost for EVERY race on every think, which is
+      // Claimant 5 in budget() (the head step) now holds its cost for EVERY race on every think, which is
       // a strictly stronger version of the same thing with no race in it. If TvZ or PvZ moves when
       // the balance run is finally made, this paragraph is the first place to look.
       if (def.tier === 'addon') { if (this.addon(id)) { this.stepT = G.frame; return; } continue; }
@@ -793,7 +797,7 @@ class AI {
         if (!best || bd < 12 * TILE) break;                 // both ends in one base is not a shortcut
         const t = G.map.findFreeTile(best.tx, best.ty + best.def.h + 1, 8);
         if (t) Abilities.issue(cn, 'nydus_exit', null, (t[0] + 0.5) * TILE, (t[1] + 0.5) * TILE);
-        break;                                              // one a turn; it costs minerals
+        break;                                              // one a turn. The exit itself is free (nydusExit places it without a debit); the minerals gate above is the AI keeping a canal's price in hand -- REVIEW-M17 question
       }
       // M12 wave four: the network past the second end. A worm may only surface on creep, so this is
       // the AI's half of the tumour interlock -- the mouths follow the creep, and the creep follows
@@ -1042,7 +1046,7 @@ class AI {
   }
   nearResources(tx, ty, w, h) { for (const r of G.map.resources) { if (tx < r.x + r.w + 3 && tx + w > r.x - 3 && ty < r.y + r.h + 3 && ty + h > r.y - 3) return true; } return false; }
   // ---------------- army ----------------
-  armyUnits() { return this.mine(u => !u.isBuilding && !u.def.worker && !u.def.larva && !u.def.egg && u.hasWeapon() && !u.inside && !u.def.notUnit && u.def.id !== 'spider_mine' && !(u.def.id === 'lurker' && false)); }
+  armyUnits() { return this.mine(u => !u.isBuilding && !u.def.worker && !u.def.larva && !u.def.egg && u.hasWeapon() && !u.inside && !u.def.notUnit && u.def.id !== 'spider_mine'); }
   // The four M12 Zerg additions with no weapon at all. armyUnits() is gated on hasWeapon(), so without
   // this an infestor, viper, swarm host or overseer would be trained and then stand at the hatchery
   // for the rest of the game -- the exact shape of "the AI casts 7 of 28 spells" in HANDOFF.md.
@@ -1051,6 +1055,7 @@ class AI {
     const halls = this.halls().filter(h => h.done); const p = this.p;
     const nat = halls.length > 1 ? halls[1] : halls[0]; if (!nat) return { x: p.startX, y: p.startY };
     const cx = G.map.w * TILE / 2, cy = G.map.h * TILE / 2; const d = distPt(nat.x, nat.y, cx, cy);
+    if (!(d > 0)) return { x: nat.x, y: nat.y };   // a hall on the exact map centre would divide by zero and rally every unit to NaN
     return { x: nat.x + (cx - nat.x) / d * 7 * TILE, y: nat.y + (cy - nat.y) / d * 7 * TILE };
   }
   // Enemy strength inside a radius, counting static defence as the army it is worth. Used to decide
@@ -1177,7 +1182,7 @@ class AI {
   // biggest enemy army supply we have actually seen, decayed slowly so old sightings stop mattering
   seenEnemyArmy() {
     let sup = 0;
-    for (const u of G.units) { if (!u.alive || u.def.worker || u.def.larva || u.def.egg || u.def.notUnit) continue; if (G.allied(u.owner, this.p.id)) continue; if (u.isBuilding) { if ((u.def.gw || u.def.aw) && u.done && G.explored(this.p.id, Math.floor(u.x / TILE), Math.floor(u.y / TILE))) sup += 4; continue; } if (!u.hasWeapon()) continue; if (!G.canSee(this.p.id, u)) continue; sup += u.def.sup || 1; } // a defended base costs more army than an open field
+    for (const u of G.units) { if (!u.alive || u.def.worker || u.def.larva || u.def.egg || u.def.notUnit) continue; if (G.allied(u.owner, this.p.id) || G.players[u.owner].neutral) continue; if (u.isBuilding) { if ((u.def.gw || u.def.aw) && u.done && G.explored(this.p.id, Math.floor(u.x / TILE), Math.floor(u.y / TILE))) sup += 4; continue; } if (!u.hasWeapon()) continue; if (!G.canSee(this.p.id, u)) continue; sup += u.def.sup || 1; } // a defended base costs more army than an open field
     if (sup > (this.seenSup || 0)) this.seenSup = sup; else this.seenSup = (this.seenSup || 0) * 0.995;
     return this.seenSup;
   }
@@ -1327,13 +1332,13 @@ class AI {
     const defenders = G.units.filter(u => u.alive && u.isBuilding && (u.def.gw || u.def.aw) && !G.allied(u.owner, this.p.id) && this.hasSeen(u.x, u.y));
     const prod = G.units.filter(u => u.alive && u.isBuilding && u.done && !G.allied(u.owner, this.p.id) && this.hasSeen(u.x, u.y)
       && ((u.def.produces && u.def.produces.length) || (u.def.tech && u.def.tech.length) || (u.def.upg && u.def.upg.length)));
-    for (const u of G.units) { if (!u.alive || G.allied(u.owner, this.p.id) || !u.isBuilding || u.def.tier === 'addon') continue; if (G.players[u.owner].defeated) continue; if (!this.hasSeen(u.x, u.y)) continue;
+    for (const u of G.units) { if (!u.alive || G.allied(u.owner, this.p.id) || !u.isBuilding || u.def.tier === 'addon') continue; if (G.players[u.owner].defeated || G.players[u.owner].neutral) continue; if (!this.hasSeen(u.x, u.y)) continue;   // neutral: a derelict is nobody's base (REVIEW-M17 -- it was the wave target on three of three seeds with derelicts on)
       const guarded = defenders.filter(d => distPt(d.x, d.y, u.x, u.y) < 8 * TILE).length;
       const anchors = u.def.depot ? Math.min(ANCHOR_CAP, prod.filter(b => distPt(b.x, b.y, u.x, u.y) < BASE_R * TILE).length) : 0;
       const sameBase = near && distPt(u.x, u.y, near.x, near.y) < BASE_R * TILE ? BASE_PULL : 0;
       const d = distPt(u.x, u.y, from.x, from.y) - (u.def.depot ? HALL_PULL * TILE : 0) - anchors * ANCHOR_PULL * TILE - sameBase * TILE + guarded * GUARD_COST * TILE;
       if (d < bd) { bd = d; best = u; } }
-    if (!best) { for (const u of G.units) { if (u.alive && !G.allied(u.owner, this.p.id) && !G.players[u.owner].defeated && !u.def.larva && this.hasSeen(u.x, u.y)) { const d = distPt(u.x, u.y, from.x, from.y); if (d < bd) { bd = d; best = u; } } } }
+    if (!best) { for (const u of G.units) { if (u.alive && !G.allied(u.owner, this.p.id) && !G.players[u.owner].defeated && !G.players[u.owner].neutral && !u.def.larva && this.hasSeen(u.x, u.y)) { const d = distPt(u.x, u.y, from.x, from.y); if (d < bd) { bd = d; best = u; } } } }
     // Go looking whenever no enemy TOWN HALL has been seen, even if some forward building has been.
     // Without this clause the fog version won zero games of eight where the omniscient one won seven:
     // it could always see something to hit, so it ground away at outlying buildings while the enemy
@@ -1345,7 +1350,9 @@ class AI {
     return best;
   }
   // micro() does not run every frame. think() runs it on multiples of 12 and on each full think, so
-  // the only values G.frame % 16 ever takes in here are {0,4,8,12} -- measured, not reasoned. Every
+  // the only values G.frame % 16 ever takes in here are {0,4,8,12} -- measured, not reasoned, FOR PLAYER 0;
+  // players 1-3 tick on other residues and never on a multiple of 12, so for them micro runs only on
+  // think frames and this table collapses differently (REVIEW-M17 open task, measured there). Every
   // stagger below was written as (G.frame + id) % N === 0, which therefore came true only for ids in a
   // quarter to an eighth of the residue classes, and did so for the whole life of the unit: a defiler
   // whose id was not a multiple of 4 could not cast dark swarm however long it lived. That is most of
@@ -1517,6 +1524,9 @@ class AI {
     return null;
   }
   micro() {
+    // Every "is this an enemy" test in here is !G.allied(o.owner, p.id), never a bare owner comparison:
+    // the older clauses compared owners and an allied AI stormed, irradiated and locked down its partner's
+    // units in a team game. Identical in a game without teams (allied(a, a) is true). (REVIEW-M17)
     const p = this.p;
     if (p.race === 'Z') this.zergCreep();
     if (p.race === 'P') this.protossMacro();
@@ -1561,7 +1571,7 @@ class AI {
     for (const u of G.units) {
       if (!u.alive || u.owner !== p.id || u.isBuilding || u.inside) continue;
       const d = u.def.id;
-      if (d === 'siege_tank' && p.hasTech('siege_tech') && u.transT <= 0) { const near = G.near(u.x, u.y, 11 * TILE).some(o => o.owner !== p.id && !o.fly && o.alive && (o.hasWeapon() || o.isBuilding)); const veryNear = G.near(u.x, u.y, 2 * TILE).some(o => o.owner !== p.id && !o.fly && o.alive && o.hasWeapon()); if (near && !u.sieged && !veryNear && this.turn(u.id, 2)) Abilities.instant(u, 'siege_mode'); else if (u.sieged && !near && this.turn(u.id, 8)) Abilities.instant(u, 'siege_mode'); }
+      if (d === 'siege_tank' && p.hasTech('siege_tech') && u.transT <= 0) { const near = G.near(u.x, u.y, 11 * TILE).some(o => !G.allied(o.owner, p.id) && !o.fly && o.alive && (o.hasWeapon() || o.isBuilding)); const veryNear = G.near(u.x, u.y, 2 * TILE).some(o => !G.allied(o.owner, p.id) && !o.fly && o.alive && o.hasWeapon()); if (near && !u.sieged && !veryNear && this.turn(u.id, 2)) Abilities.instant(u, 'siege_mode'); else if (u.sieged && !near && this.turn(u.id, 8)) Abilities.instant(u, 'siege_mode'); }
       // M12 wave four: BLINK, and it CLOSES rather than retreats. It sits ahead of the kite clause
       // below on purpose -- both are dragoon clauses in an else-if chain, and a dragoon that can be
       // shooting this second should not spend the tick shuffling.
@@ -1595,14 +1605,14 @@ class AI {
       // Stim: the marauder and the reaper are bio and carry it, so they use it. The hp floor is raised
       // for them in proportion to what stim costs -- a flat 10 hp off a 60-hp reaper is a sixth of it.
       else if ((d === 'marine' || d === 'firebat' || d === 'marauder' || d === 'reaper') && p.hasTech('stim') && u.stim <= 0 && u.hp > (d === 'reaper' ? 30 : 25) && u.order.type === 'attack' && u.order.target && dist(u, u.order.target) < 6 * TILE) Abilities.instant(u, 'stim');
-      else if (d === 'lurker' && u.transT <= 0) { const near = G.near(u.x, u.y, 7 * TILE).some(o => o.owner !== p.id && !o.fly && o.alive && !o.def.larva); if (near && !u.burrowed && this.turn(u.id, 1)) Abilities.instant(u, 'burrow'); else if (u.burrowed && !near && this.turn(u.id, 6) && this.state !== 'gather') Abilities.instant(u, 'burrow'); }
+      else if (d === 'lurker' && u.transT <= 0) { const near = G.near(u.x, u.y, 7 * TILE).some(o => !G.allied(o.owner, p.id) && !o.fly && o.alive && !o.def.larva); if (near && !u.burrowed && this.turn(u.id, 1)) Abilities.instant(u, 'burrow'); else if (u.burrowed && !near && this.turn(u.id, 6) && this.state !== 'gather') Abilities.instant(u, 'burrow'); }
       // ---- M12 wave four ---------------------------------------------------------------------------
       // A Widow Mine buried is a weapon and a Widow Mine walking is a 90-hit-point paperweight -- its
       // gun is `burrowOnly`, so Unit.weaponFor hands it nothing at all while it is up. Same shape as
       // the Lurker clause directly above, with one difference that matters: the mine hits AIR too, so
       // the "is there anything here" test must not filter on `!o.fly` the way the Lurker's does.
       else if (d === 'widow_mine' && u.transT <= 0) {
-        const near = G.near(u.x, u.y, 6 * TILE).some(o => o.owner !== p.id && o.alive && !o.def.larva && !o.isBuilding);
+        const near = G.near(u.x, u.y, 6 * TILE).some(o => !G.allied(o.owner, p.id) && o.alive && !o.def.larva && !o.isBuilding);
         if (near && !u.burrowed && this.turn(u.id, 1)) Abilities.instant(u, 'burrow');
         // Do not dig up a mine that is still arming. FIXLIST-M14 A3 put an arming delay between burrowing
         // and being able to fire, and `transT` only covers the going-down half of it -- so without this
@@ -1617,31 +1627,31 @@ class AI {
       // that window, so a Viking that folds up in front of a mutalisk flock is dead; one that stays up
       // while there is anything flying has merely not helped yet.
       else if (d === 'viking' && u.transT <= 0 && this.turn(u.id, 4)) {
-        const air = G.near(u.x, u.y, 12 * TILE).some(o => o.owner !== p.id && o.alive && o.fly && !o.def.larva);
-        const ground = G.near(u.x, u.y, 8 * TILE).some(o => o.owner !== p.id && o.alive && !o.fly && (o.hasWeapon() || o.isBuilding));
+        const air = G.near(u.x, u.y, 12 * TILE).some(o => !G.allied(o.owner, p.id) && o.alive && o.fly && !o.def.larva);
+        const ground = G.near(u.x, u.y, 8 * TILE).some(o => !G.allied(o.owner, p.id) && o.alive && !o.fly && (o.hasWeapon() || o.isBuilding));
         if (!air && ground) Abilities.instant(u, 'viking_mode');
       }
       else if (d === 'viking_a' && u.transT <= 0 && this.turn(u.id, 2)) {
-        const air = G.near(u.x, u.y, 14 * TILE).some(o => o.owner !== p.id && o.alive && o.fly && !o.def.larva);
+        const air = G.near(u.x, u.y, 14 * TILE).some(o => !G.allied(o.owner, p.id) && o.alive && o.fly && !o.def.larva);
         if (air) Abilities.instant(u, 'viking_mode');
       }
       // The Raven blinds a defended position. The cluster test is the enemy's, not ours: what the field
       // is worth is proportional to how many of their eyes are inside it, and dropping it on our own
       // army would blind nothing (Abilities.tickFields skips anyone allied with the owner).
       else if (d === 'raven' && u.energy >= 75 && this.turn(u.id, 2)) {
-        const c = this.cluster(u, 9, 3, o => o.owner !== p.id && !o.def.larva);
+        const c = this.cluster(u, 9, 3, o => !G.allied(o.owner, p.id) && !o.def.larva);
         if (c && !Abilities.inField(c.x, c.y, 'jam')) Abilities.issue(u, 'jam_field', null, c.x, c.y);
       }
       // The Banshee cloaks for the same reason and off the same research as the Wraith. It is a
       // separate clause rather than an extra `||` on the wraith one below because the wraith clause is
       // far down the else-if chain, behind several that a banshee would never match anyway.
-      else if (d === 'banshee' && !u.cloaked && u.energy >= 50 && p.hasTech('cloaking_field') && this.turn(u.id, 4) && G.near(u.x, u.y, 8 * TILE).some(o => o.owner !== p.id && o.hasWeapon())) Abilities.instant(u, 'cloak_wraith');
-      else if (d === 'high_templar' && u.energy >= 75 && p.hasTech('psi_storm_tech') && this.turn(u.id, 1)) { const c = this.cluster(u, 9, 3, o => o.owner !== p.id && !o.isBuilding); if (c) Abilities.issue(u, 'psi_storm', null, c.x, c.y); }
+      else if (d === 'banshee' && !u.cloaked && u.energy >= 50 && p.hasTech('cloaking_field') && this.turn(u.id, 4) && G.near(u.x, u.y, 8 * TILE).some(o => !G.allied(o.owner, p.id) && o.hasWeapon())) Abilities.instant(u, 'cloak_wraith');
+      else if (d === 'high_templar' && u.energy >= 75 && p.hasTech('psi_storm_tech') && this.turn(u.id, 1)) { const c = this.cluster(u, 9, 3, o => !G.allied(o.owner, p.id) && !o.isBuilding); if (c) Abilities.issue(u, 'psi_storm', null, c.x, c.y); }
       // Dark Swarm is as much a defensive spell as an offensive one, and the cluster test below already
       // says "our ground units are being shot at". Gating it on the army being on the attack meant the
       // Zerg AI, which spends most of a losing game in `defend`, never cast it when it needed it most.
-      else if (d === 'defiler' && u.energy >= 100 && this.turn(u.id, 1)) { const c = this.cluster(u, 9, 3, o => o.owner === p.id && !o.fly && !o.isBuilding && o.hasWeapon() && G.frame - o.lastHit < 48); if (c && !Abilities.inField(c.x, c.y, 'swarm')) Abilities.issue(u, 'dark_swarm', null, c.x, c.y); else if (p.hasTech('plague_tech') && u.energy >= 150) { const e = this.cluster(u, 9, 4, o => o.owner !== p.id); if (e) Abilities.issue(u, 'plague', null, e.x, e.y); } }
-      else if (d === 'science_vessel' && u.energy >= 75 && p.hasTech('irradiate_tech') && this.turn(u.id, 2)) { const t = G.near(u.x, u.y, 9 * TILE).find(o => o.owner !== p.id && o.def.bio && !o.isBuilding && !o.fx.irradiate && o.maxHp >= 80); if (t) Abilities.issue(u, 'irradiate', t); }
+      else if (d === 'defiler' && u.energy >= 100 && this.turn(u.id, 1)) { const c = this.cluster(u, 9, 3, o => o.owner === p.id && !o.fly && !o.isBuilding && o.hasWeapon() && G.frame - o.lastHit < 48); if (c && !Abilities.inField(c.x, c.y, 'swarm')) Abilities.issue(u, 'dark_swarm', null, c.x, c.y); else if (p.hasTech('plague_tech') && u.energy >= 150) { const e = this.cluster(u, 9, 4, o => !G.allied(o.owner, p.id)); if (e) Abilities.issue(u, 'plague', null, e.x, e.y); } }
+      else if (d === 'science_vessel' && u.energy >= 75 && p.hasTech('irradiate_tech') && this.turn(u.id, 2)) { const t = G.near(u.x, u.y, 9 * TILE).find(o => !G.allied(o.owner, p.id) && o.def.bio && !o.isBuilding && !o.fx.irradiate && o.maxHp >= 80); if (t) Abilities.issue(u, 'irradiate', t); }
       // M12 item 11. FIRST among the Queen's clauses, because inject is what a Queen is for: it is the
       // only ability in the game that produces anything, and at 25 energy against Spawn Broodling's
       // 150 it almost never costs a cast that would otherwise have happened. Offered only on a hall
@@ -1651,10 +1661,10 @@ class AI {
       // clause that matches on `d === 'queen'` and then finds nothing to do would swallow the Queen's
       // three older clauses for that tick.
       else if (d === 'queen' && u.energy >= DATA.abilities.larva_inject.energy && this.turn(u.id, 2) && this.injectHall(u)) Abilities.issue(u, 'larva_inject', this.injectHall(u));
-      else if (d === 'queen' && u.energy >= 150 && p.hasTech('spawn_broodling_tech') && this.turn(u.id, 2)) { const t = G.near(u.x, u.y, 9 * TILE).find(o => o.owner !== p.id && !o.fly && !o.isBuilding && !NO_BROODLING.has(o.def.id) && o.def.sup >= 2); if (t) Abilities.issue(u, 'spawn_broodling', t); }
+      else if (d === 'queen' && u.energy >= 150 && p.hasTech('spawn_broodling_tech') && this.turn(u.id, 2)) { const t = G.near(u.x, u.y, 9 * TILE).find(o => !G.allied(o.owner, p.id) && !o.fly && !o.isBuilding && !NO_BROODLING.has(o.def.id) && o.def.sup >= 2); if (t) Abilities.issue(u, 'spawn_broodling', t); }
       else if (d === 'medic' && u.order.type === 'idle' && this.rally && distPt(u.x, u.y, this.rally.x, this.rally.y) > 8 * TILE) { const a = this.armyUnits()[0]; if (a) u.setOrder({ type: 'follow', target: a }); }
       else if (d === 'vulture' && u.mines > 0 && p.hasTech('spider_mines_tech') && u.order.type === 'idle' && this.turn(u.id, 4)) { Abilities.issue(u, 'spider_mine', null, u.x + (G.rand() - .5) * 64, u.y + (G.rand() - .5) * 64); }
-      else if (d === 'arbiter' && u.energy >= 100 && p.hasTech('stasis_tech') && this.turn(u.id, 2)) { const c = this.cluster(u, 9, 4, o => o.owner !== p.id && !o.isBuilding); if (c) Abilities.issue(u, 'stasis_field', null, c.x, c.y); }
+      else if (d === 'arbiter' && u.energy >= 100 && p.hasTech('stasis_tech') && this.turn(u.id, 2)) { const c = this.cluster(u, 9, 4, o => !G.allied(o.owner, p.id) && !o.isBuilding); if (c) Abilities.issue(u, 'stasis_field', null, c.x, c.y); }
       // The rest of the spell book. Every one of these had working code in js/abilities.js, a place on
       // the command card and an entry in the tech tree, and no line anywhere that made the AI press it,
       // so a player never saw them. Each sits AFTER the existing clause for the same unit, and an
@@ -1663,7 +1673,7 @@ class AI {
       // Lockdown, which was researched and never pressed. Sits before the nuke clause so a ghost with
       // no nuke still has a job; a nuke-carrying ghost matches the clause below instead.
       else if (d === 'ghost' && p.nukes === 0 && u.energy >= 100 && p.hasTech('lockdown_tech') && this.turn(u.id, 2)) {
-        const t = G.near(u.x, u.y, 8 * TILE).find(o => o.owner !== p.id && !o.isBuilding && o.def.mech && !o.fx.lockdown && o.def.sup >= 2); if (t) Abilities.issue(u, 'lockdown', t);
+        const t = G.near(u.x, u.y, 8 * TILE).find(o => !G.allied(o.owner, p.id) && !o.isBuilding && o.def.mech && !o.fx.lockdown && o.def.sup >= 2); if (t) Abilities.issue(u, 'lockdown', t);
       }
       // Repair. SCVs never repaired anything, so a damaged tank line, a bunker or a cracked building
       // simply stayed damaged -- the one Terran mechanic that is free and was going entirely unused.
@@ -1674,39 +1684,39 @@ class AI {
       else if (d === 'queen' && u.energy >= 150 && this.turn(u.id, 4)) {
         // Infest: a Terran command centre under 50% is a free infested terran factory. Niche, and the
         // only reason it is here is that "every ability the game has" should mean every one.
-        const cc = G.near(u.x, u.y, 8 * TILE).find(o => o.owner !== p.id && o.isBuilding && o.def.id === 'command_center' && o.hp < o.maxHp * 0.5);
+        const cc = G.near(u.x, u.y, 8 * TILE).find(o => !G.allied(o.owner, p.id) && o.isBuilding && o.def.id === 'command_center' && o.hp < o.maxHp * 0.5);
         if (cc) Abilities.issue(u, 'infest', cc);
       }
       else if (d === 'medic' && this.turn(u.id, 2) && u.energy >= 50) {
         const hurt = this.mine(o => o !== u && !o.isBuilding && o.fx && (o.fx.plague > 0 || o.fx.irradiate) && distPt(o.x, o.y, u.x, u.y) < 9 * TILE)[0];
         if (hurt && p.hasTech('restoration_tech')) Abilities.issue(u, 'restoration', hurt);
-        else if (u.energy >= 75 && p.hasTech('optical_flare_tech')) { const e = G.near(u.x, u.y, 9 * TILE).find(o => o.owner !== p.id && !o.isBuilding && !o.fly && o.def.sight >= 7 && !o.fx.blind); if (e) Abilities.issue(u, 'optical_flare', e); }
+        else if (u.energy >= 75 && p.hasTech('optical_flare_tech')) { const e = G.near(u.x, u.y, 9 * TILE).find(o => !G.allied(o.owner, p.id) && !o.isBuilding && !o.fly && o.def.sight >= 7 && !o.fx.blind); if (e) Abilities.issue(u, 'optical_flare', e); }
       }
       else if (d === 'science_vessel' && this.turn(u.id, 2) && u.energy >= 100) {
-        const emp = p.hasTech('emp_tech') ? this.cluster(u, 8, 3, o => o.owner !== p.id && (o.maxSh > 0 || o.maxEnergy > 0)) : null;
+        const emp = p.hasTech('emp_tech') ? this.cluster(u, 8, 3, o => !G.allied(o.owner, p.id) && (o.maxSh > 0 || o.maxEnergy > 0)) : null;
         if (emp) Abilities.issue(u, 'emp', null, emp.x, emp.y);
         else { const hurt = this.mine(o => !o.isBuilding && o.hp < o.maxHp * 0.5 && o.def.sup >= 2 && !o.fx.matrix && distPt(o.x, o.y, u.x, u.y) < 10 * TILE)[0]; if (hurt) Abilities.issue(u, 'defensive_matrix', hurt); }
       }
       else if (d === 'battlecruiser' && u.energy >= 150 && p.hasTech('yamato_tech') && this.turn(u.id, 2)) {
-        const t = G.near(u.x, u.y, 10 * TILE).find(o => o.owner !== p.id && (o.maxHp >= 200 || o.isBuilding)); if (t) Abilities.issue(u, 'yamato', t);
+        const t = G.near(u.x, u.y, 10 * TILE).find(o => !G.allied(o.owner, p.id) && (o.maxHp >= 200 || o.isBuilding)); if (t) Abilities.issue(u, 'yamato', t);
       }
-      else if (d === 'wraith' && !u.cloaked && u.energy >= 50 && p.hasTech('cloaking_field') && this.turn(u.id, 4) && G.near(u.x, u.y, 8 * TILE).some(o => o.owner !== p.id && o.hasWeapon())) Abilities.instant(u, 'cloak_wraith');
+      else if (d === 'wraith' && !u.cloaked && u.energy >= 50 && p.hasTech('cloaking_field') && this.turn(u.id, 4) && G.near(u.x, u.y, 8 * TILE).some(o => !G.allied(o.owner, p.id) && o.hasWeapon())) Abilities.instant(u, 'cloak_wraith');
       else if (d === 'queen' && this.turn(u.id, 2) && u.energy >= 75) {
-        const c = p.hasTech('ensnare_tech') ? this.cluster(u, 9, 3, o => o.owner !== p.id && !o.isBuilding && !o.fx.ensnare) : null;
+        const c = p.hasTech('ensnare_tech') ? this.cluster(u, 9, 3, o => !G.allied(o.owner, p.id) && !o.isBuilding && !o.fx.ensnare) : null;
         if (c) Abilities.issue(u, 'ensnare', null, c.x, c.y);
-        else { const big = G.near(u.x, u.y, 12 * TILE).find(o => o.owner !== p.id && !o.isBuilding && o.def.sup >= 2 && !o.fx.parasite); if (big) Abilities.issue(u, 'parasite', big); }
+        else { const big = G.near(u.x, u.y, 12 * TILE).find(o => !G.allied(o.owner, p.id) && !o.isBuilding && o.def.sup >= 2 && !o.fx.parasite); if (big) Abilities.issue(u, 'parasite', big); }
       }
       else if (d === 'defiler' && u.energy < 100 && p.hasTech('consume_tech') && this.turn(u.id, 2)) {
         const food = this.mine(o => o.def.id === 'zergling' && distPt(o.x, o.y, u.x, u.y) < 2 * TILE)[0]; if (food) Abilities.issue(u, 'consume', food);
       }
       else if (d === 'dark_archon' && this.turn(u.id, 2) && u.energy >= 50) {
-        const caster = G.near(u.x, u.y, 10 * TILE).find(o => o.owner !== p.id && o.maxEnergy > 0 && o.energy >= 50);
+        const caster = G.near(u.x, u.y, 10 * TILE).find(o => !G.allied(o.owner, p.id) && o.maxEnergy > 0 && o.energy >= 50);
         if (caster) Abilities.issue(u, 'feedback', caster);
-        else if (u.energy >= 100 && p.hasTech('maelstrom_tech')) { const c = this.cluster(u, 10, 3, o => o.owner !== p.id && !o.isBuilding && o.def.bio); if (c) Abilities.issue(u, 'maelstrom', null, c.x, c.y); }
-        else if (u.energy >= 150 && p.hasTech('mind_control_tech')) { const t = G.near(u.x, u.y, 8 * TILE).find(o => o.owner !== p.id && !o.isBuilding && o.def.sup >= 2); if (t) Abilities.issue(u, 'mind_control', t); }
+        else if (u.energy >= 100 && p.hasTech('maelstrom_tech')) { const c = this.cluster(u, 10, 3, o => !G.allied(o.owner, p.id) && !o.isBuilding && o.def.bio); if (c) Abilities.issue(u, 'maelstrom', null, c.x, c.y); }
+        else if (u.energy >= 150 && p.hasTech('mind_control_tech')) { const t = G.near(u.x, u.y, 8 * TILE).find(o => !G.allied(o.owner, p.id) && !o.isBuilding && o.def.sup >= 2); if (t) Abilities.issue(u, 'mind_control', t); }
       }
       else if (d === 'corsair' && u.energy >= 125 && p.hasTech('disruption_web_tech') && this.turn(u.id, 2)) {
-        const c = this.cluster(u, 9, 3, o => o.owner !== p.id && !o.fly && o.hasWeapon()); if (c) Abilities.issue(u, 'disruption_web', null, c.x, c.y);
+        const c = this.cluster(u, 9, 3, o => !G.allied(o.owner, p.id) && !o.fly && o.hasWeapon()); if (c) Abilities.issue(u, 'disruption_web', null, c.x, c.y);
       }
       else if (d === 'high_templar' && u.energy >= 100 && p.hasTech('hallucination_tech') && this.turn(u.id, 4) && this.state === 'attack') {
         const friend = this.mine(o => !o.isBuilding && o.def.sup >= 2 && distPt(o.x, o.y, u.x, u.y) < 9 * TILE)[0]; if (friend) Abilities.issue(u, 'hallucination', friend);

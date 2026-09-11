@@ -127,7 +127,7 @@ const Abilities = {
     const p = u.player, ab = DATA.abilities[id];
     switch (id) {
       case 'stim': if (u.hp <= 10 || u.stim > 200) return false; u.hp -= 10; u.stim = 300; return true;
-      case 'siege_mode': if (u.transT > 0) return false; u.sieged = !u.sieged; u.transT = 40; u.path = null; if (u.sieged) u.order = { type: 'hold' }; else u.order = { type: 'idle' }; return true;
+      case 'siege_mode': if (u.transT > 0) return false; u.sieged = !u.sieged; u.transT = MODE_TRANS; u.path = null; if (u.sieged) u.order = { type: 'hold' }; else u.order = { type: 'idle' }; return true;
       // BURROW. 24 frames for everything that digs in, EXCEPT a def carrying `dig` -- see the Widow
       // Mine in js/data.js, which has its own going-down, arming and coming-up durations because the
       // player reported that its burrow time did not match StarCraft II's and it in fact had none.
@@ -163,7 +163,7 @@ const Abilities = {
         if (to === 'viking_a' && !G.passable(u.x, u.y, u)) { p.msg('Cannot land here.', 'error'); return false; }
         const nd = DATA.units[to], ratio = u.hp / u.maxHp;
         u.def = nd; u.maxHp = nd.hp; u.hp = Math.max(1, Math.min(nd.hp, nd.hp * ratio));
-        u.fly = !!nd.fly; u.r = nd.r; u.transT = 40; u.path = null; u.target = null;
+        u.fly = !!nd.fly; u.r = nd.r; u.transT = MODE_TRANS; u.path = null; u.target = null;
         u.order = { type: 'idle' }; u.queue = [];
         G.effects.push({ kind: 'ring', x: u.x, y: u.y, r: 20, t: 10, color: '#9cf' });
         G.recomputeSupply();
@@ -612,8 +612,8 @@ const Abilities = {
         if (!t || t.isBuilding || t.def.larva || t.def.egg || t.def.notUnit || t.def.mine || t.fx.stasis > 0) { p.msg(!t || t.isBuilding ? 'Abduct cannot take a building.' : t.fx.stasis > 0 ? 'That unit is in stasis and cannot be moved.' : 'Abduct can only take a unit.', 'error'); u.energy += ab.energy; break; }
         let ax = u.x, ay = u.y;
         if (!t.fly) { const tl = G.map.findFreeTile(Math.floor(u.x / TILE), Math.floor(u.y / TILE), 6); if (!tl) { p.msg('No room to pull it to.', 'error'); u.energy += ab.energy; break; } ax = (tl[0] + .5) * TILE; ay = (tl[1] + .5) * TILE; }
-        if (t.burrowed) { t.burrowed = false; t.transT = 24; }
-        if (t.sieged) { t.sieged = false; t.transT = 40; }
+        if (t.burrowed) t.surface();   // the unburrow time stated once, in js/data.js digTimes (REVIEW-M17: a literal 24 here, and a Widow Mine's own timing ignored)
+        if (t.sieged) { t.sieged = false; t.transT = MODE_TRANS; }
         t.x = ax; t.y = ay; t.px = ax; t.py = ay; t.path = null; t.target = null; t.stuck = 0; t.applyOrder({ type: 'idle' });
         G.effects.push({ kind: 'line', x: u.x, y: u.y, tx: ax, ty: ay, t: 8, color: '#7d5' }); ring(0.8, '#7d5'); break;
       }

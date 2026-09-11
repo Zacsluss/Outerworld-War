@@ -110,8 +110,9 @@ const Snapshot = {
       height: Array.from(G.map.height),
       // Craters and hulks. `scar` goes as SPARSE (index, value) pairs, not as a fourth dense 16k array
       // beside the three above: craters are sparse by nature and a checkpoint is taken often. `wrecks`
-      // goes whole -- it is a short list -- and `syncWrecks` on the other side puts `height` back,
-      // which is the one grid no snapshot carries. Exactly the deal `broken` strikes for map features.
+      // goes whole -- it is a short list -- and `syncWrecks` on the other side repaints each hulk's
+      // tiles over the restored `height` (captured just above, since the crater rule) so `cliff`, which
+      // no snapshot carries, agrees with it. Exactly the deal `broken` strikes for map features.
       scar: G.map.scarPairs(), wrecks: G.map.wrecks.map(w => ({ tiles: Array.from(w.tiles), baseH: Array.from(w.baseH), born: w.born, life: w.life, big: w.big })),
       psi: Object.fromEntries(Object.entries(G.map.psi).map(([k, v]) => [k, Array.from(v)])), // the Protoss power grid is cached, not recomputed every tick
 
@@ -154,8 +155,8 @@ const Snapshot = {
     G.map.creep.set(s.creep); G.map.blocked.set(s.blocked); G.map.walk.set(s.walk);
     if (s.height) G.map.height.set(s.height);   // before syncFeature/syncWrecks, which repaint their own tiles idempotently on top
     G.map.loadScar(s.scar);
-    // Wrecks are rebuilt from the snapshot and then repainted, because `height` is not in the snapshot
-    // and a hulk is the one thing besides a feature that moves it. syncWrecks is idempotent and reads
+    // Wrecks are rebuilt from the snapshot and then repainted, because `cliff` is not in the snapshot
+    // (height is, one line up) and a hulk is the one thing besides a feature that moves it. syncWrecks is idempotent and reads
     // no clock, so it is safe here, halfway through a restore. Repainting AFTER walk/blocked have been
     // set is deliberate: paintWreck writes both, and doing it first would have them overwritten.
     G.map.wrecks = (s.wrecks || []).map(w => ({ tiles: w.tiles.slice(), baseH: w.baseH.slice(), born: w.born, life: w.life, big: w.big }));

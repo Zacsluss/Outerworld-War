@@ -61,14 +61,14 @@ const DATA = (() => {
   U('scv', { name: 'SCV', race: 'T', hp: 60, size: 'small', min: 50, sup: 1, time: 300, speed: 4.92, sight: 7, r: 9, hk: 'S', from: 'command_center', worker: true, mech: true, bio: true, cargoSize: 1,
     gw: W(5, 'normal', 0.4, 15, { upgKey: null }), abil: ['repair', 'gather', 'build_basic', 'build_adv'] });
   U('marine', { name: 'Marine', race: 'T', hp: 40, size: 'small', min: 50, sup: 1, time: 360, speed: 4, sight: 7, r: 8, hk: 'M', from: 'barracks', bio: true, cargoSize: 1,
-    gw: W(6, 'normal', 4, 15, { upgKey: 'infW', targets: 'both' }), abil: ['stim'], upgA: 'infA' });
+    gw: W(6, 'normal', 4, 15, { upgKey: 'infW', targets: 'both', rangeTech: ['u238', 5] }), abil: ['stim'], upgA: 'infA' });
   U('firebat', { name: 'Firebat', race: 'T', hp: 50, armor: 1, size: 'small', min: 50, gas: 25, sup: 1, time: 360, speed: 4, sight: 7, r: 8, hk: 'F', from: 'barracks', req: ['academy'], bio: true, cargoSize: 1,
     gw: W(8, 'concussive', 1, 22, { hits: 2, upgKey: 'infW', splash: [0.5, 0.75, 1] }), abil: ['stim'], upgA: 'infA' });
   U('medic', { name: 'Medic', race: 'T', hp: 60, armor: 1, size: 'small', min: 50, gas: 25, sup: 1, time: 450, speed: 4, sight: 9, r: 8, hk: 'C', from: 'barracks', req: ['academy'], bio: true, cargoSize: 1, energy: 200,
     abil: ['heal', 'restoration', 'optical_flare'], upgA: 'infA' });
-  U('ghost', { name: 'Ghost', race: 'T', hp: 45, size: 'small', min: 25, gas: 75, sup: 1, time: 750, speed: 4, sight: 9, r: 8, hk: 'G', from: 'barracks', req: ['academy', 'covert_ops'], bio: true, cargoSize: 1, energy: 200,
+  U('ghost', { name: 'Ghost', race: 'T', hp: 45, size: 'small', min: 25, gas: 75, sup: 1, time: 750, speed: 4, sight: 9, r: 8, hk: 'G', from: 'barracks', req: ['academy', 'covert_ops'], bio: true, cargoSize: 1, energy: 200, sightTech: ['ocular', 11],
     gw: W(10, 'concussive', 7, 22, { upgKey: 'infW', targets: 'both' }), abil: ['lockdown', 'cloak_ghost', 'nuke'], upgA: 'infA' });
-  U('vulture', { name: 'Vulture', race: 'T', hp: 80, size: 'medium', min: 75, sup: 2, time: 450, speed: 6.4, sight: 8, r: 12, hk: 'V', from: 'factory', mech: true, cargoSize: 2, hover: true,
+  U('vulture', { name: 'Vulture', race: 'T', hp: 80, size: 'medium', min: 75, sup: 2, time: 450, speed: 6.4, sight: 8, r: 12, hk: 'V', from: 'factory', mech: true, cargoSize: 2, hover: true, speedTech: ['ion_thrusters', 8.53],
     gw: W(20, 'concussive', 5, 30, { upgKey: 'vehW', upgDmg: 2 }), abil: ['spider_mine'], upgA: 'vehA', mines: 3 });
   U('siege_tank', { name: 'Siege Tank', race: 'T', hp: 150, armor: 1, size: 'large', min: 150, gas: 100, sup: 2, time: 750, speed: 4, sight: 10, r: 16, hk: 'T', from: 'factory', req: ['machine_shop'], mech: true, cargoSize: 4,
     gw: W(30, 'explosive', 7, 37, { upgKey: 'vehW', upgDmg: 3 }), abil: ['siege_mode'], upgA: 'vehA' });
@@ -759,7 +759,7 @@ const DATA = (() => {
   B('starport', { name: 'Starport', race: 'T', hp: 1300, w: 4, h: 3, min: 150, gas: 100, time: 1050, hk: 'S', tier: 'adv', req: ['factory'], produces: ['wraith', 'dropship', 'science_vessel', 'battlecruiser', 'valkyrie', 'banshee', 'liberator', 'viking', 'medivac', 'raven'], addons: ['control_tower'], canLift: true });
   B('control_tower', { name: 'Control Tower', race: 'T', hp: 500, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'C', tier: 'addon', parent: 'starport', tech: ['cloaking_field', 'apollo'] });
   B('science_facility', { name: 'Science Facility', race: 'T', hp: 850, w: 4, h: 3, min: 100, gas: 150, time: 900, hk: 'I', tier: 'adv', req: ['starport'], addons: ['physics_lab', 'covert_ops'], tech: ['emp_tech', 'irradiate_tech', 'titan'], canLift: true });
-  B('physics_lab', { name: 'Physics Lab', race: 'T', hp: 600, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'P', tier: 'addon', parent: 'science_facility', tech: ['yamato_tech', 'colossus'] });
+  B('physics_lab', { name: 'Physics Lab', race: 'T', hp: 600, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'P', tier: 'addon', parent: 'science_facility', tech: ['yamato_tech', 'colossus_reactor'] });   // the tech was called 'colossus', the same id as the Protoss unit (REVIEW-M17)
   B('covert_ops', { name: 'Covert Ops', race: 'T', hp: 750, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'C', tier: 'addon', parent: 'science_facility', tech: ['lockdown_tech', 'personnel_cloaking', 'ocular', 'moebius'] });
   B('armory', { name: 'Armory', race: 'T', hp: 750, w: 3, h: 2, min: 100, gas: 50, time: 1200, hk: 'A', tier: 'adv', req: ['factory'], upg: ['vehW', 'vehA', 'shipW', 'shipA'] });
   // Terran's three: a dressing station behind the line, an EW mast, and the concrete the engineers pour.
@@ -1175,11 +1175,14 @@ const DATA = (() => {
   T('suppress_gate', 'Disruption Cadence', 'P', 'gateway', 'U', 100, 100, 1200, { suppress: ['dragoon'] });
   T('suppress_bay', 'Phase Salvo', 'P', 'stargate', 'U', 150, 150, 1500, { suppress: ['scout', 'corsair', 'carrier'] });
   T('stim', 'Stim Packs', 'T', 'academy', 'T', 100, 100, 1200);
-  T('u238', 'U-238 Shells', 'T', 'academy', 'U', 150, 150, 1500, { effect: { unit: 'marine', range: 5 } });
+  // The three techs below used to carry an `effect` key that nothing read, while js/sim.js applied each
+  // one by unit id with the number repeated as a literal. The effect lives on the unit or weapon now,
+  // through the same speedTech/sightTech/rangeTech fields twenty other defs already use. (REVIEW-M17)
+  T('u238', 'U-238 Shells', 'T', 'academy', 'U', 150, 150, 1500);
   T('restoration_tech', 'Restoration', 'T', 'academy', 'R', 100, 100, 1200);
   T('optical_flare_tech', 'Optical Flare', 'T', 'academy', 'F', 100, 100, 1800);
   T('caduceus', 'Caduceus Reactor', 'T', 'academy', 'C', 150, 150, 2500, { energy: 'medic' });
-  T('ion_thrusters', 'Ion Thrusters', 'T', 'machine_shop', 'I', 100, 100, 1500, { effect: { unit: 'vulture', speed: 8.53 } });
+  T('ion_thrusters', 'Ion Thrusters', 'T', 'machine_shop', 'I', 100, 100, 1500);
   T('spider_mines_tech', 'Spider Mines', 'T', 'machine_shop', 'M', 100, 100, 1200);
   T('siege_tech', 'Siege Tech', 'T', 'machine_shop', 'S', 150, 150, 1200);
   T('charon', 'Charon Boosters', 'T', 'machine_shop', 'C', 100, 100, 2000);
@@ -1193,10 +1196,10 @@ const DATA = (() => {
   T('irradiate_tech', 'Irradiate', 'T', 'science_facility', 'I', 200, 200, 1200);
   T('titan', 'Titan Reactor', 'T', 'science_facility', 'T', 150, 150, 2500, { energy: 'science_vessel' });
   T('yamato_tech', 'Yamato Gun', 'T', 'physics_lab', 'Y', 100, 100, 1800);
-  T('colossus', 'Colossus Reactor', 'T', 'physics_lab', 'C', 150, 150, 2500, { energy: 'battlecruiser' });
+  T('colossus_reactor', 'Colossus Reactor', 'T', 'physics_lab', 'C', 150, 150, 2500, { energy: 'battlecruiser' });
   T('lockdown_tech', 'Lockdown', 'T', 'covert_ops', 'L', 200, 200, 1500);
   T('personnel_cloaking', 'Personnel Cloaking', 'T', 'covert_ops', 'C', 100, 100, 1200);
-  T('ocular', 'Ocular Implants', 'T', 'covert_ops', 'O', 100, 100, 2500, { effect: { unit: 'ghost', sight: 11 } });
+  T('ocular', 'Ocular Implants', 'T', 'covert_ops', 'O', 100, 100, 2500);
   T('moebius', 'Moebius Reactor', 'T', 'covert_ops', 'M', 150, 150, 2500, { energy: 'ghost' });
   T('metabolic', 'Metabolic Boost', 'Z', 'spawning_pool', 'M', 100, 100, 1500);
   T('adrenal', 'Adrenal Glands', 'Z', 'spawning_pool', 'A', 200, 200, 1500, { req: ['hive'] });
