@@ -215,6 +215,16 @@ class Unit {
     if (this.def.worker && (o.type === 'gather' || o.type === 'return')) this.heldOrder = false;
     if (this.order.type === 'gather' && this.order.target && this.order.target.miner === this) this.order.target.miner = null;
     if (this.order.type === 'construct' && this.order.target && this.order.target.builder === this) this.order.target.builder = null;
+    // A UNIT ORDERED OUT OF A GAS BUILDING LEAVES IT. tick() returns early for anything `inside` that is not
+    // mid-gather, and nothing here cleared `inside`, so a worker re-ordered while inside an extractor never
+    // ticked again and stayed the building's `occupant` -- alive, order 'gather' -- so no other worker
+    // could enter: the geyser was dead for the rest of the game. Measured in test/eightplayer.js's game:
+    // AI.economy's gas rebalancing pulled a drone at 291 s and sent it straight back at 292 s, and both of
+    // that Zerg's extractors sat at 4,200 and 4,520 gas from minute five to the end with three drones each.
+    // It comes out where the gather cycle puts a worker that has finished, empty-handed; the exit path
+    // below in tickGather clears `inside` before it calls applyOrder, so that path is untouched. Bunkers and
+    // transports are not gas buildings and are not touched either: their cargo is unloaded, not ordered.
+    if (this.inside && this.inside.def.onGeyser && !(o.type === 'gather' && o.phase === 'inside')) { const g = this.inside; if (g.occupant === this) g.occupant = null; this.inside = null; this.x = g.x; this.y = g.y + g.r + this.r; this.px = this.x; this.py = this.y; }
     this.order = o; this.path = null; this.pathI = 0; this.stuck = 0; this.waitT = 0;
     if (o.type === 'patrol') { o.ox = this.x; o.oy = this.y; }
     if (o.type === 'attackmove' || o.type === 'move' || o.type === 'patrol') o.hx = o.x, o.hy = o.y;

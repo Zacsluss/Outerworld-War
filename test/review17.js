@@ -28,6 +28,10 @@
 // 12-16. THE DECISIONS (REVIEW-M17 section 2): bunkered infantry fired at double rate; eleven energy techs
 //     did nothing; the 12-frame micro cadence existed only for player 0 and the detector weight never
 //     fired; a larva-starved Zerg could add a hatchery only every 45 s.
+// 17. A ZERG PLAYER STARTS WITH A QUEEN (user decision, second session).
+// 18. A WORKER RE-ORDERED INSIDE A GAS BUILDING NEVER LEFT IT. Unit.tick returns early for anything inside,
+//     applyOrder never cleared `inside`, and the worker stayed the building's occupant: the geyser was dead
+//     for the game. Found measuring the Zerg notes in the eight-player game (both extractors, minute five on).
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
 let pass = 0, fail = 0;
@@ -373,6 +377,40 @@ function DATA_NAME(c, id) { return R(c, 'return DATA.units[' + JSON.stringify(id
   ok('a Zerg player starts with one Queen at 50 energy, and a Terran does not', out.human.queens === 1 && out.human.energy === 50 && out.human.terranQueens === 0, JSON.stringify(out.human));
   ok('...within the starting supply (the Queen is 2 of ' + out.human.supMax + ')', out.human.supUsed <= out.human.supMax, JSON.stringify(out.human));
   ok('a Zerg AI casts Spawn Larva at least twice in its first minute (was never: it had no Queen until it could spare 100 gas)', out.ai.queens >= 1 && out.ai.injectsInFirstMinute >= 2, JSON.stringify(out.ai));
+}
+
+// ============================================================================
+// 18. a worker re-ordered while inside a gas building leaves it, and the building takes the next one
+// ============================================================================
+// AI.economy's gas rebalancing does this routinely (pull a worker off gas, send one back a think later),
+// so this is how a geyser went dead in test/eightplayer.js: the pulled drone was inside the extractor,
+// applyOrder left `inside` set, Unit.tick's early return froze it there, and as the extractor's living
+// `occupant` with a gather order it kept every other drone out. Measured: 4,200 gas untouched from
+// minute five to the end with three drones assigned.
+{
+  const out = R(ctx, `
+    const p = this.fresh('Z', 'T'); p.gas = 0;
+    const hall = G.units.find(u => u.alive && u.owner === 0 && u.def.spawnsLarva);
+    const gz = G.map.resources.find(r => r.type === 'geyser' && distPt(r.cx, r.cy, hall.x, hall.y) < 14 * TILE);
+    const ex = G.placeBuilding(DATA.buildings.extractor, gz.x, gz.y, 0); ex.done = true; ex.progress = ex.def.time; ex.hp = ex.maxHp;
+    const min = G.map.resources.find(r => r.type === 'mineral' && r.amount > 0 && distPt(r.cx, r.cy, hall.x, hall.y) < 12 * TILE);
+    const a = this.sp('drone', 0, ex.x, ex.y + 90), b = this.sp('drone', 0, ex.x + 40, ex.y + 90);
+    a.applyOrder({ type: 'gather', target: ex, phase: 'goto' });
+    let entered = null; for (let i = 0; i < 400 && entered === null; i++) { G.tick(); if (a.inside === ex) entered = G.frame; }
+    const wasOccupant = ex.occupant === a, phase = a.order.phase;
+    // ...and now the AI (or anyone) re-orders her while she is inside
+    a.applyOrder({ type: 'gather', target: min, phase: 'goto' });
+    const after = { inside: a.inside === null, occupant: ex.occupant === null, x: a.x, y: a.y };
+    const x0 = a.x, y0 = a.y; this.run(48); const moved = distPt(a.x, a.y, x0, y0) > 8;
+    // ...and a second drone can use the extractor
+    b.applyOrder({ type: 'gather', target: ex, phase: 'goto' });
+    let bIn = null; for (let i = 0; i < 400 && bIn === null; i++) { G.tick(); if (b.inside === ex) bIn = G.frame; }
+    this.run(GAS_TIME + 200);
+    return { entered: entered !== null, wasOccupant, phase, after, moved, bIn: bIn !== null, gas: p.gas, aOrder: a.order.type, aTarget: a.order.target && a.order.target.type };`);
+  ok('a drone sent to an extractor goes inside it and becomes its occupant', out.entered && out.wasOccupant && out.phase === 'inside', JSON.stringify(out));
+  ok('RE-ORDERED WHILE INSIDE, SHE COMES OUT: inside cleared, the occupant slot freed (both used to stay set for the rest of the game)', out.after.inside && out.after.occupant, JSON.stringify(out.after));
+  ok('...and she actually moves on her new order (Unit.tick used to return early for her, forever)', out.moved && out.aOrder === 'gather' && out.aTarget === 'mineral', JSON.stringify(out));
+  ok('...and the next drone gets in and the geyser pays again (it paid nothing for five minutes in the eight-player game)', out.bIn && out.gas > 0, JSON.stringify([out.bIn, out.gas]));
 }
 
 ok('no JS errors', ctx.errors.length === 0, ctx.errors.slice(0, 3).join(' | '));

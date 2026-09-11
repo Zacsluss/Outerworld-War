@@ -174,6 +174,14 @@ run(`(() => {
     p.ai = new AI(p, 'normal');                     // a human seat that plays: alerts should be rare and always earned
     TEXTS.supply = RACE_INFO[g[0]].supplyMsg;
     const last = {};
+    // THE SUPPLY MESSAGE HAS TWO VOICES. G.tickAlerts raises it as the alert this half is about; G.supplyRefused
+    // speaks the same text when an order is refused for supply, on purpose (js/abilities.js: one voice for
+    // being supply blocked). A refusal is true by construction -- it IS the supply check -- but truth() below
+    // only knows the alert's definition (at the cap, or a queued unit stalled), so a refusal from a unit
+    // morph at 84.5/85 read as a lie when a re-dealt game happened to sample one (REVIEW-M17 follow-up).
+    // Note the frames the refusal spoke on and judge those messages by the refusal's own truth.
+    let refusedAt = -1; const origRefused = G.supplyRefused;
+    G.supplyRefused = function (q) { const r = origRefused.call(G, q); if (r && q === p) refusedAt = G.frame; return r; };
     // the ground truth for each alert, recomputed here independently of the code under test
     const truth = () => {
       let stalled = false;
@@ -208,18 +216,20 @@ run(`(() => {
       const m = p.msgs[p.msgs.length - 1];
       if (!m || m.t !== G.frame) continue;
       for (const [key, text] of Object.entries(TEXTS)) if (m.text === text) {
-        fired[key].push(G.frame); claims.push({ key, frame: G.frame, mu: g[0] + g[1], true_: truth()[key] });
+        const refused = key === 'supply' && refusedAt === G.frame;
+        fired[key].push(G.frame); claims.push({ key, frame: G.frame, mu: g[0] + g[1], refused, true_: refused ? true : truth()[key] });   // a refusal is the supply check itself; section 1 above tests that voice on its own
         if (last[key] !== undefined && G.frame - last[key] < ALERTS[key].cool) tooSoon.push({ key, mu: g[0] + g[1], gap: G.frame - last[key] });
         last[key] = G.frame;
       }
     }
     mins += G.frame / 24 / 60;
+    G.supplyRefused = origRefused;
   }
   this.live = { fired, claims, tooSoon, lies: claims.filter(c => !c.true_), total: claims.length, mins: +mins.toFixed(1) };
 })();`);
 const live = ctx.live;
 const counts = Object.entries(live.fired).map(([k, f]) => k + ' ' + f.length).join(', ');
-console.log('\n  three competently played games, ' + live.mins + ' minutes in all, raised ' + live.total + ' alerts: ' + counts);
+console.log('\n  three competently played games, ' + live.mins + ' minutes in all, raised ' + live.total + ' alerts: ' + counts + ' (of the supply ones, ' + live.claims.filter(c => c.refused).length + ' were refused orders speaking with the alert\'s voice)');
 ok('every alert raised in a real game was true when it was raised', live.lies.length === 0, JSON.stringify(live.lies.slice(0, 4)));
 ok('no alert repeats inside its own cooldown', live.tooSoon.length === 0, JSON.stringify(live.tooSoon.slice(0, 4)));
 ok('the games are not drowned in alerts', live.total / Math.max(1, live.mins) < 6, live.total + ' in ' + live.mins + ' minutes');
