@@ -57,7 +57,13 @@ exist only in a chat transcript.
   first time and every fix that started from a hypothesis had to be reverted. Build the probe first.
 - **Read the constant, never the literal.** Stale constants have caused real bugs here (`AI.supply()`
   returning early at 200 when `SUPPLY_CAP` had been 500 for a milestone).
-- **CRLF.** Every file in this repo is CRLF and `git show <rev>:file` emits LF. Patch scripts must
-  detect and preserve the file's own line ending.
+- **LINE ENDINGS ARE MIXED, so DETECT PER FILE.** The old rule here said "every file in this repo is
+  CRLF" and that is measured false: **71 files are CRLF, 77 are LF-only and two (`HANDOFF.md`,
+  `HANDOFF-M13.md`) are already mixed.** `js/net.js`, `index.html`, `test/serve.js` and most of `test/`
+  are LF. A patch script that assumes CRLF silently matches nothing and reports a zero anchor count,
+  which is how this was found. Detect the ending the file already has, reuse it, and build every
+  multi-line anchor as an ARRAY joined with it rather than as a literal.
+  `git show <rev>:file` emits LF regardless. `core.autocrlf` is true, so git normalises on commit and
+  a working-copy mismatch usually produces no diff at all -- do not chase one.
 - **`test/patch10.js`, `patch11.js`, `patch15.js` are NOT tests** — they are one-off codemods that
   rewrite `js/`. They refuse to run without a flag. Leave it that way.
