@@ -1933,7 +1933,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const cbx = $('codexBtn'); if (cbx) cbx.addEventListener('click', () => UI.openCodexFromMenu());
   const qc = $('mute'); if (qc) { qc.checked = Sound.muted; qc.addEventListener('change', () => Sound.setMuted(qc.checked)); }
   const vc = $('voice'), mc = $('music'); if (vc) { vc.checked = Voice.on; vc.addEventListener('change', () => Voice.set(vc.checked)); } if (mc) { mc.checked = Music.on; mc.addEventListener('change', () => Music.set(mc.checked)); }
-  const nc = $('netConnect'); if (nc) { $('netUrl').placeholder = Net.defaultUrl(); nc.addEventListener('click', () => Net.connect($('netUrl').value.trim() || Net.defaultUrl(), $('netName').value.trim() || 'Player', 'R')); }
+  const nc = $('netConnect'); if (nc) { $('netUrl').placeholder = Net.defaultUrl(); nc.addEventListener('click', () => Net.connect($('netUrl').value.trim() || Net.defaultUrl(), $('netName').value.trim() || 'Player', 'R', ($('netRoom') ? $('netRoom').value.trim() : ''))); }
   // Custom maps made in the editor appear in the same dropdown as the built-ins. Editor.register() is
   // what puts them into MAP_LAYOUTS, so it has to run before the list is rebuilt from it; the whole
   // select is rebuilt rather than patched because the list is grouped now and a saved map has to land

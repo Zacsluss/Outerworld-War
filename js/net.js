@@ -14,12 +14,19 @@
 // without ui.js in the headless harnesses and reaching into UI here threw for both clients.
 const NET_SPEED_NAMES = ['Slowest', 'Slower', 'Slow', 'Normal', 'Fast', 'Faster', 'Fastest'];
 const Net = {
-  active: false, ws: null, me: -1, delay: 3, outbox: [], inbox: {}, sent: {}, gone: {}, players: [], lobby: null, connected: false, id: 0, waitingSince: 0, chatLog: [],
+  active: false, ws: null, me: -1, delay: 3, outbox: [], inbox: {}, sent: {}, gone: {}, players: [], lobby: null, connected: false, id: 0, waitingSince: 0, chatLog: [], room: '',
   HASH_EVERY: 48, myHashes: {}, theirHashes: {}, desynced: false, desyncFrame: -1, catchingUp: false, catchTarget: 0, serverState: 'lobby', name: 'Player', lastError: '',
   defaultUrl() { return (location.protocol === 'https:' ? 'wss://' : 'ws://') + (location.host || 'localhost:8765') + '/ws'; },
-  connect(url, name, race) {
-    this.disconnect(); this.name = name || 'Player'; const ws = new WebSocket(url || this.defaultUrl()); this.ws = ws;
-    ws.onopen = () => { this.connected = true; this.send({ t: 'join', name: this.name, race }); this.status('Connected. Waiting in lobby...'); };
+  // `room` is a short code deciding WHICH game on this relay you are joining, and on a public server
+  // it is the only thing stopping anything with the link walking into your lobby. Empty means the room
+  // called LAN, so a LAN game needs nothing typed and behaves exactly as it always did.
+  //
+  // KEPT ON `this`, because a rejoin after a drop reconnects through here and has to land in the same
+  // room. A rejoin that fell back to the default room would look to the relay like a stranger turning
+  // up with a name that is already taken, and be refused.
+  connect(url, name, race, room) {
+    this.disconnect(); this.name = name || 'Player'; this.room = (room == null ? this.room : room) || ''; const ws = new WebSocket(url || this.defaultUrl()); this.ws = ws;
+    ws.onopen = () => { this.connected = true; this.send({ t: 'join', name: this.name, race, room: this.room }); this.status('Connected. Waiting in lobby...'); };
     ws.onmessage = ev => { try { this.handle(JSON.parse(ev.data)); } catch (e) { console.error(e); } };
     ws.onclose = () => { this.connected = false; if (this.active) { this.status('Connection lost.'); if (typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg('Connection to the relay lost. Reconnect from the menu with the same name to rejoin.', 'error'); } this.lobby = null; this.render(); };
     ws.onerror = () => { this.status('Could not connect to ' + (url || this.defaultUrl())); };
@@ -30,7 +37,13 @@ const Net = {
   playerName(i) { const p = this.players[i]; return p ? p.name : 'Player ' + (i + 1); },
   handle(m) {
     switch (m.t) {
-      case 'hello': this.id = m.id; this.serverState = m.state; if (m.state !== 'lobby') this.status('A game is running on this server. Connect with the name you used to rejoin it.'); break;
+      // GUARDED ON `m.state` BEING PRESENT, which is not belt and braces. A relay with rooms cannot say
+      // whether "the game" is running before it has been given a code -- answering would leak that the
+      // room exists, which is the one secret the code is. So `hello` describes the relay and the real
+      // state arrives with the `lobby` message `join` triggers, or the `error` that refuses it. Without
+      // the guard `undefined !== 'lobby'` is true and every fresh connection announces a game in
+      // progress that may not exist.
+      case 'hello': this.id = m.id; this.serverState = m.state || 'lobby'; this.hasRooms = !!m.rooms; if (m.state && m.state !== 'lobby') this.status('A game is running on this server. Connect with the name you used to rejoin it.'); break;
       case 'lobby': this.lobby = m; this.serverState = m.state; this.render(); break;
       case 'error': this.lastError = m.msg; this.status(m.msg); break;
       case 'start': this.startGame(m); break;
@@ -47,7 +60,9 @@ const Net = {
   render() {
     const el = document.getElementById('lobby'); if (!el) return; const L = this.lobby; if (!L) { el.innerHTML = ''; return; }
     const meP = L.players.find(p => p.id === this.id); const host = !!(meP && meP.host);
-    let h = '<div class="lobbyList">' + L.players.map(p => `<div class="lp">${p.host ? '★ ' : ''}${p.name}${p.ai ? ' (AI ' + p.difficulty + ')' : ''}${p.gone ? ' (dropped)' : ''} — ${{ T: 'Terran', Z: 'Zerg', P: 'Protoss', R: 'Random' }[p.race]} — Team ${p.team}${host && p.id !== this.id ? ` <a href="#" data-kick="${p.id}">✕</a>` : ''}</div>`).join('') + '</div>';
+    // The room is shown only when it is not the default: on a LAN there is one room and naming it is
+    // noise, and over a tunnel it is the thing everyone needs to have agreed on.
+    let h = (L.room && L.room !== 'LAN' ? '<div class="sub">Room <b>' + L.room + '</b></div>' : '') + '<div class="lobbyList">' + L.players.map(p => `<div class="lp">${p.host ? '★ ' : ''}${p.name}${p.ai ? ' (AI ' + p.difficulty + ')' : ''}${p.gone ? ' (dropped)' : ''} — ${{ T: 'Terran', Z: 'Zerg', P: 'Protoss', R: 'Random' }[p.race]} — Team ${p.team}${host && p.id !== this.id ? ` <a href="#" data-kick="${p.id}">✕</a>` : ''}</div>`).join('') + '</div>';
     if (L.state !== 'lobby') { h += '<div class="sub">Game in progress. Dropped players can rejoin by connecting with their name.</div>'; el.innerHTML = h; return; }
     if (meP) h += `<div class="row"><label>My race</label><select id="lbRace"><option value="R">Random</option><option value="T">Terran</option><option value="Z">Zerg</option><option value="P">Protoss</option></select><label>Team</label><select id="lbTeam">${[1, 2, 3, 4].map(t => `<option value="${t}">${t}</option>`).join('')}</select></div>`;
     if (host) h += `<div class="row"><label>Map</label><select id="lbLayout"><option value="temple">Lost Ruins</option><option value="bloodbath">Blood Pit</option><option value="valley">Twilight Valley</option></select><button id="lbAddAi" class="small">ADD AI</button></div><div class="row"><label>Speed</label><select id="lbSpeed">` + NET_SPEED_NAMES.map((n, i) => `<option value="${i}">${n}</option>`).join('') + `</select></div><button id="lbStart">START MULTIPLAYER GAME</button>`;

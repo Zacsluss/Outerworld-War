@@ -76,6 +76,7 @@ const TESTS = [
   { name: 'larvacard', args: ['larvacard.js'], what: 'Drone is top-left on the larva card, no two buttons share a slot, and a refused click acts once' },
   { name: 'creeplife', args: ['creeplife.js'], what: 'creep bubbles as an overlay, without disturbing the chunk cache or the build stamp' },
   { name: 'creepspeed', args: ['creepspeed.js'], what: 'the swarm moves faster over its own ground -- SC2 multipliers, and the Drone gets nothing' },
+  { name: 'rooms', args: ['rooms.js'], what: 'one relay, many games: room codes keep them apart, and the lockstep delay is the server to set' },
   { name: 'shots', args: ['shots.js'], what: 'every weapon has its own shot, the races are disjoint, and every kind actually draws' },
   { name: 'wavetarget', args: ['wavetarget.js'], what: 'an attack wave scores a defended main above a bare expansion, and finishes the base it is in' },
   { name: 'fognight', args: ['fognight.js'], what: 'explored ground remembers, and night shortens sight on maps that have one' },
