@@ -16,7 +16,7 @@ is the state M13 left behind and is still true except where this file says other
 
 ## State
 
-- **63 test suites green.** `node test/all.js`, ~2.7 minutes. That is the gate before any commit.
+- **67 test suites green.** `node test/all.js`, ~3 minutes. That is the gate before any commit.
 - **FIXLIST-M14 is complete.** All twenty-one reported items, nineteen entries.
 - **Thirteen new suites** were added to the gate this session (50 -> 63): `describe`, `gated`, `clicking`, `defeat`,
   `addons`, `fogbuild`, `sensor`, `tumour`, `onmove`, `line`, `clearance`, `curve`, `wavetarget`.
@@ -273,74 +273,131 @@ node tools/bake.js                                re-bake sprites after art chan
 
 ---
 
+## Traps found while doing FIXLIST-M15 Groups A and B
+
+On top of every trap in HANDOFF-M13, M14 and the list above. These six each cost real time in the
+session that closed A1-A3 and B1-B3, and none of them is guessable from reading the code.
+
+1. **`UI.key(action)` IS NOT A KEYPRESS.** It is a bindings lookup that returns which key is bound to
+   a named action. The real keyboard entry point is **`UI.onKey(e)`**, taking an event-shaped object.
+   Three probes reported "pressing D produces no message" before this was noticed, which read as the
+   bug being fixed when nothing had been pressed at all.
+2. **`Abilities.cast(u, id, t, x, y)` takes the ability id SECOND**, not last. Calling it with the id
+   last silently does nothing and returns no error.
+3. **The CALLER deducts an ability's energy before `cast()` runs** (`js/abilities.js:240`). A refusal
+   inside `cast` refunds it, so a test that calls `cast` directly without deducting first sees the
+   refund as free energy and goes red against correct code.
+4. **`UI.paginate` renumbers every flowed button by ARRAY INDEX.** The slot argument to `B(slot, ...)`
+   is decorative for anything without `pin: true` -- array order is what decides the card. This was
+   the whole of FIXLIST-M15 B3, and it is the same family as M14's B5.
+5. **Alert cooldowns silence repeated refusals.** `ALERTS.supply.cool` is 24*40 frames, so a second
+   supply refusal within forty seconds says nothing by design. A harness that resets `p.alertAt`
+   between calls will see a stream of duplicate messages that a player never sees. I overclaimed a
+   bug fix on exactly this and the negative control caught it.
+6. **The Bash tool's heredoc mangles backslash escapes** in an embedded Python script -- `\\n` inside a
+   string can arrive as a real newline and produce a syntax error two steps later. Write patch scripts
+   to a file with the Write tool and run them, which is what finally worked every time.
+
+---
+
 ## Kickoff prompt for a fresh chat
 
-**`FIXLIST-M15.md` supersedes the single-action version of this prompt.** Six more reported items
-landed after M14 closed, three more were found while verifying them, and the two carried-over AI
-items are folded in as Group D. **When FIXLIST-M15 is closed the project has no open to-dos.**
+Drives **everything that is left**: FIXLIST-M15 Groups C and D, then the milestone close-out. Groups
+A and B are done and ticked. **Closing Group D closes the project's to-do list entirely** -- nothing
+is queued behind it except the gated balance run.
 
 Paste everything inside the fence into an empty chat. **Replace the HEAD hash with
 `git log -1 --format=%h` first** -- committing this file moves it.
 
 ```
 Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
-Branch: m10-overnight. HEAD: <run: git log -1 --format=%h>. Working tree clean.
+Branch: m10-overnight. HEAD: c7f5530. Working tree clean.
 
 Read CLAUDE.md, then FIXLIST-M15.md, then HANDOFF-M15.md.
 
-YOUR JOB THIS SESSION IS FIXLIST-M15, worked in the order the file gives: A (data and
-presentation) -> B (interface) -> C (simulation) -> D (AI). That order is strictly increasing
-risk and strictly decreasing independence and it is not arbitrary. Do not reorder it without
-saying why. Closing this list closes the project's to-do list entirely -- there is nothing
-queued behind it except the gated balance run.
+FIXLIST-M15 Groups A and B are DONE and ticked -- six entries, six commits, all gated green.
+Your job is everything that remains: Group C (simulation), then Group D (the AI), then the
+milestone close-out. Work them in the order the file gives. That order is strictly increasing
+risk and it is not arbitrary. CLOSING GROUP D CLOSES THE PROJECT'S TO-DO LIST ENTIRELY.
 
-One commit per entry, except where the file says otherwise. Nine entries:
-  A1 projectiles -- 34 of 63 armed things fire the same white bullet. Fix the CAUSE (a
-     hardcoded id list in Combat.visual) not the symptom; the look belongs on the weapon.
-  A2 descriptions -- 0 of 76 abilities have one. M14's A1 did units and buildings only.
-  A3 creep should look alive. RENDER ONLY -- run node test/version.js after and confirm the
-     build stamp did NOT move.
-  B1 the Drone-at-supply-cap double error.
-  B2 seven abilities say only 'Invalid target.' and never say what would be valid.
-  B3 two buttons share slot 6 on the Zerg larva card.
-  C1 creep tumours cost no energy and the Overlord has no energy pool at all.
-  C2 tumour cast range. Read the entry before touching it -- the half the report asks you to
-     limit is the half that already works, and the real cause is one line in orderTick.
-  C3 Zerg move faster on creep. The exact SC2 percentages are in the entry, including the
-     exceptions; the Drone getting NO bonus is the one most likely to be missed.
-  D1/D2 are the carried-over AI work. D1 is measured and ready; D2 is blocked on D1.
+FIVE ENTRIES, one commit each:
 
-FOUR THINGS IN THE LIST ARE NOT WHAT THEY LOOK LIKE, and each is marked with a warning sign:
-the projectile pass was never done at all rather than done badly; the tumour range fault is in
-a shared code path and not in the tumour code; item 6 is TWO faults and I only reproduced one,
-so do not guess at the other; and Spawn Broodlings is one instance of a class of seven.
+  C1  Creep tumours cost no energy at all, and the Overlord has no energy pool -- it is not an
+      energy unit. Give plant_tumour a cost and give the Overlord 200 energy that regenerates
+      like the Queen's. FIND THE EXISTING REGEN, do not write a second one. The AI plants
+      tumours too (js/ai.js, AI.tumourBudget) and must respect the new cost or it will spam
+      refusals.
 
-MEASURE BEFORE FIXING. Three entries name the probe to build first (A1, C3, D1). In this
-codebase every fix that started from a measurement was right the first time and every fix that
-started from a hypothesis had to be reverted. Long measurements go in a git worktree --
-test/ledger.js, test/soak.js and test/techtime.js all re-read js/ per run, so editing the tree
-while one runs silently contaminates it.
+  C2  Tumour range. READ THE ENTRY BEFORE TOUCHING ANYTHING -- this is not what the report says.
+      Both tumour abilities already carry a range. The fault is one line in Abilities.orderTick:
+      for anything that can MOVE, range is a walk-to distance and not a limit, so the Overlord
+      simply flies to wherever you clicked. The half the report asks you to limit -- a tumour
+      seeding its child -- is the half that already works correctly, because a tumour cannot
+      move and so takes the refuse branch. Prefer a per-ability flag over changing the shared
+      path: every other point ability in the game relies on walk-to today.
 
-THE GATE: node test/all.js, 63 suites, about 2.7 minutes, before every commit. Green means
+  C3  Zerg do not move faster on creep -- the bonus does not exist anywhere in js/sim.js. The
+      exact StarCraft II numbers are in the entry with their exceptions: +30% for most Zerg
+      ground units, +167% Queen, +150% crawlers, +40% Locust, and NO bonus for Drone, Broodling,
+      Changeling or anything burrowed. The Drone getting nothing is the one most likely to be
+      missed and the one that most changes the early game if it is wrong. This is in the replay
+      path, so watch test/longgame.js.
+
+  D1  Bound the fall-through in AI.production(). Already measured: the AI ignores its own
+      composition table in all three races -- the cheapest tier-one unit takes three to six times
+      its intended share of army supply -- because production() buys the cheapest affordable unit
+      whenever its correctly-ranked top pick cannot be paid for. The ranking was never wrong:
+      hydralisk was the top pick 564 times and built 11, zergling was the top pick 50 times and
+      built 122.
+
+  D2  Re-tune AI_COMP weights. BLOCKED ON D1 by measurement, not preference -- the weights are
+      not being read, so tuning them tunes a table nothing consults. Only worth doing once the
+      misallocation number is small enough that a weight change shows up in it.
+
+MEASURE BEFORE FIXING. It is a rule here, not advice: every fix in this project that started
+from a measurement was right the first time and every one that started from a hypothesis had to
+be reverted. Two entries name the probe. D1's already exists -- `node test/ledger.js 20 1 solo Z`
+prints section 6, intended supply share against actual, and a TOTAL MISALLOCATION line. Get
+before numbers for all three races IN A GIT WORKTREE before editing: test/ledger.js, test/soak.js
+and test/techtime.js each re-read js/ per run, so editing the tree while one runs silently
+contaminates it.
+
+DO NOT take the claim-order reorder in budget() as D1's fix. It works and it is fully priced per
+race in HANDOFF-M15, and it trades most of the AI's upgrades for a much bigger army -- Protoss
+goes from a 143-supply army to 360 while dropping from 35 upgrades to 10. That is a balance
+question, it is gated, and it is not yours to take unilaterally.
+
+THE GATE: node test/all.js, 67 suites, about three minutes, before EVERY commit. Green means
 green. If a change fixes a real fault but turns a marginal assertion red, revert it anyway and
-say so -- that happened twice already and both reverts were right.
+say so -- that has happened three times in this project and all three reverts were right.
+
+Every new behaviour gets a negative control that goes RED when the feature is removed, and it
+must produce a clean red rather than a crash. Mine caught me overclaiming twice in the last
+session; they earn their place.
 
 KNOWN REDS, none of which block:
   - test/soak.js fails one tier-1/2 coverage assertion (Swarm Host). Do not weaken it.
   - test/aistyles.js on seeds 1 and 11 fails four assertions -- no style attacks inside its
     12,000-frame window. Pre-existing. Seed 5, the one in the gate, is clean.
-  - test/eightplayer.js is currently 19/19, but its money assertion passes by only 4% (2405
-    against a 2500 threshold). If it flips back the cause is AI.macro's wantHalls floor at
-    js/ai.js:141, not whatever you just changed.
+  - test/eightplayer.js is 19/19, but its money assertion passes by only 4% (2405 against a 2500
+    threshold). If it flips back the cause is AI.macro's wantHalls floor at js/ai.js:141, not
+    whatever you just changed.
 
 GATED, and it comes last: do NOT run test/balance.js or test/proxy.js without my explicit
 instruction, and double-check with me if I appear to give one. Every balance number in
-HANDOFF.md is stale. FIXLIST-M15 adds three big ones to what it must price -- tumours costing
-energy, tumour range becoming a real limit, and a 30% army-wide creep speed bonus.
+HANDOFF.md is stale. C1, C2 and C3 all add to what it must price, and the 30% creep speed bonus
+is the single largest balance change in either fixlist.
 
-When the fixlist is complete, close the milestone the way CLAUDE.md requires: a fresh-chat
-kickoff prompt, high-level bullets in a player's language, and manual playtest steps committed
-as PLAYTEST-M15.md.
+WHEN THE FIXLIST IS CLOSED, close the milestone the way CLAUDE.md requires, without being asked:
+a ready-to-paste kickoff prompt for a fresh chat, high-level bullets in a player's language (what
+changed FOR A PLAYER, not which file moved, including anything deliberately different from what
+was asked and anything left unfinished), and manual playtest steps committed as PLAYTEST-M15.md.
+Say plainly where an item is invisible from normal play and what to do instead -- PLAYTEST-M14.md
+is the model.
+
+Read the 'Traps found while doing FIXLIST-M15' section of HANDOFF-M15.md before writing any
+probe. Six specific things in there each cost an hour last session, including that UI.key is not
+a keypress and that Abilities.cast takes the ability id second.
 ```
 
 ---
