@@ -192,10 +192,37 @@ const PROBE = (race, ledgered) => `(() => {
   for (const u of G.units) if (u.alive) hash = (hash * 31 + u.owner * 7919 + Math.round(u.x) + Math.round(u.y) * 3 + u.def.id.length * 13) | 0;
   hash = (hash * 31 + Math.round(p.minerals) * 17 + Math.round(p.gas) * 19 + p.supUsed * 23 + p.ai.scriptIdx * 29) | 0;
 
+  // WHAT THE COMPOSITION ASKED FOR, AGAINST WHAT IT GOT. AI_COMP weights are documented as a share of
+  // ARMY SUPPLY, so the only honest test of them is to divide the finished army by supply and compare.
+  // Counting bodies instead would say a 1-supply zergling and a 6-supply battlecruiser are the same
+  // thing, which is the opposite of what the table means.
+  //
+  // Read the EFFECTIVE composition the AI used, never AI_COMP.Z: production() picks a per-matchup key
+  // when one exists and then the style multiplies every weight, so the table in the source is not what
+  // ran. This asks the AI the same question production() asks.
+  const foe0 = ai.enemies()[0];
+  const compKey = foe0 && AI_COMP[ai.race + 'v' + foe0.race] ? ai.race + 'v' + foe0.race : ai.race;
+  const compW = ai.styleComp(compKey, ai.style);
+  const inComp = id => compW.some(e => e[0] === id);
+  // A morph is still the share its ancestor was meant to be. A hydralisk that became a lurker did not
+  // stop being the hydralisk allocation, and counting lurkers as off-table would make hydralisk look
+  // under-built by exactly the amount the AI spent obeying the table.
+  const rootOf = id => { let g = id, n = 0; while (!inComp(g) && DATA.units[g] && DATA.units[g].morphFrom && n++ < 8) g = DATA.units[g].morphFrom; return g; };
+  const armySup = {}, offTable = {}; let armyTotal = 0, morphed = 0;
+  for (const u of G.units) {
+    if (!u.alive || u.owner !== 0 || u.isBuilding || u.def.worker || !u.def.sup) continue;
+    const root = rootOf(u.def.id);
+    if (root !== u.def.id) morphed += u.def.sup;
+    if (inComp(root)) armySup[root] = (armySup[root] || 0) + u.def.sup;
+    else offTable[u.def.id] = (offTable[u.def.id] || 0) + u.def.sup;
+    armyTotal += u.def.sup;
+  }
+
   const built = {};
   for (const u of G.units) if (u.alive && u.owner === 0) built[u.def.id] = (built[u.def.id] || 0) + 1;
 
-  return { hash, spend, bought, income, gates, unit, timeline, thinks, thinksReserved, thinksBound,
+  return { compW, compKey, armySup, offTable, armyTotal, morphed,
+           hash, spend, bought, income, gates, unit, timeline, thinks, thinksReserved, thinksBound,
            headHeld, funded, reqAt, srcB, compIds: [...compIds], built, errs: __err.slice(0, 3),
            idx: ai.scriptIdx, sup: p.supUsed, supMax: p.supMax, bank: [Math.round(p.minerals), Math.round(p.gas)],
            rmMean: rmN ? Math.round(rmSum / rmN) : 0, rgMean: rgN ? Math.round(rgSum / rgN) : 0,
@@ -276,4 +303,48 @@ for (const race of RACES) {
   console.log('   ' + pad('time', 7) + num('min', 6) + num('gas', 6) + num('cmtMin', 8) + num('cmtGas', 8) + num('step', 6) + num('sup', 5) + num('wk', 4) + '  ' + pad('head of order', 22) + 'committed to');
   for (const t of r.timeline) console.log('   ' + pad(mmss(t.f), 7) + num(t.m, 6) + num(t.g, 6) + num(t.rm, 8) + num(t.rg, 8) + num(t.idx, 6) + num(t.sup, 5) + num(t.wk, 4) + '  ' + pad(t.hd || '-', 22) +
     (t.by || []).map(c => c.id + ' ' + c.min + 'm' + (c.gas ? '/' + c.gas + 'g' : '')).join(' '));
+
+  // ---- 6. intended vs actual supply share ----------------------------------
+  // The number the composition ratchet needs. Sections 1-5 say where the MONEY went; this one says
+  // where the SUPPLY went, which is the unit the AI_COMP weights are actually denominated in.
+  //
+  // Two denominators, because they answer different questions and mixing them hides the answer:
+  //   over UNLOCKED only -- the fair comparison. A Battlecruiser that never unlocked did not lose a
+  //     share fight, it was never in one, and leaving it in the denominator makes every unit that DID
+  //     get built look under-represented by the same fictitious amount.
+  //   over the WHOLE TABLE -- what the weights literally say, kept alongside so the gap between the
+  //     two is visible rather than chosen.
+  const cw = r.compW || [];
+  const unlocked = id => r.reqAt[id] !== undefined;
+  const sumAll = cw.reduce((a, e) => a + e[1], 0);
+  const sumUnl = cw.filter(e => unlocked(e[0])).reduce((a, e) => a + e[1], 0);
+  console.log('\n6. INTENDED vs ACTUAL SUPPLY SHARE   composition key ' + r.compKey +
+    ',  army ' + r.armyTotal + ' supply' + (r.morphed ? ' (' + r.morphed + ' of it in morphs, credited to what it morphed FROM)' : ''));
+  console.log('   ' + pad('unit', 18) + num('weight', 8) + num('want%', 8) + num('got%', 8) + num('supply', 8) + num('ratio', 8) + '  ' + num('want% all', 10) + '  verdict');
+  const rows = cw.map(([id, w]) => {
+    const got = r.armySup[id] || 0;
+    const wantU = sumUnl && unlocked(id) ? 100 * w / sumUnl : 0;
+    const gotP = r.armyTotal ? 100 * got / r.armyTotal : 0;
+    return { id, w, got, wantU, gotP, wantAll: sumAll ? 100 * w / sumAll : 0, unl: unlocked(id),
+      ratio: wantU ? gotP / wantU : null };
+  });
+  // Sorted by the size of the miss, largest first, so the worst offender is the first line rather
+  // than something to be found by eye in a table of twenty-three.
+  rows.filter(x => x.unl).sort((a, b) => Math.abs(b.gotP - b.wantU) - Math.abs(a.gotP - a.wantU)).forEach(x => {
+    const off = x.gotP - x.wantU;
+    const verdict = x.ratio === null ? '' : x.ratio >= 2 ? 'OVER  x' + x.ratio.toFixed(1)
+      : x.ratio <= 0.5 ? 'UNDER x' + x.ratio.toFixed(2) : 'ok';
+    console.log('   ' + pad(x.id, 18) + num(x.w, 8) + num(x.wantU.toFixed(1), 8) + num(x.gotP.toFixed(1), 8) +
+      num(x.got, 8) + num(x.ratio === null ? '-' : x.ratio.toFixed(2), 8) + '  ' + num(x.wantAll.toFixed(1), 10) +
+      '  ' + (off > 0 ? '+' : '') + off.toFixed(1) + ' pts  ' + verdict);
+  });
+  const locked = rows.filter(x => !x.unl);
+  if (locked.length) console.log('   (never unlocked, excluded from want%: ' + locked.map(x => x.id + ' w' + x.w).join(', ') + ')');
+  const ot = Object.entries(r.offTable || {}).sort((a, b) => b[1] - a[1]);
+  if (ot.length) console.log('   (army supply in units with no weight of their own: ' + ot.map(e => e[0] + ' ' + e[1]).join(', ') + ')');
+  // The one-line summary, because the table above is for diagnosis and this is for deciding.
+  const worst = rows.filter(x => x.unl && x.ratio !== null).sort((a, b) => Math.abs(b.gotP - b.wantU) - Math.abs(a.gotP - a.wantU))[0];
+  const spread = rows.filter(x => x.unl).reduce((a, x) => a + Math.abs(x.gotP - x.wantU), 0);
+  console.log('   TOTAL MISALLOCATION ' + spread.toFixed(0) + ' points of share' +
+    (worst ? ',  worst single: ' + worst.id + ' wants ' + worst.wantU.toFixed(0) + '% and holds ' + worst.gotP.toFixed(0) + '%' : ''));
 }
