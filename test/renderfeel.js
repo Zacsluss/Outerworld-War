@@ -35,7 +35,12 @@ const num = v => Math.round(v * 100) / 100;
 // arguments are world coordinates.
 const DRAWS = new Set(['drawImage', 'fill', 'stroke', 'fillRect', 'strokeRect', 'fillText', 'strokeText', 'putImageData', 'clearRect']);
 function recorder() {
-  return { ops: [], tag: null, on: false, calls: 0, reset() { this.ops.length = 0; this.calls = 0; } };
+  // `grads` and the per-op state fields are FIXLIST-M14 B6. Softening an edge is a claim about
+  // gradient stops and stroke widths, so the harness has to be able to see them: every recorded op now
+  // carries the alpha, line width and style that were in force when it ran, and every gradient handed
+  // out keeps its own stops. Both are purely additive -- `calls` and the op names are untouched, so
+  // sections 2 and 5 read exactly what they always did.
+  return { ops: [], grads: [], tag: null, on: false, calls: 0, reset() { this.ops.length = 0; this.grads.length = 0; this.calls = 0; } };
 }
 function mkCtx(cv, rec) {
   const grad = { addColorStop() { } };
@@ -43,7 +48,8 @@ function mkCtx(cv, rec) {
     canvas: cv, fillStyle: '#000', strokeStyle: '#000', lineWidth: 1, lineCap: 'butt', lineJoin: 'miter',
     globalAlpha: 1, globalCompositeOperation: 'source-over', font: '10px sans-serif', filter: 'none',
     imageSmoothingEnabled: true, shadowBlur: 0, shadowColor: '#000', textAlign: 'start', textBaseline: 'alphabetic', miterLimit: 10, lineDashOffset: 0,
-    createLinearGradient: () => grad, createRadialGradient: () => grad, createConicGradient: () => grad,
+    createLinearGradient: () => { const g = { stops: [], addColorStop(o, col) { this.stops.push([o, col]); } }; if (rec.on) rec.grads.push(g); return g; },
+    createRadialGradient: () => grad, createConicGradient: () => grad,
     createPattern: () => ({ setTransform() { } }),
     createImageData: (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(Math.max(1, w * h * 4)) }),
     getImageData: (x, y, w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(Math.max(1, w * h * 4)) }),
@@ -53,7 +59,7 @@ function mkCtx(cv, rec) {
   for (const k of ['save', 'restore', 'setTransform', 'resetTransform', 'transform', 'translate', 'rotate', 'scale',
     'beginPath', 'closePath', 'moveTo', 'lineTo', 'arc', 'arcTo', 'ellipse', 'rect', 'roundRect', 'quadraticCurveTo', 'bezierCurveTo',
     'clip', 'fill', 'stroke', 'fillRect', 'strokeRect', 'clearRect', 'drawImage', 'fillText', 'strokeText', 'putImageData']) {
-    c[k] = function (...a) { if (rec.on) { if (DRAWS.has(k)) rec.calls++; rec.ops.push({ op: k, a, tag: rec.tag }); } };
+    c[k] = function (...a) { if (rec.on) { if (DRAWS.has(k)) rec.calls++; rec.ops.push({ op: k, a, tag: rec.tag, ga: c.globalAlpha, lw: c.lineWidth, ss: String(c.strokeStyle), fs: typeof c.fillStyle === 'string' ? c.fillStyle : 'grad' }); } };
   }
   return c;
 }
@@ -190,6 +196,94 @@ const offCam = R(ctx, `
   return { away, onIt, active: s.active };
 `);
 ok('a sweep the camera is not looking at costs nothing', offCam.away === 0 && offCam.onIt > 0, JSON.stringify(offCam));
+
+// ============================================================================
+// 2b. The edges are SOFT -- FIXLIST-M14 B6
+// ============================================================================
+// Reported as "the dust storm has hard edges -- dither or blend them so it looks like a real storm
+// starting and tapering off". Two separate hardnesses, and both are measured here rather than looked at:
+//
+//   * the LEADING edge went from nothing to 86% opacity across zero distance, because the gradient's
+//     first stop sat exactly on the clip boundary. It now starts a feather AHEAD of the wall at zero.
+//     (The trailing edge was already soft: its gradient reaches zero at the boundary.)
+//   * the whole pass ran at FULL STRENGTH from the first frame of the sweep to the last, so a player at
+//     the far edge saw a wall switch on. Render.stormAmp now ramps it in and out.
+//
+// The curve first, on its own, because it is arithmetic and cheap to pin.
+const amp = R(ctx, `
+  const f = t => Render.stormAmp(t);
+  const at = {};
+  for (const t of [0, 0.02, 0.07, 0.14, 0.3, 0.5, 0.7, 0.86, 0.93, 0.98, 1]) at[t] = f(t);
+  // monotone up over the first ramp, monotone down over the last, and symmetric
+  let upOk = true, downOk = true, sym = true;
+  for (let i = 1; i <= 50; i++) { const a = f((i - 1) / 100), b = f(i / 100); if (b < a) upOk = false; }
+  for (let i = 51; i <= 100; i++) { const a = f((i - 1) / 100), b = f(i / 100); if (b > a) downOk = false; }
+  for (let i = 0; i <= 50; i++) { if (Math.abs(f(i / 100) - f(1 - i / 100)) > 1e-9) sym = false; }
+  // and it is a pure function: no state, called in any order
+  const fwd = [], back = [];
+  for (let i = 0; i <= 20; i++) fwd.push(f(i / 20));
+  for (let i = 20; i >= 0; i--) back.unshift(f(i / 20));
+  return { at, upOk, downOk, sym, pure: JSON.stringify(fwd) === JSON.stringify(back), ramp: Render.HAZE_RAMP, feather: Render.HAZE_FEATHER };
+`);
+ok('the storm ramps from nothing at the start of a sweep to nothing at the end', amp.at[0] === 0 && amp.at[1] === 0, JSON.stringify([amp.at[0], amp.at[1]]));
+ok('and reaches full strength in the middle', amp.at[0.5] === 1, String(amp.at[0.5]));
+ok('rising over the first ' + Math.round(amp.ramp * 100) + '% and falling over the last, monotonically', amp.upOk && amp.downOk, JSON.stringify([amp.upOk, amp.downOk]));
+ok('symmetrically, and with no corner at either end (smoothstep, not a straight line)',
+  amp.sym && amp.at[0.07] > 0 && amp.at[0.07] < 1 && Math.abs(amp.at[0.07] - 0.5) < 0.2, JSON.stringify([amp.sym, amp.at[0.07]]));
+ok('stormAmp is a pure function of t, in any call order', amp.pure);
+ok('the feather is a real distance, not zero', amp.feather >= 24, String(amp.feather));
+
+// Then the front as actually drawn: the gradient stops, the rim strokes, and the composite alpha.
+const soft = R(ctx, `
+  const h = G.map.hazard;
+  const shot = t => {
+    G.frame = h.warn + Math.round(t * (h.sweep - 1));
+    const s = G.map.hazardState(G.frame), mid = (s.t0 + s.t1) / 2 * TILE;
+    Render.camX = mid - ${VIEW_W} / 2; Render.camY = G.map.h * TILE / 2 - ${VIEW_H} / 2;
+    _rec.reset(); _rec.on = true; Render.drawHazard(Render.ctx); _rec.on = false;
+    // the front's body gradient is the one with the most stops
+    let body = null;
+    for (const g of _rec.grads) if (!body || g.stops.length > body.stops.length) body = g;
+    // the rim: the strokes drawn AFTER the clip is released, widest first
+    const strokes = _rec.ops.filter(o => o.op === 'stroke').map(o => ({ lw: o.lw, ga: o.ga, ss: o.ss }));
+    // the composite: the last drawImage of the haze buffer onto the scene
+    const imgs = _rec.ops.filter(o => o.op === 'drawImage');
+    const composite = imgs.length ? imgs[imgs.length - 1].ga : null;
+    return { t, stops: body ? body.stops.slice() : null, strokes, composite, active: s.active, calls: _rec.calls };
+  };
+  const out = { mid: shot(0.5), early: shot(0.02), late: shot(0.98) };
+  // and the same frame twice, to prove nothing accumulated
+  const a = shot(0.5), b = shot(0.5);
+  out.same = JSON.stringify(a) === JSON.stringify(b);
+  Render.camX = G.map.w * TILE / 2 - ${VIEW_W} / 2;
+  return out;
+`);
+// The last number in an rgba(...) string. Written by hand rather than with a regex because the storm's
+// colours are built by Render.dustRGB and the exact spacing is its business, not this file's.
+const alphaOf = col => { const s = String(col); const i = s.lastIndexOf(','); if (i < 0) return null; const v = parseFloat(s.slice(i + 1)); return isNaN(v) ? null : v; };
+ok('the front has a multi-stop gradient across its depth', soft.mid.stops && soft.mid.stops.length >= 6, JSON.stringify(soft.mid.stops && soft.mid.stops.length));
+{ const st = soft.mid.stops;
+  ok('THE LEADING EDGE STARTS AT ZERO OPACITY -- it used to start at 0.86, which is the reported hard edge',
+    st[0][0] === 0 && alphaOf(st[0][1]) === 0, JSON.stringify(st[0]));
+  ok('...and climbs through the feather before it reaches the wall',
+    alphaOf(st[1][1]) > 0 && alphaOf(st[1][1]) < 0.5 && st[1][0] > 0 && st[1][0] < st[2][0], JSON.stringify(st.slice(0, 3)));
+  ok('the trailing edge still reaches zero, as it always did', alphaOf(st[st.length - 1][1]) === 0, JSON.stringify(st[st.length - 1]));
+  ok('and the stops are in order, which a remap can easily break', st.every((s, i) => i === 0 || s[0] >= st[i - 1][0]), JSON.stringify(st.map(s => s[0]))); }
+{ const rims = soft.mid.strokes.filter(s => s.lw >= 4);
+  ok('the lit rim is drawn as three strokes rather than one 8 px line', rims.length >= 3, JSON.stringify(soft.mid.strokes));
+  // Guarded, so that reverting the rim to one stroke gives a clean red here rather than a crash that
+  // takes the rest of the file with it -- a negative control that throws tells you nothing.
+  const wide = rims.slice(-3), got = wide.length === 3;
+  ok('widest first, narrowing inward', got && wide[0].lw > wide[1].lw && wide[1].lw > wide[2].lw, JSON.stringify(wide.map(s => s.lw)));
+  ok('and faintest first, so the outer edge of the glow is the one nobody can point at',
+    got && alphaOf(wide[0].ss) < alphaOf(wide[1].ss) && alphaOf(wide[1].ss) < alphaOf(wide[2].ss), JSON.stringify(wide.map(s => s.ss))); }
+ok('the haze layer is composited in all three phases',
+  soft.early.composite !== null && soft.late.composite !== null && soft.mid.composite !== null,
+  JSON.stringify([soft.early.composite, soft.mid.composite, soft.late.composite]));
+ok('THE STORM GATHERS AND THINS: the composite alpha is lower at both ends of the sweep than in the middle',
+  soft.early.composite < soft.mid.composite && soft.late.composite < soft.mid.composite,
+  JSON.stringify({ early: soft.early.composite, mid: soft.mid.composite, late: soft.late.composite }));
+ok('drawing the same frame twice produces the identical ops -- nothing accumulates, so a seek reproduces it', soft.same);
 
 // A map with no hazard must be untouched by any of this.
 START('temple');

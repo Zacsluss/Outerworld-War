@@ -489,6 +489,30 @@ const Render = {
   // pattern fill is one call however many pixels it lands on, and M9's dpr measurement is the proof
   // that fill area is not what this pass is bound by. Correctness: the safe zones are erased with
   // `destination-out`, which needs somewhere to erase that is not the scene.
+  // FIXLIST-M14 B6 -- "the dust storm has hard edges". Two numbers and a curve, and the reason each
+  // exists is that the front used to switch from nothing to 86% opacity across zero distance and then
+  // stay at full strength for the whole sweep. It looked like a rectangle being slid over the map,
+  // because that is what it was.
+  //
+  //   HAZE_FEATHER  world pixels the LEADING edge fades in over. The trailing edge already faded --
+  //                 its gradient reaches zero exactly at the clip boundary -- so only the front needed
+  //                 this. 46 is a tile and a half, which is enough to read as depth at zoom 1 and is
+  //                 still shorter than the 30 px the crest already wanders by.
+  //   HAZE_RAMP     fraction of the sweep spent ramping the whole pass in, and again out. The front's
+  //                 GEOMETRY already enters and leaves the map, but at full strength the instant it
+  //                 appears -- so a player at the far edge saw a wall switch on rather than a storm
+  //                 gathering. Smoothstepped, so neither end has a corner.
+  //
+  // Both are applied to values derived from `s.t` and world position only. Nothing accumulates between
+  // frames, which is the contract this whole pass is written under: a replay seek or a rejoin has to
+  // draw the identical storm, and it can only do that if the storm is a pure function of the frame.
+  HAZE_FEATHER: 46, HAZE_RAMP: 0.14,
+  // How strong the storm is right now, 0..1.
+  stormAmp(t) {
+    const r = this.HAZE_RAMP; if (!(r > 0)) return 1;
+    const k = Math.max(0, Math.min(1, Math.min(t, 1 - t) / r));
+    return k * k * (3 - 2 * k);
+  },
   HAZE_SS: 0.5, HAZE_A: 0.68, HAZE_STEPS: 14, HAZE_WOB: 30,
   hazeLayer() {
     const w = Math.max(1, Math.ceil(this.viewW * this.HAZE_SS)), h = Math.max(1, Math.ceil(this.viewH * this.HAZE_SS));
@@ -586,15 +610,22 @@ const Render = {
     const col = this.dustCol(), lead = s.dir > 0 ? n1 : n0, back = s.dir > 0 ? n0 : n1;
     const P = (a, b) => vert ? [b, a] : [a, b];                // (along, across) -> (x, y), so one body of code serves either axis
     const b0 = camB - 24, b1 = camB + lenB + 24;
-    // The crest wanders. Two sine waves of different period and drift, so the wall rolls rather than
-    // arriving as a rectangle, and both are functions of world position and G.frame only -- nothing is
-    // stored, so a replay of this frame draws the identical storm.
-    const crest = i => { const b = b0 + (i / N) * (b1 - b0); return [lead + (Math.sin(b * 0.0075 + G.frame * 0.026) * WOB + Math.sin(b * 0.019 - G.frame * 0.017) * WOB * 0.45) * s.dir, b]; };
+    // The crest wanders, and it has THREE terms since B6. The two long ones make the wall roll rather
+    // than arrive as a rectangle; the third is short and shallow and is what stops the edge itself
+    // reading as a drawn line. All three are functions of world position and G.frame only -- nothing
+    // is stored, so a replay of this frame draws the identical storm.
+    const FE = this.HAZE_FEATHER;
+    const wob = b => Math.sin(b * 0.0075 + G.frame * 0.026) * WOB
+      + Math.sin(b * 0.019 - G.frame * 0.017) * WOB * 0.45
+      + Math.sin(b * 0.058 + G.frame * 0.041) * WOB * 0.2;
+    // `off` pushes the crest OUTWARD, ahead of the front. The clip takes it at FE so there is somewhere
+    // for the leading edge to fade across; the lit rim takes it at 0, on the wall itself.
+    const crest = (i, off) => { const b = b0 + (i / N) * (b1 - b0); return [lead + (wob(b) + off) * s.dir, b]; };
     c.beginPath();
-    for (let i = 0; i <= N; i++) { const [a, b] = crest(i), [x, y] = P(a, b); if (i) c.lineTo(x, y); else c.moveTo(x, y); }
+    for (let i = 0; i <= N; i++) { const [a, b] = crest(i, FE), [x, y] = P(a, b); if (i) c.lineTo(x, y); else c.moveTo(x, y); }
     { const [x, y] = P(back, b1); c.lineTo(x, y); } { const [x, y] = P(back, b0); c.lineTo(x, y); }
     c.closePath(); c.save(); c.clip();
-    const ra = Math.min(n0, n1) - WOB * 2, rb = Math.max(n0, n1) + WOB * 2;
+    const ra = Math.min(n0, n1) - WOB * 2 - FE, rb = Math.max(n0, n1) + WOB * 2 + FE;
     const [rx, ry] = P(ra, b0), [rx2, ry2] = P(rb, b1), rw = rx2 - rx, rh = ry2 - ry;
     // A lit face and a dark body, in that order, and the value gap between them is the whole effect.
     // The first version tinted the whole band with the tileset's own dust colour and was nearly
@@ -603,10 +634,18 @@ const Render = {
     // bright rim where the light still catches it and everything behind that goes DARKER than the
     // ground it is covering. That works on ice and on a space platform too, because it is a value
     // relationship rather than a hue.
-    const [gx0, gy0] = P(lead, 0), [gx1, gy1] = P(back, 0);
+    //
+    // B6: the gradient now STARTS a feather ahead of the wall at zero opacity instead of at the wall
+    // at 0.86. `f` is where the old first stop has moved to, and every stop after it is remapped by
+    // the same amount, so the body of the front is unchanged and only the leading edge is new.
+    const [gx0, gy0] = P(lead + FE * s.dir, 0), [gx1, gy1] = P(back, 0);
     const g = c.createLinearGradient(gx0, gy0, gx1, gy1);
-    g.addColorStop(0, this.dustRGB(col, 0.86, 1.05)); g.addColorStop(0.1, this.dustRGB(col, 0.86, 0.6));
-    g.addColorStop(0.36, this.dustRGB(col, 0.74, 0.44)); g.addColorStop(0.78, this.dustRGB(col, 0.42, 0.4));
+    const depth = Math.max(1, Math.abs(back - lead));
+    const f = FE / (depth + FE), at = x => f + x * (1 - f);
+    g.addColorStop(0, this.dustRGB(col, 0, 0.9));
+    g.addColorStop(f * 0.5, this.dustRGB(col, 0.26, 1.0));
+    g.addColorStop(at(0), this.dustRGB(col, 0.86, 1.05)); g.addColorStop(at(0.1), this.dustRGB(col, 0.86, 0.6));
+    g.addColorStop(at(0.36), this.dustRGB(col, 0.74, 0.44)); g.addColorStop(at(0.78), this.dustRGB(col, 0.42, 0.4));
     g.addColorStop(1, this.dustRGB(col, 0, 0.4));
     c.fillStyle = g; c.fillRect(rx, ry, rw, rh);
     const mod = (v, n) => ((v % n) + n) % n;
@@ -636,9 +675,16 @@ const Render = {
     c.restore();
     // The lit face of the wall: the sun is still on the outside of it, which is what makes it read as a
     // solid thing arriving rather than as a wash over the screen.
-    c.beginPath();
-    for (let i = 0; i <= N; i++) { const [a, b] = crest(i), [x, y] = P(a, b); if (i) c.lineTo(x, y); else c.moveTo(x, y); }
-    c.strokeStyle = this.dustRGB(col, 0.5, 1.3); c.lineWidth = 8; c.lineJoin = 'round'; c.stroke();
+    //
+    // B6: three strokes rather than one. A single 8 px line has an edge you can point at, and pointing
+    // at it is exactly what the report did. Widening and fading outward turns the same rim into a glow
+    // with no edge, for two more stroke calls -- and it lands OUTSIDE the clip, so the glow spills onto
+    // the ground ahead of the wall the way the light actually would.
+    for (const rim of [[18, 0.09], [10, 0.19], [4, 0.44]]) {
+      c.beginPath();
+      for (let i = 0; i <= N; i++) { const [aa, bb] = crest(i, 0), [x, y] = P(aa, bb); if (i) c.lineTo(x, y); else c.moveTo(x, y); }
+      c.strokeStyle = this.dustRGB(col, rim[1], 1.3); c.lineWidth = rim[0]; c.lineJoin = 'round'; c.lineCap = 'round'; c.stroke();
+    }
     // The dust is erased over the settled ground around a start base. It was drawn this way because
     // that ground took no damage; it stays drawn this way because a storm that visually buries a
     // mineral line nobody can move reads as the game being broken rather than as weather.
@@ -655,7 +701,10 @@ const Render = {
       }
       c.globalCompositeOperation = 'source-over';
     }
-    ctx.save(); this.base(ctx); ctx.globalAlpha = this.HAZE_A;
+    // B6: the whole layer is scaled by how far into the sweep the storm is, so it gathers as it
+    // arrives and thins as it leaves instead of running at full strength from the first frame to the
+    // last. One multiply on the composite, and it is a pure function of `s.t`.
+    ctx.save(); this.base(ctx); ctx.globalAlpha = this.HAZE_A * this.stormAmp(s.t);
     ctx.drawImage(this.hazeBuf, 0, 0, this.hazeBuf.width, this.hazeBuf.height, 0, 0, this.viewW, this.viewH);
     ctx.restore();
   },
