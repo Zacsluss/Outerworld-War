@@ -43,7 +43,7 @@ done as one. **Every reported number appears in this table exactly once.**
 | 1 | click a mineral node to see what is left | **B1** | ✅ done |
 | 2 | double-click selects all of that building | **B2** | ✅ done |
 | 3 | click a geyser / extractor to see gas left | **B1** | ✅ done |
-| 4 | do Queens have Spawn Larva | **V1** | ✅ they do — verify by hand |
+| 4 | do Queens have Spawn Larva | **V1** | ✅ verified by hand in a running game |
 | 5 | creep tumours should come from the Queen | **C3** | ✅ done — two sources now |
 | 6 | AI raids expansions, never pushes the main | **D1** | ☐ retreat exists; targeting is the fault |
 | 7 | units are hard to click | **B3** | ✅ done |
@@ -544,9 +544,22 @@ timer. The comment records that 0.8 beat 0.7 and 0.55 outright.
 deliberate. The Queen flies, has 200 energy, and the ability fills a hatchery to the same cap of 3 that
 natural larva production uses.
 
-**To close:** confirm by hand — build a Queen, select it, press `L` on a hatchery, watch larvae appear
-after the delay. If it does not work it is a *bug in an existing feature* and earns its own entry. It is
-documented as working in `PLAYTEST-M12.md`.
+**CLOSED — verified by hand in a running game** (browser, Zerg, seed 4). Built a Queen, selected her,
+pressed the Spawn Larva button, clicked the hatchery:
+
+- energy went **200 → 176**, exactly the 25 the ability declares, then regenerated
+- an `inject` field appeared on the hatchery
+- **three larvae arrived 219 frames after the cast**, against a declared delay of 240 (10 s)
+- capped at three, as `cap: 3` says
+- a second inject on the same hatchery was refused with *"That hatchery is already spawning larva."*
+
+It works. No new entry earned.
+
+One thing found while checking, and fixed under C3: the Queen now shows **six** abilities on her card —
+Spawn Larva, Creep Tumour, Parasite, Ensnare, Spawn Broodlings and Infest. `UI.buildCard` had capped a
+unit at four since the command card was 3×3, and never had that raised when it grew to 4×3, so slots 9,
+10 and 11 sat empty on every unit card in the game. Before this session `infest` fell off the end and
+the def comment called that a deliberate loss.
 
 ---
 
