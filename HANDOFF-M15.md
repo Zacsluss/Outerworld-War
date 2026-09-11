@@ -3,6 +3,11 @@
 Written at the end of the session that did `FIXLIST-M14.md`. Branch `m10-overnight`. (HEAD moves as
 this file is committed — trust `git log -1`, not a hash written here.)
 
+> **THE OPEN WORK IS `FIXLIST-M15.md`.** Six further reported items arrived after M14 closed, three
+> more were found while verifying them, and the two AI items below are folded in as its Group D.
+> **Closing that file closes the project's to-do list entirely.** This file remains the state of the
+> tree, the reds, the traps and the measurements behind Group D.
+
 **Read `FIXLIST-M14.md` first.** Every one of its nineteen entries is closed and each carries what was
 measured, what was decided, and why. `PLAYTEST-M14.md` is how to see each one by hand. `HANDOFF-M14.md`
 is the state M13 left behind and is still true except where this file says otherwise.
@@ -125,6 +130,10 @@ the first three each cost a wasted measurement.
 
 ## What is next, in order
 
+> All of this is now entries in **`FIXLIST-M15.md`** -- steps 1 and 2 below are its Group D, step 3
+> is closed (see the reds above), and step 4 is unchanged and still gated. Kept here because the
+> measurements and the argument live here and the fixlist only summarises them.
+
 ### 1. The composition ratchet -- THE PROBE IS BUILT AND THE MEASUREMENT IS IN
 
 HANDOFF-M14 said to build the probe first. `test/ledger.js` **section 6** now reports intended supply
@@ -221,9 +230,11 @@ not been tried. Measure it with section 6 before and after, in a worktree.
 them is tuning a table nothing reads. This becomes worth doing once section 6's misallocation number
 is small enough that a weight change would show up in it.
 
-### 3. Find out what fixed the eightplayer economy assertion
+### 3. Find out what fixed the eightplayer economy assertion -- CLOSED
 
-See the reds above. A real improvement landed by accident and nobody knows which item did it.
+Half answered, half overtaken. The money-hoarding red was fixed by D1 and that is verified against
+the pre-D1 commit. The economy red is still unattributed, but the suite is 19/19 so there is nothing
+left to chase -- **except that its money assertion now passes by only 4%.** See the reds above.
 
 ### 4. The balance run — LAST, and gated
 
@@ -264,50 +275,72 @@ node tools/bake.js                                re-bake sprites after art chan
 
 ## Kickoff prompt for a fresh chat
 
-CLAUDE.md requires this and requires it to stand alone. Paste everything inside the fence into an
-empty chat. **Replace the HEAD hash with `git log -1 --format=%h` before pasting** -- committing this
-file moves it.
+**`FIXLIST-M15.md` supersedes the single-action version of this prompt.** Six more reported items
+landed after M14 closed, three more were found while verifying them, and the two carried-over AI
+items are folded in as Group D. **When FIXLIST-M15 is closed the project has no open to-dos.**
+
+Paste everything inside the fence into an empty chat. **Replace the HEAD hash with
+`git log -1 --format=%h` first** -- committing this file moves it.
 
 ```
 Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
 Branch: m10-overnight. HEAD: <run: git log -1 --format=%h>. Working tree clean.
 
-Read CLAUDE.md, then HANDOFF-M15.md. FIXLIST-M14.md is closed -- all twenty-one reported
-items -- and PLAYTEST-M14.md is how to see them by hand. Read those two only if you need
-background on something specific.
+Read CLAUDE.md, then FIXLIST-M15.md, then HANDOFF-M15.md.
 
-THE SINGLE NEXT ACTION: bound the fall-through in AI.production(). HANDOFF-M15 step 1
-measured that the AI ignores its own composition table in all three races -- the cheapest
-tier-one unit takes three to six times its intended share of army supply -- and that the
-cause is production() buying the cheapest affordable unit whenever its correctly-chosen
-top pick cannot be paid for. Bounding that fall-through is the one avenue identified that
-does not obviously trade army size for tech level. It has NOT been tried.
+YOUR JOB THIS SESSION IS FIXLIST-M15, worked in the order the file gives: A (data and
+presentation) -> B (interface) -> C (simulation) -> D (AI). That order is strictly increasing
+risk and strictly decreasing independence and it is not arbitrary. Do not reorder it without
+saying why. Closing this list closes the project's to-do list entirely -- there is nothing
+queued behind it except the gated balance run.
 
-Measure before fixing, which in this codebase is a rule and not advice. The probe already
-exists: `node test/ledger.js 20 1 solo Z` prints section 6, intended supply share against
-actual, and a TOTAL MISALLOCATION line. Get a before number for all three races, IN A GIT
-WORKTREE, before editing anything -- test/ledger.js, test/soak.js and test/techtime.js all
-re-read js/ per run, so editing the tree while one runs silently contaminates it.
+One commit per entry, except where the file says otherwise. Nine entries:
+  A1 projectiles -- 34 of 63 armed things fire the same white bullet. Fix the CAUSE (a
+     hardcoded id list in Combat.visual) not the symptom; the look belongs on the weapon.
+  A2 descriptions -- 0 of 76 abilities have one. M14's A1 did units and buildings only.
+  A3 creep should look alive. RENDER ONLY -- run node test/version.js after and confirm the
+     build stamp did NOT move.
+  B1 the Drone-at-supply-cap double error.
+  B2 seven abilities say only 'Invalid target.' and never say what would be valid.
+  B3 two buttons share slot 6 on the Zerg larva card.
+  C1 creep tumours cost no energy and the Overlord has no energy pool at all.
+  C2 tumour cast range. Read the entry before touching it -- the half the report asks you to
+     limit is the half that already works, and the real cause is one line in orderTick.
+  C3 Zerg move faster on creep. The exact SC2 percentages are in the entry, including the
+     exceptions; the Drone getting NO bonus is the one most likely to be missed.
+  D1/D2 are the carried-over AI work. D1 is measured and ready; D2 is blocked on D1.
 
-Do NOT start by re-tuning AI_COMP weights. Step 1 measured that the weights are not being
-read, so tuning them tunes a table nothing consults.
+FOUR THINGS IN THE LIST ARE NOT WHAT THEY LOOK LIKE, and each is marked with a warning sign:
+the projectile pass was never done at all rather than done badly; the tumour range fault is in
+a shared code path and not in the tumour code; item 6 is TWO faults and I only reproduced one,
+so do not guess at the other; and Spawn Broodlings is one instance of a class of seven.
 
-THE GATE: `node test/all.js`, 63 suites, about 2.7 minutes, before every commit. Green means
-green. If a change fixes a real fault but turns a marginal assertion red, revert it anyway
-and say so.
+MEASURE BEFORE FIXING. Three entries name the probe to build first (A1, C3, D1). In this
+codebase every fix that started from a measurement was right the first time and every fix that
+started from a hypothesis had to be reverted. Long measurements go in a git worktree --
+test/ledger.js, test/soak.js and test/techtime.js all re-read js/ per run, so editing the tree
+while one runs silently contaminates it.
+
+THE GATE: node test/all.js, 63 suites, about 2.7 minutes, before every commit. Green means
+green. If a change fixes a real fault but turns a marginal assertion red, revert it anyway and
+say so -- that happened twice already and both reverts were right.
 
 KNOWN REDS, none of which block:
   - test/soak.js fails one tier-1/2 coverage assertion (Swarm Host). Do not weaken it.
   - test/aistyles.js on seeds 1 and 11 fails four assertions -- no style attacks inside its
     12,000-frame window. Pre-existing. Seed 5, the one in the gate, is clean.
-  - test/eightplayer.js is currently 19/19, but its money assertion passes by 4% (2405
-    against a 2500 threshold). If it flips back, the cause is AI.macro's wantHalls floor at
+  - test/eightplayer.js is currently 19/19, but its money assertion passes by only 4% (2405
+    against a 2500 threshold). If it flips back the cause is AI.macro's wantHalls floor at
     js/ai.js:141, not whatever you just changed.
 
-GATED, and it must come last: do NOT run test/balance.js or test/proxy.js without my
-explicit instruction, and double-check with me if I appear to give one. Every balance number
-in HANDOFF.md is stale. HANDOFF-M15 section 4 lists what is waiting on it, including a fully
-priced claim-order trade that is not to be taken unilaterally.
+GATED, and it comes last: do NOT run test/balance.js or test/proxy.js without my explicit
+instruction, and double-check with me if I appear to give one. Every balance number in
+HANDOFF.md is stale. FIXLIST-M15 adds three big ones to what it must price -- tumours costing
+energy, tumour range becoming a real limit, and a 30% army-wide creep speed bonus.
+
+When the fixlist is complete, close the milestone the way CLAUDE.md requires: a fresh-chat
+kickoff prompt, high-level bullets in a player's language, and manual playtest steps committed
+as PLAYTEST-M15.md.
 ```
 
 ---
