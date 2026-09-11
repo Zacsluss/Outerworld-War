@@ -72,6 +72,7 @@ const TESTS = [
   { name: 'line', args: ['line.js'], what: 'a line weapon hits everything along it, to its own range, in its own colours' },
   { name: 'clearance', args: ['clearance.js'], what: 'a wide unit gets a path its body can walk, not one a point can' },
   { name: 'curve', args: ['curve.js'], what: 'a freehand drag spreads the selection along the stroke, and replays identically' },
+  { name: 'larvacard', args: ['larvacard.js'], what: 'Drone is top-left on the larva card, no two buttons share a slot, and a refused click acts once' },
   { name: 'creeplife', args: ['creeplife.js'], what: 'creep bubbles as an overlay, without disturbing the chunk cache or the build stamp' },
   { name: 'shots', args: ['shots.js'], what: 'every weapon has its own shot, the races are disjoint, and every kind actually draws' },
   { name: 'wavetarget', args: ['wavetarget.js'], what: 'an attack wave scores a defended main above a bare expansion, and finishes the base it is in' },

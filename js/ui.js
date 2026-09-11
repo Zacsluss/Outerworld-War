@@ -900,7 +900,37 @@ const UI = {
     // The morphed larva stays in the selection. larvaMorph reuses the object, so the egg IS the larva
     // and its rally can be set the instant it morphs; the filter drops only what actually died. Eggs are
     // skipped by the `l.def.larva` test below, so the next press still morphs the next larva.
-    if (u.def.larva) { B(6, 'Set Rally', 'R', setPending('rally')); DATA.larvaMorphs.forEach((id, i) => { const d = DATA.units[id]; const ok = p.hasReq(d); B(i, d.name, d.hk, () => { for (const l of sel) if (l.def.larva) { if (G.larvaMorph(l, id)) { this.selection = this.selection.filter(x => x.alive); break; } } }, { cost: d, enabled: ok, dim: !ok, why: why(d) }); }); return btns; }
+    // THE LARVA CARD -- FIXLIST-M15 B1 and B3, which are one bug.
+    //
+    // Set Rally used to be emitted FIRST, asking for slot 6. UI.paginate ignores the slot a flowed
+    // button asks for -- it renumbers by array index -- so Set Rally took slot 0 and pushed every
+    // morph one place right. Drone was not in the top-left corner of its own card, and the whole
+    // ladder was off by one.
+    //
+    // That is also where the second, unexplained half of item 6 came from. With grid hotkeys on, keys
+    // are assigned by SLOT from 'QWERASDFZXCV', so the shift moved D off Queen and onto SCOURGE.
+    // Pressing D -- which every player reads as Drone -- hit a greyed Scourge and answered
+    // 'Requires Spire'. Reproduced exactly: with normal keys D at the supply cap says 'Spawn more
+    // overlords.', and with grid keys the same press at the same cap says 'Requires Spire'.
+    //
+    // So the morphs are emitted first and Set Rally last. Note that B()'s slot argument is decorative
+    // for anything not pinned; ARRAY ORDER is what decides the card.
+    if (u.def.larva) {
+      DATA.larvaMorphs.forEach(id => {
+        const d = DATA.units[id], ok = p.hasReq(d);
+        // ONE CLICK IS ONE ATTEMPT. This used to walk every selected larva and only stop on SUCCESS,
+        // so a refusal was announced once per larva -- three selected larvae at the supply cap gave
+        // three identical 'Spawn more overlords.' errors from one keypress, which is the first half
+        // of item 6. Every larva is interchangeable: if one cannot morph for cost, supply or
+        // requirements, none of them can, so trying the rest can only repeat the same refusal.
+        B(0, d.name, d.hk, () => {
+          const l = sel.find(x => x.def.larva);
+          if (l && G.larvaMorph(l, id)) this.selection = this.selection.filter(x => x.alive);
+        }, { cost: d, enabled: ok, dim: !ok, why: why(d) });
+      });
+      B(0, 'Set Rally', 'R', setPending('rally'));
+      return btns;
+    }
     if (u.def.egg) { B(6, 'Set Rally', 'R', setPending('rally')); B(this.CARD_SLOTS - 1, 'Cancel', 'Escape', () => { for (const e of sel) G.cancelProd(e, 0); }, { pin: true }); return btns; }
     // Several buildings at once. Brood War shows the first one's card and applies what you press to all
     // of them that can do it, which is what makes "select every hatchery, press S" work. The card is
