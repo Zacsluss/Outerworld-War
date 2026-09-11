@@ -9,9 +9,12 @@ is committed — trust `git log -1`, not a hash written here.)
 > controls and gate results. Section 1 holds 24 open tasks with file, fault, fix and cost; section 4
 > holds 13 things deliberately not done. `PLAYTEST-M17.md` is how to see every fixed thing by hand.
 >
-> **Nothing is queued.** The balance run stays gated. The one thing awaiting a word from the user is
-> whether to delete the 23 stale worktrees (question 5: all superseded drafts, four with uncommitted
-> edits of work that landed).
+> **QUEUED: the user's three Zerg notes**, measured and written up as open tasks 25-27 in
+> `REVIEW-M17.md` — Spawn Larva should raise a hatchery to 12 larvae (it refills to 3), the AI has one
+> Queen all game and injects only the two hatcheries nearest her, and larvae should be drawn from the
+> fullest hatchery. Then task 1 (the HUD overrides), task 23 (the AI's Queen follows the army) and task
+> 28 (peer hosting means the relay must ship inside the Tauri app). The balance run stays gated. The 23
+> stale worktrees are deleted.
 
 `HANDOFF-M16.md` remains true for its traps and its account of M15. Three of its facts moved: the fourth
 red is gone (the assertion was wrong and was replaced), `eightplayer` was never 19/19 at that tree, and
@@ -24,8 +27,7 @@ the gate's `aistyles` seed is 1 now, not 5.
 - **74 test suites green.** `node test/all.js`, ~3 minutes. That is the gate before any commit. Five
   suites joined it: `saveload` (which had never run anywhere), `cmdlog`, `review17`, `review17ui`,
   `dmath`.
-- **16 commits since the `pre-review-m17` tag**, each gated. `git diff --stat pre-review-m17` is 58
-  files, +3,081 / −484.
+- **18 commits since the `pre-review-m17` tag**, each gated.
 - **The build stamp moved with every simulation change**; it is `bb40caab900717ee` at this file's commit.
   Every save and replay from before the review is refused with the reason, which is the stamp doing its
   job — and the first move was the point: it had been blind to 56 of the 76 things the simulation reads.
@@ -161,14 +163,22 @@ commits behind and unmerged; nothing lives there.)
 Read CLAUDE.md, then HANDOFF-M17.md, then REVIEW-M17.md in full, then PLAYTEST-M17.md.
 
 REVIEW-M17 was a stop-and-inspect pass over the whole codebase, then a second session that carried
-out the user's ten decisions: sixteen commits since the tag pre-review-m17, all gated. The four
-lists at the bottom of REVIEW-M17.md ARE the to-do list. Nothing else is queued; every question in
-section 2 is answered and done.
+out the user's ten decisions: eighteen commits since the tag pre-review-m17, all gated. The four
+lists at the bottom of REVIEW-M17.md ARE the to-do list; every question in section 2 is answered
+and done, and the decisions table above the questions says what each became.
 
-THE FIRST ACTION: take the open tasks in REVIEW-M17.md section 1 in order, starting with task 1
-(the HUD overrides that leave two shipped features never drawing -- needs the game open in a
-browser to judge) and task 23 (the AI's Queen follows the army away from her hatcheries). Ask
-before deleting the 23 stale worktrees (question 5): all four dirty ones are superseded drafts.
+THE FIRST ACTION: REVIEW-M17.md open tasks 25, 26 and 27, in that order -- the user's Zerg notes,
+already measured (.claude/review/larva-probe.js is the probe):
+  25. Spawn Larva raises a hatchery/lair/hive to up to 12 larvae (+3 per cast); without it a hall
+      behaves exactly as today (three, one per LARVA_TIME). test/zerg12.js pins the old M12 rule
+      and must change with it. Moves the stamp.
+  26. Queens for every hatchery: the AI never trains a second Queen (one all game, 227-355 gas
+      banked) and injects only the two halls within 26 tiles of her (8/10/0/0/0 at ten minutes).
+      One Queen per hall, each homed to it, kept out of the army.
+  27. AI.train takes the oldest larva in G.units order; take one from the fullest hatchery.
+Then task 1 (the HUD overrides that leave two shipped features never drawing -- needs the game
+open in a browser to judge), task 23 (the AI's Queen follows the army), and task 28 (peer hosting
+only: the relay must ship with the Tauri app, as a Node sidecar or a port of test/serve.js).
 
 THE GATE: node test/all.js, 74 suites, about three minutes, before EVERY commit. Green means
 green. If a change fixes a real fault but turns a marginal assertion red, revert it anyway and

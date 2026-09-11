@@ -155,6 +155,9 @@ Fill in the two lists below, in this file, and commit it.
 
 # 1. Open tasks / to-dos
 
+**NEXT UP — the user's three Zerg notes (2026-09-11, end of the second session), measured and queued as
+tasks 25-27 below; take them first, then task 1 and task 23.** Then the Tauri relay question, task 28.
+
 Each entry names the file, what is wrong, the fix, and what it would cost. Everything measured says so;
 "reviewer" means one of the six read-only region reviews, whose claims were verified before they were
 listed here. Ordered by what I would do first.
@@ -296,6 +299,39 @@ listed here. Ordered by what I would do first.
 24. **`tools/`:** `raster.js` exports `mesh`, `V`, `M` and `models.js` exports `C` with no consumer;
     `bake.js` writes `META.dirs` into `assets/atlas.js` (16) while five units bake at 32 and
     `js/atlas.js` never reads it. Cosmetic; a re-bake is not worth it for this alone.
+25. **Spawn Larva should raise a hatchery's larvae to 12; today it only refills to 3.** Measured in the
+    code: natural spawning stops at three (`Unit.tickBuilding`, `if (this.larvae.length < 3)`), and the
+    inject resolution in `Abilities.tickFields` spawns `for (n = larvae.length; n < cap; n++)` with
+    `larva_inject.cap = 3` — M12 item 11 chose "fill, don't raise". The user's rule: **with Spawn Larva a
+    hatchery, lair or hive may hold up to 12 larvae; without it, exactly as today (three, spawning one
+    per `LARVA_TIME`).** Fix: `larva_inject` gets `per: 3, cap: 12`; the resolution adds `per` larvae up
+    to `cap`; natural spawning keeps its `< 3` and is untouched; `AI.injectHall` skips a hall at the
+    new cap or already injecting (not one at three). `test/zerg12.js` asserts the M12 behaviour ("inject
+    fills a hatchery rather than raising its ceiling") and must change with it — read it first. Cost S.
+    Moves the stamp; changes Zerg macro for players and AI alike; on the balance list.
+26. **The AI has one Queen for the whole game and injects only the two hatcheries nearest her.** Measured
+    (`.claude/review/larva-probe.js`, a solo Zerg AI, normal and hard, ten minutes): Queens by minute =
+    1 throughout (the starting one; the AI never trains another though it ends with 227-355 gas), and
+    injects per hall = 8/10/0/0/0 (normal), 9/7/0/0/0 (hard) — `injectHall` reaches 26 tiles from where
+    she is, and the expansions are farther. The user's rule: **Queens are produced for all hatcheries,
+    lairs and hives, and each one is injected.** Fix: a macro rule `queens < halls → train a Queen` when
+    affordable (100/100; place it above the composition's top pick, as supply is), each Queen homes to
+    a hall (`queen.home`; `injectHall` prefers her home, and she flies there when idle), and
+    `supportUnits()` leaves a homed Queen out of the army (open task 23 is the same fault from the
+    other side). Measure with the probe: injects on every hall, larvae never sitting at cap while a
+    Queen has energy. Cost M. Changes what the AI builds and where its Queens are; run the canaries.
+27. **Are larvae used from every hatchery?** Yes — measured: at ten minutes every hall's larvae read 0
+    and the later hatcheries never sat at their cap (seconds at cap: 59/64/18/0/0 of 600). `AI.train`
+    takes `this.mine(u => u.def.larva)[0]`, the oldest larva in `G.units` order, which drains the
+    oldest hatchery first; with task 25's higher cap that becomes a real waste, so pick the larva from
+    the hatchery holding the most. Cost S, part of task 25.
+28. **Peer hosting in a Tauri build.** Decision (2026-09-11): multiplayer is peer-hosted only, no server
+    of yours. `test/serve.js` is a Node process; a Tauri app ships a webview, not Node, so a sold copy
+    cannot host a game until the relay ships with it — as a bundled Node sidecar, or as a port of
+    `serve.js` (184 lines, no dependencies) to the Tauri (Rust) side behind the same WebSocket
+    protocol. Until then `PLAY.bat` / `PLAY-ONLINE.bat` on the host's machine is the way. Cost M for a
+    sidecar, L for a port; the protocol is pinned by `test/rooms.js`, `test/net.js` and
+    `test/net_many.js`, which a port would have to pass.
 
 # 2. Questions and decisions for the user
 
@@ -308,12 +344,14 @@ says what happened to each, and the numbered entries in section 3 hold the measu
 | 2 | `eightplayer` red since C3 | **touch the AI's expansion floor now** | measured first: the floor was not the cause — no base left to take, and the Zerg AIs at zero larvae with income outrunning six hatcheries. A larva-starvation clause in the hall rule instead (entry 12), then the starting Queen (entry 16): every bank under 2,500. The money line stays a hand-run measurement, not a gate member — a Terran floats minerals under the flat-3 production rule kept on purpose, and any rounding-step change re-deals the game |
 | 3 | line endings | **yes**, `.gitattributes` + one re-checkout | **done**, entry 13 |
 | 4 | relay: min code length, join rate limit, cheats online | **all three; block cheats** | **done**, entry 14 |
-| 5 | 23 stale worktrees | asked what they hold | all four dirty ones are superseded drafts of work that landed (an M9 build-stamp edit that is in `js/build.js` today; the three M12 wave-four race agents, whose tests in HEAD are the longer, later versions); **still not deleted — say the word** |
+| 5 | 23 stale worktrees | asked what they hold | all four dirty ones were superseded drafts of work that landed (an M9 build-stamp edit that is in `js/build.js` today; the three M12 wave-four race agents, whose tests in HEAD are the longer, later versions); **deleted** on the follow-up answer |
 | 6 | balance run, claim order | **OK** — stay gated | unchanged |
 | 7 | bunker double fire rate | **FIX** | **done**, entry 12 |
 | 8 | AI micro cadence, dead detector weight | **FIX NOW** | **done**, entry 12 |
 | 9 | eleven inert energy techs | **+50 max energy** | **done**, entry 12 |
 | 10 | fog memory | **the fog shows the last state a unit of yours saw, not what is there now** | **done**, entry 17 |
+| — | Tauri: who runs the relay for sold copies? | **peer hosting only** | open task 28: the relay has to ship with the app (Tauri has no Node); `PLAY.bat` on the host's machine until then |
+| — | delete the stale worktrees? | **yes, the merged ones** | **done**: all 23 were on merged commits (the four dirty ones held superseded drafts); worktrees and their 22 agent branches removed |
 | — | (mid-session) Zerg should start with a Queen; is she injecting to the maximum? | **they should** | **done**, entry 16. She injects whenever energy allows and a hatchery within 26 tiles is short of larvae; energy bounds her to one cast per 33 s sustained. One follow-up in open task 23: the AI's Queen follows the army |
 
 The questions as they were put, kept for the record:
@@ -754,7 +792,7 @@ The questions as they were put, kept for the record:
    points at, and the cause is gated (question 2).
 4. **Updating `file:line` references inside the closed `FIXLIST-M14.md`.** No: it is a frozen record
    and the references were true when written. Living documents are a different matter.
-5. **Deleting the 23 stale worktrees.** Not without an answer to question 5.
+5. **Deleting the 23 stale worktrees** — deferred until question 5 was answered; then done.
 6. **Migrating the 90 suites to a shared harness inside this review.** No: open task 2 says why.
 7. **Defaulting `min: 0` in the def constructors** so no def could ever be priced NaN. Done, gated,
    **reverted**: `test/veterancy.js` pins "a spider mine is a munition with no `min` key" as the project's
