@@ -981,7 +981,7 @@ Object.assign(UI, {
     ctx.restore();
   },
   drawHelp(ctx) {
-    const lines = ['CONTROLS', 'Left click / drag: select    Right click: smart command    Shift: queue / add to selection', 'Ctrl+click or double-click: select all of a type on screen', 'M move   S stop   A attack-move   P patrol   H hold   B build   V advanced build', 'Ctrl+1..9 assign group   1..9 select group   Shift+# add   F2-F8 (+Shift) camera saves', 'Esc: cancel / cancel construction or last queued item    Space: jump to last alert', 'Arrow keys or screen edge: scroll    Minimap: click to move, right-click to command', '+ / -: game speed    F9: pause    F10: menu    F1: toggle this help', 'Unit-specific hotkeys are the yellow letters on the command card.'];
+    const lines = ['CONTROLS', 'Left click / drag: select    Right click: smart command    Shift: queue / add to selection', 'Ctrl+click or double-click: select all of a type on screen', 'M move   S stop   A attack-move   P patrol   H hold   B build   V advanced build', 'Ctrl+0..9 assign group   0..9 select group   Shift+# add   F2 F4 F6 F7 (+Shift) camera saves   F8 load autosave', 'Esc: cancel / cancel construction or last queued item    Space: jump to last alert', 'Arrow keys or screen edge: scroll    Minimap: click to move, right-click to command', '+ / -: game speed    F9: pause    F10: menu    F1: toggle this help', 'Unit-specific hotkeys are the yellow letters on the command card.'];
     HUD.bevel(ctx, Render.W / 2 - 340, 60, 680, 20 * lines.length + 24, true, 'rgba(10,12,16,0.94)'); lines.forEach((l, i) => HUD.text(ctx, l, Render.W / 2 - 326, 86 + i * 20, i ? '#d0d6de' : '#ffe45a', 13, i === 0));
   },
   drawMenu() {

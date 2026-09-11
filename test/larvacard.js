@@ -43,6 +43,7 @@ const SCENE = `
   G.init({ players: [{ race: 'Z', human: true, difficulty: 'easy', name: 'You', team: 1 },
                      { race: 'T', human: false, difficulty: 'easy', name: 'B', team: 2 }], seed: 3, layout: 'temple' });
   G.checkVictory = () => { }; G.human = 0;
+  UI.running = true;   // REVIEW-M17: UI.onKey ignores every key while no game is running (they belong to the menu's text fields); this harness starts its game with G.init, not UI.start, so it says so itself
   const p = G.players[0];
   for (let i = 0; i < 24 * 60 * 2; i++) G.tick();
   p.minerals = 5000; p.gas = 5000;

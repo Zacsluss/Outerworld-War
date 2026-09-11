@@ -841,7 +841,7 @@ const G = {
     if (!this.signals) this.signals = [];
     if (this.signals.length > 64) this.signals.splice(0, this.signals.length - 64);   // a spam bound, not a design
     this.signals.push({ kind, x, y, pts: pts || null, owner, t: kind === 'draw' ? 150 : 96 });
-    if (kind === 'ping' && this.allied(owner, this.human)) { this.lastAlertPos = { x, y }; }
+    if (kind === 'ping' && this.allied(owner, this.human)) { this.lastAlertPos = { x, y, f: this.frame }; }   // read by UI's lastAlert key against its own record (REVIEW-M17)
     return true;
   },
   // ---------------- commands (validated) ----------------

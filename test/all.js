@@ -123,6 +123,7 @@ const TESTS = [
   { name: 'saveload', args: ['saveload.js'], what: 'a save taken mid-nuke, mid-morph and mid-Recall reloads byte-identically; a rejoin restores the donor\'s state' },
   { name: 'cmdlog', args: ['cmdlog.js'], what: 'every order the interface can issue survives the command log: autocast, the ferry route, a dead target, a malformed log' },
   { name: 'review17', args: ['review17.js'], what: 'the simulation faults REVIEW-M17 measured and fixed: Carrier cooldown, status refresh, sieged tank, decloak, larva, worker poll, tick errors, Charon' },
+  { name: 'review17ui', args: ['review17ui.js'], what: 'the interface faults REVIEW-M17 fixed: keys in text fields, zoom keys, F8, Tab, the last alert, net speed, rejoin input, the editor loop, per-sim-frame effects, the manual wheel' },
 ];
 
 const argv = process.argv.slice(2);

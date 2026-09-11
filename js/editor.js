@@ -120,7 +120,10 @@ const Editor = {
     document.getElementById('menu').style.display = 'none';
     const c = document.getElementById('game'); c.style.display = 'block';
     this.canvas = c; this.ctx = c.getContext('2d'); this.resize();
-    if (!this._loop) { this._loop = () => { if (this.active) { this.draw(); requestAnimationFrame(this._loop); } }; requestAnimationFrame(this._loop); }
+    // Re-armed on every open. The loop ends itself when `active` goes false on close, so a second open
+    // used to find `_loop` already made, skip the request, and draw nothing at all. (REVIEW-M17)
+    if (!this._loop) this._loop = () => { this._queued = false; if (this.active) { this._queued = true; this.draw(); requestAnimationFrame(this._loop); } };
+    if (!this._queued) { this._queued = true; requestAnimationFrame(this._loop); }
     this.bind();
   },
   close() { this.active = false; document.getElementById('game').style.display = 'none'; document.getElementById('menu').style.display = 'flex'; UI.refreshMapList && UI.refreshMapList(); },

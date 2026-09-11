@@ -402,7 +402,7 @@ const Terrain = {
   },
   draw(ctx, camX, camY, vw, vh, zoom = 1) {
     const CH = this.CH * TILE; const x0 = Math.floor(camX / CH), y0 = Math.floor(camY / CH), x1 = Math.floor((camX + vw) / CH), y1 = Math.floor((camY + vh) / CH);
-    const maxC = Math.ceil(G.map.w / this.CH);
+    const maxCx = Math.ceil(G.map.w / this.CH), maxCy = Math.ceil(G.map.h / this.CH);   // both axes: a 64x128 editor map lost its lower chunk rows to a clamp on the width (REVIEW-M17)
     if (zoom < this.OVER_Z) { this.drawOverview(ctx, camX, camY, vw, vh); return; }
     this.checkDpr();
     // Blit on whole pixels. A chunk landed at a fractional offset goes through the bilinear filter, and
@@ -413,7 +413,7 @@ const Terrain = {
     // Only at zoom 1: at any other zoom the blit is resampled regardless, and rounding the camera in
     // world units would make the ground jitter by up to a whole pixel per scroll step instead.
     const ox = zoom === 1 ? Math.round(camX) : camX, oy = zoom === 1 ? Math.round(camY) : camY;
-    const cx0 = Math.max(0, x0), cx1 = Math.min(maxC - 1, x1), cy0 = Math.max(0, y0), cy1 = Math.min(maxC - 1, y1);
+    const cx0 = Math.max(0, x0), cx1 = Math.min(maxCx - 1, x1), cy0 = Math.max(0, y0), cy1 = Math.min(maxCy - 1, y1);
     let budget = Infinity;
     if (zoom < 1) {
       // Zoomed out: cap the bakes, and put the overview underneath if anything on screen is missing.
@@ -616,7 +616,10 @@ const Terrain = {
   },
   buildMini() {
     const m = G.map; const cv = document.createElement('canvas'); cv.width = m.w; cv.height = m.h; const x = cv.getContext('2d'); const img = x.createImageData(m.w, m.h); const d = img.data;
-    for (let ty = 0; ty < m.h; ty++) for (let tx = 0; tx < m.w; tx++) { const i = m.idx(tx, ty); let c; if (m.cliff[i] === 2) c = [40, 36, 32]; else if (m.cliff[i] === 1) c = [72, 54, 40]; else if (m.height[i] === 2) c = [150, 142, 124]; else if (m.height[i] === 1) c = [130, 116, 90]; else c = [118, 96, 62]; const o = i * 4; d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = 255; }
+    // The tileset's own palette, the way overview() derives it -- these were five badlands browns, so the
+    // minimap of an ice or jungle map was a brown map of a white one. (REVIEW-M17)
+    const P = this.pal, cols = { rock: P.rock(0.6), slope: P.slope(0.65), high: P.high(0.5, 0), ramp: P.ramp(0.5), low: P.low(0.5, 0) };
+    for (let ty = 0; ty < m.h; ty++) for (let tx = 0; tx < m.w; tx++) { const i = m.idx(tx, ty); let c; if (m.cliff[i] === 2) c = cols.rock; else if (m.cliff[i] === 1) c = cols.slope; else if (m.height[i] === 2) c = cols.high; else if (m.height[i] === 1) c = cols.ramp; else c = cols.low; const o = i * 4; d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = 255; }
     x.putImageData(img, 0, 0); this.mini = cv; return cv;
   },
 };

@@ -381,6 +381,46 @@ Each entry names the file, what is wrong, the fix, and what it would cost. Anyth
    **Tests:** `test/review17.js` gained the neutral scene (three seeds; two negative controls run — the
    `pickTarget` guard removed picks `derelict_foundry`, the `seenEnemyArmy` guard removed counts 11) and a
    static guard on `micro` (no owner-only clause, ≥ 26 `G.allied` ones). **Gate:** 72 of 72, 199 s.
+9. **Interface: keys, effects, the editor, a clamp, and the dead code around them.** *(commit:
+   presentation)* None of it is stamped except one line in `js/game.js`. Pinned in `test/review17ui.js`
+   (32 checks, in the gate), run against the old tree first: **12 clean reds and one crash** on a
+   method that did not exist yet.
+   - **Keys leaked into text fields and the main menu.** `UI.onKey` had no target or running-game guard:
+     with the Name box focused, Enter opened an invisible chat buffer that ate every key until Escape,
+     Backspace and Tab were swallowed, and F5 threw inside `Replay.data()`. Three guards now; the codex
+     key still works from the menu; input is also refused while a rejoin catches up (an order issued then
+     was stamped with a frame the live clients had passed, and the rejoiner desynced on its next hash).
+   - **The zoom keys never matched.** `zoomIn` was bound to `'='` and read with Shift held, when
+     `e.key` is `'+'`; the speed line matched `'+'` instead, so Shift+= sped the game up and nothing
+     zoomed. The bindings are the shifted characters now and the bare `=`/`-` fallbacks are gone.
+   - **F8 replaced a running game with the autosave in silence** while the help text called it a
+     camera slot. It asks first when a game is running; the help text names F2 F4 F6 F7 as camera
+     slots and F8 as the autosave, which is what README says.
+   - **Tab never turned the card page** in Brood War hotkey mode: `cycleSubgroup` took it before the
+     'More' button (whose key it is) even with one kind selected. It yields when there is nothing to
+     cycle.
+   - **An ally's ping never became "jump to last alert"**: `G.signal` recorded it on `G`, the key read
+     UI's own record. Both carry a frame now and the key takes the later.
+   - **In a network game the draw pass paced on `speedIdx` while the sim paced on `Net.speed`**, so
+     units stepped instead of gliding; the +/- keys changed a number nothing read. One `speedIndex()`
+     for both, and the keys say the host sets the speed. **A menu open on one client froze every peer**
+     (`simStep` returned before the lockstep branch) — the lockstep runs behind a menu in a net game.
+   - **The editor went blank on its second open**: the draw loop was made once and never re-armed.
+   - **Effects fired per drawn frame, not per sim frame.** Decals aged 2.5× too fast at 60 Hz and the
+     rocket, missile, flame, big-boom and nuke spawns ran two or three times per tick — the trap
+     `ambient()` already documents, in five more places. `FX.once(e)` gates them; measured: a decal
+     drawn three times in one frame ages 24, not 72. The rocket's trail used keys `p()` does not read
+     (`r/c/g`) and drew an additive orange dot instead of grey smoke.
+   - **A non-square map lost its lower chunk rows**: the y clamp used the map width. **The minimap was
+     five badlands browns on every tileset**; it reads the tileset's palette like `overview()`.
+   - **The manual could not be wheel-scrolled**: the wheel handler returned before `Codex.wheel`,
+     whose only caller was a test.
+   - Dead: an empty `dblclick` listener, a `setPending('land')` overwritten on the next statement, an
+     empty Reaver/Carrier branch, a 'waiting' menu nothing set, two Interceptor projectile branches for
+     a projectile never pushed, a stray path before a `save()`; `decal()` capped at a literal 400
+     against `MAX_DECALS` 260; a comment that called `FX.rnd` seeded (it is `Math.random`).
+   **Gate:** 73 of 73, 173 s. `test/larvacard.js` starts its game with `G.init` and drives the D key
+   through `UI.onKey`, so it now says `UI.running = true` itself.
 
 # 4. Considered and deliberately not done
 

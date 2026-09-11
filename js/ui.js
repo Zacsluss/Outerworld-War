@@ -57,20 +57,25 @@ const UI = {
   get consoleH() { return Math.round(clamp(Render.H * 0.26, 140, 196)); }, // a fixed height left no map at all in a short window
   selection: [], subgroup: 0, idleIdx: 0, groups: {}, hover: null, mouse: { x: 0, y: 0, down: false, wx: 0, wy: 0, inside: false }, drag: null, dragging: false, pending: null, placing: null, menu: null, markers: [], pings: [], keys: {}, lastClick: 0, lastClickUnit: null, msgLog: [], camSaves: {}, showHelp: false, cardButtons: [], lastAlertPos: null, speedIdx: 6, accum: 0, lastT: 0, running: false, fps: 0, frames: 0, fpsT: 0,
   SPEEDS: [0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1, 2, 4, 8], SPEED_NAMES: ['Slowest', 'Slower', 'Slow', 'Normal', 'Fast', 'Faster', 'Fastest', '2x', '4x', '8x'], mode: 'play', viewAll: false, chat: null, loading: null, prodOverlay: false, replayData: null, seeking: false, snaps: [], SNAP_EVERY: 24 * 30,
+  // One speed index for both the simulation step and the draw interpolation: in a network game the host's
+  // Net.speed paces the sim, and the draw pass used to read speedIdx, so the two disagreed and units
+  // stepped instead of gliding for the rest of the match. (REVIEW-M17)
+  speedIndex() { if (this.net && typeof Net !== 'undefined') return Net.speed != null ? Net.speed : 6; return this.speedIdx; },
   speedName() { return this.net && typeof Net !== 'undefined' && Net.speed != null ? this.SPEED_NAMES[Net.speed] + ' (set by the host)' : this.SPEED_NAMES[this.speedIdx]; },
   maxSpeedIdx() { return this.mode === 'replay' ? 9 : 6; },
   init() {
     const c = document.getElementById('game'); Render.init(c); Sound.init(); if (typeof Atlas !== 'undefined') Atlas.init();
     window.addEventListener('resize', () => Render.resize());
     c.addEventListener('mousemove', e => this.onMove(e)); c.addEventListener('mousedown', e => this.onDown(e)); window.addEventListener('mouseup', e => this.onUp(e));
-    c.addEventListener('contextmenu', e => e.preventDefault()); c.addEventListener('dblclick', e => { });
+    c.addEventListener('contextmenu', e => e.preventDefault());
     window.addEventListener('keydown', e => this.onKey(e)); window.addEventListener('keyup', e => { this.keys[e.key] = false; });
     // The wheel zooms. Guarded on the console strip and on any modal, so scrolling over the command
     // card or the codex does not silently move the world behind it. Render.zoomAt clamps and re-clamps
     // the camera itself; the anchor is the cursor, so the tile under the pointer stays under it.
     c.addEventListener('wheel', e => {
       e.preventDefault();
-      if (this.menu || (typeof Codex !== 'undefined' && Codex.isOpen())) return;
+      if (typeof Codex !== 'undefined' && Codex.isOpen()) { Codex.wheel(e.deltaY); return; }   // the manual scrolls; this was the only caller Codex.wheel never had (REVIEW-M17)
+      if (this.menu) return;
       if (e.clientY >= Render.H - this.consoleH) return;
       Render.zoomAt(Render.zoom * Math.pow(1.12, -Math.sign(e.deltaY)), e.clientX, e.clientY);
     }, { passive: false });
@@ -138,7 +143,7 @@ const UI = {
     }
     if (G.paused || this.menu || this.loading) return;
     if (this.mode === 'play' && G.frame > 0 && G.frame % (TPS * 120) === 0 && !(typeof Net !== 'undefined' && Net.active) && !this._autosaved) { this._autosaved = true; Replay.save(false); } else if (G.frame % (TPS * 120) !== 0) this._autosaved = false;
-    const step = 1 / (TPS * this.SPEEDS[this.net ? (typeof Net !== 'undefined' && Net.speed != null ? Net.speed : 6) : this.speedIdx]); this.accum += dt; let n = 0;
+    const step = 1 / (TPS * this.SPEEDS[this.speedIndex()]); this.accum += dt; let n = 0;
     if (this.net && typeof Net !== 'undefined' && Net.active) { while (this.accum >= step && n < 8) { if (!Net.ready(G.frame)) { if (!Net.waitingSince) Net.waitingSince = performance.now(); this.accum = Math.min(this.accum, step); break; } Net.waitingSince = 0; Net.beforeTick(); G.tick(); this.accum -= step; n++; } return; }
     while (this.accum >= step && n < 48) { G.tick(); this.keepSnapshot(); this.accum -= step; n++; }
     if (n >= 48) this.accum = 0;
@@ -148,7 +153,7 @@ const UI = {
     if (this.menuCodex) { this.drawMenuCodex(); return; }   // the main-menu codex; see openCodexFromMenu
     if (!this.running) return;
     const dt = Math.min(0.1, (t - this.lastR) / 1000); this.lastR = t;
-    const step = 1 / (TPS * this.SPEEDS[this.speedIdx]);
+    const step = 1 / (TPS * this.SPEEDS[this.speedIndex()]);
     this.scrollCam(dt);
     for (let i = this.markers.length - 1; i >= 0; i--) if (--this.markers[i].t <= 0) this.markers.splice(i, 1);
     for (let i = this.pings.length - 1; i >= 0; i--) if (--this.pings[i].t <= 0) this.pings.splice(i, 1);
@@ -390,6 +395,7 @@ const UI = {
     this.hoverRes = (!this.hover && m.y < Render.H - this.consoleH) ? this.resourceAt(m.wx, m.wy) : (this.hover ? this.resourceUnder(this.hover) : null);
   },
   onDown(e) {
+    if (this.loading) return;   // a rejoin catching up: see onKey
     const m = this.mouse; m.x = e.clientX; m.y = e.clientY; [m.wx, m.wy] = this.screenToWorld(m.x, m.y);
     // Alt is the signalling modifier (M12 item 9): alt-click pings, alt-drag draws a stroke. Both go
     // out as commands, so allies see them and a replay keeps them.
@@ -471,15 +477,17 @@ const UI = {
     cycleSubgroup: { key: 'Tab', label: 'Cycle subgroup', group: 'Selection' },
     centerSel: { key: 'Backspace', label: 'Centre on selection', group: 'Camera' },
     lastAlert: { key: ' ', label: 'Jump to last alert', group: 'Camera' },
-    zoomIn: { key: '=', label: 'Zoom in', group: 'Camera' },
-    zoomOut: { key: '-', label: 'Zoom out', group: 'Camera' },
+    // The shifted characters, because that is what e.key carries when Shift is held: bound to '=' the
+    // zoom never matched ('+' arrived), and the speed line below it matched instead. (REVIEW-M17)
+    zoomIn: { key: '+', label: 'Zoom in', group: 'Camera' },
+    zoomOut: { key: '_', label: 'Zoom out', group: 'Camera' },
     help: { key: 'F1', label: 'Toggle help overlay', group: 'Interface' },
     codex: { key: 'F3', label: 'Open the codex', group: 'Interface' },
     pause: { key: 'F10', label: 'Pause menu', group: 'Interface' },
     save: { key: 'F5', label: 'Save game', group: 'Interface' },
     chat: { key: 'Enter', label: 'Chat', group: 'Interface' },
-    speedUp: { key: '+', label: 'Game speed up', group: 'Interface' },
-    speedDown: { key: '_', label: 'Game speed down', group: 'Interface' },
+    speedUp: { key: '=', label: 'Game speed up', group: 'Interface' },
+    speedDown: { key: '-', label: 'Game speed down', group: 'Interface' },
   },
   bindings() {
     if (this._binds) return this._binds;
@@ -514,6 +522,15 @@ const UI = {
   resetBindings() { this._binds = null; try { localStorage.removeItem('bw_binds'); } catch (e) { } return this.bindings(); },
   onKey(e) {
     this.keys[e.key] = true; const k = e.key;
+    // Three guards. A keydown inside a text field belongs to the field: with the menu's Name, Room or
+    // Seed box focused, Backspace and Tab were swallowed, Enter opened an invisible chat buffer that ate
+    // every key until Escape, and F5 threw inside Replay.data(). With no game running there is nothing
+    // for a hotkey to act on except the codex, which keeps its own key. And while a rejoin is catching
+    // up, an order issued here would be stamped with a frame the live clients have already passed --
+    // they drop it, the rejoiner applies it, and the rejoiner desyncs at the next hash. (REVIEW-M17)
+    const tag = e.target && e.target.tagName; if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+    if (!this.running && !(typeof Codex !== 'undefined' && (Codex.isOpen() || this.hit('codex', e, k)))) return;
+    if (this.loading && k !== 'F10' && k !== 'Escape') { e.preventDefault(); return; }
     // The codex is modal: while it is open it eats the keyboard so nothing leaks through to the game.
     if (typeof Codex !== 'undefined' && Codex.isOpen()) { if (Codex.key(k)) { e.preventDefault(); return; } }
     if (this.hit('codex', e, k)) { e.preventDefault(); if (typeof Codex !== 'undefined') Codex.toggle(); return; }
@@ -523,7 +540,9 @@ const UI = {
     if (this.chat !== null) { e.preventDefault(); if (k === 'Enter') { const line = this.chat.trim(); this.chat = null; if (line) { if (this.net) Net.chat(line); else if (!G.cheat(line)) G.players[G.human].msg(line, 'info'); } } else if (k === 'Escape') this.chat = null; else if (k === 'Backspace') this.chat = this.chat.slice(0, -1); else if (k.length === 1 && this.chat.length < 60) this.chat += k; return; }
     if (this.hit('chat', e, k) && this.mode === 'play') { this.chat = ''; e.preventDefault(); return; }
     if (this.hit('save', e, k)) { e.preventDefault(); Replay.save(true); return; }
-    if (k === 'F8') { e.preventDefault(); if (Replay.hasAutosave()) Replay.loadAutosave(); return; }
+    // F8 loads the autosave (README) -- and it used to do so mid-game with no confirmation, while the
+    // help text advertised F8 as a camera slot. A running game asks first. (REVIEW-M17)
+    if (k === 'F8') { e.preventDefault(); if (Replay.hasAutosave() && (!this.running || typeof confirm !== 'function' || confirm('Load the autosave? The game in progress will be lost.'))) Replay.loadAutosave(); return; }
     if ((k === 'm' || k === 'M') && e.ctrlKey) { Sound.setMuted(!Sound.muted); e.preventDefault(); const hp = G.players[G.human]; if (hp) hp.msg(Sound.muted ? 'Sound muted.' : 'Sound on.', 'info'); return; }   // plain M is the Move command
     if ((k === 'v' || k === 'V') && e.ctrlKey && this.mode === 'replay') { this.viewAll = !this.viewAll; e.preventDefault(); return; }
     if ((k === 'b' || k === 'B') && e.ctrlKey && this.mode === 'replay') { this.branchReplay(); e.preventDefault(); return; }
@@ -535,7 +554,9 @@ const UI = {
       if (k === 'ArrowRight' && e.shiftKey) { e.preventDefault(); this.seekTo(G.frame + TPS * 30); return; }
       if (k === 'Home') { e.preventDefault(); this.seekTo(0); return; }
     }
-    if (this.hit('cycleSubgroup', e, k)) { e.preventDefault(); this.cycleSubgroup(e.shiftKey ? -1 : 1); return; }   // Brood War cycles the card through the kinds in a mixed selection
+    // Only when there is a subgroup to cycle to: Tab is also the card's page-turn key (the 'More' button,
+    // UI.paginate), and this line used to swallow it in Brood War hotkey mode. (REVIEW-M17)
+    if (this.hit('cycleSubgroup', e, k) && this.subgroupKinds().length > 1) { e.preventDefault(); this.cycleSubgroup(e.shiftKey ? -1 : 1); return; }   // Brood War cycles the card through the kinds in a mixed selection
     if (this.hit('idleWorker', e, k)) { this.idleWorker(); return; }
     if (this.hit('centerSel', e, k)) { e.preventDefault(); this.centerOnSelection(); return; }
     if (this.hit('selectArmy', e, k)) { e.preventDefault(); this.selectArmy(); return; }
@@ -545,11 +566,14 @@ const UI = {
     // Speed and zoom share the +/- row, so zoom takes SHIFT and speed takes the bare key. The
     // strategic zoom shipped with no keyboard access at all -- only the wheel -- which left it
     // unusable to anyone playing with a trackpad that swallows wheel events.
-    if (e.shiftKey && this.hit('zoomIn', e, k)) { Render.setZoom(Render.zoom * 1.25); this.clampCam(); return; }
-    if (e.shiftKey && this.hit('zoomOut', e, k)) { Render.setZoom(Render.zoom / 1.25); this.clampCam(); return; }
-    if (this.hit('speedUp', e, k) || k === '=') { this.speedIdx = Math.min(this.maxSpeedIdx(), this.speedIdx + 1); return; }
-    if (this.hit('speedDown', e, k) || k === '-') { this.speedIdx = Math.max(0, this.speedIdx - 1); return; }
-    if (this.hit('lastAlert', e, k)) { if (this.lastAlertPos) this.centerOn(this.lastAlertPos.x, this.lastAlertPos.y); return; }
+    if (this.hit('zoomIn', e, k)) { Render.setZoom(Render.zoom * 1.25); this.clampCam(); return; }
+    if (this.hit('zoomOut', e, k)) { Render.setZoom(Render.zoom / 1.25); this.clampCam(); return; }
+    // In a network game the host's delay sets the pace (Net.speed) and these keys used to move a number
+    // nothing read; say so instead of pretending.
+    if (this.hit('speedUp', e, k) || this.hit('speedDown', e, k)) { if (this.net) { const hp = G.players[G.human]; if (hp) hp.msg('The host sets the speed in a network game.', 'info'); return; } this.speedIdx = this.hit('speedUp', e, k) ? Math.min(this.maxSpeedIdx(), this.speedIdx + 1) : Math.max(0, this.speedIdx - 1); return; }
+    // The most recent alert, whether it was ours (UI.ping) or an ally's (G.signal records those on G; the
+    // key used to read only ours, so an ally's ping never became "jump to last alert").
+    if (this.hit('lastAlert', e, k)) { const a = [this.lastAlertPos, G.lastAlertPos].filter(Boolean).sort((p, q) => (q.f || 0) - (p.f || 0))[0]; if (a) this.centerOn(a.x, a.y); return; }
     if (/^[0-9]$/.test(k)) { if (e.ctrlKey) { this.groups[k] = this.selection.slice(); e.preventDefault(); } else if (e.shiftKey) { this.groups[k] = (this.groups[k] || []).concat(this.selection.filter(u => !(this.groups[k] || []).includes(u))); } else if (this.groups[k] && this.groups[k].length) { const g = this.groups[k].filter(u => u.alive); if (this.lastGroupKey === k && performance.now() - this.lastGroupT < 400) this.centerOn(g[0].x, g[0].y); this.selection = g; this.pending = null; this.placing = null; this.cardMenu = null; this.lastGroupKey = k; this.lastGroupT = performance.now(); } return; }
     if (/^F[2-8]$/.test(k)) { if (e.shiftKey) this.camSaves[k] = { x: Render.camX, y: Render.camY, z: Render.zoom }; else if (this.camSaves[k]) { if (this.camSaves[k].z) Render.setZoom(this.camSaves[k].z); Render.camX = this.camSaves[k].x; Render.camY = this.camSaves[k].y; this.clampCam(); } return; }
     const up = k.length === 1 ? k.toUpperCase() : k;
@@ -842,7 +866,7 @@ const UI = {
     pl.builder.setOrder({ type: 'build', def: pl.def, tx: pl.tx, ty: pl.ty }, shift); Sound.ack(pl.builder);
     if (!shift) { this.placing = null; this.cardMenu = null; }
   },
-  ping(x, y) { this.pings.push({ x, y, t: 90 }); this.lastAlertPos = { x, y }; },
+  ping(x, y) { this.pings.push({ x, y, t: 90 }); this.lastAlertPos = { x, y, f: G.frame }; },
   // ---------------- command card ----------------
   // The card is 4 wide and 3 tall -- twelve slots -- and pages beyond that. It used to be 3x3 with
   // Cancel pinned to slot 8, and nothing enforced the nine-entry ceiling: a tenth button drew
@@ -993,9 +1017,8 @@ const UI = {
       // stable frame to frame and does not jitter between two equal buildings
       const target = () => (bldGroup ? bldGroup.slice().sort((a, b) => a.prod.length - b.prod.length || a.id - b.id)[0] : u);
       if (!u.done) { B(this.CARD_SLOTS - 1, 'Cancel', 'Escape', () => G.cancelBuilding(u), { pin: true }); return btns; }
-      if (u.lifted) { B(0, 'Land', 'L', setPending('land'), {}); btns[0].fn = () => { this.placing = { def: d, builder: u, land: true, tx: 0, ty: 0 }; }; return btns; }
+      if (u.lifted) { B(0, 'Land', 'L', () => { this.placing = { def: d, builder: u, land: true, tx: 0, ty: 0 }; }, {}); return btns; }
       for (const id of d.produces) { const ud = DATA.units[id]; const ok = p.hasReq(ud); B(i++, ud.name, ud.hk, () => G.queueUnit(target(), id), { cost: ud, enabled: ok, dim: !ok, why: why(ud) }); }
-      if (d.id === 'reaver' || d.id === 'carrier') { }
       for (const id of d.upg) { const ud = DATA.upgrades[id]; const lvl = p.upgLevel(id); if (lvl >= 3) continue; const rq = ud.req[lvl]; const ok = !rq || p.hasBuilding(rq); B(i++, ud.name + ' L' + (lvl + 1), ud.hk, () => G.queueUpgrade(u, id), { cost: { min: ud.min[lvl], gas: ud.gas[lvl], time: ud.time[lvl] }, enabled: ok && !p.researching.has(id), dim: !ok || p.researching.has(id), why: !ok && rq ? 'Requires ' + DATA.buildings[rq].name : p.researching.has(id) ? 'Already researching.' : null }); }
       for (const id of d.tech) { const td = DATA.techs[id]; if (p.tech.has(id)) continue; const ok = !td.req || p.hasReq(td); B(i++, td.name, td.hk, () => G.queueTech(u, id), { cost: td, enabled: ok && !p.researching.has(id), dim: !ok || p.researching.has(id), why: !ok ? why(td) : p.researching.has(id) ? 'Already researching.' : null }); }
       // AN ADD-ON KEEPS ITS OWN CARD -- FIXLIST-M14 B5 (item 15). This block used to copy the add-on's
@@ -1330,14 +1353,13 @@ const UI = {
     let y = Render.H - this.consoleH - 12; for (let i = p.msgs.length - 1; i >= 0; i--) { const m = p.msgs[i]; const age = G.frame - m.t; if (age > 24 * 8) continue; ctx.fillStyle = m.kind === 'error' ? '#f77' : m.kind === 'attack' || m.kind === 'nuke' ? '#f55' : '#ff8'; ctx.globalAlpha = age > 24 * 6 ? 1 - (age - 144) / 48 : 1; ctx.fillText(m.text, 12, y); ctx.globalAlpha = 1; y -= 18; }
   },
   drawHelp(ctx) {
-    const lines = ['CONTROLS', 'Left click / drag: select   Right click: smart command   Shift: queue / add to selection', 'Ctrl+click: select all of type on screen   Double-click: same', 'M move  S stop  A attack(-move)  P patrol  H hold   B build  V advanced build', 'Ctrl+1..9 assign group   1..9 select   Shift+# add   F2-F8 (+Shift) camera saves', 'Esc: cancel / cancel construction or last queue item   Space: jump to last alert', 'Arrow keys / screen edge: scroll   Minimap click: move, right-click: command', 'Tab: cycle selected kind   , idle worker   Ctrl+A select army   Backspace: centre on selection',
+    const lines = ['CONTROLS', 'Left click / drag: select   Right click: smart command   Shift: queue / add to selection', 'Ctrl+click: select all of type on screen   Double-click: same', 'M move  S stop  A attack(-move)  P patrol  H hold   B build  V advanced build', 'Ctrl+0..9 assign group   0..9 select   Shift+# add   F2 F4 F6 F7 (+Shift) camera saves   F8 load autosave', 'Esc: cancel / cancel construction or last queue item   Space: jump to last alert', 'Arrow keys / screen edge: scroll   Minimap click: move, right-click: command', 'Tab: cycle selected kind   , idle worker   Ctrl+A select army   Backspace: centre on selection',
       '+ / -: game speed   F9: pause   F10: menu   Ctrl+M: mute   F1: toggle this help', 'Unit-specific hotkeys are shown on the command card (bottom right).'];
     ctx.fillStyle = '#000c'; ctx.fillRect(Render.W / 2 - 330, 60, 660, 20 * lines.length + 20); ctx.fillStyle = '#eee'; ctx.font = '13px sans-serif'; lines.forEach((l, i) => ctx.fillText(l, Render.W / 2 - 320, 84 + i * 20));
   },
   // ---------------- menus ----------------
   menuItems() {
     if (this.menu === 'brief' && G.mission) { const d = G.mission.def; return { title: d.title.toUpperCase(), lines: d.brief.concat(['', 'OBJECTIVE: ' + d.objective]), items: [['Begin mission', () => { this.menu = null; }]] }; }
-    if (this.menu === 'waiting') return { title: 'WAITING FOR PLAYERS', lines: ['The game resumes when all players have caught up.'], items: [['Keep waiting', () => { this.menu = null; }], ['Leave game', () => { Net.disconnect(); this.toMenu(); }]] };
     if (this.net && Net.active && !Net.connected) return { title: 'CONNECTION LOST', lines: ['The relay connection dropped.', 'Reconnect from the main menu with the same name to rejoin this game.'], items: [['Keep watching', () => { this.menu = null; }], ['Return to main menu', () => this.toMenu()]] };
     if (this.menu === 'over') { const hp = G.players[G.human]; const won = G.mission ? G.winner === G.human : (G.winTeam != null ? G.winTeam === hp.team : G.winner === G.human); const mins = Math.max(1, G.frame / TPS / 60); const apm = Math.round(G.log.filter(e => e.c.p === G.human).length / mins); const lines = [`Time ${Math.floor(G.frame / TPS / 60)}:${String(Math.floor(G.frame / TPS) % 60).padStart(2, '0')}   APM ${apm}`]; if (G.mission) { lines.push('Objective: ' + G.mission.def.objective + (G.mission.done ? (won ? '  — complete' : '  — failed') : '')); if (G.mission.summary) lines.push(G.mission.summary); } lines.push(''); for (const q of G.players) { const s = q.stats; lines.push(`${q.name} (${RACE_INFO[q.race].name})  kills ${s.unitsKilled}/${s.buildingsKilled}  lost ${s.unitsLost}/${s.buildingsLost}  minerals ${s.mined}  gas ${s.gassed}${q.defeated ? '  ELIMINATED' : ''}`); } return { title: won ? 'VICTORY' : 'DEFEAT', lines, items: [[hp.defeated ? 'Keep watching' : 'Continue playing', () => { this.menu = null; G.over = false; G.freePlay = true; }], ['Restart this game', () => this.start(this.lastOpts)], ['Save replay', () => { Replay.saveReplay(); }], ['Return to main menu', () => this.toMenu()]] }; }
     if (this.mode === 'replay') return { title: 'REPLAY PAUSED', lines: ['Speed: ' + this.speedName(), 'Watching: ' + (this.viewAll ? 'everyone' : G.players[G.human].name), '', '[ and ] switch player, O production overlay', 'Shift+Left/Right skip 30 s, Home restarts, click the bar to seek'], items: [['Resume (Esc)', () => { this.menu = null; }], [(Sound.muted ? 'Sound: off' : 'Sound: on') + ' (Ctrl+M)', () => Sound.setMuted(!Sound.muted)], ['Toggle full map view (Ctrl+V)', () => { this.viewAll = !this.viewAll; this.menu = null; }], ['Next player (])', () => { this.cycleObserved(1); this.viewAll = false; this.menu = null; }], ['Toggle production overlay (O)', () => { this.prodOverlay = !this.prodOverlay; this.menu = null; }], ['Take control from here (Ctrl+B)', () => this.branchReplay()], ['Quit to menu', () => this.toMenu()]] };
