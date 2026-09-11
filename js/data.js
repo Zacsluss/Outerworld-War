@@ -145,8 +145,16 @@ const DATA = (() => {
   // only mech unit that can chase a mutalisk pack across the map rather than waiting for it to come
   // back. Requires the Machine Shop, so it sits on the tank branch rather than the armory branch and
   // does not simply replace the goliath in a build.
+  //
+  // `onMove` IS FIXLIST-M14 C4 (item 19), and it is a flag on the WEAPON rather than a Cyclone clause
+  // in the combat loop -- so the next unit that needs it costs one field and not another branch. Every
+  // other unit in the game plants itself the moment something walks into range; this one does not.
+  //
+  // DAMAGE, RANGE AND COOLDOWN ARE UNCHANGED, and that is the user's decision recorded in the fixlist:
+  // firing on the move is a mobility change only, and any adjustment to what it costs belongs to the
+  // gated balance run rather than to a guess made here.
   U('cyclone', { name: 'Cyclone', race: 'T', hp: 110, armor: 1, size: 'large', min: 125, gas: 50, sup: 3, time: 540, speed: 7.0, sight: 9, r: 13, hk: 'Y', from: 'factory', req: ['machine_shop'], mech: true, cargoSize: 4,
-    gw: W(14, 'explosive', 6, 22, { targets: 'both', upgKey: 'vehW', upgDmg: 2 }), upgA: 'vehA' });
+    gw: W(14, 'explosive', 6, 22, { targets: 'both', onMove: true, upgKey: 'vehW', upgDmg: 2 }), upgA: 'vehA' });
   // WIDOW MINE -- and the reason it is not a spider mine, since that was the brief's own question.
   // A spider mine is a MUNITION: three of them come free with a vulture, they cost no supply, they are
   // fire-and-forget, they hit ground only, and they die on the shot. A widow mine is a UNIT you train:

@@ -301,7 +301,29 @@ class Unit {
       case 'follow': if (!o.target.alive) { this.nextOrder(); break; } if (dist(this, o.target) > this.r + o.target.r + 24) { this.moveTo(o.target.x, o.target.y, o.target); if (this.moveFailed) this.nextOrder(); } break;
       case 'attackmove': {
         if (!o.target || !o.target.alive || !G.targetable(this, o.target)) o.target = this.autoTarget(false);
-        if (o.target) { this.engage(o.target); } else if (this.moveTo(o.x, o.y)) this.nextOrder();
+        // FIRING ON THE MOVE (FIXLIST-M14 C4) is its own branch rather than engage plus a nudge, and
+        // that is not tidiness -- the first version called engage() AND moveTo() in the same frame, so
+        // one repath aimed at the target and the other at the destination and the unit jittered on the
+        // spot: 277 moving frames out of 330 and six pixels of net progress.
+        //
+        // One path, and it goes where the player pointed. A weapon that does not halt never walks
+        // TOWARDS what it is shooting during an attack-move; it walks where it was sent and shoots
+        // whatever comes into range on the way, which is what "fires while moving" means for the only
+        // order that has somewhere to be. Everything else still resolves into stand-here-and-fight.
+        //
+        // AND IT MUST NOT TURN TO FACE WHAT IT SHOOTS, which is the second thing that went wrong and
+        // the more interesting one. `facing` is not decoration in this engine: moveTo turns it toward
+        // the next waypoint at a limited rate and then MOVES ALONG IT. Pointing it at the target each
+        // frame therefore steers the unit at the target -- the Cyclone crept BACKWARDS down the lane,
+        // 13.4 tiles of advance undone to 6.8, and then its movement watchdog gave up and dropped the
+        // order. A unit that shoots without stopping keeps facing where it is going; the gun turns, the
+        // chassis does not, and nothing in fireAt asks which way it was pointed.
+        if (o.target && this.firesOnMove(o.target)) {
+          if (this.inRange(o.target) && this.cooldown <= 0) this.fireAt(o.target);
+          if (this.moveTo(o.x, o.y)) this.nextOrder();
+        }
+        else if (o.target) { this.engage(o.target); }
+        else if (this.moveTo(o.x, o.y)) this.nextOrder();
         break;
       }
       case 'patrol': {
@@ -430,6 +452,10 @@ class Unit {
     return best;
   }
   inRange(t) { const w = this.weaponFor(t); if (!w) return false; const dd = dist(this, t) - t.r - this.r; if (w.minRange && dd < w.minRange * TILE) return false; return dd <= this.wRangeAt(w, t) * TILE + 2; }
+  // Can this unit shoot what it is pointed at WITHOUT stopping? Asked of the weapon it would use
+  // against THIS target, because a unit can carry two and only one of them need be an on-the-move gun.
+  // The immobility tests are here rather than at the call sites so nothing can forget one.
+  firesOnMove(t) { const w = this.weaponFor(t); return !!(w && w.onMove) && this.canMove && !this.sieged && !this.burrowed && !this.inside; }
   engage(t) {
     const w = this.weaponFor(t);
     if (!w) { this.moveTo(t.x, t.y, t); return; }
@@ -438,7 +464,12 @@ class Unit {
       if (w.minRange && dd < w.minRange * TILE) { if (this.canMove && !this.sieged) this.moveTo(this.x + (this.x - t.x), this.y + (this.y - t.y)); return; }
       this.facing = Math.atan2(t.y - this.y, t.x - this.x);
       if (this.cooldown <= 0) this.fireAt(t);
-      this.path = null;
+      // THE HALT, and the one weapon that is exempt from it. Clearing the path is what makes every unit
+      // in this game stand still the moment something walks into range -- it is the engine's default and
+      // it is why a Goliath plants itself. A weapon flagged `onMove` (FIXLIST-M14 C4, the Cyclone) keeps
+      // its carrier's path, so the shot costs it no ground. A flag on the WEAPON and not on the unit, so
+      // the next thing that needs it is one field rather than another branch here.
+      if (!w.onMove) this.path = null;
     } else if (this.canMove && !this.sieged && !(this.burrowed && !this.def.mine)) {
       if (this.burrowed) { this.surface(); return; }
       this.moveTo(t.x, t.y, t);
