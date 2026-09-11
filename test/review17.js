@@ -36,6 +36,9 @@
 //     become a Hive could never research its three techs; the Raven and the Disruptor were bought and never
 //     moved (weaponless, and not on supportUnits()); morph() and addon() never released their claim, so
 //     the money the bank had already paid stayed reserved for the rest of the think.
+// 20. THE AI NEVER REBUILT A DESTROYED TECH BUILDING (task 30): script() only walked forward, so a Queen's
+//     Nest lost in a raid was lost for the game -- the head went null (the Hive requires the nest) and no
+//     Queen could be made again. Measured: a finished nest killed at 335 s, nothing sent to rebuild it in 240 s.
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
 let pass = 0, fail = 0;
@@ -476,6 +479,37 @@ function DATA_NAME(c, id) { return R(c, 'return DATA.units[' + JSON.stringify(id
   ok('MORPH RELEASES ITS CLAIM: the reserve falls by the Lair\'s price and afford(150, 100) is true again (before: 250 reserved of a 250 bank, afford false)', !t8.morph.after.lairClaim && t8.morph.after.commitMin === t8.morph.before.commitMin - 150 && t8.morph.after.commitGas === t8.morph.before.commitGas - 100 && t8.morph.afford === true, JSON.stringify(t8.morph));
   ok('the add-on scene stands: the Reactor is the head claim and the add-on is bought', t8.addon.placed && t8.addon.ok && t8.addon.before.claim, JSON.stringify(t8.addon));
   ok('ADD-ON RELEASES ITS CLAIM too', !t8.addon.after.claim && t8.addon.after.commitMin === t8.addon.before.commitMin - 50 && t8.addon.after.commitGas === t8.addon.before.commitGas - 50, JSON.stringify(t8.addon));
+}
+
+// ============================================================================
+// 20. the AI rebuilds a tech building it has lost, and leaves a step it gave up on alone
+// ============================================================================
+// The real opening (Zerg vs Terran, normal, seed 3) to the Queen's Nest, then the nest destroyed. Before:
+// scriptIdx sat at 15 with a null head for the whole watch (.claude/review/rebuild-probe.js).
+{
+  const out = R(ctx, `
+    G.init({ players: [{ race: 'Z', human: false, difficulty: 'normal', name: 'Z', team: 1 }, { race: 'T', human: false, difficulty: 'normal', name: 'T', team: 2 }], seed: 3, layout: 'temple' });
+    const p = G.players[0], ai = p.ai; const s = ai.styleScript('Z', ai.style); const nestStep = s.findIndex(x => x[1] === 'queens_nest');
+    let nest = null, at = null;
+    for (let i = 0; i < 24 * 60 * 14 && !G.over; i++) { G.tick(); const n = G.units.find(u => u.alive && u.owner === 0 && u.def.id === 'queens_nest' && u.done); if (n && ai.scriptIdx > nestStep) { nest = n; at = G.frame; break; } }
+    if (!nest) return { noNest: true, over: G.over, idx: ai.scriptIdx };
+    const idxBefore = ai.scriptIdx; G.kill(nest, null, true);
+    let sent = null, rebuilt = null, rewound = null;
+    for (let i = 0; i < 24 * 240 && !G.over; i++) {
+      G.tick();
+      if (rewound === null && ai.scriptIdx === nestStep) rewound = G.frame;
+      if (sent === null && ai.mine(u => u.def.worker && u.order.type === 'build' && u.order.def && u.order.def.id === 'queens_nest').length) sent = G.frame;
+      if (rebuilt === null && G.units.some(u => u.alive && u.owner === 0 && u.def.id === 'queens_nest')) { rebuilt = G.frame; break; }
+    }
+    // ...and a step the 200-second hatch gave up on is not rewound to: mark the nest's step skipped, kill
+    // the new nest, and the head must NOT return to it
+    let idle = null;
+    if (rebuilt !== null) { const n2 = G.units.find(u => u.alive && u.owner === 0 && u.def.id === 'queens_nest'); ai.scriptSkipped[nestStep] = true; G.kill(n2, null, true); ai.scriptIdx = Math.max(ai.scriptIdx, nestStep + 1); for (let i = 0; i < 24 * 30 && !G.over; i++) { G.tick(); if (ai.scriptIdx === nestStep) { idle = G.frame; break; } } }
+    return { nestStep, killedAt: Math.round(at / 24), idxBefore, rewound: rewound === null ? null : Math.round((rewound - at) / 24), sent: sent === null ? null : Math.round((sent - at) / 24), rebuilt: rebuilt === null ? null : Math.round((rebuilt - at) / 24), skippedRewound: idle !== null, over: G.over };`);
+  ok('the scene stands: a Zerg AI finished its Queen\'s Nest and the order moved past it before the nest was destroyed', !out.noNest && out.idxBefore > out.nestStep, JSON.stringify(out));
+  ok('THE ORDER GOES BACK TO THE LOST STEP and a drone is sent to rebuild the nest (before: never, in 240 s)', out.rewound !== null && out.sent !== null && out.sent <= 200, JSON.stringify(out));
+  ok('...and a Queen\'s Nest stands again', out.rebuilt !== null, JSON.stringify(out));
+  ok('...but a step the 200-second hatch gave up on is left alone', out.skippedRewound === false, JSON.stringify(out));
 }
 
 ok('no JS errors', ctx.errors.length === 0, ctx.errors.slice(0, 3).join(' | '));

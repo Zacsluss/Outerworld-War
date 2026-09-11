@@ -358,7 +358,9 @@ listed here. Ordered by what I would do first.
     previous deal). Fix: the `land` case in `Unit.tickOrder` should give up through `moveFailed` like
     every other walk, or re-root where it stands when the spot is blocked; pin it beside the crawler
     section of `test/zerg12.js`. Cost S; probe the root spot first (creep? a unit standing on it?).
-30. **The AI never rebuilds a destroyed tech building.** Measured in the same game: Zerg player 1 ends
+30. **The AI never rebuilds a destroyed tech building.** **DONE** (entry 23): a passed step whose building
+    is missing goes back to the head of the build order, unless the 200-second hatch gave up on it. As
+    listed: Measured in the same game: Zerg player 1 ends
     with a Hive and no Queen's Nest (`hasReq(queen)` false, `scriptIdx` 19, head `greater_spire`) — the
     nest was built at step 20, lost in a raid, and `script()` only walks forward, so task 26's Queen rule
     can never fire for that player again and every Queen's Nest tech is gone for the game. Fix: when a
@@ -965,6 +967,22 @@ The questions as they were put, kept for the record:
     put back -> one clean red; the two names off the list -> two reds; the morph release removed -> one
     red; the add-on release removed -> one red. **Canaries:** aistyles seed 1 clean (131, the gate's); seed 5 the known economy line (57 vs 61) and the first-wave line re-dealt (28 vs 34 over P); seed 11 the same one line (32 vs 34 over P). **Eight-player banks:** 253/352/414/478/257/80/23/242 (every AI under 500; re-dealt from 337/294/462/488/188/70/144/252, which is what an AI change does).
     **Gate:** 75 of 75, 245 s. The stamp moved (`ai.js`): `ac3cc0ea77d0c21c`.
+23. **The AI rebuilds a tech building it has lost (task 30).** *(commit: task 30; fourth session)*
+    **Measured first** (`.claude/review/rebuild-probe.js`, Zerg vs Terran, normal, seed 3): the Queen's Nest
+    finished at 335 s with the order at step 15; killed, **nothing was sent to rebuild it in 240 s** --
+    `scriptIdx` sat at 15 and the head was null the whole time, because the Hive at the head requires the
+    nest and `script()` only walked forward. The eight-player game had shown the end state: a Hive, no
+    nest, `hasReq(queen)` false for the rest of the game. **Fix:** before advancing, `script()` looks back
+    over the passed steps and returns the head to the first one whose building is missing (`met(i)` false),
+    so the build order rebuilds what it had -- a tech building, a lost hatchery, a lost sunken -- through
+    the same claim and throttle as any head step. Steps the 200-second hatch gave up on are recorded in
+    `scriptSkipped` and never rewound to, or the hatch would undo itself on the next think; the field
+    rides the AI's own snapshot like every other. **After:** the nest is rebuilt 13 s after it dies: the order is back on its step within a second, a drone is sent at 12 s (was never). **Test:**
+    `test/review17.js` section 20 (4 checks): the real opening to the nest, the nest destroyed, the head
+    back on its step, a drone sent, a nest standing again; then the step marked skipped, the new nest
+    destroyed, and the head does not return. **Negative controls** (restored byte-identical): the rewind
+    removed -> two clean reds (`rewound null, sent null, rebuilt null`, the measured before); the skipped guard removed -> one clean red (`skippedRewound true`). **Canaries:** aistyles seed 1 clean (131, the gate's); seed 5 the known economy line only (57 vs 61 -- its first-wave line went green on this re-deal); seed 11 clean (131; its first-wave line went green too). **Eight-player
+    banks:** 377/804/147/222/302/392/221/303 (re-dealt; every AI under the 2,500 line, one at 804). **Gate:** 75 of 75, 258 s. The stamp moved (`ai.js`): `d782195f5590ca44`.
 
 # 4. Considered and deliberately not done
 

@@ -642,6 +642,14 @@ class AI {
     const cnt = {}; for (const u of G.units) if (u.alive && u.owner === p.id) cnt[u.def.id] = (cnt[u.def.id] || 0) + 1;
     const need = i => { let n = 0; for (let k = 0; k <= i; k++) if (s[k][1] === s[i][1]) n++; return n; };
     const met = i => this.scriptHave(cnt, s[i][1]) >= need(i);
+    // A PASSED STEP WHOSE BUILDING IS GONE GOES BACK TO THE HEAD. The order only walked forward, so a
+    // tech building lost in a raid was lost for the game: the eight-player game ended with a Zerg holding
+    // a Hive and no Queen's Nest (no Queen could be made again, and the head -- the Hive's successor
+    // steps -- sat null because their requirement was gone); a probe that killed a finished nest watched
+    // 240 s with nothing sent to rebuild it (REVIEW-M17 task 30). Steps the 200-second hatch gave up on
+    // are remembered in scriptSkipped and never rewound to, or the hatch would undo itself every think.
+    this.scriptSkipped = this.scriptSkipped || {};
+    for (let i = 0; i < this.scriptIdx; i++) if (!this.scriptSkipped[i] && !met(i)) { this.scriptIdx = i; this.stepT = G.frame; break; }
     while (this.scriptIdx < s.length && met(this.scriptIdx)) { this.scriptIdx++; this.stepT = G.frame; }
     if (this.scriptIdx >= s.length) return;
     if (this.stepT === undefined) this.stepT = G.frame;
@@ -710,7 +718,7 @@ class AI {
       // money the step in front of it is saving for, or it would starve the thing it jumped over.
       if (this.build(id)) { this.stepT = G.frame; return; } // the head step draws on claim 5; a look-ahead step spends from free, so it cannot eat the money the step it jumped over is saving for
     }
-    if (G.frame - this.stepT > 24 * 200) { this.scriptIdx++; this.stepT = G.frame; } // nothing in the whole order was startable for that long: stop asking for the head
+    if (G.frame - this.stepT > 24 * 200) { this.scriptSkipped[this.scriptIdx] = true; this.scriptIdx++; this.stepT = G.frame; } // nothing in the whole order was startable for that long: stop asking for the head (and never rewind to it)
   }
   macro() {
     const p = this.p, r = this.race; const halls = this.halls();

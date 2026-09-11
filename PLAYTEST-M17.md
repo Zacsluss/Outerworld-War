@@ -396,3 +396,15 @@ builds a Reactor), the money already paid stayed reserved as well, so anything b
 think was refused for a cost the bank had already met. `node test/review17.js` section 19 shows the
 reserve falling by the morph's price the moment it is queued. Saves and replays from before this commit
 are refused (the stamp moved).
+
+## 49. The computer rebuilds a tech building it has lost (task 30)
+
+Play against a **normal** computer of any race. Around minute six, `black sheep wall`, find one of its
+tech buildings that its build order has already passed -- a Zerg Queen's Nest or Hydralisk Den, a Terran
+Academy or Factory, a Protoss Cybernetics Core -- and destroy it (`power overwhelming`, a few units, or
+`show me the money` and a Ghost's nuke). **Working:** within a minute or two a worker of theirs goes back
+and builds the same building again, before the order carries on past it. **Before:** never -- the
+computer's order only walked forward, so the building and everything that needed it (the Hive, every
+later Queen) were gone for the game. Not rebuilt on purpose: a step the computer gave up on because it
+could not be started for 200 seconds (it skips those and does not go back). Quicker:
+`node test/review17.js` section 20. Saves and replays from before this commit are refused (the stamp moved).
