@@ -127,11 +127,12 @@ for (const id of GRANTED) {
   if (u && D.buildings[u]) ok((D.buildings[u].produces || []).includes(id), u + ' actually offers ' + id + ' on its `produces` list', (D.buildings[u].produces || []).join(','));
 }
 // and nothing outside race 'N' picked either flag up by accident
-for (const table of [D.units, D.buildings]) for (const k in table) {
-  const d = table[k]; if (d.race === 'N') continue;
-  if (d.neutral || d.unlocked) ok(false, k + ' is a ' + d.race + ' def and must not carry a neutral flag', 'neutral=' + d.neutral + ' unlocked=' + d.unlocked);
-}
-ok(true, 'no T/Z/P def carries `neutral` or `unlocked`');
+{ const leaked = [];
+  for (const table of [D.units, D.buildings]) for (const k in table) {
+    const d = table[k]; if (d.race === 'N') continue;
+    if (d.neutral || d.unlocked) leaked.push(k + ' (' + d.race + ', neutral=' + d.neutral + ' unlocked=' + d.unlocked + ')');
+  }
+  ok(leaked.length === 0, 'no T/Z/P def carries `neutral` or `unlocked`', leaked.join(', ')); }
 
 // RACE_INFO.N: the neutral player's own contract. It exists because Unit.speed, Unit.sight and
 // Unit.armor all dereference this.player unconditionally, so a neutral unit needs a real Player.

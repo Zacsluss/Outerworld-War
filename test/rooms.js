@@ -49,7 +49,16 @@ function client(port, tag) {
     if (m.t === 'cmds') c.cmds.push(m);
   };
   c.send = o => c.ws.send(JSON.stringify(o));
-  c.open = new Promise(r => { c.ws.onopen = r; });
+  // REVIEW-M17: `onopen` alone hangs the whole gate against a port something else already holds (the
+  // relay child dies on EADDRINUSE and this file carried on waiting). Error, close and a deadline all
+  // reject, and the rejection is marked handled so an un-awaited client cannot crash the process.
+  c.open = new Promise((r, j) => {
+    c.ws.onopen = r;
+    c.ws.onerror = () => j(new Error('socket error before open on port ' + port + ' -- is another relay (or another gate) holding it?'));
+    c.ws.onclose = () => j(new Error('socket closed before open on port ' + port));
+    setTimeout(() => j(new Error('no open within 10 s on port ' + port)), 10000).unref();
+  });
+  c.open.catch(() => { });
   c.close = () => { try { c.ws.close(); } catch (e) { } };
   return c;
 }

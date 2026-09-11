@@ -69,7 +69,8 @@ function fight(compA, compB, seed) {
     const tx = (us) => { let x = 0, y = 0, n = 0; for (const u of us) if (u.alive) { x += u.x; y += u.y; n++; } return n ? { x: x / n, y: y / n } : null; };
     // applyOrder, not setOrder: CMD.install() wraps setOrder, and outside a tick it packs the call as a
     // player command owned by G.human, which is nobody here. applyOrder is the raw sim entry the sim
-    // itself uses (see G.rallyOrder), so a duel drives units the same way an order arriving does.
+    // itself uses (applyOrder, the unwrapped path a rally or the AI takes), so a duel drives units the
+    // same way an order arriving does.
     const send = (us, x, y) => { for (const u of us) if (u.alive) { u.queue = []; u.applyOrder({ type: 'attackmove', x, y }); } };
     send(A, hx + 600, hy + 160); send(B, hx + 80, hy + 160);
     let f = 0;

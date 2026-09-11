@@ -3,8 +3,8 @@
 //
 // Running it today does damage. Its anchors no longer match, so it throws part-way -- and `edit()`
 // writes each file as it finishes it, so the files it got through before the throw are already
-// modified. It appended a second `CMD.install()` to js/commands.js before failing on js/map.js, which
-// is a duplicate that parses, runs, and would have been committed by anything that did not diff first.
+// modified. (This header was copied from patch10.js, whose story about a duplicate CMD.install() is
+// its own; this codemod's only target is js/ai.js. The danger is the same.)
 //
 // Kept for the record rather than deleted, behind a flag, so that `for f in test/*.js` is safe.
 if (!process.argv.includes('--i-know-this-rewrites-source')) {

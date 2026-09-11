@@ -4,9 +4,9 @@
 //
 // Prints every simulation file and every test with its size, its own one-line description (taken
 // from the file's first comment, which every file in this repo has), and for a test whether the
-// pre-commit gate actually runs it. That last column is the one worth having: fourteen suites exist
-// and are NOT in the gate, for reasons test/all.js states at the top, and it is easy to assume a
-// green gate means every test passed.
+// pre-commit gate actually runs it. That last column is the one worth having: about a third of the
+// suites are NOT in the gate (the tool prints the count; it was 32 at REVIEW-M17), for reasons
+// test/all.js states at the top, and it is easy to assume a green gate means every test passed.
 const fs = require('fs'), path = require('path');
 const root = path.join(__dirname, '..');
 const MD = process.argv.includes('--md');
@@ -26,7 +26,9 @@ function firstComment(file) {
   }
   return '';
 }
-const lineCount = f => fs.readFileSync(f, 'utf8').split(/\r?\n/).length;
+// Newlines, not split pieces: a file that ends in a newline used to count one line too many, which put
+// the repo total 131 lines (one per file) above `wc -l`.
+const lineCount = f => { const s = fs.readFileSync(f, 'utf8'); const n = (s.match(/\n/g) || []).length; return s.length && !s.endsWith('\n') ? n + 1 : n; };
 const endings = f => { const s = fs.readFileSync(f, 'latin1'); const c = (s.match(/\r\n/g) || []).length, l = (s.match(/(^|[^\r])\n/g) || []).length; return c && l ? 'MIXED' : c ? 'CRLF' : 'LF'; };
 
 // which suites the gate runs

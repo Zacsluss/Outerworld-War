@@ -20,7 +20,7 @@
 //   test/playtest.js        drives whole games through the UI; minutes per matchup
 //   test/net.js             spins up the relay and two clients with real sockets and 240 s phase
 //                           budgets, so it is both slow and environment-dependent
-//   test/missions.js        eight scripted scenarios end to end
+//   test/missions.js        twelve scripted scenarios end to end
 //   test/editor.js          builds a map, then plays an AI game and a LAN game on it
 //   test/aiaudit.js         counts, does not assert
 //   test/casters.js         counts, does not assert
@@ -137,7 +137,9 @@ if (unknown.length) { console.log('unknown test' + (unknown.length > 1 ? 's' : '
 // Pull "N passed, M failed" out of a child's output. Every check in this repo prints one of these
 // shapes; determinism.js prints none and speaks only through its exit code, which is fine.
 const summarize = out => {
-  let m = /(?:ALL PASS|FAIL)\s+(\d+) passed, (\d+) failed/.exec(out);
+  // FAILURES as well as FAIL: thirteen gate suites print 'FAILURES N passed, M failed' on the red path,
+  // which is the path that matters, and this fell through to '(exit code only)' for every one of them.
+  let m = /(?:ALL PASS|FAILURES|FAIL)\s+(\d+) passed, (\d+) failed/.exec(out);
   if (m) return m[1] + ' passed, ' + m[2] + ' failed';
   m = /^PASS (\d+)\s+FAIL (\d+)\s*$/m.exec(out);
   if (m) return m[1] + ' passed, ' + m[2] + ' failed';
@@ -148,14 +150,20 @@ const summarize = out => {
   return '(exit code only)';
 };
 
+// A hang is a failure, not a wait. test/rooms.js awaited a socket `open` that never fires against a
+// port something else already held, and this runner had no way to notice; the slowest honest member
+// is under three minutes, so fifteen is a hang.
+const KILL_MS = 15 * 60 * 1000;
 const runOne = t => new Promise(resolve => {
   const t0 = Date.now();
   const child = spawn(process.execPath, [path.join(__dirname, t.args[0])].concat(t.args.slice(1)), { cwd: path.join(__dirname, '..'), stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
+  const killer = setTimeout(() => { out += '\n[test/all.js killed this check after ' + (KILL_MS / 1000) + ' s: a hang is a failure]\n'; try { child.kill(); } catch (e) { } }, KILL_MS);
   child.stdout.on('data', d => { out += d; });
   child.stderr.on('data', d => { out += d; });
   child.on('error', e => resolve(Object.assign({}, t, { rc: -1, ms: Date.now() - t0, out: String(e && e.stack || e) })));
   child.on('close', rc => {
+    clearTimeout(killer);
     const r = Object.assign({}, t, { rc, ms: Date.now() - t0, out });
     console.log((rc === 0 ? '  ok   ' : ' FAIL  ') + r.name.padEnd(13) + (r.ms / 1000).toFixed(1).padStart(6) + 's  ' + summarize(out));
     resolve(r);
@@ -185,6 +193,11 @@ const runOne = t => new Promise(resolve => {
   for (const r of bad) {
     console.log('\n' + '='.repeat(88) + '\n=== ' + r.name + ' failed (exit ' + r.rc + '), its output:\n' + '='.repeat(88));
     const lines = r.out.split('\n');
+    // Nine gate suites print a PASS line per check and have more than sixty checks, so a FAIL in the
+    // first three hundred lines of test/neutrals.js used to be cut by the tail below. Every FAIL line
+    // is printed first, wherever it was.
+    const fails = lines.filter(l => /^\s*FAIL\b/.test(l) && !/^FAIL\s+\d+ passed/.test(l));
+    if (lines.length > 60 && fails.length) console.log('every FAIL line, wherever it was:\n' + fails.join('\n') + '\n');
     console.log(lines.length > 60 ? '... ' + (lines.length - 60) + ' earlier lines omitted, run `node test/' + r.args[0] + '` for all of it ...\n' + lines.slice(-60).join('\n') : r.out);
   }
   if (VERBOSE) for (const r of results.filter(x => x.rc === 0)) console.log('\n=== ' + r.name + ' ===\n' + r.out);

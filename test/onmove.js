@@ -158,7 +158,9 @@ ok(det.a === det.b, 'an eight-minute game re-runs bit-identically', det.a + ' vs
 { const src = fs.readFileSync(path.join(root, 'js', 'sim.js'), 'utf8');
   // Comments may name it -- one does, explaining the flag. What must not exist is a BRANCH on it: the
   // item asked for a flag on the weapon rather than a Cyclone special case in the combat loop.
-  ok(!/id === 'cyclone'|id == 'cyclone'|.ids*===s*.cyclone/.test(src),
+  // REVIEW-M17: the third alternative had lost its backslashes (HANDOFF-M13 trap 6, landed in a test)
+  // and matched almost nothing; `u.def.id === "cyclone"` slipped past it.
+  ok(!/\.id\s*===?\s*['"]cyclone['"]/.test(src),
     'js/sim.js branches on no unit id for this -- the flag is the whole mechanism'); }
 
 ok(errors.length === 0, 'no JS errors were logged along the way', errors.slice(0, 3).join(' | '));

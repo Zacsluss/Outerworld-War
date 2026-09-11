@@ -1,6 +1,6 @@
 'use strict';
 // ============================================================================
-// Sprite baking pipeline:  node tools/bake.js [--only id,id] [--ss N]
+// Sprite baking pipeline:  node tools/bake.js [--only id,id] [--ss N] [--pv N]
 // Renders every unit (16 facings x idle/walk/attack frames) and building
 // model into PNG sprite sheets + team-colour masks, and writes assets/atlas.js
 // ============================================================================

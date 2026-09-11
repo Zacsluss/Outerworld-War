@@ -225,6 +225,7 @@ const JA = x => JSON.parse(vm.runInContext('JSON.stringify(' + x + ')', ctx));
   ok(/DATA\.abilities\[b\.abil\]/.test(src), '...and it reads the description off the ability, not off a cost the button does not have');
   const ui = fs.readFileSync(path.join(root, 'js', 'ui.js'), 'utf8');
   const btns = ui.match(/B\(i\+\+, (?:label|ab\.name)[^\n]*?\);/g) || [];
+  ok(btns.length >= 8, 'the scrape finds the ability buttons (negative control for the anchor: eight today)', btns.length + ' found');
   const noId = btns.filter(b => !/abil: id/.test(b));
   ok(noId.length === 0, 'and every ability button carries its id, or the tooltip could not find it', String(noId.length) + ' without');
 }

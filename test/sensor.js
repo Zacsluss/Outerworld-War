@@ -214,6 +214,7 @@ ok(det.sameGame, 'and the same seed replayed gives the same contacts', JSON.stri
 ok(det.survivesSnapshot, 'A SNAPSHOT AND A REPLAY SEEK REPRODUCE THEM EXACTLY -- nothing is stored, so there is nothing to lose');
 { const src = fs.readFileSync(path.join(root, 'js', 'game.js'), 'utf8');
   const fn = src.slice(src.indexOf('contacts(pid) {'), src.indexOf('// ---------------- spawning'));
+  ok(fn.length > 200, 'the slice found G.contacts (negative control for the anchor: ~800 chars today)', fn.length + ' chars');
   ok(!/Math\.random|Date\.now|performance\.|this\._|G\._/.test(fn), 'G.contacts uses no randomness, no clock and no stored state', fn.length + ' chars'); }
 
 ok(errors.length === 0, 'no JS errors were logged along the way', errors.slice(0, 3).join(' | '));

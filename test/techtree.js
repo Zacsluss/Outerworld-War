@@ -26,7 +26,6 @@ let fails = 0, checks = 0;
 const QUIET = process.argv.includes('--quiet');
 const say = QUIET ? () => { } : (...a) => console.log(...a); // detail; failures and the verdict always print
 const bad = (msg) => { console.log('  FAIL ' + msg); fails++; };
-const ok = (msg) => { console.log('  PASS ' + msg); };
 
 // A building id counts as present if it, or anything that morphs into it, is present. Lair satisfies a
 // hatchery requirement, and greater spire a spire, which is what EQUIV is for.

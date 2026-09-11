@@ -52,8 +52,10 @@ const Bot = {
   // base under attack: send the army there (returns true while defending)
   defend(army) { const hit = this.mine(u => (u.isBuilding || u.def.worker) && G.frame - u.lastHit < 72 && u.lastHitBy && u.lastHitBy.owner !== G.human && !G.allied(u.lastHitBy.owner, G.human))[0]; if (!hit) { if (this.defending && G.frame - this.defending > 24 * 20) this.defending = 0; return !!this.defending; } this.defending = G.frame; const far = army.filter(u => u.order.type !== 'attack' && distPt(u.x, u.y, hit.x, hit.y) > 6 * TILE && !u.sieged && !u.burrowed); if (far.length) { this.attackMove(far.slice(0, 12), hit.x, hit.y); if (far.length > 12) this.attackMove(far.slice(12, 24), hit.x, hit.y); } return true; },
   attackMove(units, x, y, shift) { if (!units.length) return; this.select(units); this.key('a'); this.lclick(x, y, shift); },
-  // Selection is capped at 12, and the scripts used to send exactly two selections -- 24 units out of an
-  // army of ninety -- and then leave the rest standing at home for two minutes. A human uses control
+  // The scripts used to send exactly two selections -- 24 units out of an army of ninety, back when
+  // selection was capped at twelve (the cap went in M12 item 2; the walk in twelves stayed because it
+  // is what a human's control groups look like) -- and then leave the rest standing at home for two
+  // minutes. A human uses control
   // groups and sends the lot; this walks the army in twelves the way that actually looks on screen.
   attackAll(units, x, y, max) { for (let i = 0; i < units.length && i < (max || 96); i += 12) this.attackMove(units.slice(i, i + 12), x, y); },
   // units that finished training after the push left, or that fell out of it

@@ -24,9 +24,10 @@ const START = `G.init({ players: [{ race: 'T', human: false, difficulty: 'normal
 run(`
   ${START}
   this.ref = {};
-  for (let f = 1; f <= 12000; f++) { G.tick(); if (f % 1500 === 0) this.ref[f] = G.stateHash(); }
+  // 4800 as well as the 1500s: the no-perturb check below runs to 4800 (REVIEW-M17 made it a real comparison).
+  for (let f = 1; f <= 12000; f++) { G.tick(); if (f % 1500 === 0 || f === 4800) this.ref[f] = G.stateHash(); }
 `);
-ok('the reference run produced hashes', Object.keys(ctx.ref).length === 8, JSON.stringify(Object.keys(ctx.ref)));
+ok('the reference run produced hashes', Object.keys(ctx.ref).length === 9, JSON.stringify(Object.keys(ctx.ref)));
 
 // ---- take a snapshot mid-game, run on, restore, run on again ----
 run(`
@@ -39,7 +40,10 @@ run(`
   for (let f = 4501; f <= 7500; f++) G.tick();
   this.hashAfter = G.stateHash();
 `);
-ok('a snapshot is taken quickly', ctx.takeMs < 400, ctx.takeMs + 'ms for ' + ctx.unitsAtSnap + ' live units, ' + Math.round(ctx.snapBytes / 1024) + ' KB');
+// REVIEW-M17: the two millisecond budgets that were here (take < 400, restore < 400) are printed now, not
+// asserted -- test/all.js's header promises no wall-clock budgets in the gate, and a busy machine is not
+// a regression. The numbers were 4 ms and 2 ms against 400 when they were removed.
+console.log('   snapshot taken in ' + ctx.takeMs + 'ms for ' + ctx.unitsAtSnap + ' live units, ' + Math.round(ctx.snapBytes / 1024) + ' KB');
 ok('running on from the snapshot matches the reference', ctx.hashAfter === ctx.ref[7500], ctx.hashAfter + ' vs ' + ctx.ref[7500]);
 
 run(`
@@ -49,7 +53,7 @@ run(`
 `);
 ok('restoring puts the frame back', ctx.frameRestored === 4500, String(ctx.frameRestored));
 ok('a restored state hashes the same as when it was taken', ctx.hashRestored === ctx.hashAtSnap, ctx.hashRestored + ' vs ' + ctx.hashAtSnap);
-ok('restoring is fast', ctx.restoreMs < 400, ctx.restoreMs + 'ms');
+console.log('   restored in ' + ctx.restoreMs + 'ms');
 
 // The real test: carry on simulating and land on exactly the reference states.
 run(`
@@ -108,7 +112,9 @@ run(`
   this.noPerturbLater = G.stateHash();
 `);
 ok('taking a snapshot does not perturb the simulation', ctx.noPerturb === true);
-ok('...including its effect on later frames', ctx.noPerturbLater === ctx.ref[4500] || true);
+// REVIEW-M17: this line used to read `=== ctx.ref[4500] || true` -- always green, and comparing frame 4800
+// against the frame-4500 reference. The reference run records 4800 now, so the comparison is real.
+ok('...including its effect on later frames', ctx.noPerturbLater === ctx.ref[4800], ctx.noPerturbLater + ' vs ' + ctx.ref[4800]);
 
 // ---- what a rejoin does: JSON over the wire, into a process that has not played the game ----
 // The checks above all restore into a context that has already played, which hides a whole class of bug:

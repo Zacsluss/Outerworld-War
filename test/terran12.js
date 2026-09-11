@@ -537,8 +537,9 @@ const zl = json(`(() => {
 ok(zl.t === 24 && zl.digT === 0 && zl.times === null, 'CONTROL: a Zergling still burrows in the generic 24 frames and has no arming delay at all', JSON.stringify(zl));
 
 console.log('\n--- 11. determinism and the shared tables ---');
-ok(!/Math\.random|Date\.now|performance\./.test(run('String(Abilities.tickTerran) + String(Abilities.muleHaul) + String(Abilities.reactorTick) + String(Abilities.cast) + String(Abilities.instant)')),
-  'no Math.random, Date or performance in the new ability code');
+{ const srcs = run('[Abilities.tickTerran, Abilities.muleHaul, Abilities.reactorTick, Abilities.cast, Abilities.instant].map(f => typeof f === "function" ? String(f) : "MISSING")');
+  ok(!srcs.includes('MISSING'), 'the five ability functions exist (String(undefined) would pass the next check on nothing)', srcs.map((s, i) => s === 'MISSING' ? i : null).filter(x => x !== null).join(','));
+  ok(!/Math\.random|Date\.now|performance\./.test(srcs.join('')), 'no Math.random, Date or performance in the new ability code'); }
 ok(!/Math\.random|Date\.now/.test(run('String(AI.prototype.micro)')), 'nor in AI.micro');
 ok(json('EQUIV.command_center').includes('orbital_command') && json('EQUIV.command_center').includes('planetary_fortress'),
   'EQUIV knows an Orbital and a Fortress are still Command Centers', JSON.stringify(json('EQUIV.command_center')));

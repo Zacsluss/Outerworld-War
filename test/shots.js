@@ -111,13 +111,23 @@ ok(T.size >= 4 && Z.size >= 3 && P.size >= 4, '...and each race has several of i
 // is created with. Nothing connects them, and a mismatch does not throw -- it just makes a shot arrive
 // early or late, which is invisible in a test that only checks the kind.
 {
+  // REVIEW-M17: this scrape used to search the whole file, and js/fx.js has TWO switches with the same
+  // case labels -- the impact effects come first and interpolate nothing -- so twelve of nineteen kinds
+  // matched the wrong switch, found no lerpPos, and were silently skipped: the check was verified for
+  // seven kinds and read as if for all. It is scoped to drawEffect now, reads `lerpPos(e, T)` through
+  // the `const T = N` beside it, and counts what it found, so an anchor that matches nothing is a red.
   const fxSrc = fs.readFileSync(path.join(root, 'js', 'fx.js'), 'utf8');
+  const draw = fxSrc.slice(fxSrc.indexOf('drawEffect('));
   const shotT = J('Combat.SHOT_T');
-  const bad = [];
+  const bad = [], found = [];
   for (const [kind, t] of Object.entries(shotT)) {
-    const m = new RegExp("case '" + kind + "':[\\s\\S]{0,400}?lerpPos\\(e, (\\d+)\\)").exec(fxSrc);
-    if (m && Number(m[1]) !== t) bad.push(kind + ' SHOT_T=' + t + ' lerpPos=' + m[1]);
+    const m = new RegExp("case '" + kind + "':([\\s\\S]{0,400}?)lerpPos\\(e, (\\d+|T)\\)").exec(draw);
+    if (!m) continue;
+    const n = m[2] === 'T' ? (/const T = (\d+)/.exec(m[1]) || [])[1] : m[2];
+    found.push(kind);
+    if (Number(n) !== t) bad.push(kind + ' SHOT_T=' + t + ' lerpPos=' + n);
   }
+  ok(found.length >= 9, 'the scrape finds the kinds that interpolate their flight (negative control for the anchor: nine today)', found.length + ' found: ' + found.join(' '));
   ok(bad.length === 0, 'every kind that interpolates its flight uses the same duration Combat.SHOT_T gave it', bad.join(', '));
   ok(Object.keys(shotT).length >= 12, 'and SHOT_T covers the new kinds rather than leaving them on the 4-frame default', String(Object.keys(shotT).length));
 }

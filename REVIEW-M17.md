@@ -257,6 +257,36 @@ Each entry names the file, what is wrong, the fix, and what it would cost. Anyth
    No negative control applies to a deletion; the evidence is the cross-reference count. Gate 70 of 70,
    166.9 s. The stamp moved again, `14ec639729837842` → `a82605150bc95a01` (source in `game.js`,
    `sim.js`, `map.js` and `abilities.js` changed).
+5. **Test hygiene: the runner reads every failure, shows every FAIL line, and turns a hang into a
+   failure; four vacuous anchors have count guards; a mangled regex is repaired; the wall-clock
+   budgets are gone.** *(commit: test hygiene)* All test/ and tools/, no simulation change.
+   - `test/all.js`: `summarize()` only knew `ALL PASS`/`FAIL`; **thirteen gate suites print `FAILURES`
+     on their red path** and fell through to "(exit code only)" — the path that matters. Fixed with one
+     alternative; the three shapes were re-checked against the regex. A child is now killed after 15
+     minutes with a clean FAIL line (the slowest honest member is under three). Every `FAIL` line of a
+     failing child is printed before the 60-line tail, because nine gate suites print a PASS line per
+     check and have more than sixty (`neutrals` has 383), so a FAIL in the first 300 lines was cut.
+   - `test/rooms.js`: `c.open` waited on `onopen` alone, so a relay port held by anything else (a
+     second gate, a stray server) hung the whole gate. **Measured:** with a dummy server on 8793 the
+     old file waited forever; the new one exits red in 10.6 s naming the port. Error, close and a
+     10 s deadline all reject, marked handled.
+   - Vacuous anchors, each now guarded by the count it finds today: `test/shots.js` searched the whole
+     of `fx.js` for `case 'kind'` and **js/fx.js has two switches with the same labels** — twelve of
+     nineteen kinds matched the impact switch, found no `lerpPos`, and were skipped; scoped to
+     `drawEffect` and reading `lerpPos(e, T)` through its `const T`, it finds nine (was seven) and
+     asserts that. `test/describe.js` (eight buttons), `test/sensor.js` (an 800-char slice) get the
+     same guard. `test/onmove.js`'s third regex alternative had lost its backslashes (HANDOFF-M13 trap
+     6 in a committed test) — repaired. `test/neutrals.js` printed an unconditional PASS after a loop
+     of FAILs; `test/terran12.js` would have passed on `String(undefined)`; `test/snapshot.js:111`
+     read `=== ref[4500] || true` — always green and against the wrong frame; the reference run now
+     records 4800 and the comparison is real.
+   - `test/snapshot.js`'s two millisecond budgets (take < 400, restore < 400; measured 3 ms and 2 ms)
+     are printed, not asserted: `test/all.js`'s header promises no wall-clock budgets in the gate.
+     `test/observer.js` keeps its 1500 ms seek budget for now (198 ms measured here; open task 3).
+   - `tools/inventory.js` counted one line too many per file (split pieces, not newlines: +131 on the
+     repo total) and its header said fourteen suites are outside the gate (32). `test/patch15.js`
+     carried `patch10.js`'s header verbatim. Two more stale comments in non-gate files, one dead helper.
+   **Gate:** 70 of 70, 167 s.
 
 # 4. Considered and deliberately not done
 
