@@ -48,10 +48,10 @@ done as one. **Every reported number appears in this table exactly once.**
 | 6 | AI raids expansions, never pushes the main | **D1** | ☐ retreat exists; targeting is the fault |
 | 7 | units are hard to click | **B3** | ✅ done |
 | 8 | game over screen with menu / restart | **B4** | ✅ done — it was never appearing in a FFA |
-| 9 | cannot build in undiscovered blackness | **C1** | ☐ |
+| 9 | cannot build in undiscovered blackness | **C1** | ✅ done — soak and techtime both flat |
 | 10 | dust storm has hard edges | **B6** | ✅ done |
 | 11 | dust storm should not hurt units | **A2** | ✅ done |
-| 12 | sensor tower shows movement as dots | **C2** | ☐ it is plain vision today |
+| 12 | sensor tower shows movement as dots | **C2** | ✅ done |
 | 13 | Reactor gives no prerequisite error | **A4** | ✅ done |
 | 14 | hover ring on minerals and gas | **B1** | ✅ done |
 | 15 | Starport shows add-on tech, dead page button | **B5** | ✅ done — one cause |
@@ -312,7 +312,7 @@ written as "the least possible version of a hazard".
 Each moves the build stamp. Each needs `node test/all.js` green and a negative control. C1 and C2 are
 both vision and are done as one stretch.
 
-### ☐ C1 · (item 9) You must not be able to build in unexplored blackness
+### ✅ C1 · (item 9) You must not be able to build in unexplored blackness
 
 **Asked for:** cannot build where fog is pure black/undiscovered; error at the bottom of the screen
 saying "You can't build here until it is explored".
@@ -337,7 +337,7 @@ test**. `G.explored(player, tx, ty)` already exists and is used for building vis
 
 ---
 
-### ☐ C2 · (item 12) The Sensor Tower shows enemy movement as contacts, not vision
+### ✅ C2 · (item 12) The Sensor Tower shows enemy movement as contacts, not vision
 
 **Asked for:** see enemy *movement* as dots without illuminating the whole sight range.
 **Decision: the AI sees the contacts too, so this is simulation state and the stamp moves.**
