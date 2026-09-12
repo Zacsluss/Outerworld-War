@@ -443,3 +443,18 @@ section 22 puts an allied High Templar inside your Marines in a team game and sh
 and never you; `node test/zoom.js` section 7 draws a 64x128 editor map to its foot. `node test/snapshot.js`
 shows a drawn unit's screen position and alpha stay out of saves and rejoin snapshots (they rode every
 one, three numbers per unit). Saves from before this commit still load: the stamp did not move.
+
+## 53. A rebind cannot land on a key the game keeps (task 15)
+
+Main menu -> **SETTINGS** -> **CONTROLS** (the in-game pause menu's Settings has only the Brood War / Grid
+switch; the rebinding screen is on the main menu). Click the key button beside **Select idle worker** -- it
+reads `,` -- and press **F8**. **Working:** the button reads "F8 is reserved" for about a second, then `,`
+again; nothing changed. The same for **5**, **Ctrl+M**, **F2**, an **arrow key**, **Home**, **Ctrl+F8**.
+(Escape cannot be tried from here: it cancels the capture, as the screen says.) Then press **Q**: the button
+reads `Q`, and in a game **Q** finds an idle worker while `,` no longer does. **Before:** F8 was accepted and
+the button read F8, but in a game F8 loaded the autosave (asking first) and the idle-worker key was dead; a
+digit was accepted and that control group could never be recalled again. Also on that screen: bind **Pause
+menu** to **F11**. In a game, F11 opens the pause menu and F11 or Esc closes it. **Before:** only F10 closed
+it, whatever pause was bound to. Invisible from normal play: Shift+F3 after moving the codex off F3 no
+longer saves a camera slot (the four slots are F2 F4 F6 F7, as the F1 help says). Quicker:
+`node test/controls.js`. Saves and replays are unaffected (the stamp did not move).

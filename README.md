@@ -20,7 +20,7 @@ For a game over the internet, run `PLAY-ONLINE.bat` instead: it starts the same 
 - All three races with every Brood War unit, building, upgrade and research, using BW stats, costs, build times, ranges, cooldowns (with BW's -1..+2 frame jitter) and speeds, simulated at 24 ticks/s.
 - Fog of war that remembers: explored ground shows the last state one of your units saw of every enemy building, corrected only by looking again. With the high-ground rule, cloak/burrow and detection, Ensnare and Plague revealing cloaked units, damage types vs unit sizes, shields, splash rings, glaive bounce, lurker lines, Dark Swarm misses, friendly-fire rules per weapon.
 - Ground units have turn rates (tanks, vultures, dragoons rotate before moving); flyers accelerate, brake and drift.
-- Economy, supply, production queues, rally points, larva (a Zerg player starts with a Queen, whose Spawn Larva adds three larvae to a hatchery, up to twelve), add-ons, lift-off, warp-in and psi power, creep, building and unit morphs, Archon merging, transports and bunkers, Nydus Canal transit, Infest Command Center, Terran buildings burning below one third health.
+- Economy, supply, production queues, rally points, larva (a Zerg player starts with a Queen, whose Spawn Larva adds three larvae to a hatchery, up to twelve), add-ons, lift-off, warp-in and psi power, creep, building and unit morphs, Archon merging, transports and bunkers, Nydus Canal transit, Infest Command Center.
 - Killable Interceptors that launch, swoop and dock, and Scarabs that path to their target and can fizzle.
 - All 30 spells: Stim, Siege Mode, Cloak, Lockdown, Nuke, Spider Mines, Defensive Matrix, EMP, Irradiate, Yamato, Heal, Restoration, Optical Flare, Scanner Sweep, Burrow, Parasite, Ensnare, Spawn Broodlings, Dark Swarm, Plague, Consume, Psionic Storm, Hallucination, Feedback, Mind Control, Maelstrom, Disruption Web, Recall, Stasis Field, Shield Battery, Arbiter cloaking field.
 
@@ -51,7 +51,7 @@ That bakes everything in about 40 seconds and writes `assets/sprites/*.png`, `as
 
 ## Controls
 
-Left click select, drag to box-select, right click for smart commands. `A` attack-move, `M` move, `S` stop, `H` hold, `P` patrol, `B` build, `V` advanced build, `Esc` cancel. Unit and building hotkeys are the yellow letters on the command card. Ctrl+1-9 control groups, Shift+F2-F8 camera saves, Space jumps to the last alert, +/- speed, F1 help, F5 save, F8 load, F9 pause, F10 menu, Enter chat/cheats.
+Left click select, drag to box-select, right click for smart commands. `A` attack-move, `M` move, `S` stop, `H` hold, `P` patrol, `B` build, `V` advanced build, `Esc` cancel. Unit and building hotkeys are the yellow letters on the command card. Ctrl+1-9 control groups, Shift+F2/F4/F6/F7 camera saves (F8 loads the autosave), Space jumps to the last alert, +/- speed, F1 help, F5 save, F8 load, F9 pause, F10 menu, Enter chat/cheats.
 
 ## Tests
 

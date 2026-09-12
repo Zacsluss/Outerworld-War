@@ -108,7 +108,7 @@ const TESTS = [
   { name: 'daynight', args: ['daynight.js'], what: 'the cycle a player can see: the dial, the countdown, and the air half of idea 19' },
   { name: 'qol', args: ['qol.js'], what: 'M12 wave one: no selection cap, shared production, auto-mine, smart cast, autocast, signals' },
   { name: 'push', args: ['push.js'], what: 'a moving unit flows past a standing ally; enemies still block' },
-  { name: 'controls', args: ['controls.js'], what: 'every global action is named, listed, rebindable and actually consulted' },
+  { name: 'controls', args: ['controls.js'], what: 'every global action is named, listed, rebindable and actually consulted, and no rebind lands on a hard-coded key' },
   { name: 'baked', args: ['baked.js'], what: 'every unit and building has a 3D model and a baked sheet, not the flat fallback' },
   { name: 'fields', args: ['fields.js'], what: 'every persistent field paints something -- an invisible force field is a wall with no wall' },
   { name: 'aiadapt', args: ['aiadapt.js'], what: 'the AI scouts for real: intel is vision-gated, and massing vs teching change what it builds' },

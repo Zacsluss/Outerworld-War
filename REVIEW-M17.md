@@ -270,7 +270,9 @@ listed here. Ordered by what I would do first.
     `appliedFrame === G.frame` with that frame's batch already applied; a donor snapshot taken then
     carries `frame: G.frame`, the rejoiner sets `appliedFrame = G.frame - 1` and re-applies it. Only
     matters if "Continue playing" follows. Cost S.
-15. **Hard-coded keys outside the bindings table.** Ctrl+M, Ctrl+V, Ctrl+B, F8, F9/Pause, the digit
+15. **Hard-coded keys outside the bindings table.** **DONE** (entry 27): `UI.RESERVED` names the 29 keys
+    `onKey` and `scrollCam` read by literal, `setBinding` refuses them, and `test/controls.js` checks the
+    list both ways. As listed: Ctrl+M, Ctrl+V, Ctrl+B, F8, F9/Pause, the digit
     groups and the F2-F8 camera slots are read directly in `onKey`, while the comment above the table
     says every read goes through `UI.key(action)` so nothing is unrebindable; `test/controls.js` checks
     only the declared→consulted direction, so a rebind that collides with a hard-coded key is a silent
@@ -407,7 +409,7 @@ says what happened to each, and the numbered entries in section 3 hold the measu
 | — | the balance run, its list grown by Spawn Larva stacking and a Queen per hatchery | **OK** — stays gated | unchanged |
 | — | task 28's shape: Node sidecar or Rust port? | **ship the relay unchanged as a sidecar** | open task 28 rewritten; no Tauri project exists yet |
 | — | task 1 looked at in the browser (Nightfall, 25+ units selected) | **the selection strip works; nothing where the dial should be** | open task 1 narrowed to the dial and the dead bodies |
-| — | README promises Terran buildings burning below one third health and no code exists (task 20): build it or drop the sentence? | *not yet answered* | open |
+| — | README promises Terran buildings burning below one third health and no code exists (task 20): build it or drop the sentence? | **delete the sentence** (fourth session) | **done**: the clause is gone from README; nothing was built |
 
 The questions as they were put, kept for the record:
 
@@ -1066,6 +1068,30 @@ The questions as they were put, kept for the record:
       draw. Control: the set emptied -> two clean reds (all three present in the record, and back on the restored unit). Not a stamp move: `snapshot.js` is not a stamped file.
     **Canaries** (task 12's team scene and the rest touch no AI decision, but `aistyles` gained a check):
     aistyles seed 1 clean (132 with the new check), seed 11 clean (132), seed 5 its one known economy line (131 + 1); eightplayer 19 of 19 with banks byte-identical to task 6's (377/804/147/222/302/392/221/303); the stamp still `f5ab8a213468977c`.. **Gate:** 75 of 75, 270 s. The stamp did not move.
+27. **Hard-coded keys outside the bindings table (task 15).** *(commit: task 15; fourth session, prepared by
+    a worktree agent)* **Measured first** (`js/ui.js` at `6eb8b85`, `onKey` read line by line): 29 keys the
+    table never declares are read by literal -- Ctrl+M, Ctrl+V, Ctrl+B, F8, F9, Pause, Escape, the ten digits,
+    the camera slots, `[` `]` O Home and Shift+Left/Right in a replay -- and `scrollCam` polls the four arrows
+    every frame outside `onKey`; two more literals were `F10`, pause's own default. Every line of `onKey`
+    returns, so a rebind onto one of those was not two actions but ONE DEAD ONE, decided by line order:
+    `idleWorker` on F8 never fired (the autosave line is earlier); `idleWorker` on `5` fired and group 5 could
+    never be recalled again. None of the bare reads checks Ctrl, so a `ctrl+f8` binding would be dead too.
+    **Fix:** `UI.RESERVED`, a Set beside `BIND_DEFAULTS` with one commented line per key naming its reader;
+    `UI.reserved(key)` ignores case as `hit()` does and refuses a `ctrl+` chord over a reserved bare key;
+    `setBinding` returns false and touches nothing; the Controls screen's button says "F8 is reserved" for a
+    second instead of snapping back in silence. Two reads of the literal `F10` (the loading guard, the menus'
+    close key) go through `hit('pause')`, so a rebound pause key also closes the menu it opened; the
+    camera-slot pattern is `F[2467]`, the four the help overlay lists (F3, F5 and F8 returned earlier while
+    bound). README's "Shift+F2-F8 camera saves" says F2/F4/F6/F7 now. **Test:** `test/controls.js` (+12)
+    scrapes `onKey` and `scrollCam` for every literal read (count guard 22 reads / 29 keys) and checks the
+    list both ways -- every scraped key reserved, every reserved key scraped -- plus the live refusals, the
+    pause-binding menu close, and the rebind button driven against a listener-recording document.
+    **Negative controls**, ten, all clean reds, restored byte-identical (`.claude/review/agent-15/`
+    `run-controls.js`): an entry removed from RESERVED, a new literal F11 in `onKey`, the refusal disabled, the
+    scrape anchor broken (the count guard), the F10 literal restored, the case rule dropped, the button ignoring
+    `setBinding`'s answer, the chord rule dropped, `F[2-8]` restored, an arrow dropped from the list. Also in
+    this commit: the user's decision on README's burning Terran buildings (delete the sentence) is applied.
+    **Gate:** 75 of 75, 299 s. The stamp did not move (`f5ab8a213468977c`).
 
 # 4. Considered and deliberately not done
 

@@ -471,6 +471,13 @@ const UI = {
   // the alternative, sprinkling lookups through onKey, is how half the actions end up unrebindable and
   // nobody notices until someone tries.
   //
+  // The keys that are NOT in the table but that onKey (and the camera scroll) read by literal -- the
+  // control groups, the camera slots, F8, F9, Ctrl+M and the rest -- are listed in RESERVED below, and
+  // setBinding refuses them. Without that list a rebind could land on one of them and the two handlers
+  // shared the key in silence: whichever line of onKey came first won, and the other was dead with
+  // nothing to say so. test/controls.js scrapes onKey for every literal key and checks the list both
+  // ways. (REVIEW-M17 task 15)
+  //
   // Stored per action rather than per key so a saved binding survives a default changing underneath it,
   // and so an unbound action is expressible (empty string) rather than being confused with a default.
   BIND_DEFAULTS: {
@@ -490,6 +497,34 @@ const UI = {
     chat: { key: 'Enter', label: 'Chat', group: 'Interface' },
     speedUp: { key: '=', label: 'Game speed up', group: 'Interface' },
     speedDown: { key: '-', label: 'Game speed down', group: 'Interface' },
+  },
+  // Keys a hard-coded handler owns, in the form setBinding stores them (e.key as the browser gives it, or
+  // 'ctrl+' and the lower-cased key). One line per key, naming the reader. setBinding refuses these, and
+  // test/controls.js scrapes onKey and scrollCam for every literal key read and checks this list both
+  // ways. Case is ignored the way hit() ignores it, and a ctrl+ chord over a bare key here is reserved
+  // too: none of the bare reads below checks Ctrl, so Ctrl+F8 still loads the autosave and a binding on
+  // it would be dead. A default from the table above is never in this list -- those are read through hit().
+  RESERVED: new Set([
+    'ctrl+m',   // onKey: mute / unmute (Sound.setMuted); plain M is the Move command
+    'ctrl+v',   // onKey, replay: toggle full-map vision (viewAll)
+    'ctrl+b',   // onKey, replay: take control from here (branchReplay)
+    'F8',   // onKey: load the autosave (Replay.loadAutosave, asking first with a game running)
+    'F9',   // onKey: pause the simulation (G.paused; not in a network game)
+    'Pause',   // onKey: pause the simulation, the same line as F9
+    'Escape',   // onKey: cancel placing / pending / the card menu, cancel construction or the last queued item; the menus and the chat buffer read it too
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',   // onKey: control groups (Ctrl assigns, Shift adds, bare recalls)
+    'F2', 'F4', 'F6', 'F7',   // onKey: camera slots (Shift saves, bare recalls) -- the four the help overlay lists
+    '[', ']',   // onKey, replay: switch whose vision is shown (cycleObserved)
+    'o',   // onKey, replay: the production overlay (prodOverlay)
+    'Home',   // onKey, replay: restart (seekTo(0))
+    'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',   // scrollCam polls this.keys for these every frame, outside onKey; onKey reads Shift+Left/Right in a replay (seek 30 s)
+  ]),
+  // Is `key`, as setBinding stores it, one a hard-coded handler owns? See RESERVED.
+  reserved(key) {
+    if (!key) return false;
+    const lc = this._reservedLC || (this._reservedLC = new Set([...this.RESERVED].map(r => r.toLowerCase())));
+    const k = key.toLowerCase();
+    return lc.has(k) || (k.startsWith('ctrl+') && lc.has(k.slice(5)));
   },
   bindings() {
     if (this._binds) return this._binds;
@@ -513,6 +548,9 @@ const UI = {
   },
   setBinding(action, key) {
     const b = this.bindings(); if (!b[action]) return false;
+    // A reserved key (RESERVED above) is refused before anything is taken off another action: the caller
+    // gets false and the table and storage are exactly as they were. (REVIEW-M17 task 15)
+    if (this.reserved(key)) return false;
     // A key already in use is TAKEN OFF the other action rather than silently duplicated. Two actions
     // on one key is a state the player cannot see and cannot debug.
     if (key) for (const id of Object.keys(b)) if (id !== action && b[id].key === key) b[id].key = '';
@@ -532,12 +570,15 @@ const UI = {
     // they drop it, the rejoiner applies it, and the rejoiner desyncs at the next hash. (REVIEW-M17)
     const tag = e.target && e.target.tagName; if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
     if (!this.running && !(typeof Codex !== 'undefined' && (Codex.isOpen() || this.hit('codex', e, k)))) return;
-    if (this.loading && k !== 'F10' && k !== 'Escape') { e.preventDefault(); return; }
+    // The pause key is read from the table here and in the menu below, like every other bound key: read
+    // as the literal F10 it stayed the menus' close key after a rebind, and the rebound key never closed
+    // them. (REVIEW-M17 task 15)
+    if (this.loading && !this.hit('pause', e, k) && k !== 'Escape') { e.preventDefault(); return; }
     // The codex is modal: while it is open it eats the keyboard so nothing leaks through to the game.
     if (typeof Codex !== 'undefined' && Codex.isOpen()) { if (Codex.key(k)) { e.preventDefault(); return; } }
     if (this.hit('codex', e, k)) { e.preventDefault(); if (typeof Codex !== 'undefined') Codex.toggle(); return; }
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'F10', 'F1'].includes(k)) e.preventDefault();
-    if (this.menu) { if (k === 'Escape' || k === 'F10') { if (this.menu === 'settings') this.menu = 'pause'; else if (this.menu === 'pause') this.menu = null; } return; }
+    if (this.menu) { if (k === 'Escape' || this.hit('pause', e, k)) { if (this.menu === 'settings') this.menu = 'pause'; else if (this.menu === 'pause') this.menu = null; } return; }
     if (this.hit('pause', e, k)) { this.menu = 'pause'; return; }
     if (this.chat !== null) { e.preventDefault(); if (k === 'Enter') { const line = this.chat.trim(); this.chat = null; if (line) { if (this.net) Net.chat(line); else if (!G.cheat(line)) G.players[G.human].msg(line, 'info'); } } else if (k === 'Escape') this.chat = null; else if (k === 'Backspace') this.chat = this.chat.slice(0, -1); else if (k.length === 1 && this.chat.length < 60) this.chat += k; return; }
     if (this.hit('chat', e, k) && this.mode === 'play') { this.chat = ''; e.preventDefault(); return; }
@@ -577,7 +618,10 @@ const UI = {
     // key used to read only ours, so an ally's ping never became "jump to last alert").
     if (this.hit('lastAlert', e, k)) { const a = [this.lastAlertPos, G.lastAlertPos].filter(Boolean).sort((p, q) => (q.f || 0) - (p.f || 0))[0]; if (a) this.centerOn(a.x, a.y); return; }
     if (/^[0-9]$/.test(k)) { if (e.ctrlKey) { this.groups[k] = this.selection.slice(); e.preventDefault(); } else if (e.shiftKey) { this.groups[k] = (this.groups[k] || []).concat(this.selection.filter(u => !(this.groups[k] || []).includes(u))); } else if (this.groups[k] && this.groups[k].length) { const g = this.groups[k].filter(u => u.alive); if (this.lastGroupKey === k && performance.now() - this.lastGroupT < 400) this.centerOn(g[0].x, g[0].y); this.selection = g; this.pending = null; this.placing = null; this.cardMenu = null; this.lastGroupKey = k; this.lastGroupT = performance.now(); } return; }
-    if (/^F[2-8]$/.test(k)) { if (e.shiftKey) this.camSaves[k] = { x: Render.camX, y: Render.camY, z: Render.zoom }; else if (this.camSaves[k]) { if (this.camSaves[k].z) Render.setZoom(this.camSaves[k].z); Render.camX = this.camSaves[k].x; Render.camY = this.camSaves[k].y; this.clampCam(); } return; }
+    // The four camera slots the help overlay lists. F3, F5 and F8 are the codex, save and autosave keys
+    // and returned above before this line while bound, so a slot that appeared only once its key had been
+    // moved was one nobody could find; the pattern names the four now and RESERVED lists them. (REVIEW-M17 task 15)
+    if (/^F[2467]$/.test(k)) { if (e.shiftKey) this.camSaves[k] = { x: Render.camX, y: Render.camY, z: Render.zoom }; else if (this.camSaves[k]) { if (this.camSaves[k].z) Render.setZoom(this.camSaves[k].z); Render.camX = this.camSaves[k].x; Render.camY = this.camSaves[k].y; this.clampCam(); } return; }
     const up = k.length === 1 ? k.toUpperCase() : k;
     for (const b of this.currentCard()) if (b.hk === up) { this.press(b); return; }
   },
@@ -1670,7 +1714,10 @@ window.addEventListener('DOMContentLoaded', () => {
         if (ev.key === 'Escape') { redraw(); return; }
         if (ev.key === 'Delete') { UI.setBinding(id, ''); redraw(); return; }
         if (['Control', 'Shift', 'Alt', 'Meta'].includes(ev.key)) { redraw(); return; }   // a modifier alone is not a binding
-        UI.setBinding(id, ev.ctrlKey ? 'ctrl+' + ev.key.toLowerCase() : ev.key);
+        const key = ev.ctrlKey ? 'ctrl+' + ev.key.toLowerCase() : ev.key;
+        // A reserved key (UI.RESERVED: the control groups, the camera slots, F8, F9, Ctrl+M...) is refused,
+        // and the button says so for a moment rather than snapping back as if nothing had been pressed.
+        if (!UI.setBinding(id, key)) { btn.textContent = pretty(key) + ' is reserved'; setTimeout(redraw, 1200); return; }
         redraw();
       };
       window.addEventListener('keydown', grab, true);
