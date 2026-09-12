@@ -218,21 +218,11 @@ re-anchor that line, or the suite goes red reporting a stale anchor.
 
 ---
 
-## The three worktrees
+## The three worktrees -- GONE
 
-Three agents were stopped mid-task when the session paused. **None had written its deliverable**, so nothing of
-theirs is on the main line, none of it is gated, and none of it has notes saying what was measured. `git
-worktree list` shows them, all locked, all based on `e9fe40e`:
-
-| worktree | items | where it got to |
-|---|---|---|
-| lobby | 1, 10, 12, 13 | fixing a check that still passed with the feature deleted |
-| HUD scale | 5 | verifying its deliverable reproduces on a clean tree — the furthest along |
-| four sim bugs | 3, 4, 6, 11 | three of four written; starting item 11's patch |
-
-**Re-dispatching fresh is the safer default.** If you do resume one, treat everything in the worktree as
-unverified until it has been measured, controlled and gated. Clean up with `git worktree remove --force <path>`
-then `git branch -d <branch>`.
+Removed in the seventh session, with their branches: every item they held was redone from scratch on the main line,
+measured, controlled and gated (items 1, 3, 5, 6, 10-13 are in Closed). `git worktree list` shows only the main
+checkout. Nothing of theirs remains to resume.
 
 ---
 
