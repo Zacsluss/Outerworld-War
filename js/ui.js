@@ -9,6 +9,10 @@ const Sound = {
   // the page session only. A browser tab that starts making noise on its own is the thing being
   // avoided, and a remembered "unmuted" would defeat that on the one load that matters -- the next one.
   ctx: null, last: {}, enabled: true, muted: true,
+  // The master VOLUME (Settings, Audio), 0 to 1. Unlike mute it is remembered (UI.loadPrefs): a level is a preference,
+  // where an unmute is a decision about this page. Every sound goes through one of three places and all three read it:
+  // tone() here, Voice.speak and Music's master gain.
+  volume: 1,
   setMuted(v) {
     this.muted = !!v;
     if (typeof Music === 'undefined') return;
@@ -16,7 +20,7 @@ const Sound = {
     else if (Music.on && typeof G !== 'undefined' && G.players.length) Music.start();
   },
   init() { try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { this.enabled = false; } },
-  tone(f, dur, type = 'square', vol = 0.05, slide = 0) { if (this.muted || !this.enabled || !this.ctx) return; const c = this.ctx; if (c.state === 'suspended') c.resume(); const o = c.createOscillator(), g = c.createGain(); o.type = type; o.frequency.value = f; if (slide) o.frequency.linearRampToValueAtTime(f + slide, c.currentTime + dur); g.gain.value = vol; g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur); o.connect(g); g.connect(c.destination); o.start(); o.stop(c.currentTime + dur); },
+  tone(f, dur, type = 'square', vol = 0.05, slide = 0) { if (this.muted || !this.enabled || !this.ctx || !(this.volume > 0)) return; vol *= this.volume; const c = this.ctx; if (c.state === 'suspended') c.resume(); const o = c.createOscillator(), g = c.createGain(); o.type = type; o.frequency.value = f; if (slide) o.frequency.linearRampToValueAtTime(f + slide, c.currentTime + dur); g.gain.value = vol; g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur); o.connect(g); g.connect(c.destination); o.start(); o.stop(c.currentTime + dur); },
   limited(key, ms) { const n = performance.now(); if (n - (this.last[key] || 0) < ms) return false; this.last[key] = n; return true; },
   click() { this.tone(900, 0.04, 'square', 0.03); },
   select(u) { if (typeof Voice !== 'undefined') Voice.select(u); if (!this.limited('sel', 120)) return; const r = u.def.race; this.tone(r === 'Z' ? 220 : r === 'P' ? 520 : 380, 0.08, r === 'Z' ? 'sawtooth' : 'triangle', 0.04, r === 'Z' ? -60 : 40); },
@@ -85,11 +89,32 @@ const Sound = {
 //   1280x720                  band 262 px, 36% of the height -- the ceiling no longer bites at 720p
 //   800x400                   band 168 px at k 1.20: the ceiling's own case, 42% of the height
 // Set HUD_SCALE to 1 and every number in the table above comes back unchanged.
-const HUD_SCALE = 1.4, HUD_MAX_FRAC = 0.42;
+//
+// HUD_SCALE is now the DEFAULT, not the knob: the player's own HUD size (Settings, Display) is UI.hudScale, kept between
+// HUD_SCALE_MIN and HUD_SCALE_MAX and remembered (UI.loadPrefs). A player who never touches it gets exactly 1.4.
+const HUD_SCALE = 1.4, HUD_MAX_FRAC = 0.42, HUD_SCALE_MIN = 1, HUD_SCALE_MAX = 1.6;
 const UI = {
   // What the band would be unscaled. A fixed height left no map at all in a short window.
   get consoleBase() { return Math.round(clamp(Render.H * 0.26, 140, 196)); },
-  get consoleH() { const b = this.consoleBase; return Math.round(Math.max(b, Math.min(b * HUD_SCALE, Render.H * HUD_MAX_FRAC))); },
+  get consoleH() { const b = this.consoleBase; return Math.round(Math.max(b, Math.min(b * this.hudScale, Render.H * HUD_MAX_FRAC))); },
+  // ---- remembered settings (seventh session, item 2) ----
+  // Read once at boot and written the moment one changes. A value missing or malformed in storage is the default, so a
+  // bad write can never take the interface down, and loading never turns a missing key into a stored one. Mute is not
+  // here on purpose: see Sound.
+  hudScale: HUD_SCALE, scrollSpeed: 1, edgeScroll: true,
+  readPref(k) { try { const s = localStorage.getItem(k); return s == null ? undefined : JSON.parse(s); } catch (e) { return undefined; } },
+  savePref(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } },
+  loadPrefs() {
+    const num = (k, lo, hi, d) => { const v = this.readPref(k); return typeof v === 'number' && isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; };
+    this.hudScale = Math.round(num('bw_hud_scale', HUD_SCALE_MIN, HUD_SCALE_MAX, HUD_SCALE) * 10) / 10;
+    this.scrollSpeed = num('bw_scroll', 0.5, 2, 1);
+    this.edgeScroll = this.readPref('bw_edge') !== false;
+    Sound.volume = num('bw_volume', 0, 1, 1);
+  },
+  setHudScale(v) { const n = Number(v); this.hudScale = isFinite(n) ? Math.round(Math.max(HUD_SCALE_MIN, Math.min(HUD_SCALE_MAX, n)) * 10) / 10 : HUD_SCALE; this.savePref('bw_hud_scale', this.hudScale); return this.hudScale; },
+  setScrollSpeed(v) { const n = Number(v); this.scrollSpeed = isFinite(n) ? Math.max(0.5, Math.min(2, n)) : 1; this.savePref('bw_scroll', this.scrollSpeed); return this.scrollSpeed; },
+  setEdgeScroll(v) { this.edgeScroll = v !== false; this.savePref('bw_edge', this.edgeScroll); return this.edgeScroll; },
+  setVolume(v) { const n = Number(v); Sound.volume = isFinite(n) ? Math.max(0, Math.min(1, n)) : 1; this.savePref('bw_volume', Sound.volume); if (typeof Music !== 'undefined' && Music.setVolume) Music.setVolume(); return Sound.volume; },
   // The factor the band actually achieved, and therefore the scale its draw pass runs under. Never
   // below 1, because consoleH is never below consoleBase.
   get hudK() { return this.consoleH / this.consoleBase; },
@@ -105,6 +130,7 @@ const UI = {
   speedName() { return this.net && typeof Net !== 'undefined' && Net.speed != null ? this.SPEED_NAMES[Net.speed] + ' (set by the host)' : this.SPEED_NAMES[this.speedIdx]; },
   maxSpeedIdx() { return this.mode === 'replay' ? 9 : 6; },
   init() {
+    try { this.loadPrefs(); } catch (e) { }   // the remembered settings, before anything is drawn at the wrong HUD size
     const c = document.getElementById('game'); Render.init(c); Sound.init(); if (typeof Atlas !== 'undefined') Atlas.init();
     window.addEventListener('resize', () => Render.resize());
     c.addEventListener('mousemove', e => this.onMove(e)); c.addEventListener('mousedown', e => this.onDown(e)); window.addEventListener('mouseup', e => this.onUp(e));
@@ -285,7 +311,9 @@ const UI = {
   // time apart; past 80 of them (40 minutes) every second one is dropped, which halves the resolution of
   // the distant past rather than letting memory grow without bound.
   keepSnapshot() {
-    if (this.mode !== 'replay' || typeof Snapshot === 'undefined') return;
+    // A network spectator (mode 'replay', net) watches a game that has not happened yet: there is nothing to seek back to
+    // that the relay would let it keep, so it keeps no snapshots.
+    if (this.mode !== 'replay' || this.net || typeof Snapshot === 'undefined') return;
     if (G.frame % this.SNAP_EVERY !== 0) return;
     const last = this.snaps[this.snaps.length - 1];
     if (last && last.f >= G.frame) return; // already have this point (we just seeked onto it)
@@ -353,9 +381,9 @@ const UI = {
   // ---------------- camera ----------------
   clampCam() { Render.clampCam(); },   // zoom-dependent, and centres the map when the view is wider than it
   scrollCam(dt) {
-    const s = 900 * dt / Render.zoom; const m = this.mouse; let dx = 0, dy = 0;   // screen-constant speed: without /zoom, edge scroll crawls at the strategic view
+    const s = 900 * this.scrollSpeed * dt / Render.zoom; const m = this.mouse; let dx = 0, dy = 0;   // screen-constant speed: without /zoom, edge scroll crawls at the strategic view; scrollSpeed is the player's (Settings, Game)
     if (document.hasFocus()) { if (this.keys.ArrowLeft) dx -= s; if (this.keys.ArrowRight) dx += s; if (this.keys.ArrowUp) dy -= s; if (this.keys.ArrowDown) dy += s; }   // polled only with focus: a key released elsewhere is a key held forever (armFocusGuards)
-    if (document.hasFocus() && !this.menu && m.inside) { if (m.x <= 2) dx -= s; if (m.x >= Render.W - 3) dx += s; if (m.y <= 2) dy -= s; if (m.y >= Render.H - 3) dy += s; }
+    if (this.edgeScroll && document.hasFocus() && !this.menu && m.inside) { if (m.x <= 2) dx -= s; if (m.x >= Render.W - 3) dx += s; if (m.y <= 2) dy -= s; if (m.y >= Render.H - 3) dy += s; }
     if (dx || dy) { Render.camX += dx; Render.camY += dy; this.clampCam(); }
   },
   centerOn(x, y) { Render.camX = x - Render.viewWorldW() / 2; Render.camY = y - Render.viewWorldH() / 2; this.clampCam(); },
@@ -1378,7 +1406,10 @@ const UI = {
   menuItems() {
     if (this.menu === 'brief' && G.mission) { const d = G.mission.def; return { title: d.title.toUpperCase(), lines: d.brief.concat(['', 'OBJECTIVE: ' + d.objective]), items: [['Begin mission', () => { this.menu = null; }]] }; }
     if (this.net && Net.active && !Net.connected) return { title: 'CONNECTION LOST', lines: ['The relay connection dropped.', 'Reconnect from the main menu with the same name to rejoin this game.'], items: [['Keep watching', () => { this.menu = null; }], ['Return to main menu', () => this.toMenu()]] };
-    if (this.menu === 'over') { const hp = G.players[G.human]; const won = G.mission ? G.winner === G.human : (G.winTeam != null ? G.winTeam === hp.team : G.winner === G.human); const mins = Math.max(1, G.frame / TPS / 60); const apm = Math.round(G.log.filter(e => e.c.p === G.human).length / mins); const lines = [`Time ${Math.floor(G.frame / TPS / 60)}:${String(Math.floor(G.frame / TPS) % 60).padStart(2, '0')}   APM ${apm}`]; if (G.mission) { lines.push('Objective: ' + G.mission.def.objective + (G.mission.done ? (won ? '  — complete' : '  — failed') : '')); if (G.mission.summary) lines.push(G.mission.summary); } lines.push(''); for (const q of G.players) { const s = q.stats; lines.push(`${q.name} (${RACE_INFO[q.race].name})  kills ${s.unitsKilled}/${s.buildingsKilled}  lost ${s.unitsLost}/${s.buildingsLost}  minerals ${s.mined}  gas ${s.gassed}${q.defeated ? '  ELIMINATED' : ''}`); } return { title: won ? 'VICTORY' : 'DEFEAT', lines, items: [[hp.defeated ? 'Keep watching' : 'Continue playing', () => { this.menu = null; G.over = false; G.freePlay = true; }], ['Restart this game', () => this.start(this.lastOpts)], ['Save replay', () => { Replay.saveReplay(); }], ['Return to main menu', () => this.toMenu()]] }; }
+    if (this.menu === 'over') { const hp = G.players[G.human]; const won = G.mission ? G.winner === G.human : (G.winTeam != null ? G.winTeam === hp.team : G.winner === G.human); const mins = Math.max(1, G.frame / TPS / 60); const apm = Math.round(G.log.filter(e => e.c.p === G.human).length / mins); const lines = [`Time ${Math.floor(G.frame / TPS / 60)}:${String(Math.floor(G.frame / TPS) % 60).padStart(2, '0')}   APM ${apm}`]; if (G.mission) { lines.push('Objective: ' + G.mission.def.objective + (G.mission.done ? (won ? '  — complete' : '  — failed') : '')); if (G.mission.summary) lines.push(G.mission.summary); } lines.push(''); for (const q of G.players) { const s = q.stats; lines.push(`${q.name} (${RACE_INFO[q.race].name})  kills ${s.unitsKilled}/${s.buildingsKilled}  lost ${s.unitsLost}/${s.buildingsLost}  minerals ${s.mined}  gas ${s.gassed}${q.defeated ? '  ELIMINATED' : ''}`); } return { title: this.mode === 'replay' && this.net ? 'GAME OVER' : won ? 'VICTORY' : 'DEFEAT', lines, items: [[hp.defeated || this.mode === 'replay' ? 'Keep watching' : 'Continue playing', () => { this.menu = null; G.over = false; G.freePlay = true; }]].concat(this.net ? [] : [['Restart this game', () => this.start(this.lastOpts)]], [['Save replay', () => { Replay.saveReplay(); }], ['Return to main menu', () => this.toMenu()]]) }; }   // no Restart online: it would start a private copy of a game everyone else is still in
+    // A network spectator's menu: the game runs on behind it (the lockstep never waits for a spectator), and there is no
+    // speed to change, nothing to seek and nobody's game to take over.
+    if (this.mode === 'replay' && this.net) return { title: 'SPECTATING', lines: ['Watching: ' + (this.viewAll ? 'everyone' : G.players[G.human].name), '', '[ and ] switch player, O production overlay, Ctrl+V the whole map', 'The game carries on while this menu is open.'], items: [['Resume (Esc)', () => { this.menu = null; }], [(Sound.muted ? 'Sound: off' : 'Sound: on') + ' (Ctrl+M)', () => Sound.setMuted(!Sound.muted)], ['Toggle full map view (Ctrl+V)', () => { this.viewAll = !this.viewAll; this.menu = null; }], ['Next player (])', () => { this.cycleObserved(1); this.viewAll = false; this.menu = null; }], ['Toggle production overlay (O)', () => { this.prodOverlay = !this.prodOverlay; this.menu = null; }], ['Stop watching', () => this.toMenu()]] };
     if (this.mode === 'replay') return { title: 'REPLAY PAUSED', lines: ['Speed: ' + this.speedName(), 'Watching: ' + (this.viewAll ? 'everyone' : G.players[G.human].name), '', '[ and ] switch player, O production overlay', 'Shift+Left/Right skip 30 s, Home restarts, click the bar to seek'], items: [['Resume (Esc)', () => { this.menu = null; }], [(Sound.muted ? 'Sound: off' : 'Sound: on') + ' (Ctrl+M)', () => Sound.setMuted(!Sound.muted)], ['Toggle full map view (Ctrl+V)', () => { this.viewAll = !this.viewAll; this.menu = null; }], ['Next player (])', () => { this.cycleObserved(1); this.viewAll = false; this.menu = null; }], ['Toggle production overlay (O)', () => { this.prodOverlay = !this.prodOverlay; this.menu = null; }], ['Take control from here (Ctrl+B)', () => this.branchReplay()], ['Quit to menu', () => this.toMenu()]] };
     // Settings is its own screen rather than four more rows on the pause menu: the pause menu is where
     // you go to leave or to save, and mixing "quit to menu" in with "music off" made both harder to find.
@@ -1387,6 +1418,11 @@ const UI = {
       ['Voice: ' + (typeof Voice !== 'undefined' && Voice.on ? 'on' : 'off'), () => { if (typeof Voice !== 'undefined') Voice.set(!Voice.on); }],
       ['Music: ' + (typeof Music !== 'undefined' && Music.on ? 'on' : 'off'), () => { if (typeof Music !== 'undefined') Music.set(!Music.on); }],
       ['Hotkeys: ' + (this.gridKeys ? 'Grid' : 'Brood War'), () => { this.gridKeys = !this.gridKeys; try { localStorage.setItem('bw_hotkeys', this.gridKeys ? 'grid' : 'bw'); } catch (e) { } }],
+      // The same settings as the menu's tabs, a step per press, wrapping round (seventh session, item 2).
+      ['HUD size: ' + this.hudScale.toFixed(1) + 'x', () => { this.setHudScale(this.hudScale >= HUD_SCALE_MAX - 1e-9 ? HUD_SCALE_MIN : this.hudScale + 0.1); }],
+      ['Scroll speed: ' + Math.round(this.scrollSpeed * 100) + '%', () => { const steps = [0.5, 0.75, 1, 1.5, 2]; const i = steps.findIndex(s => s > this.scrollSpeed + 1e-9); this.setScrollSpeed(i < 0 ? steps[0] : steps[i]); }],
+      ['Edge scroll: ' + (this.edgeScroll ? 'on' : 'off'), () => { this.setEdgeScroll(!this.edgeScroll); }],
+      ['Volume: ' + Math.round(Sound.volume * 100) + '%', () => { const steps = [0.25, 0.5, 0.75, 1]; const i = steps.findIndex(s => s > Sound.volume + 1e-9); this.setVolume(i < 0 ? steps[0] : steps[i]); }],
       ['Back (Esc)', () => { this.menu = 'pause'; }],
     ] };
     // A branch says so, and offers the way back. Nothing was destroyed to get here -- the file on disk
@@ -1805,7 +1841,36 @@ window.addEventListener('DOMContentLoaded', () => {
   // The front is three doors -- SINGLE PLAYER, MULTIPLAYER, SETTINGS -- the way a nineties RTS opened, and
   // everything else stands behind one of them as a .panel of its own with a BACK to the door it came
   // through. The skirmish form's BACK goes to Single Player, not to the front (see setupBack below).
-  const sb = $('settingsBtn'); if (sb) sb.addEventListener('click', () => UI.showPanel('settingsPanel'));
+  // SETTINGS (seventh session, item 2): tabs, and every control applied the moment it moves and remembered.
+  const tabs = $('setTabs');
+  const showTab = name => {
+    if (!tabs) return;
+    for (const a of tabs.querySelectorAll('[data-tab]')) a.classList.toggle('on', a.dataset.tab === name);
+    for (const b of document.querySelectorAll('#settingsPanel [data-body]')) b.style.display = b.dataset.body === name ? '' : 'none';
+  };
+  if (tabs) for (const a of tabs.querySelectorAll('[data-tab]')) a.addEventListener('click', ev => { ev.preventDefault(); showTab(a.dataset.tab); });
+  const bindRange = (id, get, set, fmt) => {
+    const r = $(id), v = $(id + 'Val'); if (!r) return () => { };
+    const show = () => { r.value = String(get()); if (v) v.textContent = fmt(get()); };
+    r.addEventListener('input', () => { set(parseFloat(r.value)); if (v) v.textContent = fmt(get()); });
+    show(); return show;
+  };
+  const refreshSettings = [
+    bindRange('optHud', () => UI.hudScale, x => UI.setHudScale(x), x => x.toFixed(1) + 'x'),
+    bindRange('optScroll', () => Math.round(UI.scrollSpeed * 100), x => UI.setScrollSpeed(x / 100), x => Math.round(x) + '%'),
+    bindRange('optVolume', () => Math.round(Sound.volume * 100), x => UI.setVolume(x / 100), x => Math.round(x) + '%'),
+  ];
+  const edge = $('optEdge'); if (edge) { edge.checked = UI.edgeScroll; edge.addEventListener('change', () => UI.setEdgeScroll(edge.checked)); refreshSettings.push(() => { edge.checked = UI.edgeScroll; }); }
+  const idName = $('optNetName'), idUrl = $('optNetUrl');
+  if (idName && idUrl) {
+    const fill = () => { const idn = Net.loadIdentity(); idName.value = idn.name; idUrl.value = idn.url; };
+    // The multiplayer screen's own boxes follow, so what Settings says is what CONNECT will use.
+    const saveId = () => { const nm = idName.value.trim(); if (nm) Net.name = nm; Net.urlTyped = idUrl.value.trim(); Net.saveIdentity(); if (nm && $('netName')) $('netName').value = nm; if ($('netUrl')) $('netUrl').value = idUrl.value.trim(); };
+    idName.addEventListener('change', saveId); idUrl.addEventListener('change', saveId);
+    fill(); refreshSettings.push(fill);
+  }
+  // The in-game settings screen changes the same values, so the tabs re-read them every time they are opened.
+  const sb = $('settingsBtn'); if (sb) sb.addEventListener('click', () => { for (const f of refreshSettings) f(); UI.showPanel('settingsPanel'); });
   const sbk = $('settingsBack'); if (sbk) sbk.addEventListener('click', () => UI.showPanel('mainPanel'));
   const spb = $('singleBtn'); if (spb) spb.addEventListener('click', () => UI.showPanel('singlePanel'));
   const spk = $('singleBack'); if (spk) spk.addEventListener('click', () => UI.showPanel('mainPanel'));

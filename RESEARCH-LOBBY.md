@@ -112,7 +112,12 @@ not be changed at all.
 | 4. Same truth | a chat line for every change nobody made themselves; seat numbers on the map preview; the rules visible to all | relay `sys`, `Net.sysText` |
 | 5. Fair | every human's measured latency against the command delay; shuffle and lock teams; the map's start count enforced (a fifth player on a four-start map used to be built in player one's base) | relay lobby ping, `shuffle`, `lockTeams`, `capOf` |
 | 7. Social | player colours in chat; the nudge | relay `ring` |
+| 6. More than players | spectators: join a lobby or a running game to watch, with the whole map in view; no seat, no ready, no batch anyone waits on; a player can step out to watch and back in | relay `specs`, `catchUp`; `Net.gameOptions` (the observer mode); `test/spectate.js` |
 | Rules parity | starting bank, weather, light, destructibles, derelicts, wildlife, map sizes and procedural maps, composed by the skirmish screen's own functions | `Net.gameOptions` |
+
+And the menus: **Settings in tabs** (Game, Display, Audio, Multiplayer, Controls) with a remembered **HUD size**, scroll speed, edge scrolling, one master volume and the multiplayer identity; the in-game settings screen steps the same values (`test/settings.js`).
+
+Still not built, and why: a **rematch / back to the same lobby** after a game (the relay would have to hand a finished room back to its lobby while a player may still be watching the end of it -- a design of its own); **ratings and skill balance** (nothing records a result to rate); **start-position choice** (a seat is its start, and choosing one means reading it in the stamped `G.init`).
 
 Tests: `test/lobby.js` (relay over real sockets, and the client in a VM with the real skirmish functions), with negative
 controls in `.claude/review/lobby/controls.js`.

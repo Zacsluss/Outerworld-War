@@ -124,11 +124,12 @@ const Voice = {
     if (kind !== 'adv' && (speechSynthesis.speaking || now - this.lastAt < (this.fighting() ? this.fightGap : this.gap))) return false;
     if (kind === 'adv') speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text); const adv = this.lines.adv[race] || this.lines.adv.T;
-    if (kind === 'adv') { u.pitch = adv.pitch; u.rate = adv.rate; u.volume = 0.9; }
+    const level = typeof Sound !== 'undefined' && typeof Sound.volume === 'number' ? Sound.volume : 1;   // the master volume (Settings, Audio)
+    if (kind === 'adv') { u.pitch = adv.pitch; u.rate = adv.rate; u.volume = 0.9 * level; }
     else {
       u.pitch = this.cl(mod && mod.pitch != null ? mod.pitch : adv.sPitch, 0.1, 2);
       u.rate = this.cl(mod && mod.rate != null ? mod.rate : adv.sRate, 0.1, 4);
-      u.volume = this.cl(mod && mod.vol != null ? mod.vol : 0.7, 0, 1);
+      u.volume = this.cl(mod && mod.vol != null ? mod.vol : 0.7, 0, 1) * level;
     }
     this.lastAt = now; try { speechSynthesis.speak(u); } catch (e) { }
     return true;
@@ -193,9 +194,13 @@ const Music = {
     if (!this.on || (typeof Sound !== 'undefined' && Sound.muted)) return; if (!this.ctx) { try { this.ctx = Sound.ctx || new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
     if (this.ctx.state === 'suspended') this.ctx.resume();
     if (!this.master) { this.master = this.ctx.createGain(); this.master.gain.value = 0.0; this.master.connect(this.ctx.destination); }
-    this.master.gain.cancelScheduledValues(this.ctx.currentTime); this.master.gain.linearRampToValueAtTime(0.16, this.ctx.currentTime + 3);
+    this.master.gain.cancelScheduledValues(this.ctx.currentTime); this.master.gain.linearRampToValueAtTime(this.LEVEL * this.level(), this.ctx.currentTime + 3);
     if (this.timer) clearInterval(this.timer); this.step = 0; this.timer = setInterval(() => this.bar(), 4000); this.bar();
   },
+  // The music's own level, times the master volume (Settings, Audio). setVolume applies a change to music already playing.
+  LEVEL: 0.16,
+  level() { return typeof Sound !== 'undefined' && typeof Sound.volume === 'number' ? Sound.volume : 1; },
+  setVolume() { if (!this.master || !this.ctx || !this.timer) return; this.master.gain.cancelScheduledValues(this.ctx.currentTime); this.master.gain.setValueAtTime(this.LEVEL * this.level(), this.ctx.currentTime); },
   stop() { if (this.timer) { clearInterval(this.timer); this.timer = null; } if (this.master && this.ctx) { this.master.gain.cancelScheduledValues(this.ctx.currentTime); this.master.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 1.5); } },
   // Is a fight actually happening? The bar() below already had a `tension` flag, but it read the
   // player's ATTACK ALERTS -- so it only knew about being attacked at home, and stayed calm through

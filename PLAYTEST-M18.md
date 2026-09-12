@@ -610,3 +610,53 @@ To see a busy list, open the page in two or three more browser tabs and host a g
 - **INVITE LINK** (beside the code): copies a link. Opening it goes straight to Multiplayer, connects with your
   remembered name, and joins that lobby. Only offered when the page came from a server (not from a file).
 - **BACK** from inside a lobby now leaves the lobby, so you no longer hold up everyone's START from the main menu.
+
+---
+
+## 86. Spectators
+
+*(Seventh session, item 2. Every lobby in `RESEARCH-LOBBY.md` has observers; Beyond All Reason lets anyone join a
+running game to watch.)*
+
+**How to reach it.** Three browser tabs on the same server. Host a game in one, join it in the second, and in the third
+pick the game in the list and press **SPECTATE**.
+
+**What to look for.**
+- **In the lobby**, the spectator appears under **Spectators**, not in a team. Chat says "Sam is watching." The room's
+  seat count does not change: a full four-player game still lets people in to watch.
+- **A spectator has no READY** — START never waits for them — and a **PLAY** button that takes a free seat.
+- **A seated player** (not the host) has **watch instead** above the spectators box: it gives up the seat.
+  The host cannot, because the host is the one who starts the game.
+- **Spectators can chat**; their lines say "(watching)".
+- **When the game starts**, the spectator watches it with **the whole map in view** and everyone's production shown.
+  The banner reads **SPECTATING**; **[** and **]** switch whose view you see, **O** toggles the production overlay,
+  **Ctrl+V** the whole map. Nothing you click gives orders.
+- **The players never wait for a spectator.** A spectator's slow connection or a paused tab stalls nobody.
+- **Join a game that is already running**: pick an **in game** row in the list and press **SPECTATE**. You catch up from
+  a player's snapshot in a moment and then watch live.
+- **A spectator leaving** stops nobody's units and cancels no countdown.
+- **F10** as a spectator shows a SPECTATING menu (switch player, overlay, full map, stop watching). At the end the screen
+  says **GAME OVER**. Online games no longer offer **Restart this game** — it would have started a private copy of a
+  game everyone else was still in.
+
+---
+
+## 87. Settings, in tabs
+
+*(Seventh session, item 2: "a truly sophisticated set of menus".)*
+
+**How to reach it.** Main menu, **Settings**. In a game, **F10** then **Settings** has the same values.
+
+**What to look for.**
+- **Five tabs**: Game, Display, Audio, Multiplayer, Controls.
+- **Display → HUD size**, 1.0x to 1.6x. 1.4x is the default (the size you asked for after the first increase);
+  1.0x is the original console. Start a skirmish: the console, minimap and command card are drawn at that size. However
+  large it is set, the console never takes more than 42% of a short window.
+- **Game → Scroll speed** (50%–200%) changes how fast the arrow keys and the screen edge pan the camera, and **Edge
+  scroll** off stops the mouse panning at the edge while the arrow keys still work.
+- **Audio → Volume** is one level for everything: interface sounds, unit voices and music (a change while music plays
+  applies at once). Mute still starts on with every page load, on purpose.
+- **Multiplayer → Name and Server** are what the Multiplayer screen fills in, and what an invite link joins under.
+- **Every setting except Mute is remembered** the next time the page opens.
+- **F10 → Settings in a game** shows HUD size, Scroll speed, Edge scroll and Volume as buttons that step through values
+  (HUD 1.4 → 1.5 → 1.6 → 1.0 …). The main menu's tabs show whatever was set there.

@@ -21,6 +21,7 @@ const Net = {
   count: 0, countMsg: '',   // the relay's start countdown: the digit it last sent, and why it stopped if it was cancelled
   url: '', urlTyped: '', online: 0, pings: {}, rungAt: 0, pick: null,   // the server we are on, what the player typed for it, how many are connected, each member's measured latency, when the host last nudged us, the game picked in the browser
   filt: { q: '', full: true, playing: true, sort: 'players' },           // the browser's search, its two filters and its order
+  spectating: false,                                                    // in the room as a spectator: no seat, no batches, the whole map in view
   HASH_EVERY: 48, myHashes: {}, theirHashes: {}, desynced: false, desyncFrame: -1, catchingUp: false, catchTarget: 0, name: 'Player', lastError: '',
   defaultUrl() { return (location.protocol === 'https:' ? 'wss://' : 'ws://') + (location.host || 'localhost:8765') + '/ws'; },
   // ---------------- the way in ----------------
@@ -47,7 +48,7 @@ const Net = {
   // has ended says so instead of quietly making an empty room under its name.
   browse(url, name, opts) { this.room = ''; this.browsing = true; this.open(url, name, () => { this.status(''); this.saveIdentity(); if (opts && opts.host) this.host(opts.title); else if (opts && opts.join) { this.send({ t: 'list' }); this.join(opts.join, true); } else this.send({ t: 'list' }); this.render(); }); },
   host(title) { this.send({ t: 'join', name: this.name, race: this.race, create: true, title: String(title || '').trim() || this.name + "'s game" }); this.status('Hosting...'); },
-  join(code, existing) { code = String(code || '').trim(); if (!code) { this.status('Type a room code first.'); return; } this.room = code; this.send({ t: 'join', name: this.name, race: this.race, room: code, existing: !!existing }); this.status('Joining ' + code.toUpperCase() + '...'); },
+  join(code, existing, spectate) { code = String(code || '').trim(); if (!code) { this.status('Type a room code first.'); return; } this.room = code; this.send({ t: 'join', name: this.name, race: this.race, room: code, existing: !!existing, spectate: !!spectate }); this.status((spectate ? 'Joining ' + code.toUpperCase() + ' to watch...' : 'Joining ' + code.toUpperCase() + '...')); },
   leaveRoom() { this.send({ t: 'leave' }); this.lobby = null; this.room = ''; this.browsing = true; this.chatLog = []; this.teamsShown = 2; this.count = 0; this.countMsg = ''; this.status('Connected.'); this.render(); },
   disconnect() { if (this.ws) { try { this.ws.close(); } catch (e) { } } this.ws = null; this.connected = false; this.active = false; this.lobby = null; this.catchingUp = false; },
   send(m) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(m)); },
@@ -65,7 +66,8 @@ const Net = {
       // Only a client in no room is sent the list, so receiving it means the relay has us out of any lobby
       // (left, or kicked): back to the browser.
       case 'lobbies': this.lobbies = Array.isArray(m.rooms) ? m.rooms : []; this.online = m.online | 0; this.lobby = null; this.browsing = true; this.render(); if (typeof Desktop !== 'undefined' && Desktop.hosting) Desktop.share(); break;
-      case 'lobby': this.lobby = m; if (m.room) this.room = m.room; this.count = m.count | 0; if (Array.isArray(m.players)) for (const q of m.players) if (q && typeof q.ping === 'number') this.pings[q.id | 0] = q.ping | 0;
+      case 'lobby': this.lobby = m; if (m.room) this.room = m.room; this.count = m.count | 0; for (const q of [].concat(Array.isArray(m.players) ? m.players : [], Array.isArray(m.specs) ? m.specs : [])) if (q && typeof q.ping === 'number') this.pings[q.id | 0] = q.ping | 0;
+        if (!this.active) this.spectating = Array.isArray(m.specs) && m.specs.some(s => s && s.id === this.id);
         // The host's client keeps the relay told how many seats the chosen map has (test/serve.js, capOf).
         if (m.state === 'lobby' && m.cap != null && Array.isArray(m.players) && m.players.some(q => q && q.id === this.id && q.host)) { const want = this.mapCap(m.layout, m.rules && m.rules.size); if (want !== m.cap) this.send({ t: 'set', cap: want }); } if (this.browsing) this.status('In the lobby.'); this.browsing = false; this.render(); if (typeof Desktop !== 'undefined' && Desktop.hosting) Desktop.share(); break;
       // THE START COUNTDOWN, and the relay is the clock (the user's item 12). A number arrives a second;
@@ -91,7 +93,7 @@ const Net = {
       case 'hash': this.onHash(m); break;
       case 'left': { this.gone[m.p] = { from: m.f, to: Infinity }; if (typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg(this.playerName(m.p) + ' dropped. Their units stop at ' + this.clock(m.f) + '; the game continues.', 'info'); break; }
       case 'rejoined': { const g = this.gone[m.p]; if (g) g.to = m.f; else this.gone[m.p] = { from: -1, to: m.f }; if (typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg(this.playerName(m.p) + ' is rejoining; they take control again at ' + this.clock(m.f) + '.', 'info'); break; }
-      case 'chat': if (this.active && typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg(m.from + ': ' + m.text, 'chat'); else { this.logLine({ from: String(m.from), id: m.id, text: String(m.text) }); this.render(); } break;   // in a game it is chat on screen; in the lobby it is the lobby's log
+      case 'chat': if (this.active && typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg((m.spec ? '(watching) ' : '') + m.from + ': ' + m.text, 'chat'); else { this.logLine({ from: String(m.from), id: m.id, spec: !!m.spec, text: String(m.text) }); this.render(); } break;   // in a game it is chat on screen; in the lobby it is the lobby's log
     }
   },
   clock(f) { const s = Math.floor(f / TPS); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); },
@@ -226,7 +228,11 @@ const Net = {
       if (bank && bank[3] !== 0 && o.gas === undefined) o.gas = bank[3];
       return o;
     });
-    return { players, seed: m.seed, layout, human: m.you, mode: 'play', net: true };
+    // A SPECTATOR (you -1) starts the same game in the replay viewer's mode, which is the observer this game already had:
+    // commands are inert (CMD.install), [ and ] switch whose view, O is the production overlay. G.human is a view, not a
+    // seat, so it points at player one to begin with.
+    const watch = m.you == null || m.you < 0;
+    return { players, seed: m.seed, layout, human: watch ? 0 : m.you, mode: watch ? 'replay' : 'play', net: true };
   },
   // ---- who you are, and the link that brings a friend ----
   // The name, the server typed and the race are remembered (item 2: "getting in is fast"); nothing else is, and the
@@ -329,6 +335,8 @@ const Net = {
       case 'shuffle': return 'The host shuffled the teams.';
       case 'unready': return 'The game changed, so everyone has to ready up again.';
       case 'waiting': return 'Waiting for ' + (Array.isArray(m.names) ? m.names.map(n).join(', ') : '') + ' to ready up.';
+      case 'spectate': return n(m.name) + ' is watching.';
+      case 'play': return n(m.name) + ' took a seat.';
     }
     return '';
   },
@@ -375,6 +383,7 @@ const Net = {
       on('lbPlaying', 'onchange', () => { this.filt.playing = !!$('lbPlaying').checked; this.render(); });
       on('lbSort', 'onchange', () => { this.filt.sort = $('lbSort').value; this.render(); });
       on('lbJoinSel', 'onclick', () => { if (this.pick) this.join(this.pick, true); });
+      on('lbSpecSel', 'onclick', () => { if (this.pick) this.join(this.pick, true, true); });
       for (const r of q('[data-pick]')) { r.onclick = () => { this.pick = r.dataset.pick; this.render(); }; r.ondblclick = () => this.join(r.dataset.join, true); }
       return;
     }
@@ -396,6 +405,8 @@ const Net = {
     on('lbShuffle', 'onclick', ev => { if (ev && ev.preventDefault) ev.preventDefault(); this.send({ t: 'shuffle' }); });
     on('lbRename', 'onchange', () => { const v = String($('lbRename').value || '').trim(); if (v) this.send({ t: 'set', title: v }); });
     on('lbReady', 'onclick', () => { this.rungAt = 0; this.send({ t: 'set', ready: !(meP && meP.ready) }); });
+    on('lbToSpec', 'onclick', ev => { if (ev && ev.preventDefault) ev.preventDefault(); this.send({ t: 'set', spectate: true }); });
+    on('lbToPlay', 'onclick', () => this.send({ t: 'set', spectate: false, race: this.race }));
     on('lbStart', 'onclick', () => this.send({ t: 'start' }));
     on('lbCancel', 'onclick', () => this.send({ t: 'cancel' }));
     on('lbLeave', 'onclick', () => this.leaveRoom());
@@ -435,7 +446,9 @@ const Net = {
         + '<div class="lbDetRow"><label>Players</label><span>' + (pick.humans | 0) + ' human, ' + Math.max(0, (pick.players | 0) - (pick.humans | 0)) + ' computer, ' + Math.max(0, (pick.cap | 0) - (pick.players | 0)) + ' open</span></div>'
         + '<div class="lbDetRow"><label>Speed</label><span>' + e(speedName(pick)) + '</span></div>'
         + '<div class="lbDetRow"><label>Rules</label><span>' + (rules.length ? rules.join('<br>') : 'Standard') + (pick.lockTeams ? '<br>Teams locked' : '') + '</span></div>'
-        + '<button id="lbJoinSel"' + (joinable ? '' : ' disabled') + '>' + (joinable ? 'JOIN' : pick.state === 'lobby' ? 'FULL' : 'IN PROGRESS') + '</button></div>';
+        + '<div class="lbDetRow"><label>Watching</label><span>' + (pick.specs | 0) + '</span></div>'
+        + '<div class="lbDetBtns"><button id="lbJoinSel"' + (joinable ? '' : ' disabled') + '>' + (joinable ? 'JOIN' : pick.state === 'lobby' ? 'FULL' : 'IN PROGRESS') + '</button>'
+        + '<button id="lbSpecSel" class="small"' + ((pick.specs | 0) < 8 ? '' : ' disabled') + ' title="Watch this game with the whole map in view, without taking a seat">SPECTATE</button></div></div>';
     } else {
       detail = '<div class="lbDetail lbDetEmpty">' + (rooms.length ? 'Pick a game to see its map, its players and its rules.' : 'Nothing to pick yet.') + '<br><br>QUICK JOIN puts you in the open game with the most players, or hosts one if there is none.</div>';
     }
@@ -497,6 +510,13 @@ const Net = {
       + (host && open && L.players.length < seats ? '<a href="#" data-addai="' + t + '">+ add A.I.</a>' : '') + '</span></div>'
       + (L.players.filter(p => (p.team || 1) === t).map(row).join('') || '<div class="lbNone">empty</div>') + '</div>';
     const teams = []; for (let t = 1; t <= maxTeam; t++) teams.push(team(t));
+    const specs = Array.isArray(L.specs) ? L.specs : [];
+    const specBox = '<div class="lbSpecs"><div class="lbTeamHead"><b>Spectators</b><span class="lbTeamBtns">'
+      + (open && meP && !meP.host ? '<a href="#" id="lbToSpec" title="Give up your seat and watch the game instead">watch instead</a>' : '') + '</span></div>'
+      + (specs.map(s => '<div class="lp spec' + (s.id === this.id ? ' me' : '') + '"><span class="lbName">' + e(s.name) + '</span>'
+        + '<span class="' + this.pingClass(this.pingOf(s)) + '" data-ping="' + (s.id | 0) + '" title="' + this.pingTitle(this.pingOf(s)) + '">' + this.pingInner(this.pingOf(s)) + '</span>'
+        + (host && open && s.id !== this.id ? '<a href="#" class="lbKick" data-kick="' + (s.id | 0) + '" title="Remove this spectator">&#10005;</a>' : '') + '</div>').join('') || '<div class="lbNone">nobody watching</div>')
+      + '</div>';
     const code = L.room && L.room !== 'LAN' ? L.room : '';
     const speed = NET_SPEED_NAMES[L.speed == null ? 6 : L.speed];
     const over = L.players.length > seats;
@@ -537,12 +557,12 @@ const Net = {
       + '<div class="lbSetNote">Share the code or the invite link to bring a player in. Colours and start positions come from the seat, in the order shown. Locked alliances is a fact, not a switch: teams are fixed when the game starts. Handicap, Category, Mode and Game Duration are the StarCraft II rows this simulation does not honour, so they are not here.</div>'
       + '</div>';
     let h = '<div class="lbHead"><span class="lbHeadTitle">' + e(L.title || (code ? 'Room ' + code : 'LAN game')) + '</span>'
-      + '<span class="lbHeadInfo">' + e(this.mapName(L.layout)) + ' &middot; <span' + (over ? ' class="lbOver"' : '') + '>' + L.players.length + '/' + seats + ' players</span> &middot; ' + e(speed)
+      + '<span class="lbHeadInfo">' + e(this.mapName(L.layout)) + ' &middot; <span' + (over ? ' class="lbOver"' : '') + '>' + L.players.length + '/' + seats + ' players</span>' + (Array.isArray(L.specs) && L.specs.length ? ' &middot; ' + L.specs.length + ' watching' : '') + ' &middot; ' + e(speed)
       + (code ? ' &middot; code <b>' + e(code) + '</b>' : '') + '</span></div>';
     const lines = this.chatLog.map(c => c.sys
       ? '<div class="lbSys">' + e(c.text) + '</div>'
-      : '<div><b style="color:' + (seat.has(c.id) ? this.slotColor(seat.get(c.id)) : '#e8d9a6') + '">' + e(c.from) + ':</b> ' + e(c.text) + '</div>').join('');
-    h += '<div class="lbBody"><div class="lbSlots"><div class="lbTeams">' + teams.join('') + '</div>'
+      : '<div><b style="color:' + (seat.has(c.id) ? this.slotColor(seat.get(c.id)) : '#aab4c4') + '">' + e(c.from) + (c.spec ? ' (watching)' : '') + ':</b> ' + e(c.text) + '</div>').join('');
+    h += '<div class="lbBody"><div class="lbSlots"><div class="lbTeams">' + teams.join('') + '</div>' + specBox
       + '<div class="lbTeamTools">' + (open && maxTeam < 8 ? '<a href="#" id="lbAddTeam" class="lbLink">+ add a team</a>' : '')
       + (edit ? '<a href="#" id="lbShuffle" class="lbLink" title="Deal every slot onto the teams in use at random, as evenly as they go">shuffle teams</a>' : '') + '</div>'
       + '<div class="lbChat" id="lbChatLog">' + lines + '</div>'
@@ -557,12 +577,13 @@ const Net = {
     const rung = this.rungAt && Date.now() - this.rungAt < 8000;
     // THE BUTTON BAR: READY first, because it is the one thing every player has to press.
     h += '<div class="lbButtons">'
-      + (open ? '<button id="lbReady" class="' + (meP && meP.ready ? 'on' : '') + (rung ? ' lbRing' : '') + '">' + (meP && meP.ready ? 'READY &#10003;' : 'READY') + '</button>' : '')
+      + (open && meP ? '<button id="lbReady" class="' + (meP.ready ? 'on' : '') + (rung ? ' lbRing' : '') + '">' + (meP.ready ? 'READY &#10003;' : 'READY') + '</button>' : '')
+      + (open && this.spectating ? '<button id="lbToPlay"' + (L.players.length < seats ? '' : ' disabled title="Every seat on this map is taken"') + '>PLAY</button>' : '')
       + (host && open ? '<button id="lbStart"' + (over ? ' class="lbWaiting" title="Too many players for this map"' : checks && waiting.length ? ' class="lbWaiting" title="' + waiting.map(p => e(p.name)).join(', ') + ' not ready yet"' : '') + '>START GAME</button>' : '')
       + (host && counting ? '<button id="lbCancel">CANCEL</button>' : '')
       + (host && open ? '<button id="lbPrivacy" class="small">' + (L.listed ? 'MAKE PRIVATE' : 'MAKE PUBLIC') + '</button>' : '')
       + '<button id="lbLeave" class="small">QUIT</button>'
-      + (open ? '<span class="sub lbWait">' + (host ? readyLine : (meP && meP.ready ? 'Ready. Waiting for the host to start.' : 'Press READY when the game on screen is the one you want to play.')) + '</span>' : '')
+      + (open ? '<span class="sub lbWait">' + (host ? readyLine : this.spectating ? 'You are watching: no seat, and the whole map in view. PLAY takes a free seat.' : (meP && meP.ready ? 'Ready. Waiting for the host to start.' : 'Press READY when the game on screen is the one you want to play.')) + '</span>' : '')
       + '</div>';
     return h;
   },
@@ -575,15 +596,18 @@ const Net = {
     this.reset(m);
     this.speed = m.speed == null ? 6 : m.speed; // agreed in the lobby; every client must pace the same or lockstep just makes the fast ones wait
     this.cheats = !!m.cheats;                   // the relay says whether cheats are on for this game (off unless it was started with BW_CHEATS=1)
+    this.spectating = m.you < 0;
     UI.start(this.gameOptions(m));
+    if (this.spectating) { UI.viewAll = true; UI.prodOverlay = true; }   // a spectator sees the whole map and everyone's production
   },
   // Rejoin after a drop: the relay sends every command batch since the start; re-simulate from frame 0, then continue live.
   rejoinGame(m) {
     this.reset(m);
     this.speed = m.speed == null ? 6 : m.speed; this.cheats = !!m.cheats;
     for (const h of (m.history || [])) { if (!this.inbox[h.f]) this.inbox[h.f] = {}; this.inbox[h.f][h.p] = Array.isArray(h.c) ? h.c : []; if (h.p === this.me) this.sent[h.f] = true; }
-    this.catchingUp = true; this.catchTarget = m.frame || 0;
-    UI.start(this.gameOptions(m));;
+    this.catchingUp = true; this.catchTarget = m.frame || 0; this.spectating = m.you < 0;
+    UI.start(this.gameOptions(m));
+    if (this.spectating) { UI.viewAll = true; UI.prodOverlay = true; };
     // A snapshot from a live player skips straight to their state; only the commands after it get replayed.
     // Without one this re-simulates the whole game, which gets slower the longer the game has run.
     let from = 0;
@@ -591,7 +615,7 @@ const Net = {
       try { Snapshot.restore(m.snap); from = G.frame; this.appliedFrame = m.snapApplied ? G.frame : G.frame - 1; }   // the donor said whether its frame's batch is already in this state (task 14)
       catch (e) { console.error('rejoin snapshot rejected, re-simulating instead', e); }
     }
-    UI.loading = { target: this.catchTarget, start: from, label: m.snap ? 'Rejoining... catching up' : 'Rejoining... re-simulating' };
+    UI.loading = { target: this.catchTarget, start: from, label: this.spectating ? 'Joining to watch... catching up' : m.snap ? 'Rejoining... catching up' : 'Rejoining... re-simulating' };
   },
   queue(c) { c.p = this.me; this.outbox.push(c); },
   isGone(i, f) { const g = this.gone[i]; return !!g && f >= g.from && f < g.to; },
@@ -604,7 +628,8 @@ const Net = {
     // us at the target already, and the other players keep feeding us commands, so waiting for an empty
     // inbox would mean catching up forever.
     if (this.catchingUp && f >= this.catchTarget) this.catchingUp = false;
-    if (!this.sent[tf]) { const c = this.outbox; this.outbox = []; this.send({ t: 'cmds', f: tf, c }); if (!this.inbox[tf]) this.inbox[tf] = {}; this.inbox[tf][this.me] = c; this.sent[tf] = true; }
+    // A spectator has no slot: it sends no batch (the relay would drop it) and nobody waits for one.
+    if (!this.sent[tf]) { if (this.me >= 0) { const c = this.outbox; this.outbox = []; this.send({ t: 'cmds', f: tf, c }); if (!this.inbox[tf]) this.inbox[tf] = {}; this.inbox[tf][this.me] = c; } else this.outbox = []; this.sent[tf] = true; }
     if (this.appliedFrame === f) return; this.appliedFrame = f; // a finished (or paused) game must never apply a frame's batch twice
     for (let i = 0; i < this.players.length; i++) { const g = this.gone[i]; if (g && g.from === f) G.exec({ t: 'stopall', p: i }); }
     const b = this.inbox[f] || {};

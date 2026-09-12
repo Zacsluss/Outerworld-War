@@ -156,6 +156,16 @@
   @keyframes lbRing { from { box-shadow: 0 0 0 1px #b1964f, 0 0 6px rgba(255, 210, 110, .3); } to { box-shadow: 0 0 0 2px #ffd66e, 0 0 24px rgba(255, 210, 110, .9); } }
   #lbStart.lbWaiting { color: #8a8470; }
   .lbOver { color: #e0664a; font-weight: bold; }
+  /* Settings tabs (seventh session, item 2). */
+  .tabs { display: flex; gap: 2px; margin: 0 0 12px; border-bottom: 1px solid #3a3122; }
+  .tabs a { padding: 7px 14px; color: #8f98a8; text-decoration: none; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; border: 1px solid transparent; border-bottom: none; }
+  .tabs a:hover { color: #e8d9a6; } .tabs a.on { color: #f0d27a; background: #0c1016; border-color: #3a3122; }
+  .tabBody { min-height: 170px; }
+  input[type=range] { padding: 0; height: 22px; accent-color: #d8bd76; box-shadow: none; border: none; background: transparent; }
+  .val { width: 52px; text-align: right; color: #e8d9a6; font-size: 12px; }
+  .lbSpecs { border: 1px solid #2c2416; background: #0c1016; margin-top: 8px; }
+  .lp.spec .lbName { font-weight: normal; color: #aab4c4; }
+  .lbDetBtns { display: flex; gap: 8px; margin-top: auto; } .lbDetBtns button { margin: 0; flex: 1; }
   .lbButtons .lbWait { flex: 1; text-align: right; }
   #multiPanel.on .netHelp { display: none; }   /* the help is about reaching a server: once connected, it is in the way */
   /* The settings column reads as a form: the label beside its value, not above it. */
@@ -245,16 +255,40 @@
     <button id="multiBack" class="small back">Back</button>
   </div>
 
-  <div class="panel" id="settingsPanel" style="display:none">
+  <!-- Settings, in tabs (seventh session, item 2: "a truly sophisticated set of menus"). Five kinds of setting on one
+       plate read as one long form. Every control is read and written by js/ui.js's boot code, applied the moment it
+       moves and remembered (UI.loadPrefs) -- except Mute, which by design never outlives the page. -->
+  <div class="panel wide" id="settingsPanel" style="display:none">
     <h1 class="h2">SETTINGS</h1>
     <div class="rule"></div>
-    <div class="sub">Audio starts muted every time the page loads. Unmuting lasts for this session only.</div>
-    <div class="row"><label>Audio</label><label class="chk"><input type="checkbox" id="mute" checked> Mute all</label><label class="chk"><input type="checkbox" id="voice"> Voice</label><label class="chk"><input type="checkbox" id="music"> Music</label></div>
-    <div class="row"><label>Hotkeys</label><select id="hotkeys" class="grow"><option value="bw">Brood War</option><option value="grid">Grid (QWE / ASD / ZXC)</option></select></div>
-    <div class="help">In game: A attack-move, M move, S stop, H hold, P patrol, B build, V advanced build. Ctrl+1-9 control groups, Tab cycles the selected kind, comma finds an idle worker, Ctrl+A selects the army, Backspace centres on the selection.<br>
-      Ctrl+M mutes, F1 is help, F3 the codex, F10 the pause menu (its Settings changes the same options), +/- the speed.</div>
-    <button id="controlsBtn" class="small">Controls</button>
-    <button id="codexBtn" class="small">Codex</button>
+    <div class="tabs" id="setTabs"><a href="#" data-tab="game" class="on">Game</a><a href="#" data-tab="display">Display</a><a href="#" data-tab="audio">Audio</a><a href="#" data-tab="online">Multiplayer</a><a href="#" data-tab="keys">Controls</a></div>
+    <div class="tabBody" data-body="game">
+      <div class="row"><label>Hotkeys</label><select id="hotkeys" class="grow"><option value="bw">Brood War</option><option value="grid">Grid (QWE / ASD / ZXC)</option></select></div>
+      <div class="row"><label>Scroll speed</label><input type="range" id="optScroll" min="50" max="200" step="10" value="100" class="grow"><span class="val" id="optScrollVal">100%</span></div>
+      <div class="row"><label>Edge scroll</label><label class="chk"><input type="checkbox" id="optEdge" checked> Pan when the mouse reaches the edge of the screen</label></div>
+      <div class="help">In game: A attack-move, M move, S stop, H hold, P patrol, B build, V advanced build. Ctrl+1-9 control groups, Tab cycles the selected kind, comma finds an idle worker, Ctrl+A selects the army, Backspace centres on the selection.<br>
+        Ctrl+M mutes, F1 is help, F3 the codex, F10 the pause menu (its Settings changes the same options), +/- the speed.</div>
+    </div>
+    <div class="tabBody" data-body="display" style="display:none">
+      <div class="row"><label>HUD size</label><input type="range" id="optHud" min="1" max="1.6" step="0.1" value="1.4" class="grow"><span class="val" id="optHudVal">1.4x</span></div>
+      <div class="help">How large the console at the bottom of the screen is drawn. The minimap, the selection and the command card grow with it. 1.4x is the default; 1.0x is the original size. However large it is set, the console never takes more than 42% of a short window.</div>
+    </div>
+    <div class="tabBody" data-body="audio" style="display:none">
+      <div class="sub">Audio starts muted every time the page loads. Unmuting lasts for this session only.</div>
+      <div class="row"><label>Audio</label><label class="chk"><input type="checkbox" id="mute" checked> Mute all</label><label class="chk"><input type="checkbox" id="voice"> Voice</label><label class="chk"><input type="checkbox" id="music"> Music</label></div>
+      <div class="row"><label>Volume</label><input type="range" id="optVolume" min="0" max="100" step="5" value="100" class="grow"><span class="val" id="optVolumeVal">100%</span></div>
+      <div class="help">One level for everything: the interface sounds, the unit voices and the music.</div>
+    </div>
+    <div class="tabBody" data-body="online" style="display:none">
+      <div class="row"><label>Name</label><input id="optNetName" maxlength="16" class="grow" placeholder="Player"></div>
+      <div class="row"><label>Server</label><input id="optNetUrl" class="grow" placeholder="this page's own server"></div>
+      <div class="help">What MULTIPLAYER fills in before you connect, remembered between visits. An invite link a friend sends you connects under this name.</div>
+    </div>
+    <div class="tabBody" data-body="keys" style="display:none">
+      <div class="help">Rebind the global keys: the camera, control groups, selection and speed. The letters on the command card follow the Hotkeys layout on the Game tab.</div>
+      <button id="controlsBtn" class="small">Controls</button>
+      <button id="codexBtn" class="small">Codex</button>
+    </div>
     <button id="settingsBack" class="small back">Back</button>
   </div>
   <!-- ==================================================================================

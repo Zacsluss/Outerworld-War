@@ -1,7 +1,7 @@
 // THE ONLINE LOBBY, SEVENTH SESSION (the user's item 2: "find what makes a real-time strategy game lobby great ... we
 // need a truly sophisticated set of menus and online lobby"). RESEARCH-LOBBY.md is the research: what StarCraft II,
 // Forged Alliance Forever, Beyond All Reason and Age of Empires II share, and what this game lacked of it.
-//   node test/lobby.js [port=8810]      (uses port, port+1, port+2)
+//   node test/lobby.js [port=8810]      (uses port .. port+3)
 //
 // RELAY (real sockets against test/serve.js):
 //   1. READY MEANS READY: START refuses while a human other than the host has not readied, and names who
@@ -17,6 +17,9 @@
 //   9. the browser's filter, sort and quick-join choice, the invite link both ways
 //  10. gameOptions: rules at their defaults start the game they always started; rules set start what they say
 //  11. the room draws what the relay said: system lines escaped, latency, the nudge, the seat cap, START's reason
+//  12. SPECTATORS in the lobby: a player steps out to watch and back in, the host cannot, a spectator chats and can be
+//      removed, and one walking out during the countdown cancels nothing (test/spectate.js is the lockstep half)
+//  13. spectators on screen, and the observer's menus: no Restart online, no snapshots kept for a live game
 'use strict';
 const path = require('path'), fs = require('fs'), vm = require('vm'), { spawn } = require('child_process');
 const root = path.join(__dirname, '..');
@@ -55,6 +58,7 @@ function client(port, tag) {
   return c;
 }
 const who = (c, name) => c.lobby && c.lobby.players.find(p => p.name === name);
+const J2 = v => JSON.stringify(v);
 
 (async () => {
   // ===========================================================================================
@@ -191,6 +195,36 @@ const who = (c, name) => c.lobby && c.lobby.players.find(p => p.name === name);
   ok(F.started && F.started.rules && F.started.rules.bank === 'rich' && F.started.rules.hazard === 'none', 'the rules ride the start message to every client', JSON.stringify(F.started && F.started.rules));
   E.close(); F.close(); await sleep(300);
 
+  // ---- 12. SPECTATORS IN THE LOBBY ----
+  {
+    const P4 = PORT + 3; serve(P4, { BW_COUNTDOWN: '2', BW_READY: '0' }); await sleep(500);
+    const H = client(P4, 'Hana'), I = client(P4, 'Ivo'), W = client(P4, 'Wes'); await Promise.all([H.open, I.open, W.open]);
+    H.send({ t: 'join', name: 'Hana', race: 'T', create: true, title: 'Watch' }); await sleep(250);
+    const wc = H.lobby.room;
+    I.send({ t: 'join', name: 'Ivo', race: 'Z', room: wc, existing: true }); W.send({ t: 'join', name: 'Wes', race: 'P', room: wc, existing: true, spectate: true }); await sleep(300);
+    ok(H.lobby.players.length === 2 && (H.lobby.specs || []).map(s => s.name).join() === 'Wes' && H.sys.some(m => m.ev === 'spectate' && m.name === 'Wes'),
+      'a spectator joins without a seat, and the room is told', J2({ players: H.lobby.players.map(p => p.name), specs: H.lobby.specs }));
+    I.send({ t: 'set', spectate: true }); await sleep(250);
+    ok(H.lobby.players.length === 1 && H.lobby.specs.length === 2, 'a player steps out of their seat to watch', J2({ players: H.lobby.players.map(p => p.name), specs: H.lobby.specs.map(s => s.name) }));
+    H.send({ t: 'set', spectate: true }); await sleep(250);
+    ok(H.lobby.players.some(p => p.name === 'Hana' && p.host), 'the host cannot: a room watched by its own host would have nobody who may start it', J2(H.lobby.players));
+    I.send({ t: 'set', spectate: false, race: 'P' }); await sleep(250);
+    const ivo = H.lobby.players.find(p => p.name === 'Ivo');
+    ok(ivo && ivo.race === 'P' && H.lobby.specs.length === 1 && H.sys.some(m => m.ev === 'play' && m.name === 'Ivo'), 'and takes a seat again, with the race they asked for', J2(ivo));
+    W.send({ t: 'chat', text: 'gl' }); await sleep(200);
+    const wline = H.chats.find(m => m.text === 'gl');
+    ok(wline && wline.spec === true && wline.from === 'Wes', 'a spectator can chat, and the line says it came from someone watching', J2(wline));
+    W.send({ t: 'set', rules: { bank: 'rich' } }); W.send({ t: 'set', ready: true }); await sleep(200);
+    ok(H.lobby.rules.bank === 'standard' && !H.lobby.players.some(p => p.name === 'Wes'), 'a spectator changes nothing and readies nothing', J2(H.lobby.rules));
+    const X = client(P4, 'Xan'); await X.open; X.send({ t: 'join', name: 'Xan', race: 'T', room: wc, existing: true, spectate: true }); await sleep(250);
+    H.send({ t: 'kick', id: H.lobby.specs.find(s => s.name === 'Xan').id }); await sleep(250);
+    ok(H.lobby.specs.length === 1 && X.errors.some(e => /removed/.test(e.msg)), 'the host can remove a spectator', J2(H.lobby.specs));
+    H.send({ t: 'start' }); await sleep(600);
+    W.close(); await sleep(2400);
+    ok(H.started && I.started && !H.msgs.some(m => m.t === 'countdown' && m.cancelled), 'a spectator walking out during the countdown cancels nothing: the player list did not move', J2({ started: !!H.started, cancelled: H.msgs.filter(m => m.t === 'countdown' && m.cancelled) }));
+    H.close(); I.close(); X.close(); await sleep(200);
+  }
+
   // ---- 1b. the ready check can be turned off for the suites that start games to test something else ----
   const P3 = PORT + 2; serve(P3, { BW_READY: '0' }); await sleep(500);
   const G1 = client(P3, 'Gil'), G2 = client(P3, 'Hal'); await Promise.all([G1.open, G2.open]);
@@ -214,7 +248,7 @@ const who = (c, name) => c.lobby && c.lobby.players.find(p => p.name === name);
     document: { getElementById: elFor, createElement: () => ({ style: {}, getContext: () => null, addEventListener() { }, appendChild() { } }), addEventListener() { }, hasFocus: () => true, body: { appendChild() { } }, querySelectorAll: () => [] },
   };
   ctx.window = ctx; ctx.globalThis = ctx; vm.createContext(ctx);
-  for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'missions', 'net', 'terrain', 'sprites_units', 'sprites_buildings', 'sprites', 'fx', 'render', 'editor', 'ui'])
+  for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'missions', 'snapshot', 'net', 'terrain', 'sprites_units', 'sprites_buildings', 'sprites', 'fx', 'render', 'editor', 'ui'])
     vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
   const R = src => vm.runInContext('(() => {' + src + '})()', ctx);
   const J = v => JSON.stringify(v);
@@ -292,6 +326,33 @@ const who = (c, name) => c.lobby && c.lobby.players.find(p => p.name === name);
   ok(sent.length === 1 && sent[0].t === 'lpong' && sent[0].n === 5, 'a lobby ping is answered with its own number', J(sent));
   sent.length = 0; ctx.__m4 = lobby({ cap: 8 }); R('Net.handle(__m4);');
   ok(sent.some(m => m.t === 'set' && m.cap === 4), 'the host\'s client tells the relay how many starts the chosen map has (Lost Ruins: four)', J(sent));
+
+  // ---- 13. spectators on screen, and the observer's menus ----
+  ctx.__m5 = lobby({ players: [{ id: 8, name: 'Boss', race: 'Z', team: 1, host: true }], specs: [{ id: 7, name: 'Me', ping: 20 }, { id: 9, name: 'Other <b>', ping: 50 }] });
+  R('Net.handle(__m5);'); h = html();
+  ok(R('return Net.spectating;') === true && /id="lbToPlay"/.test(h) && !/id="lbReady"/.test(h) && /class="lbSpecs"/.test(h) && /Other &lt;b&gt;/.test(h) && /You are watching/.test(h),
+    'a spectator sees the spectators box, PLAY instead of READY, and what watching means', h.slice(0, 300));
+  ctx.__m6 = lobby({ players: [{ id: 8, name: 'Boss', race: 'Z', team: 1, host: true }, { id: 7, name: 'Me', race: 'T', team: 2 }], specs: [] });
+  R('Net.handle(__m6);'); h = html();
+  ok(R('return Net.spectating;') === false && /id="lbToSpec"/.test(h) && /id="lbReady"/.test(h) && /nobody watching/.test(h), 'a seated guest can choose to watch instead', h.slice(0, 200));
+  R('Net.handle(__m);'); h = html();
+  ok(!/id="lbToSpec"/.test(h), '...and the host cannot', h.slice(0, 200));
+  ok(R('return Net.sysText({ ev: "spectate", name: "Wes" }) + " / " + Net.sysText({ ev: "play", name: "Ivo" });') === 'Wes is watching. / Ivo took a seat.', 'the room reads who started watching and who took a seat', '');
+  R('Net.lobby = null; Net.browsing = true; Net.pick = "RUN123"; Net.handle({ t: "lobbies", online: 3, rooms: [{ code: "RUN123", title: "Running", host: "H", players: 2, humans: 2, cap: 4, state: "playing", layout: "temple", specs: 1 }] });'); h = html();
+  ok(/id="lbJoinSel" disabled>IN PROGRESS/.test(h) && /id="lbSpecSel" class="small" title=/.test(h) && !/id="lbSpecSel" class="small" disabled/.test(h), 'a running game in the browser offers SPECTATE where JOIN says in progress', (h.match(/lbDetBtns[\s\S]{0,300}/) || [''])[0]);
+  ok(R('return Net.gameOptions({ seed: 5, layout: "temple", you: -1, players: [{ name: "A", race: "T", team: 1, human: true }] });').mode === 'replay' && R('return Net.gameOptions({ seed: 5, layout: "temple", you: -1, players: [{ name: "A", race: "T", team: 1, human: true }] });').human === 0,
+    'a spectator\'s game options are the observer\'s mode, viewing player one', '');
+  const specSent = []; ctx.__ss = specSent;
+  R('G.init({ players: [{ race: "T", human: true, name: "A" }, { race: "Z", human: true, name: "B" }], seed: 3, layout: "temple" }); Net.send = m => __ss.push(m); Net.reset({ you: -1, delay: 3, players: [{ human: true }, { human: true }] }); Net.outbox = [{ t: "stopall", p: -1 }]; Net.beforeTick();');
+  ok(!specSent.some(m => m.t === 'cmds'), 'a spectator\'s client sends no command batch at all', J(specSent));
+  R('Net.reset({ you: 0, delay: 3, players: [{ human: true }, { human: true }] }); Net.beforeTick();');
+  ok(specSent.some(m => m.t === 'cmds'), '...where a player\'s does (the control for the check above)', J(specSent));
+  const menus = R('G.log = []; UI.mode = "replay"; UI.net = true; UI.menu = "pause"; const a = UI.menuItems(); UI.menu = "over"; G.winTeam = 1; const b = UI.menuItems(); UI.net = false; const c = UI.menuItems(); UI.mode = "play"; const d = UI.menuItems(); UI.menu = null; return { pause: a.title, pauseItems: a.items.map(x => x[0]), over: b.title, overItems: b.items.map(x => x[0]), replayOver: c.title, localItems: d.items.map(x => x[0]) };');
+  ok(menus.pause === 'SPECTATING' && !menus.pauseItems.some(x => /Take control/.test(x)) && menus.over === 'GAME OVER' && !menus.overItems.some(x => /Restart/.test(x)) && menus.overItems.some(x => /Keep watching/.test(x)),
+    'a network spectator\'s menus say SPECTATING and GAME OVER, with no Take control and no Restart', J(menus));
+  ok(menus.replayOver !== 'GAME OVER' && menus.localItems.some(x => /Restart/.test(x)), '...while a replay and a local game keep theirs', J(menus));
+  const snaps = R('UI.mode = "replay"; UI.snaps = []; G.frame = UI.SNAP_EVERY * 2; UI.net = true; UI.keepSnapshot(); const live = UI.snaps.length; UI.net = false; UI.keepSnapshot(); const replay = UI.snaps.length; UI.mode = "play"; UI.snaps = []; return { live, replay };');
+  ok(snaps.live === 0 && snaps.replay === 1, 'a live spectator keeps no scrubbing snapshots; a replay still does', J(snaps));
 
   console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);

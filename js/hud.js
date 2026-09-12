@@ -1083,7 +1083,7 @@ Object.assign(UI, {
     // map without a cycle (dayPhase is null there), so the plate is only drawn when the dial is.
     // REVIEW-M17 task 1: this file replaces ui.js's drawTop, whose call to it was the only one.
     if (this.dayPhase()) { HUD.bevel(ctx, 190, 6, 122, 24, true, 'rgba(12,15,20,0.85)'); this.drawDayDial(ctx, 193, 7); }
-    if (this.mode === 'replay') HUD.text(ctx, 'REPLAY  ' + this.speedName() + '  (+/- speed, Ctrl+V perspective, F10 menu)', Render.W / 2, 23, '#ffe45a', 13, true, 'center');
+    if (this.mode === 'replay') HUD.text(ctx, this.net ? 'SPECTATING  ([ ] player, Ctrl+V map, O production, F10 menu)' : 'REPLAY  ' + this.speedName() + '  (+/- speed, Ctrl+V perspective, F10 menu)', Render.W / 2, 23, '#ffe45a', 13, true, 'center');
     if (G.mission && !G.mission.done) { const d = G.mission.def; const left = d.minutes ? Math.max(0, d.minutes * 60 - Math.floor((G.frame - G.mission.start) / TPS)) : 0; HUD.text(ctx, 'Objective: ' + d.objective + (d.minutes ? `   ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : ''), 16, 66, '#ffe45a', 12); }
     if (this.net && Net.waitingSince && performance.now() - Net.waitingSince > 800) HUD.text(ctx, 'Waiting for other players...', Render.W / 2, 60, '#ffe45a', 14, true, 'center');
     if (this.net && Net.desynced) HUD.text(ctx, 'DESYNC DETECTED at ' + Net.clock(Net.desyncFrame) + ' — command log saved to a download; the game is no longer in sync', Render.W / 2, 84, '#ff5050', 14, true, 'center');
