@@ -66,7 +66,26 @@
   .row2 { display: flex; gap: 8px; } .row2 button { margin-top: 8px; }
   button.inline { display: inline-block; width: auto; height: 30px; line-height: 28px; padding: 0 12px; font-size: 11px; letter-spacing: 1px; margin: 0; }
   .chk { width: auto; margin-right: 12px; color: #ccd; text-transform: none; letter-spacing: 0; }
-  .lobbyList { margin: 8px 0; font-size: 13px; color: #dde; } .lp { padding: 4px 0; border-bottom: 1px solid #2a3340; } .lp a { color: #f66; text-decoration: none; margin-left: 8px; } #lbStart { margin-top: 10px; }
+  /* The lobby browser and the lobby (js/net.js renders both into #lobby). */
+  .lbBar { display: flex; gap: 8px; margin: 8px 0; align-items: center; } .lbBar input { flex: 1; }
+  .lbList { border: 1px solid #3a3122; background: #0b0e13; max-height: 240px; overflow: auto; margin: 6px 0; }
+  .lbRow { display: flex; gap: 10px; padding: 8px 10px; border-bottom: 1px solid #1e242e; cursor: pointer; font-size: 12px; align-items: center; }
+  .lbRow:hover { background: #1b2230; } .lbRow.playing { color: #7a8290; }
+  .lbTitle { flex: 2; color: #e8d9a6; font-weight: bold; } .lbHostName { flex: 1; color: #9aa4b4; } .lbMap { flex: 1.4; color: #b8c2cf; }
+  .lbCount { width: 40px; text-align: right; } .lbState { width: 56px; text-align: right; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: #8fb07a; } .lbRow.playing .lbState { color: #a08050; }
+  .lbEmpty { padding: 18px; color: #6e7787; font-size: 12px; text-align: center; }
+  .lbHead { display: flex; align-items: center; gap: 10px; margin: 6px 0 10px; padding-bottom: 8px; border-bottom: 1px solid #3a3122; }
+  .lbHeadTitle { font-weight: bold; color: #e8d9a6; letter-spacing: 1px; font-size: 15px; } .lbHeadInfo { flex: 1; color: #8f98a8; font-size: 11px; }
+  .lbTeams { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .lbTeam { border: 1px solid #2c2416; background: #0c1016; min-height: 74px; }
+  .lbTeamHead { display: flex; justify-content: space-between; padding: 5px 8px; background: #161b23; border-bottom: 1px solid #2c2416; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
+  .lbTeamBtns a { color: #d8bd76; text-decoration: none; margin-left: 10px; font-size: 10px; } .lbTeamBtns a:hover { color: #fff3cc; }
+  .lp { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 12px; border-bottom: 1px solid #1a1f27; } .lp.gone { color: #7a8290; }
+  .lbReady { color: #8fb07a; width: 12px; text-align: center; } .lbStar { color: #e8c25a; } .lbName { font-weight: bold; flex: 1; } .lbRace { color: #aab4c4; } .lbRace select { padding: 2px 4px; font-size: 11px; }
+  .lbKick { color: #f66; text-decoration: none; } .lbNone { padding: 8px; color: #5c6473; font-size: 11px; font-style: italic; }
+  .lbLink { display: inline-block; margin: 6px 0; color: #d8bd76; font-size: 11px; text-decoration: none; }
+  .lbChat { height: 90px; overflow: auto; background: #0b0e13; border: 1px solid #23283a; padding: 6px 8px; font-size: 12px; margin-top: 10px; } .lbChat b { color: #e8d9a6; }
+  #lbChat { width: 100%; box-sizing: border-box; margin-top: 6px; } #lbStart { margin-top: 8px; }
   .help { margin-top: 16px; font-size: 11px; color: #6e7787; line-height: 1.55; }
   .foot { margin-top: 22px; text-align: center; font-size: 9px; letter-spacing: 1.5px; color: #5c6473; text-transform: uppercase; white-space: nowrap; }
   /* Skirmish setup. A section rule instead of a second nested panel: the screen is one form with four
@@ -123,18 +142,18 @@
 
   <!-- Multiplayer: the relay client. The lobby renders into #lobby once CONNECT succeeds. HOST A GAME
        and its help line are hidden here and shown by js/desktop.js inside the desktop app only. -->
-  <div class="panel" id="multiPanel" style="display:none">
+  <div class="panel wide" id="multiPanel" style="display:none">
     <h1 class="h2">MULTIPLAYER</h1>
     <div class="rule"></div>
-    <div class="sub">Lockstep over your LAN, or the internet through a tunnel. One room code, and everyone types it.</div>
+    <div class="sub">Everyone connects to the same server, then hosts a game or joins one from the list.</div>
     <div class="row"><label>Server</label><input id="netUrl" class="grow"></div>
-    <div class="row"><label>Name</label><input id="netName" value="Player" class="grow"><label class="lb2">Room</label><input id="netRoom" placeholder="LAN" maxlength="8" style="width:6em"></div>
+    <div class="row"><label>Name</label><input id="netName" value="Player" class="grow"></div>
     <button id="netConnect">Connect</button>
     <button id="netHost" class="small" style="display:none">Host a Game</button>
     <div id="netShare" class="sub" style="display:none"></div>
     <div id="netStatus" class="sub"></div>
     <div id="lobby"></div>
-    <div class="help">On a LAN: everyone opens this page from the same server address (see the LAN URL printed by serve.js), connects, and the host presses START. Leave Room empty.<br>Over the internet: the host runs PLAY-ONLINE.bat, then shares the https link it prints AND a room code. Everyone types the same code. The code is what keeps strangers out of your game.<span id="netDesktopHelp" style="display:none"><br>In the desktop app: the host presses HOST A GAME and reads out the address it shows; everyone else types that into Server and presses CONNECT. Over the internet the host still needs a tunnel or a port forward to that port.</span></div>
+    <div class="help">The server is the machine running PLAY.bat (it prints its LAN address) or the desktop app's HOST A GAME; over the internet, whatever address reaches it. A game you host is listed for everyone connected to that server. A private room code is for a game that should not be.<span id="netDesktopHelp" style="display:none"><br>In the desktop app: HOST A GAME starts the server on this machine and puts your game in the list; the others type the address it shows into Server, press CONNECT and click your game. Over the internet the host still needs a tunnel or a port forward to that port.</span></div>
     <button id="multiBack" class="small back">Back</button>
   </div>
 

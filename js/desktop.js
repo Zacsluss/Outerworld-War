@@ -6,8 +6,8 @@
 // The relay ships beside the app as a sidecar executable -- test/serve.js built into one file by
 // desktop/relay/build.js, not ported -- and HOST A GAME asks the Rust side (desktop/src-tauri/src/main.rs,
 // the `host_relay` command) to start it on a free port, then connects the ordinary client (js/net.js) to
-// ws://localhost:<port>/ws. The other players type the address this shows -- a LAN IP and the port --
-// into Server and press CONNECT. The Rust side kills the relay when the window closes; STOP HOSTING
+// ws://localhost:<port>/ws and hosts a listed game on it. The other players type the address this shows -- a
+// LAN IP and the port -- into Server, press CONNECT and click the game in the list. The Rust side kills the relay when the window closes; STOP HOSTING
 // kills it sooner.
 //
 // Over the internet nothing changes: the host still needs a tunnel or a port forward to the port shown,
@@ -35,7 +35,7 @@ const Desktop = {
   share() {
     const el = this.$('netShare'); if (!el) return; const h = this.hosting;
     if (!h) { el.textContent = ''; el.style.display = 'none'; return; }
-    const room = (this.$('netRoom') && this.$('netRoom').value || '').trim();
+    const room = String((typeof Net !== 'undefined' && Net.lobby && Net.room) || (this.$('netRoom') && this.$('netRoom').value) || '').trim();   // the hosted lobby's code once it exists
     const where = h.lan && h.lan.length ? h.lan.map(ip => ip + ':' + h.port).join('  or  ') : 'this machine\'s address, port ' + h.port;
     el.textContent = 'Hosting. Others on your network: Server ' + where + (room ? ', Room ' + room : '') + ', then CONNECT. Over the internet: a tunnel or a port forward to port ' + h.port + ' (see PLAY-ONLINE.bat), and everyone types the same room code.';
     el.style.display = '';
@@ -47,7 +47,7 @@ const Desktop = {
       this.hosting = info; btn.textContent = 'STOP HOSTING';
       this.$('netUrl').value = 'localhost:' + info.port;
       this.share();
-      Net.connect('ws://localhost:' + info.port + '/ws', (this.$('netName').value || '').trim() || 'Player', 'R', this.$('netRoom') ? this.$('netRoom').value.trim() : '');
+      Net.browse('ws://localhost:' + info.port + '/ws', (this.$('netName').value || '').trim() || 'Player', { host: true });   // browse, then host a listed game the moment the socket opens
     } catch (e) { Net.status('Could not start the relay: ' + (e && e.message || e)); }
     btn.disabled = false;
   },
@@ -74,6 +74,8 @@ const Desktop = {
       if (/^wss:\/\//i.test(u) && !String((room == null ? Net.room : room) || '').trim()) { Net.status('Type a room code first: over the internet, no code means the shared room anyone with the link can walk into.'); return; }
       return connect.call(this, u, name, race, room);
     };
+    const browse = Net.browse;
+    Net.browse = function (url, name, opts) { const u = Desktop.url(url); if (!u) { Net.status('Type the host\'s address first (they see it under HOST A GAME), or host a game yourself.'); return; } return browse.call(this, u, name, opts); };
     btn.addEventListener('click', () => { if (Desktop.hosting) Desktop.stop(); else Desktop.host(); });
     // The Rust side kills the relay when the window is destroyed; a reload of the page is the same to it.
     window.addEventListener('beforeunload', () => { if (Desktop.hosting) Desktop.invoke('stop_relay').catch(() => { }); });

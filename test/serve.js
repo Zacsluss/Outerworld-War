@@ -7,15 +7,18 @@
 // exactly as it did before -- which is what keeps LAN play zero-friction and every existing net test
 // passing unchanged.
 //
-// THE CODE IS ALSO THE ONLY ACCESS CONTROL THERE IS, and that is the reason it exists. On a LAN,
-// reaching the server at all meant you were invited. Put the server behind a public tunnel -- which
-// is how internet play works here, see PLAY-ONLINE.bat -- and the URL is no longer a secret, so
-// anything with the link could walk into a lobby. A code the host shares out of band fixes that, and
-// it is why THE RELAY NEVER LISTS THE ROOMS IT HOLDS. A room browser would hand out exactly the
-// secret the code is. Guessing wrong lands you in an empty room of your own, never in someone else's.
+// THE CODE IS THE ACCESS CONTROL FOR A ROOM NOBODY LISTED. On a LAN, reaching the server at all meant
+// you were invited. Put the server behind a public tunnel -- which is how internet play works here, see
+// PLAY-ONLINE.bat -- and the URL is no longer a secret, so anything with the link could walk into a
+// lobby. A code the host shares out of band fixes that. Guessing wrong lands you in an empty room of
+// your own, never in someone else's.
+// THE LOBBY BROWSER (fifth session, the user's call). A room made with `join {create: true, title}` is
+// LISTED: the relay makes up its code, and every client that asked for the list (`list`, on a socket
+// with no room) is told the room's title, host, map, count and state, and joins it by that code the
+// moment it clicks. A room reached by typing a code stays unlisted, so the privacy above still holds
+// for anyone who wants it; the list is what makes a game findable by everyone else on the server.
 // NO code is not a private room: it is the shared room called LAN, where everyone else with no code
-// also lands. Over a tunnel that is the room a stranger with the link walks into, so the page insists
-// on a code when it is served over https (js/ui.js).
+// also lands -- the path test/net.js and test/net_many.js use, kept as it always was.
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto'), os = require('os');
 const root = path.join(__dirname, '..'); const port = parseInt(process.argv[2] || '8765');
 // THE LOCKSTEP BUDGET, and on the internet it is the difference between "connects" and "playable".
@@ -60,7 +63,7 @@ const server = http.createServer((req, res) => {
 const clients = new Map(); let nextId = 1;
 const rooms = new Map();        // code -> lobby. Created on demand, deleted when the last client leaves.
 // players: {id, name, race, team, ai, difficulty, gone}
-function newLobby(code) { return { code, players: [], state: 'lobby', layout: 'temple', seed: 0, started: null, history: [], lastF: {}, gone: {} }; }
+function newLobby(code) { return { code, players: [], state: 'lobby', layout: 'temple', seed: 0, started: null, history: [], lastF: {}, gone: {}, title: '', listed: false }; }   // listed: made by `join {create}` and shown to browsers
 // Normalised hard, because this is a thing humans read out over voice chat: case-folded, anything that
 // is not a letter or a digit dropped, and capped. So "ab-12", "AB12" and "  ab12  " are one room.
 function roomCode(s) { const k = String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8); return k || DEFAULT_ROOM; }
@@ -81,7 +84,18 @@ function send(c, msg) { try { c.socket.write(frame(JSON.stringify(msg))); } catc
 function inRoom(L) { const out = []; for (const c of clients.values()) if (c.room === L.code) out.push(c); return out; }
 function broadcast(L, msg, except) { for (const c of inRoom(L)) if (c !== except) send(c, msg); }
 function hostOf(L) { return L.players.find(q => !q.ai && !q.gone) || null; }
-function lobbyState(L) { const host = hostOf(L); return { t: 'lobby', room: L.code, players: L.players.map(p => ({ id: p.id, name: p.name, race: p.race, team: p.team, ai: !!p.ai, difficulty: p.difficulty, gone: !!p.gone, host: host ? p.id === host.id : false })), layout: L.layout, state: L.state, speed: L.speed == null ? 6 : L.speed }; }
+function lobbyState(L) { const host = hostOf(L); return { t: 'lobby', room: L.code, title: L.title, listed: !!L.listed, players: L.players.map(p => ({ id: p.id, name: p.name, race: p.race, team: p.team, ai: !!p.ai, difficulty: p.difficulty, gone: !!p.gone, ready: !!p.ready || !!p.ai, host: host ? p.id === host.id : false })), layout: L.layout, state: L.state, speed: L.speed == null ? 6 : L.speed }; }
+// The browser. A row per listed room that still has someone in it; pushed to every browsing client (one
+// that sent `list` and is in no room) whenever a listed room changes, and sent once to a `list`.
+function lobbyRow(L) { const h = hostOf(L); return { code: L.code, title: L.title, host: h ? h.name : '', players: L.players.length, humans: L.players.filter(p => !p.ai).length, cap: MAX_PLAYERS, state: L.state, layout: L.layout }; }
+function lobbies() { return { t: 'lobbies', rooms: [...rooms.values()].filter(L => L.listed && L.players.length).map(lobbyRow) }; }
+function pushLobbies() { const m = lobbies(); for (const c of clients.values()) if (c.browsing && !c.room) send(c, m); }
+// A hosted room's code, made here so two hosts cannot collide and no host has to invent one. Six from an
+// alphabet without 0/O and 1/I, because the code is also what a friend types to join a private game.
+function newCode() { const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; for (;;) { let s = ''; for (let i = 0; i < 6; i++) s += A[crypto.randomInt(A.length)]; if (!rooms.has(s)) return s; } }
+// Where a joining human sits: the least-populated of the teams in play (at least two), the lowest on a tie. The
+// old rule gave every joiner a team of their own, so a third human opened Team 3 in a lobby drawn as two.
+function joinTeam(L) { const top = Math.max(2, ...L.players.map(p => p.team || 1)); let best = 1, n = Infinity; for (let t = 1; t <= top; t++) { const k = L.players.filter(p => p.team === t).length; if (k < n) { n = k; best = t; } } return best; }
 function maxFrame(L) { let m = -1; for (const f of Object.values(L.lastF)) if (f > m) m = f; return m; }
 // `snapApplied`: the donor took its snapshot with its own frame's batch already applied -- which is the
 // case once G.over (G.tick no-ops, so the frame never moves past the batch it applied) or paused. The
@@ -95,12 +109,16 @@ function sendRejoin(L, c, idx, snap, snapFrame, snapApplied) {
 }
 function startMsg(L, idx) { return { room: L.code, seed: L.seed, layout: L.layout, players: L.started, you: idx, delay: DELAY, gone: L.gone, speed: L.speed == null ? 6 : L.speed, cheats: CHEATS }; }
 function onMessage(c, m) {
-  // `join` is the only message a client with no room may send: it is what puts it in one.
+  // `join` and `list` are the only messages a client with no room may send: one puts it in a room, the
+  // other makes it a browser that is told the listed rooms until it joins one.
+  if (m.t === 'list' && !roomOf(c)) { c.browsing = true; send(c, lobbies()); return; }
   if (m.t !== 'join' && !roomOf(c)) return;
   if (m.t === 'join' && !c.room) {
+    if (m.create === true) m.room = newCode();   // a hosted game: the relay picks the code
     const k = roomCode(m.room); if (k !== DEFAULT_ROOM && k.length < MIN_CODE) { send(c, { t: 'error', msg: 'A room code is at least ' + MIN_CODE + ' letters or digits.' }); return; }
     if (!joinAllowed(c.ip)) { send(c, { t: 'error', msg: 'Too many join attempts from this address. Wait a minute.' }); return; }
   }
+  const fresh = m.t === 'join' && !c.room && !rooms.has(roomCode(m.room));   // this join is what creates the room
   const L = m.t === 'join' ? roomFor(c.room || m.room) : roomOf(c);
   const me = L.players.find(p => p.id === c.id); const host = hostOf(L); const isHost = me && host === me;
   switch (m.t) {
@@ -147,18 +165,20 @@ function onMessage(c, m) {
       // while reaching the server meant being on the LAN.
       if (!me && L.players.length >= MAX_PLAYERS) { send(c, { t: 'error', msg: 'That game is full (' + MAX_PLAYERS + ' players).' }); return; }
       if (!c.room) c.room = L.code;
-      if (!me) L.players.push({ id: c.id, name: String(m.name || 'Player').slice(0, 16), race: raceOf(m.race), team: L.players.length + 1 }); broadcast(L, lobbyState(L)); break;
+      if (!me) L.players.push({ id: c.id, name: String(m.name || 'Player').slice(0, 16), race: raceOf(m.race), team: joinTeam(L) });
+      if (fresh && m.create === true) { L.listed = true; L.title = String(m.title || '').trim().slice(0, 40) || L.players[0].name + "'s game"; }   // a hosted game: listed under its title
+      c.browsing = false; broadcast(L, lobbyState(L)); if (L.listed) pushLobbies(); break;
     }
     // Lobby settings are lobby-only. The relay is the authority here, and it was accepting both of
     // these after the game had started: `set layout` rewrote lobby.layout, which sendRejoin reads via
     // startMsg(), so the next player to rejoin loaded a DIFFERENT MAP than everyone else was playing;
     // and `addai` grew lobby.players out of step with the running game. Neither is reachable from the
     // UI, which is why nothing caught them, but a relay must not trust that its clients are the UI.
-    case 'set': if (me && !L.started) { if (m.race) me.race = raceOf(m.race); if (m.team) me.team = teamOf(m.team, me.team); if (isHost && typeof m.layout === 'string' && m.layout.length <= 64) L.layout = m.layout; if (isHost && m.speed != null) L.speed = Math.max(0, Math.min(6, m.speed | 0)); } broadcast(L, lobbyState(L)); break; // everyone must run the same speed or lockstep just makes the fast clients wait
-    case 'addai': if (isHost && !L.started && L.players.length < MAX_PLAYERS) { L.players.push({ id: -(nextId++), name: 'Computer ' + L.players.filter(p => p.ai).length, race: raceOf(m.race), team: L.players.length + 1, ai: true, difficulty: ['easy', 'normal', 'hard'].includes(m.difficulty) ? m.difficulty : 'normal' }); broadcast(L, lobbyState(L)); } break;
-    case 'kick': if (isHost && L.state === 'lobby' && m.id !== c.id) { L.players = L.players.filter(p => p.id !== m.id); const kc = clients.get(m.id); if (kc) { kc.room = null; send(kc, { t: 'error', msg: 'The host removed you from the game.' }); } broadcast(L, lobbyState(L)); } break;   // the kicked client leaves the room too: it used to keep hearing every broadcast, and a re-sent join put it straight back
+    case 'set': if (me && !L.started) { if (m.race) me.race = raceOf(m.race); if (m.team) me.team = teamOf(m.team, me.team); if (typeof m.ready === 'boolean') me.ready = m.ready; if (isHost && typeof m.layout === 'string' && m.layout.length <= 64) L.layout = m.layout; if (isHost && m.speed != null) L.speed = Math.max(0, Math.min(6, m.speed | 0)); if (isHost && typeof m.title === 'string' && m.title.trim()) L.title = m.title.trim().slice(0, 40); } broadcast(L, lobbyState(L)); if (L.listed) pushLobbies(); break; // everyone must run the same speed or lockstep just makes the fast clients wait
+    case 'addai': if (isHost && !L.started && L.players.length < MAX_PLAYERS) { L.players.push({ id: -(nextId++), name: 'Computer ' + L.players.filter(p => p.ai).length, race: raceOf(m.race), team: teamOf(m.team, L.players.length + 1), ai: true, difficulty: ['easy', 'normal', 'hard'].includes(m.difficulty) ? m.difficulty : 'normal' }); broadcast(L, lobbyState(L)); if (L.listed) pushLobbies(); } break;   // `team`: the lobby's add-AI is per team
+    case 'kick': if (isHost && L.state === 'lobby' && m.id !== c.id) { L.players = L.players.filter(p => p.id !== m.id); const kc = clients.get(m.id); if (kc) { kc.room = null; kc.browsing = true; send(kc, { t: 'error', msg: 'The host removed you from the game.' }); send(kc, lobbies()); } broadcast(L, lobbyState(L)); if (L.listed) pushLobbies(); } break;   // the kicked client leaves the room too: it used to keep hearing every broadcast, and a re-sent join put it straight back
     case 'start': {
-      if (!isHost || L.state !== 'lobby' || L.players.filter(p => !p.ai).length < 1) return; L.state = 'playing';
+      if (!isHost || L.state !== 'lobby' || L.players.filter(p => !p.ai).length < 1) return; L.state = 'playing'; if (L.listed) pushLobbies();
       L.seed = Math.floor(Math.random() * 1e9); const races = ['T', 'Z', 'P'];
       L.started = L.players.map(p => ({ name: p.name, race: p.race === 'R' ? races[Math.floor(Math.random() * 3)] : p.race, team: p.team, human: !p.ai, difficulty: p.difficulty }));
       L.history = []; L.lastF = {}; L.gone = {};
@@ -179,6 +199,10 @@ function onMessage(c, m) {
     // threw inside every receiver's beforeTick. (REVIEW-M17)
     case 'cmds': { const idx = L.players.findIndex(p => p.id === c.id); if (idx >= 0 && L.state === 'playing' && Array.isArray(m.c)) { const cs = m.c.filter(x => x && typeof x === 'object' && (CHEATS || x.t !== 'cheat')).map(x => Object.assign({}, x, { p: idx })); const f = m.f | 0; if (f > maxFrame(L) + CMD_LEAD) { console.log(tag(L) + 'dropped a batch from ' + L.players[idx].name + ' claiming frame ' + f + ' (' + (f - maxFrame(L)) + ' ahead of the room, window ' + CMD_LEAD + ')'); break; } L.history.push({ p: idx, f, c: cs }); if (!(L.lastF[idx] >= f)) L.lastF[idx] = f; broadcast(L, { t: 'cmds', p: idx, f, c: cs }, c); } break; }
     case 'hash': { const idx = L.players.findIndex(p => p.id === c.id); if (idx >= 0) broadcast(L, { t: 'hash', p: idx, f: m.f, h: m.h }, c); break; }
+    // `leave` is the lobby's LEAVE button: out of the room and back to the list on the same socket. The
+    // host leaving hands the room to the next human (hostOf), and the last human leaving empties it. In
+    // a running game closing the socket is the way out, so `leave` there is ignored.
+    case 'leave': if (L.state === 'lobby') { L.players = L.players.filter(p => p.id !== c.id); if (!L.players.some(p => !p.ai)) L.players = []; c.room = null; c.browsing = true; broadcast(L, lobbyState(L)); if (!inRoom(L).length && L.code !== DEFAULT_ROOM) rooms.delete(L.code); send(c, lobbies()); pushLobbies(); console.log(tag(L) + (me ? me.name : 'client ' + c.id) + ' left the lobby'); } break;
     case 'chat': if (me) broadcast(L, { t: 'chat', from: me.name, text: String(m.text).slice(0, 200) }); break;
     case 'ping': send(c, { t: 'pong' }); break;
   }
@@ -201,6 +225,7 @@ function leave(c) {
   // The default room is kept: it is the one a client with no code lands in, and re-creating it every
   // time would be churn for no gain.
   if (!inRoom(L).length && L.code !== DEFAULT_ROOM) rooms.delete(L.code);
+  pushLobbies();   // a listed room's count changed, or the room is gone
 }
 function drop(c, why) { console.log('  dropping client ' + c.id + ': ' + why); try { c.socket.destroy(); } catch (e) { } leave(c); }
 function onData(c, data) {
@@ -233,7 +258,7 @@ server.on('upgrade', (req, socket) => {
   // `state` describes the relay, not a game: a client that has not sent a code cannot be told whether
   // some room is playing without being told that room exists. The real state arrives with the `lobby`
   // message `join` triggers, or with the `error` that refuses it.
-  send(c, { t: 'hello', id: c.id, state: 'lobby', rooms: true });
+  send(c, { t: 'hello', id: c.id, state: 'lobby', rooms: true, browser: true });
 });
 // KEEPALIVE. A connection that dies without a FIN -- wifi drop, a laptop closing, a tunnel hiccup, the
 // ordinary internet failure -- was never leave()d: every other client waited on that player's batch

@@ -13,6 +13,10 @@ trust `git log -1`, not a hash written here.)
 > front, everything else behind one of them on a screen of its own with a BACK, in the shape of a nineties RTS menu
 > (a steel plate, a bronze frame, gold lettering, bevelled buttons). Presentation only: the stamp did not move.
 > `PLAYTEST-M17.md` item 59 is how to see it. The five leftover agent worktrees were removed on the user's word.
+> **Then the lobby browser** (the user's second ask, same day): CONNECT lists the games hosted on the server, HOST GAME
+> makes one, a click joins one, and the lobby shows teams, ready marks and chat. The relay gained `list`, `leave`,
+> `create`, `ready` and a per-team `addai`; a code-joined room stays unlisted. `test/rooms.js` section 12 (74 checks
+> now); `PLAYTEST-M17.md` item 60.
 >
 > **NEXT:** nothing is left on the review's list. What remains is gated or a product decision — the balance run
 > (every number in `HANDOFF.md` is stale, and the list of things it must price has grown), the claim order in
@@ -106,23 +110,39 @@ signed, the icon is a placeholder.
 
 ## What the fifth session changed, in a player's language
 
-One commit, presentation only (`index.html`, the panel wiring in `js/ui.js`, one line of `PLAY-ONLINE.bat`);
-the stamp did not move. `PLAYTEST-M17.md` item 59 is the hand test.
+Two commits. The stamp did not move: `index.html`, `js/ui.js`, `js/net.js`, `js/desktop.js` and the relay are not
+simulation. `PLAYTEST-M17.md` items 59 and 60 are the hand tests.
 
 1. **The front of the menu is three buttons -- SINGLE PLAYER, MULTIPLAYER, SETTINGS** -- on a steel plate with
    the title in gold, in the shape of a nineties RTS menu. Nothing else on the front but a one-line footer.
 2. **Everything else stands behind one of the three**, each on a screen of its own with BACK: Single Player holds
    the quick START GAME with its summary, SKIRMISH SETUP, CAMPAIGN (its own screen), LOAD SAVED GAME, WATCH
-   REPLAY, CONTINUE AUTOSAVE and MAP EDITOR; Multiplayer holds Server, Name, Room, CONNECT, the desktop app's
-   HOST A GAME and the lobby; Settings holds audio, hotkeys, CONTROLS and CODEX. The user asked because the
+   REPLAY, CONTINUE AUTOSAVE and MAP EDITOR; Multiplayer holds Server, Name, CONNECT, the desktop app's HOST A
+   GAME and the lobby browser (item 4); Settings holds audio, hotkeys, CONTROLS and CODEX. The user asked because the
    lobby and the room code could not be found: both sat inside a collapsed disclosure at the foot of the old menu.
 3. **Skirmish's BACK returns to Single Player**, the door it is behind, not to the front; Codex closes back to
    Settings; a finished game still returns to the front.
+4. **CONNECT opens a lobby browser.** The Multiplayer screen lists every game hosted on the server you connected
+   to -- name, host, map, players, open or in game -- and updates live. HOST GAME (with a name) makes one; a click
+   on a row joins one; JOIN BY CODE is for a private room, which is never listed. The relay makes up the code.
+5. **The lobby shows teams.** Players sit under Team 1, Team 2, ... with a join link per team, add AI per team for
+   the host, a ready mark per player (READY toggles it; an AI is always ready), the host's star and kick, the map
+   and speed pickers for the host, START GAME, LEAVE and a chat box. A joining human lands on the least-populated
+   team (the relay used to give every joiner a team of their own, so a third human opened Team 3). Leaving returns
+   you to the list; the host leaving hands the room to the next human; the last human leaving removes the game
+   from the list.
+6. **Typing a room code is the private path now**, and the page's help no longer sends anyone to a .bat file.
+   `PLAY-ONLINE.bat` says: share the link, host from the list, or agree a code for a game strangers must not see.
+   The relay's rule that it never lists its rooms is gone by the user's decision; the private property survives
+   for code-joined rooms, and the header comment says so.
 
-**Deliberately different from what was asked:** nothing. **Not done:** the in-game pause menu (F10) is drawn on
-the canvas by `hud.js` and was not restyled; the Controls and Skirmish screens took the new plate and buttons
-but their layouts are unchanged. Every element keeps its id, so the wiring, `test/skirmish.js`'s scrape,
-`test/controls.js` and `desktop/page-check.js` needed no change.
+**Deliberately different from what was asked:** the lobby has no map preview -- a map is generated from the seed
+the relay picks at START, so there is nothing to draw before it -- and no password on a listed game: a private game
+is a code-joined room. **Not done:** the desktop app's HOST A GAME was re-pointed (it starts its relay, then hosts a
+listed game on it; `desktop/page-check.js` 22 of 22) but `desktop/window-check.js` was not re-driven, which needs a
+Tauri build; the in-game pause menu (F10) is drawn on the canvas by `hud.js` and was not restyled; the Controls and Skirmish screens took the new plate and buttons
+but their layouts are unchanged. Every element the wiring reaches keeps its id (only the Room box went, with the
+code-first flow), so `test/skirmish.js`'s scrape, `test/controls.js` and `desktop/page-check.js` needed no change.
 
 ---
 
@@ -161,7 +181,7 @@ node test/eightplayer.js                          19/19 by hand; the bank line i
 node test/aistyles.js --seed=N [--frames=14400]   1 is the gate's; run 5 and 11 too after any AI change
 node test/abilities20.js                          every ability, 73 checks in two seconds
 node test/review17.js / review17ui.js             sections 19-22 and 13 are this session's pins
-node test/rooms.js                                61 checks; section 11 is the window and the rejoin flag
+node test/rooms.js                                74 checks; section 11 is the window and the rejoin flag, 12 the lobby browser
 node test/net_many.js / node test/net.js          the socket suites, ~100 s and ~60 s
 node .claude/review/perf-probe.js [port=8790]     the render-cost probe (open the URL with the pane in front)
 node .claude/review/agent-21/migrate.js --check   which suites the harness codemod would move on this tree
@@ -200,6 +220,12 @@ refactor.
 THE MENU (fifth session): the front is three doors -- SINGLE PLAYER, MULTIPLAYER, SETTINGS -- with
 everything else behind them (PLAYTEST-M17 item 59). Presentation only; the in-game F10 menu on the
 canvas was not restyled. The five leftover agent worktrees are gone.
+
+THE LOBBY BROWSER (fifth session): CONNECT lists the games hosted on the server, HOST GAME makes one,
+a click joins one, the lobby shows teams, ready marks and chat; a code-joined room stays unlisted.
+Relay messages list/leave/create/ready and a per-team addai; test/rooms.js section 12 (74 checks);
+PLAYTEST-M17 item 60. The desktop app's HOST A GAME now starts its relay and hosts a listed game;
+desktop/window-check.js was not re-driven (needs a Tauri build).
 
 THERE IS NO LIST TO FINISH. What is left is gated or a product decision, and needs the user's explicit
 instruction before any of it starts:

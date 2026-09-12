@@ -548,10 +548,8 @@ second one, where nobody found them.
   CAMPAIGN (its own screen: pick a mission, PLAY MISSION, BACK to Single Player), LOAD SAVED GAME and WATCH
   REPLAY side by side, CONTINUE AUTOSAVE when an autosave exists, MAP EDITOR. Press SKIRMISH SETUP, then BACK:
   you are on Single Player, not the front. Press START GAME: the game starts as it always did.
-- **MULTIPLAYER:** Server, Name and Room, CONNECT; in the desktop app HOST A GAME under it (item 57). Press
-  CONNECT with the server running: "Connected. Waiting in lobby..." and the lobby -- players, race, team, map,
-  ADD AI, speed, START MULTIPLAYER GAME -- appears on this screen. The Room box is the code: blank is the shared
-  LAN room, four or more letters or digits a private one (item 35).
+- **MULTIPLAYER:** Server and Name, CONNECT; in the desktop app HOST A GAME under it (item 57). CONNECT opens
+  the lobby browser: item 60.
 - **SETTINGS:** audio, hotkeys, the in-game key summary, CONTROLS (the rebinding screen, item 53), CODEX. Press
   CODEX, then Escape: you are back on Settings.
 
@@ -559,3 +557,31 @@ Presentation only: the stamp did not move, saves and replays are unaffected, eve
 restyled, on purpose: the in-game pause menu (F10), which `hud.js` draws on the canvas. Quicker:
 `node test/skirmish.js` section 10 (every id the wiring reaches for is on the page; every panel has an id),
 `node test/controls.js` (the Controls screen), `node desktop/page-check.js` (the HOST button's half).
+
+## 60. Lobbies: host a game, see it in the list, join it, and play
+
+Two browser windows (or two machines on the LAN) on the same server: `PLAY.bat`, then `http://localhost:8765` in
+both. In each: **MULTIPLAYER**, a different Name, **CONNECT**. **Working:** the status line says *Connected.* and the
+screen shows a Game name box with **HOST GAME**, the list of games on this server (empty at first: "No games on
+this server yet"), and **JOIN BY CODE** for a private room.
+
+- In the first window press **HOST GAME**. **Working:** the lobby: the game's name, *Lost Ruins - 1/8 players - code
+  XXXXXX*, **LEAVE**, Team 1 with your name and the host's star, Team 2 empty with *join* and *add AI*, *+ add a
+  team*, Map and Speed pickers, **READY**, **START GAME**, and a chat box.
+- In the second window, within a second, the list shows the game: name, host, map, 1/8, OPEN. Click it. **Working:**
+  the second window is in the lobby on Team 2; the first shows 2/8 and the new player with a cross to remove them.
+- Second window: press **READY** -- both windows show a tick beside that name. Type in the chat box and press Enter
+  -- both windows show the line. Click *join* on Team 1 -- the player moves.
+- First window: *add AI* on Team 2 -- *Computer 0* appears there, ready. Change the map. Press **START GAME**: both
+  windows start the same game (same map, same seed) and play in lockstep, as before.
+- Press **LEAVE** in a lobby: you are back at the list and the count in it drops for everyone. When the last human
+  leaves, the game is gone from the list. A game that has started stays listed as IN GAME (dropped players rejoin by
+  connecting with the same name and clicking it).
+- **JOIN BY CODE**: type any code of four or more letters or digits in both windows. **Working:** both are in a room
+  the list never shows (the code is the lock, as before: items 25 and 35).
+
+**Before:** no list at all -- everyone had to type the same code into a box, and a host had no way to be found.
+Quicker: `node test/rooms.js` section 12 (the relay's list, host, join, ready, per-team AI, leave, empty; then the
+browser and the team view rendered in a VM) and `node desktop/page-check.js` (the desktop app's HOST A GAME still
+starts its relay and connects). Not seen here: the desktop app's own window (`desktop/window-check.js` needs a Tauri
+build).

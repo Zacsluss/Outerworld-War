@@ -34,16 +34,15 @@ echo     It prints a https://....trycloudflare.com address. No account needed.
 echo     Get cloudflared from https://github.com/cloudflare/cloudflared/releases
 echo     (or use any tunnel you like -- ngrok, Tailscale Funnel, a port forward).
 echo.
-echo  3. Send your friends THE HTTPS LINK and A ROOM CODE you make up.
-echo     Everyone opens the link, opens MULTIPLAYER, types the SAME room code
-echo     and their name, and presses CONNECT. Then you press START.
+echo  3. Send your friends THE HTTPS LINK. Everyone opens it, opens MULTIPLAYER,
+echo     types their name and presses CONNECT. You press HOST GAME; they see
+echo     your game in the list and click it. Then you press START.
 echo.
-echo     THE ROOM CODE IS THE ONLY THING KEEPING STRANGERS OUT. The link is not
-echo     a secret once you have sent it. Anyone who opens it and types a WRONG
-echo     code lands in an empty room of their own and never sees your game.
-echo     Anyone who types NO code lands in the shared room called LAN, with
-echo     everyone else who typed nothing -- so the page insists on a code when
-echo     it is served over https, and you should always use one.
+echo     A HOSTED GAME IS LISTED FOR EVERYONE WHO OPENS THE LINK, and the link is
+echo     not a secret once you have sent it. For a game strangers must not see,
+echo     do not host from the list: agree a ROOM CODE out of band and everyone
+echo     types it into JOIN BY CODE. A code-joined room is never listed, and
+echo     anyone who guesses wrong lands in an empty room of their own.
 echo.
 echo  Cheats are off in network games. Room codes are at least four characters.
 echo  Keep this window open while playing. Close it to stop the server.

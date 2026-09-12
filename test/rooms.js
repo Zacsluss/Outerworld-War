@@ -376,6 +376,58 @@ function client(port, tag) {
     ok(r.rejoinOver === 50 && r.rejoinMid === 49, 'the rejoiner starts from the frame after an applied batch, and from the batch itself otherwise (was always the batch: applied twice after game over)', JSON.stringify(r));
   }
 
+  // =========================================================================
+  // 12. the lobby browser: a hosted game is listed, joined from the list, left, and gone when empty (fifth session)
+  // =========================================================================
+  const HA = client(P6, 'HA'), HB = client(P6, 'HB'), HC = client(P6, 'HC'); await HA.open; await HB.open; await HC.open;
+  const lastList = c => c.msgs.filter(m => m.t === 'lobbies').pop();
+  HB.send({ t: 'list' }); await sleep(200);
+  const list0 = lastList(HB);
+  ok(list0 && Array.isArray(list0.rooms) && list0.rooms.length === 0, 'a client that asks for the list is told it, empty before anyone hosts', JSON.stringify(list0));
+  HA.send({ t: 'join', name: 'Hana', race: 'T', create: true, title: 'Hana <b>rules</b>' }); await sleep(200);
+  ok(HA.lobby && /^[A-Z0-9]{6}$/.test(HA.lobby.room) && HA.lobby.title === 'Hana <b>rules</b>' && HA.lobby.listed === true, 'hosting creates a listed room with a six-character code the relay made up', JSON.stringify(HA.lobby && { room: HA.lobby.room, title: HA.lobby.title, listed: HA.lobby.listed }));
+  const list1 = lastList(HB);
+  ok(list1 && list1.rooms.length === 1 && list1.rooms[0].code === HA.lobby.room && list1.rooms[0].title === 'Hana <b>rules</b>' && list1.rooms[0].players === 1 && list1.rooms[0].state === 'lobby' && list1.rooms[0].host === 'Hana', 'the browsing client is pushed the new game: code, title, count, state, host', JSON.stringify(list1));
+  HC.send({ t: 'join', name: 'Cody', race: 'Z', room: 'SECRET1' }); await sleep(200);
+  const list2 = lastList(HB);
+  ok(HC.lobby && HC.lobby.listed === false && list2.rooms.length === 1 && !list2.rooms.some(r => r.code === 'SECRET1'), 'a room joined by a typed code stays unlisted, so the code is still a lock for a private game', JSON.stringify(list2 && list2.rooms.map(r => r.code)));
+  HC.close(); await sleep(200);
+  const hostedCode = HA.lobby ? HA.lobby.room : 'NOROOM';   // the host's own view of the code: a list that came empty (a control) must not throw here
+  HB.send({ t: 'join', name: 'Bea', race: 'P', room: hostedCode }); await sleep(200);
+  ok(HB.lobby && HB.lobby.room === HA.lobby.room && HA.lobby.players.length === 2 && HA.lobby.players[1].name === 'Bea', 'joining by the listed code puts the browser in the hosted game, and the host sees them', JSON.stringify(HA.lobby && HA.lobby.players.map(p => p.name)));
+  const HD = client(P6, 'HD'); await HD.open; HD.send({ t: 'list' }); await sleep(200);
+  const list3 = lastList(HD);
+  ok(list3 && list3.rooms.length === 1 && list3.rooms[0].players === 2, 'a new browser sees the count at two', JSON.stringify(list3));
+  const HE = client(P6, 'HE'); await HE.open; HE.send({ t: 'join', name: 'Eli', race: 'T', room: hostedCode }); await sleep(200);
+  const eli = HA.lobby && HA.lobby.players.find(p => p.name === 'Eli');
+  ok(eli && eli.team === 1, 'a third human joins the least-populated team (Team 1, on a tie the lowest), not a team of their own (was Team 3)', JSON.stringify(HA.lobby && HA.lobby.players.map(p => p.name + '/' + p.team)));
+  HE.send({ t: 'leave' }); await sleep(200); HE.close();
+  HB.send({ t: 'set', ready: true }); HA.send({ t: 'addai', race: 'R', difficulty: 'normal', team: 2 }); HA.send({ t: 'set', title: 'Renamed' }); await sleep(250);
+  const ai = HA.lobby.players.find(p => p.ai), bea = HA.lobby.players.find(p => p.name === 'Bea');
+  ok(bea && bea.ready === true && ai && ai.team === 2 && ai.ready === true && HA.lobby.title === 'Renamed' && (lastList(HD).rooms[0] || {}).title === 'Renamed' && (lastList(HD).rooms[0] || {}).players === 3, 'ready is per player (an AI is always ready), an AI lands on the team it was added to, and a renamed game is re-pushed', JSON.stringify({ players: HA.lobby.players, list: lastList(HD).rooms }));
+  HB.send({ t: 'leave' }); await sleep(250);
+  const list4 = lastList(HB), list4d = lastList(HD);
+  ok(list4 && list4.rooms.length === 1 && list4.rooms[0].players === 2 && HA.lobby.players.length === 2 && !HA.lobby.players.some(p => p.name === 'Bea') && (list4d && list4d.rooms[0] || {}).players === 2, 'leaving a lobby returns the player to the list (host and AI remain), and every browser sees the count drop', JSON.stringify({ host: HA.lobby.players.map(p => p.name), list: list4 && list4.rooms }));
+  HA.send({ t: 'leave' }); await sleep(250);
+  const list5 = lastList(HD);
+  ok(list5 && list5.rooms.length === 0, 'when the last human leaves, the game is gone from the list', JSON.stringify(list5));
+  HA.send({ t: 'join', name: 'Hana', race: 'T', create: true, title: 'Second' }); await sleep(200); HA.send({ t: 'addai', race: 'Z', difficulty: 'easy' }); await sleep(200); HA.send({ t: 'start' }); await sleep(300);
+  const list6 = lastList(HD);
+  ok(HA.started && list6 && list6.rooms.length === 1 && list6.rooms[0].state === 'playing', 'a game that has started is listed as in progress', JSON.stringify(list6));
+  HA.close(); HB.close(); HD.close(); await sleep(300);
+  // the client half, in a VM: the list is rows to click with every string escaped, and the lobby is grouped by team
+  {
+    const html = { v: '' }; const el = () => ({ get innerHTML() { return html.v; }, set innerHTML(v) { html.v = v; }, querySelectorAll: () => [], value: '', onchange: null, style: {} });
+    const c = { console, location: { protocol: 'http:', host: 'localhost' }, document: { getElementById: el }, TPS: 24, WebSocket: function () { } };
+    vm.createContext(c); vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', 'net.js'), 'utf8'), c);
+    vm.runInContext(`Net.connected = true; Net.handle({ t: 'lobbies', rooms: [{ code: 'ABC123', title: '<img src=x onerror=x()>', host: 'Eve', players: 3, humans: 2, cap: 8, state: 'lobby', layout: 'temple' }, { code: 'ZZZ999', title: 'Old', host: 'Ann', players: 2, humans: 2, cap: 8, state: 'playing', layout: 'valley' }] })`, c);
+    ok(/data-join="ABC123"/.test(html.v) && /&lt;img/.test(html.v) && !/<img/.test(html.v) && /3\/8/.test(html.v) && /in game/.test(html.v) && /HOST GAME/.test(html.v) && /JOIN BY CODE/.test(html.v), 'the browser lists each game as a row to click, the title escaped, with the count and the state, under HOST GAME and above JOIN BY CODE', html.v.slice(0, 200));
+    vm.runInContext(`Net.id = 7; Net.handle({ t: 'lobby', room: 'ABC123', title: 'T', listed: true, state: 'lobby', speed: 6, layout: 'temple', players: [{ id: 7, name: 'Me', race: 'T', team: 1, host: true }, { id: 8, name: 'Other', race: 'Z', team: 2, ready: true }, { id: -1, name: 'Computer 0', ai: true, difficulty: 'normal', race: 'R', team: 2 }] })`, c);
+    ok((html.v.match(/class="lbTeam"/g) || []).length === 2 && /Team 1/.test(html.v) && /Team 2/.test(html.v) && /data-addai="2"/.test(html.v) && /id="lbStart"/.test(html.v) && /id="lbLeave"/.test(html.v) && /data-kick="8"/.test(html.v) && /id="lbReady"/.test(html.v), 'the lobby view groups the players by team, with add-AI per team, kick, READY, START and LEAVE for the host', html.v.slice(0, 200));
+    vm.runInContext(`Net.handle({ t: 'lobbies', rooms: [] })`, c);
+    ok(vm.runInContext('Net.lobby === null && Net.browsing === true', c) && /HOST GAME/.test(html.v), 'a list arriving while in a lobby means the relay has us out of it (left, or kicked): back to the browser', html.v.slice(0, 120));
+  }
+
   await sleep(200);
   killAll();
   console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');  process.exit(fail ? 1 : 0);
