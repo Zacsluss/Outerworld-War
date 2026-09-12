@@ -1,294 +1,199 @@
-# HANDOFF — M17 (the review, the decisions, and the Zerg notes)
+# HANDOFF — M17 (the review, the decisions, the Zerg notes, and the open list finished)
 
-Written at the end of the three sessions that did `REVIEW-M17.md`: the full codebase review, the user's
-ten answers to its questions, and then the user's three Zerg notes (open tasks 25-27) with one fault found
-while measuring them. Branch `m10-overnight`. (HEAD moves as this file is committed — trust `git log -1`,
-not a hash written here.)
+Written at the end of the fourth session, the one that finished `REVIEW-M17.md` section 1: thirteen steps, one
+commit each, every gate green before its commit. Branch `m10-overnight`. (HEAD moves as this file is committed —
+trust `git log -1`, not a hash written here.)
 
-> **THE STATE OF THE PROJECT IS `REVIEW-M17.md`.** Section 2 holds the ten questions and, above them, the
-> decisions table with what each one became. Section 3 holds 19 fixed entries with measurements, controls
-> and gate results — 18 and 19 are the third session's. Section 1 holds the open tasks: 30 listed, of
-> which 23, 25, 26 and 27 are done and 29 and 30 were found by the third session; section 4 holds 15
-> things deliberately not done. `PLAYTEST-M17.md` is how to see every fixed thing by hand (items 38-42
-> are the third session's).
+> **THE STATE OF THE PROJECT IS `REVIEW-M17.md`.** Section 1's thirty open tasks are all marked **DONE** with a
+> pointer to their section-3 entry (entries 20-32 are this session's); section 2 holds the decisions, including
+> the last one (README's burning Terran buildings: the sentence was deleted); section 4 holds sixteen things
+> deliberately not done. `PLAYTEST-M17.md` items 43-58 are how to see this session's work by hand.
 >
-> **NEXT: finish the open list, in the order REVIEW-M17.md section 1 now gives at its head** — 1 (the
-> day/night dial; the user looked, the selection strip is fine), 29, then 5/7/8, 30, 6, 13/14, 19/18/12/17,
-> 15, 20, 22/24, 16, 28 (the Tauri wrapper with the relay shipped unchanged as a sidecar), 21 last. The
-> kickoff prompt below carries the list with an action per step. The balance run stays gated. One question
-> is still open for the user: README's burning Terran buildings (task 20) — build or drop the sentence.
+> **NEXT:** nothing is left on the review's list. What remains is gated or a product decision — the balance run
+> (every number in `HANDOFF.md` is stale, and the list of things it must price has grown), the claim order in
+> `AI.budget()`, and for the desktop build the Mac side, signing and a real icon. The kickoff prompt below says so.
 
-`HANDOFF-M16.md` remains true for its traps and its account of M15. Three of its facts moved: the fourth
-red is gone (the assertion was wrong and was replaced), `eightplayer` was never 19/19 at that tree, and
-the gate's `aistyles` seed is 1 now, not 5.
+`HANDOFF-M16.md`'s traps are still true. Three facts of the third session moved: `eightplayer` is 19 of 19 by
+hand now (its money line green since the geyser fix, its "nothing wedged" line green since task 29) and its bank
+line is the identity check for refactors again; `aistyles` seed 11 is clean (its first-wave line went green on
+task 30's re-deal); and the gate is **76 suites** (`abilities20` joined it).
 
 ---
 
 ## State
 
-- **75 test suites green.** `node test/all.js`, ~3.5 minutes. That is the gate before any commit. Six
-  suites have joined it since the review began: `saveload` (which had never run anywhere), `cmdlog`,
-  `review17`, `review17ui`, `dmath`, and now `queens` (the Zerg notes).
-- **20 commits since the `pre-review-m17` tag**, each gated: 16 in the first two sessions, 2 for the Zerg
-  notes and the geyser fault, this docs commit and the one before it.
-- **The build stamp moved with every simulation change**; it is `7f822858401946ae` at this file's commit.
-  Every save and replay from before the review — and from before the two Zerg commits — is refused with
-  the reason, which is the stamp doing its job.
-- **The simulation is engine-deterministic** (`DMath`, decision 1): the game will be sold wrapped in
-  Tauri, so a Windows build (WebView2) and a Mac build (WebKit) have to agree bit for bit.
-- **Multiplayer was run by hand** against the hardened relay in the second session: `node test/net.js`
-  all pass, `node test/net_many.js` 51 of 51. Nothing in the third session touched the relay or the
-  client; the stamp moved, so mixed-build games refuse to start, which is correct.
+- **76 test suites green.** `node test/all.js`, about four minutes on a quiet machine. That is the gate before
+  any commit. One suite joined it this session: `abilities20` (task 20); forty-four suites moved onto
+  `test/_harness.js` (task 21) with every count unchanged.
+- **14 commits since `95c00e9`** (the third session's docs commit), each gated. The build stamp is
+  **`b2d136a211dfe314`** at the last simulation change (task 22's relocations). Every save and replay from before the
+  session is refused with the reason, which is the stamp doing its job; presentation and relay commits (tasks 1,
+  13/14, 15, 16, 28, 21) did not move it.
+- **Multiplayer was run by hand** after the relay commit: `node test/net.js` all pass, `node test/net_many.js`
+  51 of 51, `node test/rooms.js` 61 of 61. The desktop build hosted a LAN game end to end
+  (`desktop/window-check.js`, 23 of 23, twice on this machine).
 
 ### The known reds now
 
-1. **`test/soak.js`** — one tier-1/2 coverage assertion, Swarm Host never fielded. Unchanged, not
-   weakened, not in the gate.
-2. **`test/aistyles.js`** — the gate runs **seed 1** (131 of 131). After the Zerg commits: seed 5 fails
-   one economy line (expander vs turtle workers at five minutes, 57 vs 61 — the same line as before),
-   seed 11 fails one first-wave line (expander vs standard, 32 vs 34 over P; it was two lines, then none,
-   then this one — every AI change re-deals all fifteen arms). Run all three after any AI or start-of-game
-   change and expect movement; only seed 1 is a gate member.
-3. **`test/eightplayer.js`** — **18 of 19 by hand**, and deliberately not in the gate. Its MONEY line is
-   GREEN for the first time since FIXLIST-M15 C3 (banks 337/286/454/496/196/28/49/260 — every AI under
-   500 minerals, after the geyser fix in entry 19). Its "nothing wedged itself for good" line is red on
-   this deal: an uprooted Sunken Colony holding a `land` order it cannot complete, `stuck` 582 (open task
-   29 — a real fault, not variance). Any AI edit re-deals the whole game; the bank line is no longer a
-   free identity check for this tree, because both Zerg commits changed what the AI does.
+1. **`test/soak.js`** — one tier-1/2 coverage assertion, Swarm Host never fielded. Unchanged, not weakened, not
+   in the gate.
+2. **`test/aistyles.js`** — the gate runs **seed 1** (132 of 132 with its new tick-error check). **Seed 5 fails
+   one economy line** (expander vs turtle workers at five minutes, 57 vs 61 — the same line all session, through
+   five re-deals). **Seed 11 is clean** since task 30 (its first-wave line went green on that re-deal and stayed).
+3. **`test/eightplayer.js`** — **19 of 19 by hand** and deliberately not in the gate: its money line is a
+   measurement (every AI under 500 minerals on the last deal, one Zerg at 804), its "nothing wedged" line green
+   since task 29 (max stuck 0). Its bank line — `377/324 804/283 147/103 222/70 302/214 392/64 221/653 303/167`
+   at the end of the session — is the identity check: it was byte-identical after tasks 6, 19/18/12/17, 20 and
+   22/24 and re-dealt only by the AI commits (5/7/8, 30) and the stamp move of task 29.
 
 ---
 
-## What the three sessions changed, in a player's language
+## What the fourth session changed, in a player's language
 
-The review (commits 1-10):
+The thirteen steps, in the order they were listed (with the entry in `REVIEW-M17.md` section 3):
 
-1. **Saves and replays are honest.** The stamp covers everything the simulation reads, and an audit in
-   `test/version.js` keeps it that way.
-2. **Every order the interface can issue survives the command log** — autocast arming replays and
-   reaches LAN peers, the Dropship ferry works from the card, a malformed save is refused with a sentence.
-3. **Eight simulation faults**, each measured first: a Carrier that stopped launching, fields curing a
-   longer status, a sieged tank walking on follow, no decloak under 25 energy, a larva becoming an SCV,
-   a worker scanning every frame, an uncounted exception in the tick, Charon Boosters *shortening* range.
-4. **The interface:** keys no longer leak into the menu's text fields, Shift+= zooms, F8 asks first, Tab
-   turns the card page, an ally's ping is a last alert, net games pace on the host's speed and a menu no
-   longer freezes peers, the editor draws on reopen, effects fire per sim frame, non-square maps draw.
-5. **The relay no longer trusts its clients** — any player could order another's units, one bad URL
-   crashed every room, the checkout was served whole, a dead connection was never noticed.
-6. **The AI:** an allied AI no longer storms its partner; waves no longer march on a derelict.
-7. **Tests:** the runner reads every failure shape, shows every FAIL line, kills a hang; four vacuous
-   anchors guarded; wall-clock budgets gone.
+1. **The day/night dial draws** beside the clock on Nightfall, and **the selection strip keeps every selected
+   unit on the console** (forty Marines used to put twenty-two below the screen). Dead `ui.js` drawing bodies
+   deleted. *(task 1, entry 20)*
+2. **An uprooted crawler walks out of a gap it does not fit**, and a rooting order that gave up **no longer
+   teleports the building to the ordered tile** (sixteen tiles, measured). `eightplayer` is 19 of 19. *(task 29,
+   entry 21)*
+3. **A computer Zerg with a Hive still researches the Lair's techs**; **its Ravens and Disruptors march with the
+   army** instead of standing where they were built; a Lair or add-on no longer double-counts its money for the
+   rest of the think. *(tasks 5, 7, 8, entry 22)*
+4. **The computer rebuilds a tech building it loses** — the build order goes back to the missing step. *(task 30,
+   entry 23)*
+5. **One supply test everywhere; a nuke builds when supply is short** (it used to sit at 0% for ever under a
+   "supply blocked" alert). *(task 6, entry 24)*
+6. **Relay:** a batch claiming a far-future frame is dropped (it used to poison every later rejoin's catch
+   target); **rejoining a finished game no longer applies its last frame twice**. *(tasks 13, 14, entry 25)*
+7. **Tests that see more:** the three AI suites catch exceptions inside a tick; `observer` counts ticks, not
+   milliseconds; the ally test and the tall-map clamp are live scenes; a drawn unit's screen fields no longer ride
+   saves and rejoin snapshots. *(tasks 19, 18, 12, 17, entry 26)*
+8. **A rebind cannot land on a key the game keeps** (F8, the digits, the camera slots, Ctrl+M ...): the Controls
+   screen says "F8 is reserved" instead of silently killing the action. README's burning-buildings sentence
+   deleted (the user's decision). *(task 15, entry 27)*
+9. **Presentation cost measured**: five of the seven suspected costs were not costs; **a field of corpses and the
+   editor's minimap were**, and both are fixed (the decal pass 1.7 to 0.6 ms with 119 corpses; the 256x256
+   editor minimap 8.3 to 0.2 ms). *(task 16, entry 28)*
+10. **Every ability the gate never drove is driven** (`test/abilities20.js`, 73 checks), which found and fixed
+    two Carrier faults: **an Interceptor could circle its Carrier for ever without docking**, and **every other
+    Interceptor survived the frame its Carrier died**. *(task 20, entry 29)*
+11. **Small refactors with results unchanged** (caps, capacity and energy costs read the data; five M12 blocks
+    relocated; `HOVER` derived; four dead `tools/` exports gone). A computer Protoss with Reaver Capacity now
+    fills its Reavers to ten; a Probe puffs dust instead of leaving tyre tracks. *(tasks 22, 24, entry 30)*
+12. **The desktop build exists**: `desktop/` is a Tauri 2 project; the relay ships unchanged as a
+    single-executable sidecar; HOST A GAME in the app spawns it and kills it with the window (and a Job Object
+    kills it if the app dies). The Windows installer was built and driven end to end here. *(task 28, entry 31)*
+13. **One test harness**: forty-four gate suites share `test/_harness.js`, 286 lines fewer, every
+    suite's counts and output unchanged. *(task 21, entry 32)*
 
-The decisions (commits 11-16):
-
-8. **A Zerg player starts with a Queen**, and the AI injects with her from the first minute.
-9. **Bunkers fire at the unit's own rate.** **Eleven energy upgrades give +50 max energy.** **Every
-   computer opponent runs its micro**, and **it notices cloak**.
-10. **A larva-starved Zerg AI adds hatcheries every 15 s** instead of 45.
-11. **The fog shows what you last saw.**
-12. **Online:** room codes are at least four characters, an address may join sixty times a minute, and
-    cheats are off in network games.
-13. **Deterministic maths** in the simulation, and **one line-ending rule**.
-
-The Zerg notes (commits 17-18, the third session):
-
-14. **Spawn Larva stacks a Hatchery: +3 larvae per cast, up to twelve.** A hall you never inject still
-    spawns to three and stops, exactly as before. A cast on a full hall is refused and refunded; a
-    cancelled egg goes back to a hall that already holds more than three (it used to die).
-15. **The computer keeps one Queen at every Hatchery, Lair and Hive**, each homed to her hall: she injects
-    it first, flies back when idle, and stays behind when the army leaves (which also closes open task 23,
-    the Queen following the army). Measured before: one Queen all game, injecting two halls of five. After:
-    Queens equal to halls by minute nine on four of four measured arms, every finished hall injected.
-16. **The computer morphs larvae from its fullest Hatchery**, not from whichever is oldest.
-17. **A gas geyser no longer dies when a worker inside it is re-ordered.** Found by measurement, not by the
-    notes: the AI's own gas rebalancing did it to itself routinely, and one Zerg in the eight-player game
-    had both extractors dead from minute five with three drones each standing outside.
-
-**Deliberately different from what was asked:** task 26's text put the Queen's budget claim "above the
-composition's top pick"; measured there, two of four arms never reached one Queen per hall, so she sits
-above the head of the build order instead (at most a minute of tech on one arm; the seven claims that
-existed keep their order — the gated claim order is untouched). `test/alerts.js`'s live check was
-corrected, not weakened: it matched the supply message by text and two mechanisms speak it. **Left
-unfinished:** open tasks 1, 28, 29, 30 and the rest of section 1.
+**Deliberately different from what was asked:** task 7's derived support list was rejected by measurement (it
+adds the Overlord and drops the Arbiter and the Dark Archon) — the two units are named instead. Task 16 fixed
+only what the probe named. Task 20 fixed the two faults its coverage found rather than leaving them red, because
+both were the faults the task's own mechanics (Interceptor loss on Carrier death) exist to catch. Task 22's
+`Unit.suppresses` cache was measured and left (4.6 ms a game; a cache cannot be proved sound). Steps 8-13 were
+prepared by five agents in their own worktrees and landed on the main line in order, each re-verified here.
+**Left unfinished:** nothing on the list. Task 28's Mac build is written and unbuilt (no Mac here), nothing is
+signed, the icon is a placeholder.
 
 ---
 
-## Traps found in these three sessions
+## Traps found in the fourth session
 
-On top of everything in `HANDOFF-M13.md` to `HANDOFF-M16.md`. Each cost real time.
+On top of everything in `HANDOFF-M13.md` to `HANDOFF-M17.md`'s earlier list. Each cost real time.
 
-1. **A `//` comment appended to a one-line method kills the rest of the line.** Most of `js/` puts
-   several statements on a line; `node --check` is the only thing that notices. Use `/* */` inside a
-   line, `//` only on a line of its own.
-2. **`test/veterancy.js` defines a munition as "a def with no `min` key".** A constructor default of
-   `min: 0` turned it red; reverted, and rightly. Price the one repairable def that lacked one.
-3. **Line numbers go stale the moment you commit.** Anchor every patch on text. `tools/patch.js`
-   refuses to write unless every anchor matches exactly once; `tools/control.js` applies a negative
-   control, runs a command, and restores the file from memory.
-4. **`js/fx.js` has two `switch` statements with the same `case` labels.** Scope a scrape to the function.
-5. **`test/larvacard.js` starts its game with `G.init`, not `UI.start`**, and drives keys through
-   `UI.onKey`; any guard on `UI.running` has to be reflected there.
-6. **`test/eightplayer.js`'s bank line is a free identity check for AI edits** — until a change touches
-   the RNG stream or the AI's decisions, after which every AI game is a different sample and the line
-   says nothing. Both Zerg commits did; it is a measurement again.
-7. **Spawning a unit at start re-deals every AI test.** `Unit`'s constructor draws a random facing, so
-   the starting Queen shifted the RNG stream and re-sampled all fifteen `aistyles` arms.
-8. **`canPlace` refuses unexplored ground** (FIXLIST-M14 C1), including for a test that wants to drop an
-   enemy building at the map centre. Check the footprint's walkability and call `G.placeBuilding`.
-9. **A regex for `Math.sin` matches `DMath.sin`.** Use a lookbehind, or count what you found.
-10. **The `test/version.js` edit audit refuses a stale anchor.** When it says "the edit matched nothing",
-    the anchor is stale, not the check.
-11. **A raw test client never answers `needsnap`**, so a rejoin it donates for arrives after the relay's
-    4-second fallback. Poll for the `rejoin`.
-12. **Counting calls to a global from a probe counts every caller.** Count for the unit under test.
-13. **Nested heredocs mangle `\r\n`** — and a `node -e` script in a bash double-quoted string loses its
-    backticks and `$`. Write patch scripts, probes and long commit messages to files and run them
-    (`.claude/review/` is gitignored for exactly this).
-14. **A solo AI against an AI-less human seat wins in about nine minutes, and `G.tick` is a no-op once
-    `G.over`.** Every reading freezes at the final frame: a Queen that "held an inject order for twenty
-    seconds without moving" was a finished game. Probes that run one AI should print `G.over`'s frame.
-15. **The supply message has two voices.** `G.tickAlerts` raises it as an alert; `G.supplyRefused` says the
-    same sentence for an order refused for supply, on purpose. A check that matches the text catches both.
-16. **`tools/control.js` edits `js/` in place while it runs.** Nothing else may read `js/` meanwhile — a
-    probe or a canary started in parallel sees the control's tree. Run controls in one sequential chain,
-    and on Windows chain nothing inside the control's own command (`spawnSync` with `shell: true` is
-    `cmd.exe`, where `;` is not a separator); run the control once per suite instead.
-17. **A probe that counts "seconds at the cap" must read the cap.** `larva-probe.js` counted `>= 3` and
-    kept reporting a full hall after the cap became twelve.
-18. **`test/all.js`'s `summarize()` is fine; the suite you just added is not in the gate until it is in the
-    `TESTS` list.** `node test/all.js queens` is the check that the runner knows it.
+1. **Two gates on one machine collide on the relay ports.** `test/rooms.js` binds 8793-8798; another gate (an
+   agent's worktree, a second session) or a stray server on one of them turns `rooms` red with `EADDRINUSE`, and
+   the runner reports a plain failure. Re-run `node test/rooms.js` alone before reading anything into it; keep
+   probe servers off that range (the render probe moved to 8790).
+2. **A hidden browser pane throttles the page's timers to one a second.** Any measurement paced with
+   `setTimeout` reads ten times too high or never finishes. Front the tab (`tabs_select`), or pace with a spin.
+3. **Bash mangles backslashes and heredocs in this environment**, even quoted ones: `\\d` arrives as `\d`, a
+   heredoc with a quoted delimiter still loses them. Write scripts and patch specs with the Write tool, never
+   inline.
+4. **Inside a vm template literal `\d` is `d`.** A regex in a test's `vm.runInContext(\`...\`)` needs `[0-9]`.
+5. **`test/eightplayer.js` reads `js/` three times** (the editor context, the game, the "Dry" game at the end);
+   nothing may patch `js/` until its last PASS line, a minute after the bank line.
+6. **A docs spec anchored on the previous entry's tail breaks the moment a placeholder in it is filled.** Anchor
+   new entries on the section heading (unique, never rewritten) — `.claude/review/reanchor.js` does that.
+7. **`G.tick` is a no-op after `G.over`, and so is a donor's frame.** A snapshot taken then already holds its
+   frame's batch (task 14): the usual "restore, then apply the batch for the snapshot's frame" applies it twice.
+8. **Every branch of `onKey` returns**, so a key collision is not two actions but one dead one, decided by line
+   order — a rebind that "does nothing" is the symptom.
+9. **Worktree agents write only inside their worktree**; deliverables for the main tree go to an absolute path
+   under `.claude/review/` and are landed by the main line, never merged.
 
 ---
 
 ## Diagnostics available
 
 ```
-node test/all.js                                  75 suites, ~3.5 min, the pre-commit gate
-node test/eightplayer.js                          18/19 by hand; money green, "nothing wedged" red (task 29)
+node test/all.js                                  76 suites, ~4 min, the pre-commit gate
+node test/eightplayer.js                          19/19 by hand; the bank line is the identity check for refactors
 node test/aistyles.js --seed=N [--frames=14400]   1 is the gate's; run 5 and 11 too after any AI change
-node test/queens.js [--verbose]                   the Zerg notes: inject stacking, a Queen per hall, the fullest larva
-node test/zerg12.js                               section 4 is the inject rule itself
-node test/review17.js                             section 18 is the geyser wedge
-node test/cmdlog.js  / review17ui.js / dmath.js   the review's other pins
-node test/rooms.js                                rooms, the cap, the delay, the hardening, the cheats gate
+node test/abilities20.js                          every ability, 73 checks in two seconds
+node test/review17.js / review17ui.js             sections 19-22 and 13 are this session's pins
+node test/rooms.js                                61 checks; section 11 is the window and the rejoin flag
 node test/net_many.js / node test/net.js          the socket suites, ~100 s and ~60 s
+node .claude/review/perf-probe.js [port=8790]     the render-cost probe (open the URL with the pane in front)
+node .claude/review/agent-21/migrate.js --check   which suites the harness codemod would move on this tree
+cd desktop && npm run check:relay / check:page / check:window     the desktop build's three checks
 node tools/patch.js <spec.js>                     exactly-one-match, line-ending-safe patching
 node tools/control.js <file> <a> <b> <cmd...>     apply a negative control, run, restore from memory
-node tools/inventory.js --md                      the repo map (the appendix of REVIEW-M17.md)
 ```
 
-`.claude/review/` (gitignored) holds every probe and gate log of the three sessions. The third session's:
-`larva-probe.js` (Queens, injects, larvae per hall), `queen-why.js` (why the AI never bought a Queen),
-`queen-pos.js` (the claim's position, four arms), `queen-wander.js` / `queen-stuck.js` (what moves a homed
-Queen), `ep-zerg.js` (the eight-player Zerg players minute by minute, takes a tree root), `ep-gas.js` /
-`ep-gasdrones.js` / `ep-gastrigger.js` (the geyser wedge and who caused it), `ep-stuck.js` (the wedged
-crawler, task 29, and Z1's missing Queen's Nest, task 30), `alert-lie.js` (the supply message's two
-voices), and the `spec-*.js` patch specs that made every edit.
+`.claude/review/` (gitignored) holds every probe, spec, gate log and agent deliverable of this session: `gate-23`
+to `gate-36 (and the codemod's verify run)`, `spec-task*.js`, `ep-stuck2.js`/`ep-pocket.js`/`crawler-scenes.js` (task 29),
+`ai578-probe.js`, `rebuild-probe.js`, `nuke-probe.js`, `lead-measure.js`, `perf-probe.js` and its results, and
+`agent-15/`, `agent-20/`, `agent-2224/`, `agent-28/` (with the built installer), `agent-21/`, each with a
+`NOTES.md`.
 
 ---
 
 ## Kickoff prompt for a fresh chat
 
-Paste everything inside the fence into an empty chat. **Replace the HEAD hash with
-`git log -1 --format=%h` first** — committing this file moves it.
+Paste everything inside the fence into an empty chat. **Replace the HEAD hash with `git log -1 --format=%h`
+first** — committing this file moves it.
 
 ```
 Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
-Branch: m10-overnight. HEAD: <run git log -1 --format=%h>. Working tree clean. (master is 160+
+Branch: m10-overnight. HEAD: <run git log -1 --format=%h>. Working tree clean. (master is 170+
 commits behind and unmerged; nothing lives there.)
 
-Read CLAUDE.md, then HANDOFF-M17.md, then REVIEW-M17.md in full (section 1 is the task list, with
-file, fault, fix and cost per task and the order at its head; the decisions table in section 2 says
-what the user decided; section 3 has the measurements behind everything fixed so far; section 4 is
-what was deliberately not done), then PLAYTEST-M17.md.
+Read CLAUDE.md, then HANDOFF-M17.md (this file: the state, the known reds, the traps of four
+sessions), then REVIEW-M17.md sections 2, 3 and 4 (every open task in section 1 is DONE and points at
+its entry; section 4 is what was deliberately not done), then PLAYTEST-M17.md.
 
-THE JOB: finish every open task in REVIEW-M17.md section 1, in the order below -- one commit per
-numbered step, the gate green before each commit, a probe before every fix, a negative control for
-every behaviour change. Mark each task DONE in section 1 with a pointer to a new section 3 entry AS
-YOU GO, so a chat that dies half-way leaves the list true. Detail for every step is in the task text.
+THE STATE: the review is finished. 76 suites green; the stamp is b2d136a211dfe314. Three known reds, none
+blocking: test/soak.js's Swarm Host line; test/aistyles.js seed 5's one economy line (57 vs 61);
+nothing else. test/eightplayer.js is 19/19 by hand and its bank line is the identity check for any
+refactor.
 
-  1. Task 1 (presentation; no stamp move). The user looked on 2026-09-11: the selection strip reads
-     fine; nothing draws beside the "1:21 TERRAN" clock plate on Nightfall where the day/night dial
-     should be. Wire UI.drawDayDial into hud.js's drawTop after the clock plate and look at it in the
-     browser (.claude/launch.json starts the server on 8899; Play, map Nightfall). Select 30+ units
-     once (Ctrl+A) and check the live strip does not run off the screen; if it does, wire
-     UI.drawSelGrid into hud.js's multi-selection branch, otherwise delete it and retarget
-     test/qol.js's direct call at what hud.js draws. Then delete the other dead ui.js bodies (the dead
-     drawUnitInfo calls the unwrapped G.unloadOne -- a replay bypass). daynight.js and qol.js stay green.
-  2. Task 29: an uprooted Sunken Colony grinds forever on a `land` order it cannot complete
-     (.claude/review/ep-stuck.js reproduces it: the eight-player game, player 7, 540 s, tile 58,38).
-     Probe the root spot first (creep? a unit standing on it?). Make the `land` case give up through
-     moveFailed like every other walk, or re-root where it stands. Pin it beside the crawler section
-     of test/zerg12.js. test/eightplayer.js should read 19/19 by hand afterwards.
-  3. Tasks 5, 7, 8 together (one AI commit, canaries once): research() selects a tech's building by
-     its tech list, not its id, so a Hive still researches what the Lair carried; the Raven and the
-     Disruptor join supportUnits() (or derive the list: no weapon, not a worker, no cargo, has a
-     producer); morph() and addon() release() their head-step claim as train() and research() do.
-  4. Task 30: the AI rebuilds a destroyed tech building (ep-stuck.js shows Zerg player 1 with a Hive
-     and no Queen's Nest, so it can never make another Queen). Put a passed step whose building is
-     missing back at the head of the build order. Canaries.
-  5. Task 6: one G.supplyBlocked(p, def) at the seven hand-copied supply checks. Probe the nuke at
-     the cap first (queued, never starts, reported as "supply blocked").
-  6. Tasks 13 and 14 (relay): a window on `cmds` frames -- measure against test/net_many.js before
-     choosing it -- and the rejoin-after-game-over double apply. Run test/rooms.js (gate),
-     test/net.js and test/net_many.js by hand (BW_CHEATS=1 is set by the suites themselves).
-  7. Tasks 19, 18, 12, 17: ok(G.tickErrors === 0) at the end of aiadapt, aistyles and wavetarget;
-     observer.js counts G.tick() calls during the seek instead of milliseconds; the three
-     static-only checks made live (an allied caster in a team game, a 64x128 map through the
-     recorder harness); _x/_y/_alpha moved off Unit into Render.motion, or skipped by Snapshot.enc
-     with the reason written down.
-  8. Task 15: a RESERVED list of the hard-coded keys that setBinding refuses, and the reverse
-     assertion in test/controls.js.
-  9. Task 20: drive the eighteen never-exercised abilities through gate suites (the list is in the
-     task), Infest Command Center, Interceptor loss on Carrier death, a transport killed with cargo.
-     README's "Terran buildings burning below one third health" has no code behind it: ASK the user
-     whether to build it or delete the sentence -- not answered yet. Do not decide it yourself.
- 10. Tasks 22 and 24: the small refactors with unchanged results (the scarab/interceptor caps read
-     the def; cargo capacity once; the 27 energy literals read the ability; the five stale branch
-     comments in abilities.js), and the unused tools/ exports. Identity check: test/eightplayer.js
-     prints byte-identical banks before and after, or the change touched a game and must say why.
- 11. Task 16: MEASURE the presentation costs the task lists (test/perf_render.js needs a browser)
-     before touching any of them; fix only what the measurement names, one at a time.
- 12. Task 28, decided: ship the relay UNCHANGED as a sidecar. No Tauri project exists in the repo
-     yet. Create the wrapper loading index.html; build test/serve.js (237 lines, Node built-ins
-     only) into one self-contained executable per platform (Node single-executable build or Bun
-     compile); register it as the sidecar; on Host spawn it on a free port and kill it with the
-     game; connect the client to localhost. Internet play still needs the host's tunnel as
-     PLAY-ONLINE.bat does. The protocol suites keep running against node test/serve.js; add one
-     check that the built executable answers a room join.
- 13. Task 21 last: the shared test harness (~900 lines of duplicated boilerplate across 88 files;
-     the low-risk first slice is the 42 sim-only suites sharing a byte-identical stub). A milestone
-     of its own: diff every suite's PASS/FAIL count against a baseline gate log before committing.
+THERE IS NO LIST TO FINISH. What is left is gated or a product decision, and needs the user's explicit
+instruction before any of it starts:
+  - THE BALANCE RUN (test/balance.js, test/proxy.js) and the order of the eight claims in AI.budget().
+    Every number in HANDOFF.md is stale. The list of what it must price grew again this session: the
+    Hive's Lair techs (task 5), Ravens and Disruptors that move (7), morph/add-on claims released (8),
+    rebuilt tech buildings (30), the nuke at the cap (6), Interceptors that dock and die (20), the
+    Reaver cap read from the def (22). Do not start it without being told; double-check when told.
+  - THE DESKTOP BUILD's Mac side (written, unbuilt: needs a Mac), code signing, a real icon and
+    identifier, and internet play from the app (untested: no tunnel here). desktop/NOTES in
+    .claude/review/agent-28/NOTES.md section 6 has the exact commands.
+  - The harness's remaining tiers (16 canvas-tier suites, 8 ui-tier singletons) if anyone wants them
+    on test/_harness.js; the codemod refuses anything whose stub it does not match exactly.
 
-THE GATE: node test/all.js, 75 suites, about four minutes, before EVERY commit. Green means green.
-If a change fixes a real fault but turns a marginal assertion red, revert it anyway and say so --
-six times now, all six right. When a re-dealt AI sample turns a check red, bisect with
-tools/control.js first: the third session's alerts red was a test matching a message that two
-mechanisms speak, not a fault.
+If the user brings a new fault: MEASURE BEFORE FIXING (every fix this session that started from a
+measurement was right the first time; the one hypothesis -- that the corpse filter was the cost --
+was checked by an interleaved A/B before it was kept), a negative control that goes cleanly RED with
+the feature removed, tools/control.js for controls, tools/patch.js for edits anchored on text, probes
+and specs written to files under .claude/review/ with the Write tool (bash mangles backslashes), and
+the gate (node test/all.js, 76 suites) green before the commit -- re-run test/rooms.js alone if it is
+the one red (the relay ports collide with any other gate on the machine). After any AI or simulation
+change: aistyles seeds 1, 5, 11 and eightplayer by hand, and expect the samples to re-deal.
 
-MEASURE BEFORE FIXING. Every fix in three sessions that started from a measurement was right the
-first time. Every new behaviour gets a negative control that goes RED when the feature is removed
-and is a CLEAN red. tools/control.js applies a control, runs a command and restores; tools/patch.js
-is the exactly-one-match patch runner. Anchor on text, never line numbers. Write probes and patch
-specs to files under .claude/review/ (gitignored) -- heredocs and node -e mangle them. After any AI
-change run the canaries: test/aistyles.js --seed=1 (the gate's), 5 and 11; test/eightplayer.js by hand.
-
-KNOWN REDS, none block:
-  - test/soak.js fails one tier-1/2 coverage assertion (Swarm Host). Do not weaken it.
-  - test/aistyles.js: the gate runs seed 1 (clean). Seed 5 fails one economy line, seed 11 one
-    first-wave line. Any AI change re-deals all fifteen arms; run 1, 5 and 11 and expect movement.
-  - test/eightplayer.js is 18/19 by hand and deliberately NOT in the gate: its money line is green
-    (every AI under 500 minerals); its "nothing wedged" line is red on step 2's crawler and should
-    go green with it.
-
-GATED, needs the user's explicit instruction: test/balance.js, test/proxy.js, the order of the
-eight claims in AI.budget(), and anything justified by "better balance". None of it is on this list.
-
-CLOSE every step the way CLAUDE.md says: a ready-to-paste kickoff prompt for the next chat, a
-numbered list of what changed for a player, and how to playtest each item by hand, written into
-PLAYTEST-M17.md (or PLAYTEST-M18.md if this becomes a milestone) and committed. Nothing important may
-exist only in the chat.
-
-Read the eighteen traps in HANDOFF-M17 before writing any probe.
+CLOSE every piece of work the way CLAUDE.md says: a kickoff prompt for the next chat, a numbered
+list of what changed for a player, and how to playtest each item by hand, written into the repo.
 ```
 
 ---
@@ -297,14 +202,15 @@ Read the eighteen traps in HANDOFF-M17 before writing any probe.
 
 Unchanged, and every one of them earned its place again:
 
-- **Determinism.** Never `Math.random()` in sim code — use `G.rand()`. And never `Math.sin`, `cos`,
-  `atan2` or `hypot` in a stamped file — use `DMath`; `test/dmath.js` scrapes for a native that crept back.
-- **`node test/all.js` is the gate.** Green means green.
-- **Measure before fixing.** The Queen's claim would have gone in the wrong place without `queen-pos.js`,
-  and the eight-player bank would have been called variance without `ep-gas.js`.
+- **Determinism.** Never `Math.random()` in sim code — use `G.rand()`; never a native transcendental in a stamped
+  file — use `DMath`.
+- **`node test/all.js` is the gate.** Green means green; a red `rooms` on `EADDRINUSE` is a port collision, not a
+  fault — re-run it alone, then the gate.
+- **Measure before fixing.** Task 16's probe named two costs out of seven; the other five would have been changed
+  for nothing.
 - **Every new behaviour gets a negative control**, and it must produce a clean red rather than a crash.
-- **Read the constant, never the literal.** `LARVA_NATURAL` exists because three literal 3s meant two
-  different things the moment the cap became twelve.
-- **Build stamp scope.** `js/build.js` names every top-level binding of every stamped file, in a list or
-  in `NOT_SIM` with a reason, and `test/version.js` refuses a tree where that is not so.
+- **Read the constant, never the literal.** `AI_CLOAK_RESERVE`, `MULE_HAUL`, `hangarCap`, `cargoCap` exist because
+  the literals disagreed with the data or with each other.
+- **Build stamp scope.** `js/build.js` names every top-level binding of every stamped file; `test/version.js`
+  refuses a tree where that is not so.
 - **The balance run is gated.**
