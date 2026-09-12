@@ -1,7 +1,6 @@
 // Headless feature tests: node test/features.js
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
-const ctx = { console, Math, performance, addEventListener() { }, setTimeout, document: { getElementById: () => ({ style: {}, addEventListener() { } }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { } }; ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'render', 'ui']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f });
+const vm = require('vm'), { makeCtx } = require('./_harness');
+const ctx = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'render', 'ui'], ext: false, el: 'bare', console });
 vm.runInContext(`
 UI.ping = () => {}; UI.onUnitDied = () => {};
 let pass = 0, fail = 0; const T = (name, cond) => { if (cond) pass++; else { fail++; console.log('FAIL: ' + name); } };

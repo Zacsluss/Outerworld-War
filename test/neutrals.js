@@ -25,17 +25,11 @@
 // exactly three walls), because the cheapest way to break test/auras.js from here would be to give a
 // derelict an aura.
 'use strict';
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
+const fs = require('fs'), vm = require('vm'), path = require('path'), { makeCtx, makeOk, summary } = require('./_harness'); const root = path.join(__dirname, '..');
 
-const ctx = {
-  console: { log() { }, warn() { }, error() { } }, Math, performance, addEventListener() { }, setTimeout,
-  document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { },
-};
-ctx.window = ctx; vm.createContext(ctx);
 // sim.js comes along because js/sprites_units.js reaches for `clamp`, and map.js because the per-map
 // toggle is only meaningful next to the layouts that may or may not set it.
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'sprites_units', 'sprites_buildings'])
-  vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
+const ctx = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'sprites_units', 'sprites_buildings'] });
 // `const` in a vm context is not an own property of the context object, so everything comes back
 // through the evaluator -- the same trick test/techtree.js and test/newbuildings.js use.
 const g = n => vm.runInContext(n, ctx);
@@ -45,8 +39,7 @@ const UNIT_PAINTERS = g('UNIT_PAINTERS'), BUILDING_PAINTERS = g('BUILDING_PAINTE
 const PaintHelpers = g('PaintHelpers'), repairableDef = g('repairableDef');
 const DATA_SRC = fs.readFileSync(path.join(root, 'js', 'data.js'), 'utf8');
 
-let pass = 0, fail = 0;
-const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x ? '  ' + x : '')); } return !!c; };
+const ok = makeOk({ ret: true });
 
 // ---------------------------------------------------------------- what was added
 // Spelled out rather than derived from `race === 'N'`, so a renamed or dropped def is a failure here
@@ -431,5 +424,4 @@ for (const id of DERELICTS) {
   ok(draw(true) > 0, id + ' lights up once `u.captured` is set', draw(true) + ' canvas calls');
 }
 
-console.log('\n' + (fail ? `FAIL  ${pass} passed, ${fail} failed` : `ALL PASS  ${pass} passed, 0 failed`));
-process.exit(fail ? 1 : 0);
+summary({ nl: true });

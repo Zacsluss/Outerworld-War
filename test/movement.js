@@ -3,14 +3,10 @@
 // The pathfinder returns a best-effort partial path rather than failing, so an unreachable goal never
 // reports an error - the unit just grinds into the obstacle. And a unit that ends up overlapping a
 // building has to be able to get out again, including a large unit straddling a footprint edge.
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
-let pass = 0, fail = 0;
-const ok = (name, cond, extra) => { if (cond) { pass++; console.log('PASS ' + name); } else { fail++; console.log('FAIL ' + name + (extra ? '  ' + extra : '')); } };
+const vm = require('vm'), { makeCtx, okMC: ok, summary } = require('./_harness');
 
 const errors = [];
-const ctx = { console: { log() { }, warn() { }, error: (...a) => errors.push(String(a[0])) }, Math, performance, addEventListener() { }, setTimeout, document: { getElementById: () => ({ style: {}, addEventListener() { } }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { } };
-ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
+const ctx = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai'], el: 'bare', errors });
 const run = src => vm.runInContext(src, ctx);
 
 run(`(() => {
@@ -121,5 +117,4 @@ ok('a move order surfaces a burrowed unit', ctx.moveSurfaces === true);
 ok('a burrowed unit told to board a transport surfaces and boards', ctx.reBurrowed === true && ctx.loadWorks === true, 'reBurrowed=' + ctx.reBurrowed + ' loaded=' + ctx.loadWorks);
 
 ok('no JS errors', errors.length === 0, errors[0] || '');
-console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+summary({ nl: true });

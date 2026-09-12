@@ -12,16 +12,11 @@
 // a blocked ramp stops blocking and how a wall of units stops being a wall; enemies keep the old
 // symmetric rule exactly.
 //   node test/push.js
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
+const vm = require('vm'), { makeCtx, ok, summary } = require('./_harness');
 const mk = () => {
-  const c = { console: { log() { }, warn() { }, error() { } }, Math, performance, addEventListener() { }, setTimeout,
-    document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { } };
-  c.window = c; vm.createContext(c);
-  for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'snapshot']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), c, { filename: f });
+  const c = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'snapshot'], ext: false });
   return c;
 };
-let pass = 0, fail = 0;
-const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x ? '  ' + x : '')); } };
 const ctx = mk();
 
 const r = vm.runInContext(`(() => {
@@ -104,5 +99,4 @@ ok(r.burrowedStill, 'nor is a burrowed unit');
 ok(r.column.tenThroughAt > 0 && r.column.allThrough === 12, 'a column of twelve gets through a dense friendly blob', JSON.stringify(r.column));
 ok(r.det, 'and the simulation is still deterministic across two identical runs');
 
-console.log((fail ? 'FAILURES ' : 'ALL PASS  ') + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+summary({ word: 'FAILURES' });

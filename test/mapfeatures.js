@@ -18,19 +18,13 @@
 // same tiles. The worst-case flood is what makes "destroying everything cannot strand a player" a
 // property of the map rather than a fact about the game that happened to be played on it.
 'use strict';
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
-let pass = 0, fail = 0;
-const ok = (m, c, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x !== undefined ? '  ' + x : '')); } };
+const vm = require('vm'), path = require('path'), { makeCtx, makeOk, summary } = require('./_harness');
+const ok = makeOk({ order: 'mc', extra: 'defined' });
 
 const SIM = ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'missions', 'snapshot'];
 const errors = [];
 const ctx = (() => {
-  const c = {
-    console: { log() { }, warn() { }, error: (...a) => errors.push(String(a[0])) }, Math, performance, addEventListener() { }, setTimeout,
-    document: { getElementById: () => ({ style: {}, addEventListener() { } }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { },
-  };
-  c.window = c; vm.createContext(c);
-  for (const f of SIM) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), c, { filename: f + '.js' });
+  const c = makeCtx({ files: SIM, el: 'bare', errors });
   return c;
 })();
 const R = src => vm.runInContext('(() => {' + src + '})();', ctx);
@@ -482,5 +476,4 @@ for (const k of KEYS) {
 }
 ok('no simulation errors were logged', errors.length === 0, errors.slice(0, 3).join(' | '));
 
-console.log(fail ? `FAIL  ${pass} passed, ${fail} failed` : `ALL PASS  ${pass} passed, 0 failed`);
-process.exit(fail ? 1 : 0);
+summary();

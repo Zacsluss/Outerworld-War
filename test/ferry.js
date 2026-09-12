@@ -8,13 +8,8 @@
 //   * It picks up IDLE units only. Loading anything standing nearby would hijack a worker on its way
 //     to a patch, and a shuttle that eats your economy is worse than no shuttle.
 //   node test/ferry.js
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
-const ctx = { console: { log() { }, warn() { }, error() { } }, Math, performance, addEventListener() { }, setTimeout,
-  document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { } };
-ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'snapshot']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f });
-let pass = 0, fail = 0;
-const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x ? '  ' + x : '')); } };
+const vm = require('vm'), { makeCtx, ok, summary } = require('./_harness');
+const ctx = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'snapshot'], ext: false });
 
 const r = vm.runInContext(`(() => {
   const out = {};
@@ -91,5 +86,4 @@ ok(r.notATransport === 'idle', 'something that cannot carry anything drops the o
 ok(r.snap.type === 'ferry' && r.snap.leg === 'b' && r.snap.since === 12, 'a snapshot carries the whole route, including which leg it is on', JSON.stringify(r.snap));
 ok(r.snap.bx > 0, '...and the far end');
 
-console.log((fail ? 'FAILURES ' : 'ALL PASS  ') + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+summary({ word: 'FAILURES' });

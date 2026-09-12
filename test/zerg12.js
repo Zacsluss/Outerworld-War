@@ -14,20 +14,12 @@
 // Math.random would desync a replay hours later; a larva inject with no cap would quietly rewrite
 // Zerg's production ceiling; and an uprooted crawler that could root off creep would turn a
 // creep-locked defensive building into a free turret you can put anywhere on the map.
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
+const fs = require('fs'), vm = require('vm'), path = require('path'), { makeCtx, makeOk, summary } = require('./_harness'); const root = path.join(__dirname, '..');
 const VERBOSE = process.argv.includes('--verbose');
-let pass = 0, fail = 0;
-const ok = (m, c, x) => { if (c) { pass++; if (VERBOSE) console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x ? '  ' + x : '')); } };
+const ok = makeOk({ order: 'mc', verbose: () => VERBOSE });
 
 const errors = [];
-const ctx = {
-  console: { log() { }, warn() { }, error: (...a) => errors.push(a.map(x => x && x.stack ? x.stack.split('\n').slice(0, 3).join(' | ') : String(x)).join(' ')) },
-  Math, performance, addEventListener() { }, setTimeout,
-  document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false },
-  requestAnimationFrame() { },
-};
-ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
+const ctx = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai'], errors, collect: 'stack' });
 const run = src => vm.runInContext(src, ctx);
 const json = src => JSON.parse(vm.runInContext('JSON.stringify(' + src + ')', ctx));
 
@@ -669,5 +661,4 @@ run(`(() => {
   ok('the game ran to the end without a JS error', errors.length === 0, errors[0] || '');
 }
 
-console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+summary({ nl: true });

@@ -19,9 +19,8 @@
 // and this change does not own that file. The exact line is patched into game.js's source below, so the
 // day the real wiring lands in a different shape, this test says so.
 'use strict';
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
-let pass = 0, fail = 0;
-const ok = (m, c, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x !== undefined ? '  ' + x : '')); } };
+const fs = require('fs'), vm = require('vm'), path = require('path'), { makeCtx, makeOk, summary } = require('./_harness'); const root = path.join(__dirname, '..');
+const ok = makeOk({ order: 'mc', extra: 'defined' });
 
 const SIM = ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'missions', 'snapshot'];
 // The one line js/game.js still needs, and where it goes.
@@ -33,11 +32,7 @@ const WIRE_CALL = 'this.map.tickHazard(this.frame, this.units);';
 
 const errors = [];
 function mkCtx(wire) {
-  const c = {
-    console: { log() { }, warn() { }, error: (...a) => errors.push(String(a[0])) }, Math, performance, addEventListener() { }, setTimeout,
-    document: { getElementById: () => ({ style: {}, addEventListener() { } }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { },
-  };
-  c.window = c; vm.createContext(c);
+  const c = makeCtx({ files: null, el: 'bare', errors });
   for (const f of SIM) {
     let src = fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8');
     if (!wire && f === 'game') src = src.split(WIRE_CALL).join('');   // bare: the hazard call removed
@@ -292,5 +287,4 @@ for (const k of SIZES) {
 }
 ok('no simulation errors were logged', errors.length === 0, errors.slice(0, 3).join(' | '));
 
-console.log(fail ? `FAIL  ${pass} passed, ${fail} failed` : `ALL PASS  ${pass} passed, 0 failed`);
-process.exit(fail ? 1 : 0);
+summary();

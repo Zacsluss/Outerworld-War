@@ -3,13 +3,8 @@
 // Unit.suppresses reads { suppress: true } off the tech table rather than a list of unit ids -- so the
 // checks are about the rule, not about which units happen to have it today.
 //   node test/suppress.js
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
-const ctx = { console: { log() { }, warn() { }, error() { } }, Math, performance, addEventListener() { }, setTimeout,
-  document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { } };
-ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f });
-let pass = 0, fail = 0;
-const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x ? '  ' + x : '')); } };
+const vm = require('vm'), { makeCtx, ok, summary } = require('./_harness');
+const ctx = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai'], ext: false });
 const r = vm.runInContext(`(() => {
   const out = {};
   // every suppression tech hangs off a building that actually trains ranged units
@@ -52,5 +47,4 @@ ok(r.pinnedSpeed < 0.5 && r.pinFrames === 24, 'a hit pins the target for a secon
 ok(r.afterDecay === 1, 'and the pin wears off when the fire stops', String(r.afterDecay));
 ok(r.buildingPinned === false, 'buildings cannot be pinned');
 ok(r.untechedPin === false, 'an attacker without the research does not pin');
-console.log(fail ? `FAIL  ${pass} passed, ${fail} failed` : `ALL PASS  ${pass} passed, 0 failed`);
-process.exit(fail ? 1 : 0);
+summary();

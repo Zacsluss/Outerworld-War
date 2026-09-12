@@ -19,19 +19,13 @@
 // that no high ground is reachable from low ground at all. It then floods again with the ramps back
 // and requires that it IS -- because "nothing is reachable" would satisfy the first half on its own.
 'use strict';
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
-let pass = 0, fail = 0;
-const ok = (m, c, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x !== undefined ? '  ' + x : '')); } };
+const fs = require('fs'), vm = require('vm'), path = require('path'), { makeCtx, makeOk, summary } = require('./_harness'); const root = path.join(__dirname, '..');
+const ok = makeOk({ order: 'mc', extra: 'defined' });
 
 const SIM = ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'missions', 'snapshot'];
 const errors = [];
 const ctx = (() => {
-  const c = {
-    console: { log() { }, warn() { }, error: (...a) => errors.push(String(a[0])) }, Math, performance, addEventListener() { }, setTimeout,
-    document: { getElementById: () => ({ style: {}, addEventListener() { } }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { },
-  };
-  c.window = c; vm.createContext(c);
-  for (const f of SIM) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), c, { filename: f + '.js' });
+  const c = makeCtx({ files: SIM, el: 'bare', errors });
   return c;
 })();
 const R = src => vm.runInContext('(() => {' + src + '})();', ctx);
@@ -402,5 +396,4 @@ const src = fs.readFileSync(path.join(root, 'js', 'map.js'), 'utf8');
 ok('js/map.js still calls no Math.random, Date or performance', !/Math\.random\s*\(|new Date\b|Date\.now\s*\(|performance\.\w+\s*\(/.test(src));
 ok('no simulation errors were logged', errors.length === 0, errors.slice(0, 3).join(' | '));
 
-console.log(fail ? `FAIL  ${pass} passed, ${fail} failed` : `ALL PASS  ${pass} passed, 0 failed`);
-process.exit(fail ? 1 : 0);
+summary();

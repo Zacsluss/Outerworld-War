@@ -19,15 +19,12 @@
 // which is where it did not. The two immobile-attacker special cases get their own section, because
 // the second half of the same fix was in `case 'attack'`: a sieged tank whose ordered target walks out
 // of range re-acquires with autoTarget and used to fire at that, every frame.
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
+const vm = require('vm'), path = require('path'), { makeCtx, makeOk, summary } = require('./_harness');
 const VERBOSE = process.argv.includes('--verbose');
-let pass = 0, fail = 0;
-const ok = (name, cond, extra) => { if (cond) { pass++; if (VERBOSE) console.log('PASS ' + name); } else { fail++; console.log('FAIL ' + name + (extra ? '  ' + extra : '')); } };
+const ok = makeOk({ order: 'mc', verbose: () => VERBOSE });
 
 const errors = [];
-const ctx = { console: { log() { }, warn() { }, error: (...a) => errors.push(a.map(x => x && x.stack ? x.stack.split('\n').slice(0, 3).join(' | ') : String(x)).join(' ')) }, Math, performance, addEventListener() { }, setTimeout, document: { getElementById: () => ({ style: {}, addEventListener() { } }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { } };
-ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
+const ctx = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai'], el: 'bare', errors, collect: 'stack' });
 const run = src => vm.runInContext(src, ctx);
 const json = src => JSON.parse(vm.runInContext('JSON.stringify(' + src + ')', ctx));
 
@@ -251,5 +248,4 @@ for (const [id, why] of Object.entries(NO_RATE)) console.log('no rate to measure
 for (const [id, o] of Object.entries(OVERRIDE)) console.log('table overridden in code: ' + id + ' fires every ' + o.cd + 'f -- ' + o.why);
 
 ok('no JS errors', errors.length === 0, errors[0] || '');
-console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+summary({ nl: true });

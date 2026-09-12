@@ -10,18 +10,11 @@
 // just as well when the AI is cheating.
 //   node test/aiadapt.js
 'use strict';
-const fs = require('fs'), vm = require('vm'), path = require('path');
+const vm = require('vm'), path = require('path'), { makeCtx, ok, summary } = require('./_harness');
 const root = path.join(__dirname, '..');
-let pass = 0, fail = 0;
-const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x ? '  ' + x : '')); } };
 
 const mk = () => {
-  const c = { console: { log() { }, warn() { }, error() { } }, Math, performance, setTimeout, setInterval() { return 0; }, addEventListener() { },
-    document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false },
-    requestAnimationFrame() { } };
-  c.window = c; c.globalThis = c; vm.createContext(c);
-  for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'snapshot'])
-    vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), c, { filename: f });
+  const c = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'snapshot'], ext: false, setInterval: true, globalThis: true });
   return c;
 };
 const ctx = mk();
@@ -173,5 +166,4 @@ const J = src => JSON.parse(vm.runInContext('JSON.stringify(' + src + ')', ctx))
 }
 
 ok(vm.runInContext('__errs.n + (G.tickErrors || 0)', ctx) === 0, 'no exception inside a unit\'s or an AI\'s tick across every game here (G.tickErrors; console.error is stubbed, so nothing else would have said)', String(vm.runInContext('__errs.n + (G.tickErrors || 0)', ctx)));
-console.log((fail ? 'FAILURES ' : 'ALL PASS  ') + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+summary({ word: 'FAILURES' });

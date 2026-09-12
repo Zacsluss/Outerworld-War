@@ -1,18 +1,13 @@
 // Simulation snapshots. The whole point is that restoring one and carrying on must be
 // indistinguishable from never having stopped, so most of this is hash comparison.
 //   node test/snapshot.js
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
-let pass = 0, fail = 0;
-const ok = (name, cond, extra) => { if (cond) { pass++; console.log('PASS ' + name); } else { fail++; console.log('FAIL ' + name + (extra ? '  ' + extra : '')); } };
+const vm = require('vm'), { makeCtx, okMC: ok, summary } = require('./_harness');
 
 const errors = [];
 // A whole sim in its own context. Built by a function because the rejoin check at the bottom needs a
 // second one that has never played the game -- which is the only way to see what a fresh process lacks.
 function mkContext(errs) {
-  const c = { console: { log() { }, warn() { }, error: (...a) => errs.push(String(a[0])) }, Math, performance, addEventListener() { }, setTimeout, document: { getElementById: () => ({ style: {}, addEventListener() { } }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { } };
-  c.window = c; c.__errors = errs; vm.createContext(c);
-  for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'missions', 'snapshot'])
-    vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), c, { filename: f + '.js' });
+  const c = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'missions', 'snapshot'], el: 'bare', errors: errs, globals: { __errors: errs } });
   return c;
 }
 const ctx = mkContext(errors);
@@ -166,4 +161,4 @@ ok('...while _maxE, which is state, still rides it', ctx.renderKeys.maxE && ctx.
 ok('...and a restored unit carries none of the three until the next draw writes them', !ctx.afterRestore.hasX && !ctx.afterRestore.hasAlpha, JSON.stringify(ctx.afterRestore));
 
 ok('no JS errors', errors.length === 0, errors[0] || '');
-console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');process.exit(fail ? 1 : 0);
+summary({ nl: true });

@@ -8,13 +8,8 @@
 //   * height is the one grid no snapshot carries, so a restored hulk must repaint it or vision differs.
 //   * wreckage that never decays walls the map off by minute forty at a 500 supply cap.
 //   node test/craters.js
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
-const ctx = { console: { log() { }, warn() { }, error() { } }, Math, performance, addEventListener() { }, setTimeout,
-  document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { } };
-ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'snapshot']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f });
-let pass = 0, fail = 0;
-const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x ? '  ' + x : '')); } };
+const vm = require('vm'), { makeCtx, ok, summary } = require('./_harness');
+const ctx = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'snapshot'], ext: false });
 
 const SRC = `(() => {
   const out = {};
@@ -160,5 +155,4 @@ ok(r.snap.heightRepainted, '...and repaints height, which no snapshot carries --
 ok(r.snap.walkSame, '...and walk agrees with it afterwards');
 ok(r.snap.sparse && r.snap.pairsEven, 'scarring travels as sparse pairs, not a fourth dense 16k grid per checkpoint', JSON.stringify(r.snap));
 
-console.log((fail ? 'FAILURES ' : 'ALL PASS  ') + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+summary({ word: 'FAILURES' });

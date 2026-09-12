@@ -14,6 +14,14 @@ scope, the rules and the map already filled in; the review fills in the two list
 > the first time since FIXLIST-M15 C3, its "nothing wedged" line red (open task 29); the gate's `aistyles`
 > seed is 1. The build stamp is `7f822858401946ae` at the last simulation change; the appendix is regenerated.
 > `HANDOFF-M17.md` carries the kickoff prompt; `PLAYTEST-M17.md` says how to see each fixed item by hand.
+>
+> **FOURTH SESSION (2026-09-11): the open list is finished.** Thirteen steps, one gated commit each, from `943d9f6`
+> to the harness commit: every task in section 1 is **DONE** with a pointer to its entry (20-32), the last
+> decision is taken (README's burning buildings: the sentence is gone), the gate is **76 suites**, the stamp is
+> `b2d136a211dfe314` since task 22's relocations, `test/eightplayer.js` is 19 of 19 by hand, and `aistyles` seed
+> 11 is clean. Steps 8-13 were prepared by five agents in their own worktrees and landed in order on the main
+> line. What remains is gated (the balance run, the claim order) or a product call (the desktop build's Mac side,
+> signing, an icon) -- `HANDOFF-M17.md`'s kickoff prompt says so.
 
 ---
 
@@ -168,6 +176,8 @@ an unchanged sidecar — a project) → 21 (the shared test harness, last, when 
 first because it moves no stamp and has already been looked at; the measured faults next, grouped so the
 canaries re-deal as few times as possible; the relay fixed before it is shipped; the 90-file harness change
 when nothing else is moving. Done: 2, 3, 4, 9, 10, 11 (the decisions), 23, 25, 26, 27 (the Zerg notes).
+**All thirteen steps done in the fourth session, in that order except that 16 landed before 20 (presentation only;
+no canary re-deal) -- every task below is marked DONE with its entry.**
 
 Each entry names the file, what is wrong, the fix, and what it would cost. Everything measured says so;
 "reviewer" means one of the six read-only region reviews, whose claims were verified before they were
@@ -315,7 +325,9 @@ listed here. Ordered by what I would do first.
     docking and loss on Carrier death, Scarab pathing, worker re-targeting when a patch mines out, and a
     transport killed with cargo are untested. **One feature gap, not a coverage gap:** README promises
     "Terran buildings burning below one third health" and there is no code path for it.
-21. **Test-harness duplication.** 88 files carry their own `document` stub, 71 their own `ok`, through
+21. **Test-harness duplication.** **DONE** (entry 32): `test/_harness.js`, and forty-four gate suites moved onto
+    it by a codemod that matches each suite's stub text exactly, every suite's counts and output unchanged. As
+    listed: 88 files carry their own `document` stub, 71 their own `ok`, through
     11 differently named builders; ~870 lines of boilerplate (reviewer's catalogue is in the
     agent-F section of `.claude/review/` while it exists, and summarised here: six file-list shapes,
     three DOM tiers, four canvas stubs, two `ok` argument orders). A `test/_harness.js` would remove
@@ -1215,6 +1227,31 @@ The questions as they were put, kept for the record:
     placeholders; the Firewall asks once on the first host; internet play from the app is untested (no
     tunnel here). Build products (`node_modules`, `dist`, the sidecar, `target`) are ignored, not committed.
     **Gate:** 76 of 76, 251 s. The stamp did not move.
+32. **One test harness, and forty-four gate suites on it with every count unchanged (task 21).** *(commit:
+    harness; fourth session, last, prepared by a worktree agent)* **Measured first:** a catalogue over the 100
+    suites (`.claude/review/agent-21/catalogue.js`): 95 carry a `document` stub (103 stubs, 702 lines), 77 an
+    `ok` in fifteen shapes and two argument orders, 66 load loops in two filename styles, 161 summary lines --
+    1,084 lines of boilerplate. Byte-identical stub texts: 62; the largest two are 11 files each (the sim-only
+    silent stub, and the ui stub with a `join` collector), then 4, 3, eight pairs and fifty singletons. The
+    review's "42 sim-only suites sharing a byte-identical stub" is the sim DOM tier -- 43 files, 31 gated --
+    in sixteen texts that differ by console key order, layout, a `globalThis` alias, a `setInterval` stub,
+    the error collector, and whether the element has `getContext`. **What changed:** `test/_harness.js` (103
+    lines): `makeCtx` builds the same object a suite built, the variations as options (`tier`, `files`,
+    `ext`, `el`, `errors`+`collect`, `console`, `setInterval`, `globalThis`, `globals`); `ok`, `okMC` and
+    `makeOk` reproduce all fifteen `ok` shapes; `summary` prints the four tail shapes `summarize()` parses. A
+    codemod (`.claude/review/agent-21/migrate.js`) moves a suite only by exact text match of its stub, its
+    `ok` line, its counters and its two-line tail, per file's own line ending, refusing on zero or double
+    matches, and says per file what it did. On this tree (at 73ebee0) the codemod moved the same 44 files: 437 lines out, 153 in, 286 fewer. **The identity check:** every migrated suite's status
+    and 'N passed, M failed' diffed against a baseline gate log taken on the same tree just before: IDENTICAL, 44 suites, same status and counts (the baseline was task 28's gate log, taken on the same tree minutes before).
+    In the agent's worktree the same procedure gave 44 of 44 (after two codemod faults were fixed -- a second
+    `const root` in a file that declares its own, `okMC` imported under a name the suite does not call), a
+    full gate of 75 of 75 with every count as at the baseline, and a `--verbose` comparison of both trees, wall
+    clock masked: 75 of 75 byte-identical outputs. **Negative controls:** the same counts on a green baseline
+    cannot tell an `ok` that never fails from one that works, so nine suites had one check forced red in both
+    their old text and their migrated text -- FAIL line, extra text, summary word and exit code
+    byte-identical in nine of nine. **Deliberately not moved:** the 16 canvas-tier suites (each its own
+    recorder or fake canvas), the 8 ui-tier singletons, `determinism`/`diverge`, and the 12 sim-tier files
+    outside the gate. **Gate:** 76 of 76, 230 s. Not a stamp move.
 
 # 4. Considered and deliberately not done
 

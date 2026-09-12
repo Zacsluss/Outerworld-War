@@ -4,13 +4,8 @@
 // property of the fog memory is its ASYMMETRY: it is corrected by sight and by nothing else, so a
 // building destroyed while you were not watching stays on your map. That is the feature, not a leak.
 //   node test/fognight.js
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
-const ctx = { console: { log() { }, warn() { }, error() { } }, Math, performance, addEventListener() { }, setTimeout,
-  document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { } };
-ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'snapshot']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f });
-let pass = 0, fail = 0;
-const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x ? '  ' + x : '')); } };
+const vm = require('vm'), { makeCtx, ok, summary } = require('./_harness');
+const ctx = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'snapshot'], ext: false });
 const SRC = `(() => {
   const out = {};
   G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'Z', human: false, difficulty: 'easy', name: 'B' }], seed: 3, layout: 'temple' });
@@ -65,5 +60,4 @@ ok(r.liesAfterDeath, 'a building destroyed while you were not watching stays on 
 ok(r.correctedBySight, '...and only going back and looking corrects it');
 ok(r.ownNotRemembered, 'your own buildings are not in the memory');
 ok(r.survivesSnapshot.after === r.survivesSnapshot.before && r.survivesSnapshot.before > 0, 'the memory survives a snapshot', JSON.stringify(r.survivesSnapshot));
-console.log(fail ? 'FAIL  ' + pass + ' passed, ' + fail + ' failed' : 'ALL PASS  ' + pass + ' passed, 0 failed');
-process.exit(fail ? 1 : 0);
+summary();

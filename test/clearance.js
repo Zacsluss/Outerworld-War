@@ -19,16 +19,10 @@
 // reads as stuck. So the fix is clearance, and the check below is the A/B that proved it.
 //
 //   node test/clearance.js
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
+const fs = require('fs'), vm = require('vm'), path = require('path'), { makeCtx, makeOk, summary } = require('./_harness'); const root = path.join(__dirname, '..');
 const errors = [];
-const ctx = { console: { log() { }, warn() { }, error: (...a) => errors.push(a.join(' ')) }, Math, performance, setTimeout, setInterval() { return 0; }, addEventListener() { }, requestAnimationFrame() { }, Image: function () { },
-  localStorage: { getItem() { return null; }, setItem() { } }, location: { protocol: 'http:', host: 'localhost' },
-  document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null, click() { }, value: '', appendChild() { }, querySelectorAll: () => [] }), createElement: () => ({ getContext: () => null, style: {}, addEventListener() { } }), addEventListener() { }, hasFocus: () => false, body: { appendChild() { } }, querySelectorAll: () => [] } };
-ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai'])
-  vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f });
-let pass = 0, fail = 0;
-const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x !== undefined && x !== '' ? '  ' + x : '')); } };
+const ctx = makeCtx({ tier: 'ui', files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai'], ext: false, errors, collect: 'join' });
+const ok = makeOk({ extra: 'nonempty' });
 const J = s => JSON.parse(vm.runInContext('JSON.stringify(' + s + ')', ctx));
 
 // =============================================================================
@@ -175,5 +169,4 @@ ok(det.a === det.b, 'an eight-minute game re-runs bit-identically -- the clearan
   ok(/const fits = wide/.test(fn), 'the clearance test is a parameter of the search, not a unit-id branch inside it'); }
 
 ok(errors.length === 0, 'no JS errors were logged along the way', errors.slice(0, 3).join(' | '));
-console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+summary({ nl: true });

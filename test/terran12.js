@@ -17,20 +17,14 @@
 // EFFECT: the Reactor is timed against a Barracks without one, the MULE is watched until it dies, the
 // Viking is asked what it can shoot in each mode, and each new def is made to name the route by which
 // a computer opponent gets it and then that route is verified against the actual tables.
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
+const vm = require('vm'), { makeCtx, makeOk, summary } = require('./_harness');
 const VERBOSE = process.argv.includes('--verbose');
-let pass = 0, fail = 0;
-const ok = (c, m, x) => { if (c) { pass++; if (VERBOSE || true) console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x !== undefined && x !== '' ? '  ' + x : '')); } };
+const ok = makeOk({ extra: 'nonempty' });
 
 const errors = [];
-const ctx = { console: { log() { }, warn() { }, error: (...a) => errors.push(a.map(x => x && x.stack ? String(x.stack).split('\n')[0] : String(x)).join(' ')) }, Math, performance, addEventListener() { }, setTimeout, setInterval() { return 0; },
-  localStorage: { getItem() { return null; }, setItem() { } },
-  document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null, click() { }, value: '', appendChild() { }, querySelectorAll: () => [] }), createElement: () => ({ getContext: () => null, style: {}, addEventListener() { } }), addEventListener() { }, hasFocus: () => false, body: { appendChild() { } }, querySelectorAll: () => [] },
-  requestAnimationFrame() { }, Image: function () { }, location: { protocol: 'http:', host: 'localhost' } };
-ctx.window = ctx; vm.createContext(ctx);
 // ui.js and hud.js are loaded because two checks are about the COMMAND CARD, which is where a Terran
 // roster this size overflows first. They are not loaded by the sim-only harnesses.
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'render', 'ui', 'hud']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f });
+const ctx = makeCtx({ tier: 'ui', files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'render', 'ui', 'hud'], ext: false, errors, collect: 'stackline' });
 const run = src => vm.runInContext(src, ctx);
 const json = src => JSON.parse(vm.runInContext('JSON.stringify(' + src + ')', ctx));
 
@@ -548,5 +542,4 @@ ok(json('EQUIV.command_center').includes('orbital_command') && json('EQUIV.comma
   ok(T.RES.every(id => json('({t:DATA.techs,u:DATA.upgrades})').t[id] || json('({t:DATA.techs,u:DATA.upgrades})').u[id]), 'AI_RESEARCH.T still names only real techs and upgrades'); }
 ok(errors.length === 0, 'no JS errors were logged along the way', errors[0] || '');
 
-console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+summary({ nl: true });

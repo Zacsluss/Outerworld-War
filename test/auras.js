@@ -2,13 +2,8 @@
 // the Terran block; this is the reader tested against it clause by clause, because the two were written
 // separately and a contract nobody checks is a comment.
 //   node test/auras.js
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
-const ctx = { console: { log() { }, warn() { }, error() { } }, Math, performance, addEventListener() { }, setTimeout,
-  document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { } };
-ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f });
-let pass = 0, fail = 0;
-const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x ? '  ' + x : '')); } };
+const vm = require('vm'), { makeCtx, ok, summary } = require('./_harness');
+const ctx = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai'], ext: false });
 const r = vm.runInContext(`(() => {
   const out = {};
   out.auraDefs = Object.keys(DATA.buildings).filter(id => DATA.buildings[id].aura);
@@ -88,5 +83,4 @@ ok(r.blindClears, 'walking out of the field restores sight -- the pass clears ra
 ok(r.ownSideNotBlinded && !(r.ownSide.aura > 0 && r.ownSide.aura < 1), 'a jammer never blinds its own side', JSON.stringify(r.ownSide));
 ok(r.unfinishedProjectsNothing, 'an unfinished building projects nothing');
 ok(r.walls.length === 3 && r.wallsHaveNoAura, 'the three walls carry no aura and are flagged wall: true', r.walls.join(' '));
-console.log(fail ? `FAIL  ${pass} passed, ${fail} failed` : `ALL PASS  ${pass} passed, 0 failed`);
-process.exit(fail ? 1 : 0);
+summary();

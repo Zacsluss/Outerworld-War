@@ -24,20 +24,12 @@
 //  7. the home survives a snapshot round trip
 //  8. nothing threw
 'use strict';
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
+const vm = require('vm'), path = require('path'), { makeCtx, makeOk, summary } = require('./_harness');
 const VERBOSE = process.argv.includes('--verbose');
-let pass = 0, fail = 0;
-const ok = (m, c, x) => { if (c) { pass++; if (VERBOSE) console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x ? '  ' + x : '')); } };
+const ok = makeOk({ order: 'mc', verbose: () => VERBOSE });
 
 const errors = [];
-const ctx = {
-  console: { log() { }, warn() { }, error: (...a) => errors.push(a.map(x => x && x.stack ? x.stack.split('\n').slice(0, 3).join(' | ') : String(x)).join(' ')) },
-  Math, performance, addEventListener() { }, setTimeout,
-  document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false },
-  requestAnimationFrame() { },
-};
-ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'missions', 'build', 'snapshot']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
+const ctx = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'missions', 'build', 'snapshot'], errors, collect: 'stack' });
 const run = src => vm.runInContext(src, ctx);
 const json = src => JSON.parse(vm.runInContext('JSON.stringify(' + src + ')', ctx));
 
@@ -199,5 +191,4 @@ run(`(() => {
 
 // ================================================================ 8. nothing threw
 ok('no JS errors', errors.length === 0, errors.slice(0, 3).join(' | '));
-console.log(`\n${fail ? 'FAIL' : 'ALL PASS'}  ${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+summary({ nl: true });

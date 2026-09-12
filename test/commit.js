@@ -2,15 +2,8 @@
 //   * cancelling a BUILDING refunds nothing, while cancelling a queued UNIT still refunds
 //   * every weapon maps to one of the five audio voices, so nothing falls through to silence
 //   node test/commit.js
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
-const ctx = { console: { log() { }, warn() { }, error() { } }, Math, performance, addEventListener() { }, setTimeout, setInterval() { return 0; },
-  localStorage: { getItem() { return null; }, setItem() { } },
-  document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null, click() { }, value: '', appendChild() { }, querySelectorAll: () => [] }), createElement: () => ({ getContext: () => null, style: {}, addEventListener() { } }), addEventListener() { }, hasFocus: () => false, body: { appendChild() { } }, querySelectorAll: () => [] },
-  requestAnimationFrame() { }, Image: function () { }, location: { protocol: 'http:', host: 'localhost' } };
-ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'render', 'ui']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f });
-let pass = 0, fail = 0;
-const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x ? '  ' + x : '')); } };
+const vm = require('vm'), { makeCtx, ok, summary } = require('./_harness');
+const ctx = makeCtx({ tier: 'ui', files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'render', 'ui'], ext: false });
 const r = vm.runInContext(`(() => {
   G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'Z', human: false, difficulty: 'easy', name: 'B' }], seed: 3 });
   const p = G.players[0], out = {};
@@ -44,5 +37,4 @@ ok(r.buildingRefund.min === 0 && r.buildingRefund.gas === 0, 'cancelling a build
 ok(r.unitRefund > 0, 'cancelling a queued unit still refunds -- a production queue is scheduling, not commitment', String(r.unitRefund));
 ok(r.droneBack === 1, 'a cancelled Zerg building still returns its drone, because the drone is the building', String(r.droneBack));
 ok(r.voiceCount === 5 && r.badVoices.length === 0, 'every weapon maps to one of the five audio voices', r.badVoices.slice(0, 6).join(' '));
-console.log(fail ? `FAIL  ${pass} passed, ${fail} failed` : `ALL PASS  ${pass} passed, 0 failed`);
-process.exit(fail ? 1 : 0);
+summary();

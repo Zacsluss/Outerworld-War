@@ -3,15 +3,8 @@
 // and stayed clickable, an eleventh fell off the console, and neither threw. Protoss reached 16 of 16
 // build entries and only fitted its new structures by hanging them off a morph.
 //   node test/card.js
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
-const ctx = { console: { log() { }, warn() { }, error() { } }, Math, performance, addEventListener() { }, setTimeout, setInterval() { return 0; },
-  localStorage: { getItem() { return null; }, setItem() { } },
-  document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null, click() { }, value: '', appendChild() { }, querySelectorAll: () => [] }), createElement: () => ({ getContext: () => null, style: {}, addEventListener() { } }), addEventListener() { }, hasFocus: () => false, body: { appendChild() { } }, querySelectorAll: () => [] },
-  requestAnimationFrame() { }, Image: function () { }, location: { protocol: 'http:', host: 'localhost' } };
-ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'render', 'ui', 'hud']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f });
-let pass = 0, fail = 0;
-const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x ? '  ' + x : '')); } };
+const vm = require('vm'), { makeCtx, ok, summary } = require('./_harness');
+const ctx = makeCtx({ tier: 'ui', files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'render', 'ui', 'hud'], ext: false });
 const r = vm.runInContext(`(() => {
   const out = { cols: UI.CARD_COLS, rows: UI.CARD_ROWS, slots: UI.CARD_SLOTS };
   Render.W = 1600; Render.H = 900; Render.viewW = 1600; Render.viewH = 760;
@@ -63,5 +56,4 @@ ok(r.worstSlot < 12, 'across every page, no slot ever exceeds the grid', String(
 ok(r.reachable === 30, 'every entry of an over-long card is reachable by paging', r.reachable + ' of 30');
 ok(r.short.n === 5 && !r.short.hasMore, 'a card that fits is left alone', JSON.stringify(r.short));
 ok(r.overflow.length === 0, 'no real Protoss card overflows the grid -- the race that was at 16 of 16', r.overflow.slice(0, 4).join(' '));
-console.log(fail ? `FAIL  ${pass} passed, ${fail} failed` : `ALL PASS  ${pass} passed, 0 failed`);
-process.exit(fail ? 1 : 0);
+summary();

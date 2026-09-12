@@ -29,16 +29,10 @@
 // Section 3 pins both headings east and compares the biggest single STEP, which is exact.
 //
 //   node test/creepspeed.js
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
+const vm = require('vm'), { makeCtx, makeOk, summary } = require('./_harness');
 const errors = [];
-const ctx = { console: { log() { }, warn() { }, error: (...a) => errors.push(a.join(' ')) }, Math, performance, setTimeout, setInterval() { return 0; }, addEventListener() { }, requestAnimationFrame() { }, Image: function () { },
-  localStorage: { getItem() { return null; }, setItem() { } }, location: { protocol: 'http:', host: 'localhost' },
-  document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null, click() { }, value: '', appendChild() { }, querySelectorAll: () => [] }), createElement: () => ({ getContext: () => null, style: {}, addEventListener() { } }), addEventListener() { }, hasFocus: () => false, body: { appendChild() { } }, querySelectorAll: () => [] } };
-ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'missions', 'net'])
-  vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f });
-let pass = 0, fail = 0;
-const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x !== undefined && x !== '' ? '  ' + x : '')); } };
+const ctx = makeCtx({ tier: 'ui', files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'missions', 'net'], ext: false, errors, collect: 'join' });
+const ok = makeOk({ extra: 'nonempty' });
 const J = s => JSON.parse(vm.runInContext('JSON.stringify(' + s + ')', ctx));
 
 // =============================================================================
@@ -266,5 +260,4 @@ ok(det.a.walked > det.off.walked,
   '...and the twenty zerglings covered ' + det.a.walked + 'px with the bonus against ' + det.off.walked + 'px without it', JSON.stringify([det.a.walked, det.off.walked]));
 ok(det.a.mult === 1.3, 'the probe put the table back afterwards, so nothing below it is measuring a patched table', String(det.a.mult));
 ok(errors.length === 0, 'no JS errors were logged along the way', errors.slice(0, 3).join(' | '));
-console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+summary({ nl: true });

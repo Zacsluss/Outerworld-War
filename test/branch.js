@@ -10,15 +10,8 @@
 // save afterwards replays from frame 0 through the original opening into whatever you did instead.
 // That is what these checks are mostly about.
 //   node test/branch.js
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
-const ctx = { console: { log() { }, warn() { }, error() { } }, Math, performance, addEventListener() { }, setTimeout, setInterval() { return 0; },
-  localStorage: { getItem() { return null; }, setItem() { } },
-  document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null, click() { }, value: '', appendChild() { }, querySelectorAll: () => [] }), createElement: () => ({ getContext: () => null, style: {}, addEventListener() { } }), addEventListener() { }, hasFocus: () => false, body: { appendChild() { } }, querySelectorAll: () => [] },
-  requestAnimationFrame() { }, Image: function () { }, location: { protocol: 'http:', host: 'localhost' } };
-ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'snapshot', 'build', 'render', 'ui', 'hud']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f });
-let pass = 0, fail = 0;
-const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x ? '  ' + x : '')); } };
+const vm = require('vm'), { makeCtx, ok, summary } = require('./_harness');
+const ctx = makeCtx({ tier: 'ui', files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'snapshot', 'build', 'render', 'ui', 'hud'], ext: false });
 
 const r = vm.runInContext(`(() => {
   const out = {};
@@ -111,5 +104,4 @@ ok(r.saved.seed === 12 && r.saved.layout === 'temple', '...on the same map and s
 ok(r.second.logSeeded === r.second.expect, 'branching a second time seeds from the new frame, not the old one', JSON.stringify(r.second));
 ok(r.noopInPlay, 'and branchReplay does nothing at all outside a replay');
 
-console.log((fail ? 'FAILURES ' : 'ALL PASS  ') + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+summary({ word: 'FAILURES' });

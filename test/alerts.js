@@ -4,14 +4,10 @@
 // the alert arrives. The second half plays a full game competently and checks that every alert that
 // fired was true at the moment it fired, and that none of them fired more often than its cooldown
 // allows -- an alert that cries wolf is the reason players stop reading alerts.
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
-let pass = 0, fail = 0;
-const ok = (name, cond, extra) => { if (cond) { pass++; console.log('PASS ' + name); } else { fail++; console.log('FAIL ' + name + (extra ? '  ' + extra : '')); } };
+const vm = require('vm'), { makeCtx, okMC: ok, summary } = require('./_harness');
 
 const errors = [];
-const ctx = { console: { log() { }, warn() { }, error: (...a) => errors.push(String(a[0])) }, Math, performance, addEventListener() { }, setTimeout, document: { getElementById: () => ({ style: {}, addEventListener() { } }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { } };
-ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
+const ctx = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai'], el: 'bare', errors });
 const run = src => vm.runInContext(src, ctx);
 
 run(`(() => {
@@ -236,5 +232,4 @@ ok('the games are not drowned in alerts', live.total / Math.max(1, live.mins) < 
 ok('an unprompted game raises the two the AI is genuinely bad at', live.fired.idleProd.length > 0 && live.fired.supply.length > 0, counts);
 
 ok('no JS errors', errors.length === 0, errors[0]);
-console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+summary({ nl: true });

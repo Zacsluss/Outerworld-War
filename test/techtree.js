@@ -13,10 +13,8 @@
 // needs a Control Tower on a Starport and a Physics Lab on a Science Facility, and each of those is an
 // add-on on a building with its own chain. Checking the whole tree at once is cheaper than checking any
 // one path by hand, and it catches the cases nobody thought to ask about.
-const fs = require('fs'), vm = require('vm'), path = require('path'), root = path.join(__dirname, '..');
-const ctx = { console: { log() { }, error() { }, warn() { } }, Math, performance, addEventListener() { }, setTimeout, document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { } };
-ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
+const vm = require('vm'), { makeCtx } = require('./_harness');
+const ctx = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai'] });
 // `const` inside a vm context is not an own property of the context object, so these come back
 // through the evaluator rather than off ctx.
 const g = n => vm.runInContext(n, ctx);

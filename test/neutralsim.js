@@ -14,13 +14,8 @@
 //   * Abilities.repairTick refuses a target you do not own. That refusal is right everywhere else,
 //     and repairing what you do not own is exactly what taking a derelict IS.
 //   node test/neutralsim.js
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
-const ctx = { console: { log() { }, warn() { }, error() { } }, Math, performance, addEventListener() { }, setTimeout,
-  document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { } };
-ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'snapshot']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f });
-let pass = 0, fail = 0;
-const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x ? '  ' + x : '')); } };
+const vm = require('vm'), { makeCtx, ok, summary } = require('./_harness');
+const ctx = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'snapshot'], ext: false });
 
 const r = vm.runInContext(`(() => {
   const out = {};
@@ -161,5 +156,4 @@ ok(!r.foundry.sentinelBuildableElsewhere, '...which nothing else in the game can
 ok(r.snap.owner && r.snap.captured, 'a snapshot carries who owns a derelict and that it was captured', JSON.stringify(r.snap));
 ok(r.snap.buried && r.snap.neutralStillThere, '...and which creatures are still in the ground', JSON.stringify(r.snap));
 
-console.log((fail ? 'FAILURES ' : 'ALL PASS  ') + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+summary({ word: 'FAILURES' });

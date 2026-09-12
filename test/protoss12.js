@@ -18,19 +18,13 @@
 //     walkability test on the destination does not catch: the top of a cliff is walkable.
 //   * CHRONO BOOST must actually shorten a build and must not stack, because "cast it twice" is the
 //     first thing a player tries.
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
+const fs = require('fs'), vm = require('vm'), path = require('path'), { makeCtx, ok, summary } = require('./_harness'); const root = path.join(__dirname, '..');
 const errors = [];
-const ctx = { console: { log() { }, warn() { }, error: (...a) => errors.push(a.map(x => x && x.stack ? x.stack.split('\n').slice(0, 3).join(' | ') : String(x)).join(' ')) }, Math, performance, addEventListener() { }, setTimeout,
-  document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { } };
-ctx.window = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'snapshot', 'build'])
-  vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
+const ctx = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'snapshot', 'build'], errors, collect: 'stack' });
 const run = src => vm.runInContext(src, ctx);
 const json = src => JSON.parse(vm.runInContext('JSON.stringify(' + src + ')', ctx));
 const DATA = run('DATA'), AI_SCRIPTS = run('AI_SCRIPTS'), AI_COMP = run('AI_COMP'), AI_RESEARCH = run('AI_RESEARCH');
 
-let pass = 0, fail = 0;
-const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x ? '  ' + x : '')); } };
 
 // The twelve, as the design document names them. `fold` says the item shipped as an upgrade to a unit
 // that already existed rather than as a def of its own -- the judgement DESIGN-M12 asks for -- and the
@@ -663,5 +657,4 @@ console.log('\n--- determinism ---');
 }
 
 ok(errors.length === 0, 'no JS errors anywhere in the run', errors[0] || '');
-console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+summary({ nl: true });

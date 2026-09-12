@@ -12,18 +12,11 @@
 //   node test/aistyles.js            the checks
 //   node test/aistyles.js --dump     print the per-game measurements the checks are built on
 'use strict';
-const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
+const vm = require('vm'), { makeCtx, ok, summary } = require('./_harness');
 const DUMP = process.argv.includes('--dump');
-const ctx = {
-  console: { log() { }, warn() { }, error() { } }, Math, performance, addEventListener() { }, setTimeout,
-  document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null }), createElement: () => ({ getContext: () => null }), addEventListener() { }, hasFocus: () => false }, requestAnimationFrame() { }
-};
-ctx.window = ctx; ctx.globalThis = ctx; vm.createContext(ctx);
-for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai']) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f });
+const ctx = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai'], ext: false, globalThis: true });
 const { D, SCR, COMP, RES } = vm.runInContext('({D:DATA,SCR:AI_SCRIPTS,COMP:AI_COMP,RES:AI_RESEARCH})', ctx);
 
-let pass = 0, fail = 0;
-const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x ? '  ' + x : '')); } };
 vm.runInContext("const __errs = { n: 0 }; { const __init = G.init; G.init = function (...a) { __errs.n += this.tickErrors || 0; return __init.apply(this, a); }; }   // REVIEW-M17 task 19: bank G.tickErrors across every game this suite runs", ctx);
 const RACES = ['T', 'Z', 'P'];
 
@@ -300,5 +293,4 @@ else {
 }
 
 ok(vm.runInContext('__errs.n + (G.tickErrors || 0)', ctx) === 0, 'no exception inside a unit\'s or an AI\'s tick across every arm (G.tickErrors; console.error is stubbed, so nothing else would have said)', String(vm.runInContext('__errs.n + (G.tickErrors || 0)', ctx)));
-console.log(fail ? `FAIL  ${pass} passed, ${fail} failed` : `ALL PASS  ${pass} passed, 0 failed`);
-process.exit(fail ? 1 : 0);
+summary();

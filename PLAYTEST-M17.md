@@ -520,3 +520,12 @@ executable is the reviewed relay -- `npm run check:relay` (7 checks, one of them
 rule); that a crash cannot orphan the relay -- `npm run check:window` ends by killing the app hard and finds
 no relay left. Over the internet nothing here changes: tunnel or forward the port the share line shows,
 share the `https://` link and a room code, exactly as `PLAY-ONLINE.bat` says.
+
+## 58. One test harness (task 21)
+
+Nothing to see in the game. `node test/all.js` reads as before; run any of the forty-four moved suites
+(`node test/auras.js`, `node test/tumour.js`, `node test/queens.js --verbose`) and it prints the same PASS
+lines and the same summary line as before; what changed is the file's head, two lines where seven were. To
+watch the guard: edit one character inside the stub of a suite that has not moved (`test/cardsay.js`, say)
+and run `node .claude/review/agent-21/migrate.js --check` -- the file is reported `no stub group matches:
+untouched`, and nothing is written.
