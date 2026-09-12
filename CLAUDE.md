@@ -1,9 +1,9 @@
 # Working agreement — Brood War remake
 
-Loaded automatically every session. Kept short on purpose; the detail lives in `HANDOFF-M17.md`
-(current state, known reds, traps, the kickoff prompt), `REVIEW-M17.md` (the full codebase review:
-open tasks, questions, what was fixed, what was deliberately not), `DESIGN-M13.md` (what was built
-and why), and `PLAYTEST-M17.md`.
+Loaded automatically every session. Kept short on purpose; the detail lives in `TODO-M18.md` (**the open
+list: the user's thirteen items, what is done, what is gated and why**), `HANDOFF-M17.md` (current state,
+known reds, traps, the kickoff prompt), `REVIEW-M17.md` (the full codebase review: open tasks, questions,
+what was fixed, what was deliberately not), `DESIGN-M13.md` (what was built and why), and `PLAYTEST-M17.md`.
 
 ---
 

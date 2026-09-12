@@ -212,6 +212,77 @@ to `gate-36 (and the codemod's verify run)`, `spec-task*.js`, `ep-stuck2.js`/`ep
 
 ---
 
+## The user's thirteen-item list (fifth session, paused for the night)
+
+Brought after the first internet game against a friend. Status of each, in the user's own numbering:
+
+| # | item | status |
+|---|---|---|
+| 1 | AI settings not editable in the multiplayer lobby | **open** -- worktree, partial |
+| 2 | both players hear each other's announcements | **DONE**, commit `8dbb471`, PLAYTEST item 62 |
+| 3 | Queens/Overlords should walk into range to plant a tumour, not refuse | **open** -- worktree, partial |
+| 4 | some tech gets stuck during research | **open** -- worktree, partial |
+| 5 | the HUD is far too small, should be doubled | **open** -- worktree, nearly done |
+| 6 | workers should not cross the map when their patch runs out | **open** -- worktree, partial |
+| 7 | minerals gathered 2-3x faster than SC2 | **MEASURED, CHANGE REVERTED** -- see below |
+| 8 | queued moves should draw faint green lines | **DONE**, commit `7be866a`, PLAYTEST item 63 |
+| 9 | a dead unit's health bar lingers | **DONE: it does not.** Measured, no fault; pinned. Item 63 |
+| 10 | the lobby should be finished and self-contained | **open** -- worktree, partial |
+| 11 | dragoons wobble after moving | **open** -- worktree, partial |
+| 12 | a 5-4-3-2-1 countdown before a network game unlocks | **open** -- worktree, partial |
+| 13 | the lobby should look like SC2's (screenshots supplied) | **open**, with 10 |
+
+### Item 7: measured, changed, and REVERTED. Read this before touching the economy.
+
+**Measured** (`.claude/review/mine-rate.js`, 16 workers on a saturated line, seed 7, Lost Ruins, nothing
+spending): **100 minerals per worker per minute**, a 114-frame cycle for 8 minerals -- 75 frames inside the
+patch, 39 walking. That is **x2.4 StarCraft II** (~41/min) but only **x1.15 Brood War** (~87/min). The game was
+already close to the one it remakes; the gap the user felt is SC2's deliberately slower economy.
+
+A sweep (`.claude/review/mine-sweep.js`) measured every candidate rather than deriving it:
+
+| MINE_TIME | 75 | 90 | 105 | 120 | 140 | 160 | 190 |
+|---|---|---|---|---|---|---|---|
+| minerals/worker/min | 99.8 | 89.3 | 80.3 | 71.0 | 64.5 | 58.0 | 49.8 |
+| vs Brood War | x1.15 | x1.03 | x0.92 | x0.82 | x0.74 | x0.67 | x0.57 |
+| vs StarCraft II | x2.43 | x2.18 | x1.96 | x1.73 | x1.57 | x1.41 | x1.21 |
+
+The user chose the SC2 end. `MINE_TIME 190, GAS_TIME 94` was applied (gas scaled by the same 2.53x so the
+gas-to-mineral ratio was untouched) and **it broke the game**:
+
+- **`test/aistyles.js`: seeds 1, 5 and 11 all red with the "never attacked" sentinel (43200) for every style.**
+  No computer opponent mounted a first wave inside the ten-minute window on any seed. The rusher, the turtle
+  and the standard read identically because none of them attacked at all.
+- The gate went **4 of 79 red**: `version`, `aistyles`, `zerg12`, `queens`. (`version` is a stale anchor in the
+  test itself -- it edits `const MINE_TIME = 75,` -- and would need re-anchoring for any real change here.)
+- `test/eightplayer.js` 18/19: peak supply `21/51/57/33/56/31/19/50` against a floor of 20.
+
+**Reverted**, per the rule in `CLAUDE.md` that a change turning the canaries red is reverted even when it does
+what was asked. The cause is not the constant: the AI's build orders and its attack threshold are tuned for the
+current income, so halving income makes the computer stop playing. **Re-tuning them is the gated balance work.**
+Do not retry this without taking the AI with it.
+
+**Unfinished instrument:** `.claude/review/attack-clock.js` measures the frame of the first wave at each
+candidate, using `ai.waves` -- the same counter `aistyles` reads. It was stopped mid-run. A first version of it
+counted army units near the enemy start instead and reported "never" for Zerg even at today's settings: a probe
+that disagrees with a known-good instrument is a broken probe, not a finding. That version is gone.
+
+### Three worktrees hold partial, UNVERIFIED work
+
+Stopped mid-task when the night ended; none had written its deliverable to `.claude/review/agent-*/` yet, so
+**nothing of theirs is on the main line and none of it is gated**. `git worktree list` shows them, all locked,
+all based on `e9fe40e`:
+
+- **lobby** (items 1, 10, 12, 13) -- was fixing a check that passed with the feature deleted.
+- **HUD scale** (item 5) -- was verifying its deliverable reproduces on a clean tree. The furthest along.
+- **four sim bugs** (items 3, 4, 6, 11) -- three of four written, was starting item 11's patch.
+
+Either resume them or re-dispatch fresh with the same briefs; **a fresh dispatch is the safer default**, because
+what is in those worktrees has not been gated and has no notes saying what was measured. Remove them with
+`git worktree remove --force <path>` and `git branch -d <branch>` once their work is landed or abandoned.
+
+---
+
 ## Kickoff prompt for a fresh chat
 
 Paste everything inside the fence into an empty chat. **Replace the HEAD hash with `git log -1 --format=%h`
@@ -246,8 +317,13 @@ THE CLOCK (fifth session): the simulation runs on a Worker timer (UI.makeTicker)
 covered host window no longer starves its peer; held keys are forgotten on blur and the arrows are
 polled only with focus (UI.armFocusGuards). test/ticker.js, 17 checks; PLAYTEST-M17 item 61.
 
-THERE IS NO LIST TO FINISH. What is left is gated or a product decision, and needs the user's explicit
-instruction before any of it starts:
+THERE IS A LIST, AND IT IS THE USER'S THIRTEEN ITEMS (the table above). Four are closed (2, 8, 9, and 7
+by a measured revert); nine are open and eight of those have partial, ungated work sitting in three
+locked worktrees. Read the table and the item-7 section before starting: re-dispatching the three
+agents fresh is the safer default, and the economy must not be touched without taking the AI's build
+orders and attack threshold with it.
+
+Beyond that list, what remains is gated or a product decision and needs explicit instruction:
   - THE BALANCE RUN (test/balance.js, test/proxy.js) and the order of the eight claims in AI.budget().
     Every number in HANDOFF.md is stale. The list of what it must price grew again this session: the
     Hive's Lair techs (task 5), Ravens and Disruptors that move (7), morph/add-on claims released (8),
