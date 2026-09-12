@@ -108,17 +108,21 @@ const wait = () => new Promise(r => setTimeout(r, 5));
   `);
   run('UI.startFromLog(this.long, "watch");');
   const LEN = run('UI.replayLength()'), LATE = LEN - 24 * 30, EARLY = LATE - 24 * 60;
+  // Ticks, not milliseconds (REVIEW-M17 task 18): the gate promises no wall-clock budgets, and the thing a
+  // checkpoint buys is fewer frames re-simulated, which is what this counts.
+  run('this.__ticks = 0; { const __tick = G.tick; G.tick = function () { __ticks++; return __tick.apply(this, arguments); }; }');
+  const ticks = () => run('__ticks');
   const t0 = Date.now();
   run('UI.seekTo(' + LATE + ');');
   while (run('UI.seeking')) await wait();
   ok('a long replay plays through to near the end', run('G.frame') === LATE, run('G.frame') + ' of ' + LEN);
   ok('checkpoints were taken on the way', run('UI.snaps.length') > 10, run('UI.snaps.length') + ' checkpoints over ' + Math.round(LEN / 24) + 's of game time');
 
-  const t1 = Date.now();
+  const t1 = Date.now(), k1 = ticks();
   run('UI.seekTo(' + EARLY + ');');
   while (run('UI.seeking')) await wait();
-  const backMs = Date.now() - t1;
-  ok('seeking a minute back is quick', backMs < 1500, backMs + 'ms to frame ' + run('G.frame'));
+  const backMs = Date.now() - t1, backTicks = ticks() - k1, snapEvery = run('UI.SNAP_EVERY');
+  ok('seeking a minute back re-simulates at most a minute plus one checkpoint interval (' + backTicks + ' ticks, interval ' + snapEvery + ')', backTicks <= 24 * 60 + snapEvery, backTicks + ' ticks to frame ' + run('G.frame') + ' in ' + backMs + 'ms');
   ok('...and lands on the right frame', run('G.frame') === EARLY, String(run('G.frame')));
 
   // the checkpoint path must give the same state as re-running from zero
@@ -128,13 +132,13 @@ const wait = () => new Promise(r => setTimeout(r, 5));
     UI.seekTo(0);
   `);
   while (run('UI.seeking')) await wait();
-  const t2 = Date.now();
+  const t2 = Date.now(), k2 = ticks();
   run('UI.seekTo(' + EARLY + ');');
   while (run('UI.seeking')) await wait();
-  const scratchMs = Date.now() - t2;
+  const scratchMs = Date.now() - t2, scratchTicks = ticks() - k2;
   ok('a checkpointed seek matches re-running from frame 0 exactly', run('G.stateHash()') === ctx.viaCheckpoint, run('G.stateHash()') + ' vs ' + ctx.viaCheckpoint);
-  console.log('   seek back 1 min: ' + backMs + 'ms with checkpoints vs ' + scratchMs + 'ms re-running from frame 0');
-  ok('checkpoints make the seek much faster than re-running', backMs * 3 < scratchMs, backMs + 'ms vs ' + scratchMs + 'ms');
+  console.log('   seek back 1 min: ' + backTicks + ' ticks (' + backMs + 'ms) with checkpoints vs ' + scratchTicks + ' ticks (' + scratchMs + 'ms) re-running from frame 0');
+  ok('re-running from frame 0 simulates the whole way, and the checkpointed seek less than a third of it', scratchTicks >= EARLY && backTicks * 3 < scratchTicks, backTicks + ' vs ' + scratchTicks + ' ticks');
 
   ok('no JS errors', errors.length === 0, errors[0] || '');
   console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');

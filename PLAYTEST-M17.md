@@ -432,3 +432,14 @@ moment play continued. The other half needs a raw socket: a client sending a com
 with frame 2147483647 is now ignored by the relay (its log says "dropped a batch ... claiming frame
 2147483647"), where before every later rejoin was told to catch up to that frame. `node test/rooms.js`
 section 11 does both.
+
+## 52. Tests that can see now (tasks 19, 18, 12, 17)
+
+Nothing to see in the game; four suites see more. `node test/aiadapt.js`, `node test/aistyles.js` and
+`node test/wavetarget.js` each end with a line saying no exception happened inside any tick of any game
+they ran (they stub the console, so a throw used to be invisible to them). `node test/observer.js` prints
+the seek in ticks as well as milliseconds and no longer fails on a slow machine. `node test/review17.js`
+section 22 puts an allied High Templar inside your Marines in a team game and shows it storms the enemy
+and never you; `node test/zoom.js` section 7 draws a 64x128 editor map to its foot. `node test/snapshot.js`
+shows a drawn unit's screen position and alpha stay out of saves and rejoin snapshots (they rode every
+one, three numbers per unit). Saves from before this commit still load: the stamp did not move.

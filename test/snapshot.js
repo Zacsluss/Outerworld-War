@@ -149,6 +149,21 @@ ok('...including its effect on later frames', ctx.noPerturbLater === ctx.ref[480
   ok('no JS errors in the fresh process', (other.__errors || []).length === 0, (other.__errors || [])[0] || '');
 }
 
+// ---- the draw pass's scratch fields do not ride the snapshot (REVIEW-M17 task 17) ----
+// render.js writes _x, _y and _alpha on every unit it draws and reads them back in the same frame; they
+// are presentation, and they rode every checkpoint and every rejoin snapshot -- three floats per unit.
+run(`
+  ${START}
+  for (let f = 1; f <= 600; f++) G.tick();
+  const u = G.units.find(x => x.alive && !x.isBuilding); u._x = 123.5; u._y = 456.25; u._alpha = 0.45;   // what a drawn frame leaves behind
+  const s = Snapshot.take(); const eu = s.units.find(x => x.id === u.id);
+  this.renderKeys = { present: ['_x', '_y', '_alpha'].filter(k => k in eu), maxE: '_maxE' in eu, energyKept: eu._maxE === u._maxE, id: u.def.id };
+  Snapshot.restore(s); const back = G.units.find(x => x.id === u.id);
+  this.afterRestore = { hasX: '_x' in back, hasAlpha: '_alpha' in back, maxE: back._maxE };
+`);
+ok('a drawn unit\'s _x, _y and _alpha are not in its snapshot record (they were: three floats per unit per checkpoint and rejoin)', ctx.renderKeys.present.length === 0, JSON.stringify(ctx.renderKeys));
+ok('...while _maxE, which is state, still rides it', ctx.renderKeys.maxE && ctx.renderKeys.energyKept, JSON.stringify(ctx.renderKeys));
+ok('...and a restored unit carries none of the three until the next draw writes them', !ctx.afterRestore.hasX && !ctx.afterRestore.hasAlpha, JSON.stringify(ctx.afterRestore));
+
 ok('no JS errors', errors.length === 0, errors[0] || '');
-console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');process.exit(fail ? 1 : 0);

@@ -33,6 +33,7 @@ for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands'
   vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f });
 let pass = 0, fail = 0;
 const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x !== undefined && x !== '' ? '  ' + x : '')); } };
+vm.runInContext("const __errs = { n: 0 }; { const __init = G.init; G.init = function (...a) { __errs.n += this.tickErrors || 0; return __init.apply(this, a); }; }   // REVIEW-M17 task 19: bank G.tickErrors across every game this suite runs", ctx);
 const J = s => JSON.parse(vm.runInContext('JSON.stringify(' + s + ')', ctx));
 
 // =============================================================================
@@ -204,5 +205,6 @@ ok(det.a === det.b, 'a twelve-minute game re-runs bit-identically', det.a + ' vs
   ok(!/Math\.random|Date\.now|performance\./.test(fn), 'and pickTarget uses no randomness and no clock'); }
 
 ok(errors.length === 0, 'no JS errors were logged along the way', errors.slice(0, 3).join(' | '));
+ok(vm.runInContext('__errs.n + (G.tickErrors || 0)', ctx) === 0, 'no exception inside a unit\'s or an AI\'s tick across every game here (G.tickErrors; console.error is stubbed, so nothing else would have said)', String(vm.runInContext('__errs.n + (G.tickErrors || 0)', ctx)));
 console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

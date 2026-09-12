@@ -24,6 +24,7 @@ const { D, SCR, COMP, RES } = vm.runInContext('({D:DATA,SCR:AI_SCRIPTS,COMP:AI_C
 
 let pass = 0, fail = 0;
 const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (x ? '  ' + x : '')); } };
+vm.runInContext("const __errs = { n: 0 }; { const __init = G.init; G.init = function (...a) { __errs.n += this.tickErrors || 0; return __init.apply(this, a); }; }   // REVIEW-M17 task 19: bank G.tickErrors across every game this suite runs", ctx);
 const RACES = ['T', 'Z', 'P'];
 
 // One AI instance is enough to reach the style methods; they take the race and the style as arguments
@@ -298,5 +299,6 @@ else {
   }
 }
 
+ok(vm.runInContext('__errs.n + (G.tickErrors || 0)', ctx) === 0, 'no exception inside a unit\'s or an AI\'s tick across every arm (G.tickErrors; console.error is stubbed, so nothing else would have said)', String(vm.runInContext('__errs.n + (G.tickErrors || 0)', ctx)));
 console.log(fail ? `FAIL  ${pass} passed, ${fail} failed` : `ALL PASS  ${pass} passed, 0 failed`);
 process.exit(fail ? 1 : 0);

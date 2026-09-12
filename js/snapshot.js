@@ -70,7 +70,12 @@ const Snapshot = {
   // pointer back to the very object we are trying to capture, and restore would then wipe it.
   encOwn(v) { const o = {}; for (const k of Object.keys(v)) { if (typeof v[k] === 'function') continue; o[k] = this.enc(v[k], 1); } return o; },
   // A unit is stored as its own fields; the prototype and def come back on restore.
-  encUnit(u) { const o = {}; for (const k of Object.keys(u)) { if (typeof u[k] === 'function') continue; o[k] = k === 'def' ? { __d: u.def.id } : this.enc(u[k], 1); } return o; },
+  // Written on a Unit by the draw pass and read back within the same frame (render.js: the position the
+  // sprite was drawn at, and its alpha). Presentation, not state -- but a field on the Unit rides this
+  // snapshot unless it is named here, and these three rode every checkpoint and rejoin (REVIEW-M17 task
+  // 17). Named, not a rule on the underscore: _maxE (the energy ceiling) is state and must ride.
+  RENDER_ONLY: new Set(['_x', '_y', '_alpha']),
+  encUnit(u) { const o = {}; for (const k of Object.keys(u)) { if (typeof u[k] === 'function' || this.RENDER_ONLY.has(k)) continue; o[k] = k === 'def' ? { __d: u.def.id } : this.enc(u[k], 1); } return o; },
 
   take() {
     this._seen = new Set();

@@ -25,6 +25,7 @@ const mk = () => {
   return c;
 };
 const ctx = mk();
+vm.runInContext("const __errs = { n: 0 }; { const __init = G.init; G.init = function (...a) { __errs.n += this.tickErrors || 0; return __init.apply(this, a); }; }   // REVIEW-M17 task 19: bank G.tickErrors across every game this suite runs", ctx);
 const J = src => JSON.parse(vm.runInContext('JSON.stringify(' + src + ')', ctx));
 
 // ---------------------------------------------------------------- 1. air intel is EARNED
@@ -171,5 +172,6 @@ const J = src => JSON.parse(vm.runInContext('JSON.stringify(' + src + ')', ctx))
   ok(r.same, 'two identical games still agree -- intel reads vision, and vision is simulation state', JSON.stringify(r));
 }
 
+ok(vm.runInContext('__errs.n + (G.tickErrors || 0)', ctx) === 0, 'no exception inside a unit\'s or an AI\'s tick across every game here (G.tickErrors; console.error is stubbed, so nothing else would have said)', String(vm.runInContext('__errs.n + (G.tickErrors || 0)', ctx)));
 console.log((fail ? 'FAILURES ' : 'ALL PASS  ') + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

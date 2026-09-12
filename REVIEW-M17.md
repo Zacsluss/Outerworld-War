@@ -249,7 +249,10 @@ listed here. Ordered by what I would do first.
     map; `render.js` draws enemy buildings from the live list, so it vanishes at once. Either wire the
     renderer to `p.seen` (M, a feature) or delete it and `test/fognight.js`'s memory checks (S); at
     minimum gate the computation on `p.human`. **Question 10.**
-12. **Static-only checks worth making live.** `test/review17.js` guards `AI.micro`'s ally test by
+12. **Static-only checks worth making live.** **DONE** (entry 26) for the two the gate can afford: the
+    allied caster in a team game (`review17.js` section 22) and the 64x128 map through the recorder
+    (`zoom.js` section 7); the keepalive stays a hand check, as listed. As listed: `test/review17.js`
+    guards `AI.micro`'s ally test by
     regex; a team game with an allied caster at full energy inside your marines would prove it.
     `test/review17ui.js` checks the terrain clamp, the minimap palette and the help text by regex;
     a 64×128 editor map drawn through the recorder harness in `test/zoom.js` would prove the clamp.
@@ -281,15 +284,20 @@ listed here. Ordered by what I would do first.
     quarter of the map and issues a `fillRect` per visible creep cell per frame (`hud.js` ~824); the
     editor minimap does W×H `fillRect`s per frame; per-unit string keys built twice per frame in
     `sprites.js`/`atlas.js`. Each S once measured.
-17. **`_x`, `_y`, `_alpha` are written on `Unit` by the draw pass** (`render.js` ~340) while the file's
+17. **`_x`, `_y`, `_alpha` are written on `Unit` by the draw pass** **DONE** (entry 26): `Snapshot.encUnit`
+    skips the three by name (`RENDER_ONLY`), with the reason written beside it; `_maxE` still rides. As
+    listed: (`render.js` ~340) while the file's
     own comment explains that the settle spring lives off the Unit because a field on one rides the
     reflective snapshot and the rejoin. They do ride it (three floats per unit per checkpoint; not a
     hash divergence, `stateHash` lists its fields). Move them into `Render.motion` or have
     `Snapshot.enc` skip `_`-prefixed keys and say so. Cost S.
-18. **`test/observer.js` keeps two wall-clock budgets** (`backMs < 1500`, `backMs * 3 < scratchMs`)
+18. **`test/observer.js` keeps two wall-clock budgets** **DONE** (entry 26): it counts `G.tick()` calls
+    during each seek; the milliseconds are printed. As listed: (`backMs < 1500`, `backMs * 3 < scratchMs`)
     in a gate whose header promises none; 198 ms measured here against 1500. Count `G.tick()` calls
     during the seek instead. Cost S.
-19. **Gate suites cannot see an AI exception.** `test/aiadapt.js`, `aistyles.js`, `wavetarget.js` stub
+19. **Gate suites cannot see an AI exception.** **DONE** (entry 26): each of the three banks `G.tickErrors`
+    across every game it runs and asserts zero at the end. As listed: `test/aiadapt.js`, `aistyles.js`,
+    `wavetarget.js` stub
     `console.error` to a no-op; `G.tickErrors` now counts throws inside `G.tick` and `AI.tick`, so each
     should end with `ok(G.tickErrors === 0)`. Cost S per suite.
 20. **Coverage the gate does not have** (reviewer's identifier sweep): 18 of 80 abilities are never
@@ -1033,6 +1041,31 @@ The questions as they were put, kept for the record:
     (restored byte-identical): the window removed -> two clean reds (the batch forwarded, catch target
     2147483644); the flag not forwarded -> one red; the rejoiner ignoring it -> one red (`rejoinOver 49`).
     **By hand:** `test/net.js` all pass (phase 4's injected divergence detected by both clients at 19248); `test/net_many.js` 51 of 51. **Gate:** 75 of 75, 252 s.
+26. **Tests that could not see, and a field that rode the snapshot (tasks 19, 18, 12, 17).** *(commit: tests
+    and the snapshot field; fourth session)*
+    - **Task 19:** `aiadapt`, `aistyles` and `wavetarget` stub `console.error`, so a throw inside a unit's
+      or an AI's tick left no trace in them. Each wraps `G.init` to bank `G.tickErrors` before the counter
+      resets and asserts the sum plus the live count is zero at the end. Control: a `throw` planted in
+      `Unit.tick` for Marines -> one clean red in aiadapt (1,044 counted) and two in wavetarget (221,266, and its own error log).
+    - **Task 18:** `observer.js` counted milliseconds (198 measured against a 1500 budget, in a gate that
+      promises none). It counts `G.tick()` calls: a checkpointed seek back one minute re-simulates at most
+      a minute plus one checkpoint interval (`UI.SNAP_EVERY`) and the from-scratch seek the whole way;
+      measured 192 ticks with checkpoints against 13,152 from frame 0 (145 ms against 4,281 ms). The milliseconds are still printed. Control: checkpoints never taken -> three clean reds (no checkpoints, 13,152 ticks both ways).
+    - **Task 12:** two of the three static checks made live. `review17.js` section 22: a team game, an
+      allied Protoss AI's High Templar at full energy standing inside twelve human Marines with Psionic
+      Storm researched -- 120 frames, no cast; an enemy clump in reach -- storms land on the clump and kill zerglings, none within a storm's reach of a Marine. Control: the
+      templar clause testing owner alone (the M12 text) -> three clean reds (the static check, three storms on the Marines, none on the clump). `zoom.js` section 7: a 64x128 map
+      made through the editor, the camera at its foot, the chunk rows baked -- the last row (row 15 with 8-tile chunks, where the width's worth ends at row 7)
+      is baked. Control: the clamp on the width again -> one clean red (nothing baked at the foot, maxCy -1). The keepalive (45 s of silence) stays
+      a hand check, as the task said.
+    - **Task 17:** `_x`, `_y`, `_alpha` rode every checkpoint and rejoin snapshot (three floats per unit).
+      `Snapshot.encUnit` skips them by name -- `RENDER_ONLY`, with the reason beside it; a rule on the
+      underscore would have dropped `_maxE`, which is state. The draw pass writes all three before it
+      reads them every frame, so a restored unit is whole by its first draw. `test/snapshot.js` (+3): a
+      drawn unit's record lacks the three and keeps `_maxE`; a restored unit carries none until the next
+      draw. Control: the set emptied -> two clean reds (all three present in the record, and back on the restored unit). Not a stamp move: `snapshot.js` is not a stamped file.
+    **Canaries** (task 12's team scene and the rest touch no AI decision, but `aistyles` gained a check):
+    aistyles seed 1 clean (132 with the new check), seed 11 clean (132), seed 5 its one known economy line (131 + 1); eightplayer 19 of 19 with banks byte-identical to task 6's (377/804/147/222/302/392/221/303); the stamp still `f5ab8a213468977c`.. **Gate:** 75 of 75, 270 s. The stamp did not move.
 
 # 4. Considered and deliberately not done
 

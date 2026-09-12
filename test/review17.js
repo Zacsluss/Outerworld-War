@@ -41,6 +41,8 @@
 //     Queen could be made again. Measured: a finished nest killed at 335 s, nothing sent to rebuild it in 240 s.
 // 21. SEVEN HAND-COPIED SUPPLY CHECKS DISAGREED (task 6): only queueUnit honoured notUnit, so a nuke queued
 //     at the cap was accepted, never started, and reported as "supply blocked". One G.supplyBlocked now.
+// 22. THE ALLY TEST, LIVE (task 12): section 11 is a regex; this is a team game with an allied High Templar at
+//     full energy standing inside the human's Marines. No storm lands on them; the enemy clump is stormed.
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
 let pass = 0, fail = 0;
@@ -548,6 +550,38 @@ function DATA_NAME(c, id) { return R(c, 'return DATA.units[' + JSON.stringify(id
   const srcOf = f => fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'); const handCopies = f => (srcOf(f).match(/supUsed \+ /g) || []).length;
   ok('the hand-copied tests are gone: game.js keeps the one inside supplyBlocked, sim.js and abilities.js none', handCopies('game') === 1 && handCopies('sim') === 0 && handCopies('abilities') === 0, JSON.stringify([handCopies('game'), handCopies('sim'), handCopies('abilities')]));
   ok('...and ai.js keeps only the warp-in candidate estimate (`ud.sup || 1`, a heuristic, not a refusal)', handCopies('ai') === 1 && /const sup = ud\.sup \|\| 1; if \(p\.supUsed \+ sup > p\.supMax\) continue;/.test(srcOf('ai')), String(handCopies('ai')));
+}
+
+// ============================================================================
+// 22. an allied caster inside your army casts on the enemy, never on you (the live half of section 11)
+// ============================================================================
+{
+  const out = R(ctx, `
+    G.init({ players: [{ race: 'T', human: true, name: 'H', team: 1 }, { race: 'P', human: false, difficulty: 'hard', name: 'Ally', team: 1 }, { race: 'Z', human: false, difficulty: 'normal', name: 'E1', team: 2 }, { race: 'Z', human: false, difficulty: 'normal', name: 'E2', team: 2 }], seed: 5, layout: 'temple' });
+    G.recording = false; G.applying = true; G.human = 0;
+    for (const p of G.players) if (p.id !== 1) p.ai = null;            // only the ally thinks
+    const h = G.players[0], ally = G.players[1]; ally.tech.add('psi_storm_tech');
+    const cx = h.startX + 6 * TILE, cy = h.startY + 6 * TILE;
+    const marines = []; for (let i = 0; i < 12; i++) marines.push(G.spawnUnit('marine', 0, cx + (i % 4) * 20, cy + Math.floor(i / 4) * 20));
+    const ht = G.spawnUnit('high_templar', 1, cx + 30, cy + 20); ht.energy = ht.maxEnergy;
+    const casts = []; const issue = Abilities.issue; Abilities.issue = function (u, id, t, x, y) { if (u.def.id === 'high_templar') casts.push({ id, x, y, e: u.energy }); return issue.apply(this, arguments); };
+    const R2 = DATA.abilities.psi_storm && DATA.abilities.psi_storm.r ? DATA.abilities.psi_storm.r * TILE : 2 * TILE;
+    const near = (x, y, pts) => pts.some(p => distPt(p.x, p.y, x, y) <= R2 + 12);   // against where they STOOD: a storm kills what it lands on
+    // alone with the allied Marines: no enemy in sight
+    for (let i = 0; i < 120; i++) G.tick();
+    const mPos = marines.map(u => ({ x: u.x, y: u.y }));
+    const onMarines = casts.filter(c => near(c.x, c.y, mPos)).length, castsAlone = casts.length;
+    // ...now an enemy clump within reach, away from the Marines
+    const zl = []; for (let i = 0; i < 8; i++) zl.push(G.spawnUnit('zergling', 2, cx + 7 * TILE + (i % 4) * 16, cy - 2 * TILE + Math.floor(i / 4) * 16));
+    for (const z of zl) z.applyOrder({ type: 'hold' }); const zPos = zl.map(u => ({ x: u.x, y: u.y }));
+    casts.length = 0; ht.energy = ht.maxEnergy;
+    for (let i = 0; i < 120; i++) G.tick();
+    const onEnemy = casts.filter(c => near(c.x, c.y, zPos)).length, onMarines2 = casts.filter(c => near(c.x, c.y, mPos)).length, dead = zl.filter(u => !u.alive).length;
+    Abilities.issue = issue;
+    return { allied: G.allied(1, 0), stormTech: ally.hasTech('psi_storm_tech'), castsAlone, onMarines, onEnemy, onMarines2, dead, casts: casts.slice(0, 3).map(c => ({ id: c.id, x: Math.round(c.x), y: Math.round(c.y) })), clump: zPos[0] };`);
+  ok('the scene stands: the caster is an ally of the human with Psionic Storm researched', out.allied && out.stormTech, JSON.stringify(out));
+  ok('with only the human\'s Marines in reach, the allied templar casts nothing on them (the M12 clause tested owner alone and stormed its partner)', out.castsAlone === 0 && out.onMarines === 0, JSON.stringify(out));
+  ok('...and with an enemy clump in reach it storms the enemy, not the Marines (positive control: the clause runs)', out.onEnemy >= 1 && out.onMarines2 === 0 && out.dead >= 1, JSON.stringify(out));
 }
 
 ok('no JS errors', ctx.errors.length === 0, ctx.errors.slice(0, 3).join(' | '));

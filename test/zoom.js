@@ -564,6 +564,29 @@ ok('a game that was drawn zoomed and at night re-simulates to the same state as 
 // in the digest, so a zoom cannot refuse a save.
 R(ctx, "if (G.__dayDesc) { delete G.daylight; Object.defineProperty(G, 'daylight', G.__dayDesc); delete G.__dayDesc; }");
 const bare = mkCtx2(false);
+// ============================================================================
+// 7. A map taller than it is wide draws its lower chunk rows (the live half of review17ui section 11)
+// ============================================================================
+// The chunk clamp read the map WIDTH for both axes (REVIEW-M17), so a 64x128 editor map lost every chunk
+// row below the 64th tile: the camera at the bottom of the map baked nothing there. An editor-made
+// 64x128 layout, the camera at its foot, and the chunk rows that get baked.
+{
+  const ed = (() => { const c = { console: { log() { }, warn() { }, error() { } }, Math, performance, setTimeout, clearTimeout, setInterval() { return 0; }, addEventListener() { }, localStorage: { getItem() { return null; }, setItem() { } }, document: { getElementById: () => ({ style: {}, addEventListener() { }, getContext: () => null, value: '', appendChild() { }, options: [] }), createElement: () => ({ style: {}, addEventListener() { }, getContext: () => null }), addEventListener() { }, body: { appendChild() { } }, querySelectorAll: () => [] }, requestAnimationFrame() { }, Image: function () { }, location: { protocol: 'http:', host: 'localhost' }, prompt: () => 'x' }; c.window = c; vm.createContext(c); for (const f of SIM.concat(['editor'])) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), c, { filename: f + '.js' }); return c; })();
+  const layout = R(ed, `Editor.canvas = { width: 1280, height: 720 }; Editor.W = 64; Editor.H = 128; Editor.blank(); Editor.name = 'Tall'; Editor.tileset = 'desert'; Editor.mirror = 'off'; Editor.mark(); Editor.addBase(32, 16, true); Editor.addBase(32, 112, true); return JSON.stringify(Editor.toLayout());`);
+  R(ctx, 'MAP_LAYOUTS["custom:Tall"] = ' + layout + ';');
+  const tall = START('custom:Tall');
+  const rows = R(ctx, `
+    Render.setZoom(1); Render.camX = 0; Render.camY = G.map.h * TILE - Render.viewWorldH(); Render.clampCam();
+    Terrain.chunks.clear(); Terrain.clearOverview();
+    for (let i = 0; i < 12; i++) Terrain.draw(Render.ctx, Render.camX, Render.camY, Render.viewWorldW(), Render.viewWorldH(), 1);   // the bake is budgeted per draw; several draws fill the view
+    const cys = [...Terrain.chunks.keys()].map(k => parseInt(k.split(',')[1], 10));
+    return { w: G.map.w, h: G.map.h, CH: Terrain.CH, camY: Render.camY, baked: Terrain.chunks.size, maxCy: cys.length ? Math.max(...cys) : -1, lastRow: Math.ceil(G.map.h / Terrain.CH) - 1, widthRows: Math.ceil(G.map.w / Terrain.CH) };`);
+  ok('the editor made a 64x128 map and the renderer opened it', tall.w === 64 && tall.h === 128 && rows.w === 64 && rows.h === 128, JSON.stringify([tall, rows]));
+  ok('with the camera at the foot of the map, the LAST chunk row is baked -- rows past the width\'s worth (was: nothing below the 64th tile)', rows.maxCy === rows.lastRow && rows.maxCy >= rows.widthRows, JSON.stringify(rows));
+  R(ctx, 'delete MAP_LAYOUTS["custom:Tall"];');
+  START('temple');
+}
+
 const hBare = R(bare, 'return BUILD.hash();');
 const hFull = R(ctx, 'return BUILD.hash();');
 ok('the build stamp is the same with the render files loaded and without: ' + hBare, hBare === hFull, hBare + ' vs ' + hFull);
