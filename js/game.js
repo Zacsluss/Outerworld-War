@@ -11,6 +11,13 @@
 // same constant and the nudge cannot become a source of drift.
 const D = 0.7071067811865476;
 const SEP_DIRS = [[1, 0], [D, D], [0, 1], [-D, D], [-1, 0], [-D, -D], [0, -1], [D, -D]];
+// How close two ENEMY bodies may come, beyond their footprints: the shortest reach of any ground weapon, read off
+// DATA rather than restated, so a new melee weapon shorter than today's shortest (the Infested Terran's) still lands.
+// See separate().
+const MELEE_REACH = Math.min(...Object.values(DATA.units).filter(d => d.gw).map(d => d.gw.range)) * TILE;
+// The spatial grid is built before the frame's moves, so a neighbour can sit up to one frame's travel outside the
+// cell its grid entry is in. separate() looks this much further than two bodies to be sure of seeing it.
+const SEP_SLACK = 16;
 // The supply ceiling. 200 is StarCraft's number and it exists to stop a match becoming unreadable; at
 // 500 an army is allowed to become unwieldy instead of impossible, which is the point of the attrition
 // direction -- a long game should end on a stripped map with two ruined armies, not two capped ones.
@@ -182,71 +189,157 @@ const G = {
     // `if (cell.length < 2) continue` meant a unit alone in its 64 px cell was never the one doing the
     // looking, so a pair that straddled a cell boundary was invisible to the pass from both sides and
     // simply stayed overlapped -- two overlords 5.8 px apart, one in cell 12 and one in cell 11, sat
-    // there forever. nearEach already reaches into the neighbouring cells; nothing was asking it to.
-    for (const cell of this.grid) {
+    // there forever. The neighbourhood below reaches into the neighbouring cells for exactly that reason.
+    //
+    // BODIES, NOT FOOTPRINTS (seventh session, user item 1: "units still seem to stack on top of each other too
+    // much to the point where their models overlap"). This used to keep collision footprints apart, and only 0.85
+    // of them. The art is drawn at up to 2.6 times the footprint, so a settled clump of twelve marines had 53% of
+    // its drawn model area lying on other marines and some marines were entirely hidden; sixteen zerglings stood
+    // 59% hidden (.claude/review/overlap/probe.js). Units now keep def.body apart -- the room the MODEL takes up,
+    // measured from the baked silhouettes (DATA, BODY) -- while r keeps every rule it had: pathing, weapon range,
+    // splash, clicks, placement. What changes is where units stand, not how anything is decided.
+    //
+    // Three kinds of pair keep the old footprint rule, 0.85 of the collision radii, and the old push weights with it:
+    //  - A WORKER ON A MINING TRIP (gather or return), against anything. Brood War and StarCraft II both let a
+    //    mining worker slide through a crowd, a mineral line is the one place units are meant to stack, and the
+    //    income is tuned against this spacing; with bodies the line mines at a different rate.
+    //  - AN ATTACHED MUNITION (an interceptor, a scarab), for the reason the collision push below gives.
+    //  - AN ALLY THE ORDER IS ABOUT: a unit repairing, following, merging with or casting on another keeps the
+    //    old rule with that one, because those orders measure their reach from the footprints.
+    // And ENEMIES may close to melee reach. Body to body, a zealot is 26 px short of hitting a zealot, so an enemy
+    // pair separates only to the nearer of body contact and footprint contact plus MELEE_REACH -- the reach of the
+    // shortest ground weapon there is -- and every melee attacker can still land its blow.
+    const grid = this.grid, gw = this.gw, gh = this.gh, cs = this.cell;
+    // The biggest body on the field is how far a unit has to look for anything that could be touching it -- per layer,
+    // because ground never separates from air and a Mothership would otherwise widen every marine's search.
+    let bigG = 0, bigA = 0;
+    for (const u of this.units) {
+      if (!u.alive || u.inside || u.isBuilding) continue;
+      const b = u.def.body || u.r;
+      if (u.fly) { if (b > bigA) bigA = b; } else if (b > bigG) bigG = b;
+    }
+    for (const cell of grid) {
       for (let i = 0; i < cell.length; i++) {
-        const a = cell[i]; if (a.isBuilding || a.def.larva || a.burrowed) continue;
-        this.nearEach(a.x, a.y, a.r, b => {
-          if (b === a || b.isBuilding || b.def.larva || b.burrowed || b.id < a.id) return;
-          // Air separates from air and ground from ground, but the two layers pass through each other:
-          // a wraith flying over a marine is not a collision. Flyers used to be skipped entirely, so any
-          // number of overlords could sit on one pixel. Note this is a deliberate departure from Brood
-          // War, where air units do not collide at all and stacking mutalisks is a real technique.
-          if (!!a.fly !== !!b.fly) return;
-          const dx = b.x - a.x, dy = b.y - a.y; let d = DMath.hypot(dx, dy); const min = (a.r + b.r) * 0.85;
-          if (d >= min) return;
-          let ux, uy;
-          if (d < 0.01) {
-            // Exactly coincident. dx and dy are both zero, so the unit vector is (0,0) and the push
-            // below moves nothing -- two units on one pixel could never come apart. Pick a direction
-            // from the pair's ids instead: same answer on every client, and no trig, whose last bit is
-            // not guaranteed to agree between engines.
-            const h = ((a.id * 73856093) ^ (b.id * 19349663)) >>> 0;
-            const v = SEP_DIRS[h & 7]; ux = v[0]; uy = v[1]; d = 0.01;
-          } else { ux = dx / d; uy = dy / d; }
-          // 0.9, up from 0.6. The old damping never caught up with a crowd walking into itself: twelve
-          // marines ordered onto one point settled 2.7 px inside contact distance and stayed there, two
-          // pairs still overlapping after they had stopped. At 0.9 the same crowd lands on 13.1 of a
-          // 13.6 contact distance with nothing overlapping, and pairs overlapping in transit drop from
-          // three to one.
-          //
-          // Not 1.0, which resolves an overlap exactly and is measurably the best on both counts -- it
-          // breaks test/wrongthing.js. A unit rallied somewhere nothing can reach is jostled hard enough
-          // by its neighbours that its stuck detector reads the jostling as progress and it never gives
-          // up, which is a worse bug than the one being fixed. The real repair is for that detector to
-          // watch distance to the goal instead of distance moved; until then, damping.
-          //
-          // Running the damped pass twice also fixes the stacking, and is worse in every way: a second
-          // traversal of every unit, and it breaks test/snapshot.js's cross-process check, which is the
-          // multiplayer rejoin path. That break is unexplained and is a real lead -- JSON round-trips a
-          // snapshot exactly and there are no negative zeros, so extra position churn is exposing
-          // something the snapshot does not capture. Chase it before adding a second pass for any reason.
-          const push = (min - d) * 0.5;
-          let am = a.sieged ? 0 : 1, bm = b.sieged ? 0 : 1;
-          // COLLISION PUSH (M12 item 14). The separation above is symmetric: both units yield half, so
-          // a unit walking into a standing crowd of its own army stops dead against it and the two
-          // shove each other in place. Give the MOVER right of way instead -- the one that is going
-          // somewhere yields a quarter, the one that is standing still yields the rest -- and a column
-          // flows through its own army instead of jamming behind it.
-          //
-          // SAME OWNER ONLY, which is the whole safety argument. Cross-owner push is how a blocked ramp
-          // stops blocking and how a wall of units stops being a wall, so enemies keep the symmetric
-          // rule and shove each other exactly as before. The weights sum to 2 either way, so the total
-          // separation strength is unchanged and the settling distances the comment above measures
-          // still hold.
-          // Attached munitions are exempt. An interceptor or a scarab is not an army unit crossing a
-          // crowd, it is a projectile on a leash whose orbit is tuned to a firing cadence -- giving it
-          // right of way over its own carrier changed the return path enough to put two of a Carrier's
-          // twenty-two shot gaps outside the Brood War jitter band, which test/rates.js measures.
-          if (am && bm && !a.parent && !b.parent && a.owner === b.owner && a.moving !== b.moving) {
-            if (a.moving) { am = 0.25; bm = 1.75; } else { am = 1.75; bm = 0.25; }
+        const a = cell[i]; if (!a.alive || a.isBuilding || a.def.larva || a.burrowed) continue;
+        const ab = a.def.body || a.r, aOld = !!a.parent || (a.def.worker && (a.order.type === 'gather' || a.order.type === 'return'));
+        const reach = ab + (a.fly ? bigA : bigG) + SEP_SLACK;
+        const x0 = clamp(((a.x - reach) / cs) | 0, 0, gw - 1), x1 = clamp(((a.x + reach) / cs) | 0, 0, gw - 1);
+        const y0 = clamp(((a.y - reach) / cs) | 0, 0, gh - 1), y1 = clamp(((a.y + reach) / cs) | 0, 0, gh - 1);
+        for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
+          const near = grid[cy * gw + cx];
+          for (let j = 0; j < near.length; j++) {
+            const b = near[j];
+            if (b.id <= a.id || !b.alive || b.isBuilding || b.def.larva || b.burrowed) continue;
+            // Air separates from air and ground from ground, but the two layers pass through each other:
+            // a wraith flying over a marine is not a collision. Flyers used to be skipped entirely, so any
+            // number of overlords could sit on one pixel. Note this is a deliberate departure from Brood
+            // War, where air units do not collide at all and stacking mutalisks is a real technique.
+            if (!!a.fly !== !!b.fly) continue;
+            const old = aOld || !!b.parent || (b.def.worker && (b.order.type === 'gather' || b.order.type === 'return'));
+            let min;
+            if (old) min = (a.r + b.r) * 0.85;
+            else if (this.allied(a.owner, b.owner)) {
+              // A unit whose order is ABOUT the other one -- repairing it, following it, casting on it, merging
+              // with it -- keeps the footprint rule with it. Those orders measure their reach from the collision
+              // radii (an SCV repairs within r + r + 8, two High Templar merge inside 28 px), and bodies would
+              // hold them out of it: an SCV could never repair a Siege Tank.
+              min = a.order.target === b || b.order.target === a || a.order.partner === b || b.order.partner === a ? (a.r + b.r) * 0.85 : ab + (b.def.body || b.r);
+            } else {
+              min = ab + (b.def.body || b.r);
+              if (a.r + b.r + MELEE_REACH < min) min = a.r + b.r + MELEE_REACH;
+            }
+            const dx = b.x - a.x, dy = b.y - a.y;
+            if (dx * dx + dy * dy >= min * min) continue;
+            let d = DMath.hypot(dx, dy);
+            let ux, uy;
+            if (d < 0.01) {
+              // Exactly coincident. dx and dy are both zero, so the unit vector is (0,0) and the push
+              // below moves nothing -- two units on one pixel could never come apart. Pick a direction
+              // from the pair's ids instead: same answer on every client, and no trig, whose last bit is
+              // not guaranteed to agree between engines.
+              const h = ((a.id * 73856093) ^ (b.id * 19349663)) >>> 0;
+              const v = SEP_DIRS[h & 7]; ux = v[0]; uy = v[1]; d = 0.01;
+            } else { ux = dx / d; uy = dy / d; }
+            // Each pair is pushed exactly to contact, half each (or the weights below): the strongest one pass
+            // can be. It was damped once (0.6, then 0.9) because full strength broke test/wrongthing.js -- a unit
+            // rallied somewhere unreachable was jostled enough that its stuck detector read the jostling as
+            // progress. Unit.moveTo's watchdog now wants real progress toward the goal, so that reason is gone.
+            //
+            // Running the pass twice per frame is still not the answer to a crowd that settles slowly: a second
+            // traversal of every unit, and it once broke test/snapshot.js's cross-process check, which is the
+            // multiplayer rejoin path. That break is unexplained and is a real lead -- JSON round-trips a
+            // snapshot exactly and there are no negative zeros, so extra position churn is exposing
+            // something the snapshot does not capture. Chase it before adding a second pass for any reason.
+            const push = (min - d) * 0.5;
+            // A crowd that is getting somewhere tells everyone pressed into it (Unit.moveTo's watchdog, FLOW_HOLD).
+            // Newest news wins, and nobody makes news by touching: a crowd stuck together stays stuck.
+            if (a.owner === b.owner && a.moving && b.moving) {
+              const fa = a.progF > a.flowF ? a.progF : a.flowF, fb = b.progF > b.flowF ? b.progF : b.flowF;
+              if (fa > fb) b.flowF = fa; else if (fb > fa) a.flowF = fb;
+            }
+            let am = a.sieged ? 0 : 1, bm = b.sieged ? 0 : 1;
+            // COLLISION PUSH (M12 item 14). The separation above is symmetric: both units yield half, so
+            // a unit walking into a standing crowd of its own army stops dead against it and the two
+            // shove each other in place. Give the MOVER right of way instead -- the one that is going
+            // somewhere yields a quarter, the one that is standing still yields the rest -- and a column
+            // flows through its own army instead of jamming behind it.
+            //
+            // SAME OWNER ONLY, which is the whole safety argument. Cross-owner push is how a blocked ramp
+            // stops blocking and how a wall of units stops being a wall, so enemies keep the symmetric
+            // rule and shove each other exactly as before. The weights sum to 2 either way, so the total
+            // separation strength is unchanged.
+            // Attached munitions are exempt. An interceptor or a scarab is not an army unit crossing a
+            // crowd, it is a projectile on a leash whose orbit is tuned to a firing cadence -- giving it
+            // right of way over its own carrier changed the return path enough to put two of a Carrier's
+            // twenty-two shot gaps outside the Brood War jitter band, which test/rates.js measures.
+            //
+            // THE ONE IN FRONT GOES FIRST (seventh session, item 1). Between two units of one owner that are BOTH
+            // moving, the one nearer its own goal (goalD, left by Unit.moveTo this frame) has the same right of way.
+            // Shoving evenly is what turned the mouth of a choke into a scrum once bodies were kept apart -- the unit
+            // about to enter the gap was shoved back by the one behind as hard as it shoved forward -- and what left
+            // arrivals half inside each other. Measured with .claude/review/overlap/probe.js: twelve zealots through a
+            // one-tile gap 15.7 s to 9.3 s, sixteen marines 10.9 s to 8.8 s, a settled clump of twelve marines from 6%
+            // of its drawn area hidden to 3%.
+            //
+            // A UNIT IN RANGE AND FIGHTING HOLDS ITS GROUND against an ally on the move (plantF, left by Unit.engage this
+            // frame), and the ally SLIDES ROUND IT toward where it is going rather than being pushed straight back.
+            // Without the hold, the attackers already swinging at a target were shoved out of reach by the ones walking
+            // up behind them, walked back in, and shoved someone else out: sixteen zerglings on one pinned marine were
+            // shoved out of reach 93 times in ten seconds and averaged 4.3 in range. Holding alone stopped the shoving
+            // but packed badly (the late arrivals queued behind the early ones); holding and sliding, 0 times and 5.0 in
+            // range, against about six that fit round a marine at all (probe.js, SURROUND).
+            let slide = null;
+            if (am && bm && !a.parent && !b.parent && a.owner === b.owner) {
+              if (a.moving !== b.moving) {
+                const still = a.moving ? b : a;
+                if (!old && still.plantF === this.frame) { slide = still; if (a.moving) { am = 2; bm = 0; } else { am = 0; bm = 2; } }
+                else if (a.moving) { am = 0.25; bm = 1.75; } else { am = 1.75; bm = 0.25; }
+              }
+              // (a pair on the old footprint rule keeps the old weights as well: see the top of this function)
+              else if (!old && a.moving && a.goalD !== b.goalD) { if (a.goalD < b.goalD) { am = 0.25; bm = 1.75; } else { am = 1.75; bm = 0.25; } }
+            }
+            let ax = a.x - ux * push * am, ay = a.y - uy * push * am, bx = b.x + ux * push * bm, by = b.y + uy * push * bm;
+            if (slide) {
+              // The slide: sideways across the line between the two, toward whichever side the mover's goal lies on,
+              // by as much as the overlap it just walked into. The goal is the unit it is after if it is after one,
+              // else the point it was sent to; an order with neither (a gather, a build) does not slide. Dead ahead
+              // is broken by id, not by a coin, so every client slides the same way.
+              const mv = slide === a ? b : a;
+              const g = mv.order.target && mv.order.target.alive ? mv.order.target : mv.target && mv.target.alive ? mv.target : null;
+              const gx = g ? g.x : mv.order.x, gy = g ? g.y : mv.order.y;
+              if (gx !== undefined && gy !== undefined) {
+                const nx = mv === a ? ux : -ux, ny = mv === a ? uy : -uy;
+                const cr = nx * (gy - mv.y) - ny * (gx - mv.x);
+                const s = cr > 0 || (cr === 0 && (mv.id & 1)) ? 1 : -1, k = push * 2;
+                if (mv === a) { ax += -ny * s * k; ay += nx * s * k; } else { bx += -ny * s * k; by += nx * s * k; }
+              }
+            }
+            // passable() reads the walk grid, which says nothing useful about a flyer -- gating on it
+            // would pin overlords over cliffs and water, the places they most want to be.
+            if (am && (a.fly || this.passable(ax, ay, a))) { a.x = ax; a.y = ay; }
+            if (bm && (b.fly || this.passable(bx, by, b))) { b.x = bx; b.y = by; }
           }
-          const ax = a.x - ux * push * am, ay = a.y - uy * push * am, bx = b.x + ux * push * bm, by = b.y + uy * push * bm;
-          // passable() reads the walk grid, which says nothing useful about a flyer -- gating on it
-          // would pin overlords over cliffs and water, the places they most want to be.
-          if (am && (a.fly || this.passable(ax, ay, a))) { a.x = ax; a.y = ay; }
-          if (bm && (b.fly || this.passable(bx, by, b))) { b.x = bx; b.y = by; }
-        });
+        }
       }
     }
   },

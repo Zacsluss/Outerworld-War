@@ -17,6 +17,10 @@ const EQUIV = { hatchery: ['lair', 'hive'], lair: ['hive'], spire: ['greater_spi
 // pokes (r - 16) px into its neighbour, so 16 is exactly the radius at which that stops being zero.
 // Three defs are over it today: Thor and Ultralisk at 20, Reaver at 18.
 const WIDE_BODY = TILE / 2;
+// How long a unit pressed into a crowd keeps treating the crowd as MOVING after anyone in it last got closer to where
+// they were going, in frames. While it does, the no-progress watchdog in Unit.moveTo does not count: the unit is
+// waiting its turn, not grinding into something it can never pass. See G.separate, which passes the news along.
+const FLOW_HOLD = 48;
 // MINE_TIME and GAS_TIME are the frames a worker spends INSIDE a patch or a geyser; the walk each way is
 // the rest of the cycle and comes from the map. Measured on a saturated line (see .claude/review/mine-rate.js
 // and mine-sweep.js): at 75 a worker banked 100 minerals a minute -- x2.4 StarCraft II and x1.15 Brood War.
@@ -98,6 +102,7 @@ class Unit {
     this._maxE = def.energy || 0; this.energy = def.energy ? 50 : 0;   // maxEnergy is an accessor over _maxE; see it below
     this.facing = G.rand() * Math.PI * 2; this.fly = !!def.fly; this.done = !this.isBuilding;
     this.order = { type: 'idle' }; this.queue = []; this.path = null; this.pathI = 0; this.stuck = 0; this.repathT = 0;
+    this.progF = -FLOW_HOLD; this.flowF = -FLOW_HOLD;   // the last frame this unit, and the crowd it is pressed into, got closer to a goal (FLOW_HOLD)
     this.cooldown = 0; this.cargo = []; this.inside = null; this.carrying = null; this.lastRes = null; this.heldOrder = false;
     this.prod = []; this.rally = null; this.addon = null; this.parent = null; this.sieged = false; this.transT = 0;
     // Frames until a dug-in weapon is live. Only a def with `dig` ever sets it (the Widow Mine); it is
@@ -582,6 +587,7 @@ class Unit {
     if (dd <= this.wRangeAt(w, t) * TILE) {
       if (w.minRange && dd < w.minRange * TILE) { if (this.canMove && !this.sieged) this.moveTo(this.x + (this.x - t.x), this.y + (this.y - t.y)); return; }
       this.facing = DMath.atan2(t.y - this.y, t.x - this.x);
+      this.plantF = G.frame;   // standing in range and fighting: G.separate does not let an arriving ally shove it out of reach
       if (this.cooldown <= 0) this.fireAt(t);
       // THE HALT, and the one weapon that is exempt from it. Clearing the path is what makes every unit
       // in this game stand still the moment something walks into range -- it is the engine's default and
@@ -614,6 +620,7 @@ class Unit {
     const m = G.map; const spd = this.speed;
     this.moveFailed = false; // set when we return true without actually arriving, so callers can drop the order
     const dd = distPt(this.x, this.y, x, y);
+    this.goalD = dd;   // G.separate: of two units of one owner both on the move, the one nearer its goal has right of way
     const arriveR = targetUnit ? Math.max(6, this.r + targetUnit.r - 4) : Math.max(4, spd);
     if (dd <= arriveR) { this.noProgT = 0; return true; }
     if (this.stuck > 40 && dd < 140) { this.stuck = 0; return true; }
@@ -621,16 +628,24 @@ class Unit {
     // grinds into the obstacle with an order that can never complete. Sliding along a wall still counts as
     // progress to u.stuck, so that does not catch it either. Ten seconds without getting any closer means
     // give up and let the caller drop the order. A goal that moves (a follow target) restarts the clock.
-    if (!this.progG || distPt(this.progG[0], this.progG[1], x, y) > 2 * TILE) { this.progG = [x, y]; this.bestDD = dd; this.noProgT = 0; }
+    if (!this.progG || distPt(this.progG[0], this.progG[1], x, y) > 2 * TILE) { this.progG = [x, y]; this.bestDD = dd; this.noProgT = 0; this.progF = G.frame; }
     // Sixteen pixels, not four. The watchdog resets whenever the unit gets closer to its goal, and four
     // pixels is inside the noise: a unit being shoved about by its neighbours drifts a few pixels toward
     // the goal often enough to keep resetting the clock, so it never gives up. That is what made
     // full-strength separation break test/wrongthing.js -- units rallied somewhere unreachable ground
-    // against the wall forever because the jostling read as progress. Sixteen is larger than any single
-    // separation push (half of a contact distance, and contact distances here run 12 to 31) and far
-    // below what real movement covers in the ten seconds the watchdog allows.
-    else if (dd < this.bestDD - 16) { this.bestDD = dd; this.noProgT = 0; }
-    else if (++this.noProgT > 240) { this.noProgT = 0; this.stuck = 0; this.moveFailed = true; return true; }
+    // against the wall forever because the jostling read as progress. Sixteen was chosen as larger than any
+    // single separation push when contact distances ran 12 to 31; units keep their BODIES apart now (G.separate)
+    // and a push between two big ones can be larger, but a crowd that has already met jostles by a few pixels,
+    // not by a push from a standing start -- test/wrongthing.js, which is this case for all three races, holds.
+    // It is still far below what real movement covers in the ten seconds the watchdog allows.
+    else if (dd < this.bestDD - 16) { this.bestDD = dd; this.noProgT = 0; this.progF = G.frame; }
+    // WAITING IS NOT GRINDING (seventh session, item 1). Once units kept their bodies apart, a jam could take longer
+    // than the ten seconds this allows: the last of twelve zealots through a one-tile gap jostled at the mouth for 240
+    // frames, gave up, and was left behind while the jam it was waiting in cleared. So the clock stops while the unit
+    // is pressed into a crowd that is still getting somewhere (flowF, passed along contact by contact in G.separate).
+    // A crowd grinding at something unreachable gets nowhere, its news goes stale after FLOW_HOLD, and every unit in
+    // it gives up as before -- test/wrongthing.js is that case.
+    else if (!(G.frame - this.flowF < FLOW_HOLD) && ++this.noProgT > 240) { this.noProgT = 0; this.stuck = 0; this.moveFailed = true; return true; }
     let gx = x, gy = y;
     if (!this.fly) {
       const [sx, sy] = this.tile(); const tx = clamp(Math.floor(x / TILE), 0, m.w - 1), ty = clamp(Math.floor(y / TILE), 0, m.h - 1);

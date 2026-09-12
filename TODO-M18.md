@@ -12,6 +12,28 @@ for edits, and the gate green before the commit.
 
 ---
 
+## The seventh session's list (the user's second message, 2026-09-12)
+
+Two decisions first: **no rebalance yet** ("still more bugs to fix") and **commit, leaving nothing unmerged**. Then
+ten items. Status, most recent first:
+
+- **1. Units overlap.** DONE -- units keep their measured BODIES apart (`DATA`'s BODY table, `tools/bodies.js`,
+  `G.separate`); settled clumps went from 14-59% of drawn model area hidden to 0-4%. Mining, repair, merges, follow,
+  melee reach and chokes each needed something and each has a negative control (`test/overlap.js`, 19 checks,
+  `.claude/review/overlap/controls.js`). **Costs, stated plainly:** fewer melee units reach one target at once
+  (16 zerglings on a marine -> about 5), one-tile chokes take about twice as long, and the Zerg AI's Queens come
+  about a minute later, which turns `test/queens.js` red -- AI pacing, same family as `aistyles`, waits for 7b.
+  PLAYTEST item 81.
+- **2. Lobby research and a sophisticated set of menus and online lobby.** IN PROGRESS -- the research lands in
+  `RESEARCH-LOBBY.md` with the lobby work itself.
+- **8. Supply Depot lower / raise.** DONE, `ecc9f8b`, PLAYTEST 80.
+- **9. Queued buildings show a ghost.** DONE, `45107c9`, PLAYTEST 79.
+- **5. Builders walk back to the minerals after building; 6. a worker in a Refinery drops out of the selection.**
+  DONE, `54132bd`, PLAYTEST 77-78.
+- **3. HUD 30% smaller (1.4x); 4. black minimap until explored; 7. laggy cursor; 10. minerals still fast.** DONE,
+  `3fc2fea`, PLAYTEST 73-76. Item 10 was measured, not changed: 48 a worker a minute against StarCraft II's 54-61.
+- **The dragoon wobble fix** (item 11 above) committed on the user's word, `c343b47`.
+
 ## Open
 
 ### 3 (DONE). A Queen or Overlord should walk into range to plant a creep tumour

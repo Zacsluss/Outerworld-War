@@ -399,7 +399,8 @@ ok('and the rim pass is ' + scale.rimCalls + ' of them -- one per player plus on
 // final image to be identified.
 //
 // The one number this needs and cannot read off the code is HOW BIG A UNIT IS DRAWN. Its collision
-// radius is exact and is what separation packs the ball to -- but drawn art overhangs the footprint
+// radius is exact -- separation packed the ball to it until units kept their bodies apart instead (G.separate,
+// DATA's BODY table, which is that overhang measured) -- but drawn art overhangs the footprint
 // (that overhang is the whole reason ART_SCALE exists), and units packed to touching footprints occlude
 // each other exactly as much as their art overhangs and not one pixel more. Picking a single overhang
 // factor would be picking the answer, so the table below sweeps it from 1.0 (art exactly the footprint,
@@ -473,7 +474,13 @@ const legible = R(ctx, `
   const worst = rows[rows.length - 1];
   ok('every unit on screen got a rim (' + hasRim.size + ' of ' + N + ', from ' + legible.rims.length + ' ellipses -- the extra ones are the wounded halo)',
     hasRim.size >= N * 0.95, hasRim.size + ' / ' + N);
-  ok('at the densest reading of the art the rim recovers ' + worst.b.pct + '% -> ' + worst.a.pct + '% identifiable', worst.a.pct - worst.b.pct >= 10, JSON.stringify(worst));
+  // The rim's job is to give back what occlusion took, so that is what this measures. It used to demand a ten-point gain,
+  // which was the same claim while the ball was packed to collision footprints (88% -> 100% at x2.00). Units keep their
+  // BODIES apart now (G.separate, seventh session item 1) and the same ball is 93.5% identifiable before any rim, so a
+  // fixed gain would be measuring the ball: nine in ten of the units occlusion made unreadable must be readable again.
+  const lost = 100 - worst.b.pct, back = worst.a.pct - worst.b.pct;
+  ok('at the densest reading of the art the rim recovers ' + worst.b.pct + '% -> ' + worst.a.pct + '% identifiable (' + back.toFixed(1) + ' of the ' + lost.toFixed(1) + ' points occlusion took)',
+    lost > 0 && back >= lost * 0.9, JSON.stringify(worst));
   ok('and at no overhang factor does it take anything away', rows.every(r => r.a.id >= r.b.id && r.a.meanArea >= r.b.meanArea),
     JSON.stringify(rows.map(r => [r.art, r.b.id, r.a.id])));
   ok('the rim is visible even where the sprite is entirely buried', rows.every(r => r.a.pct >= 99), JSON.stringify(rows.map(r => [r.art, r.a.pct])));

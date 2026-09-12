@@ -108,6 +108,7 @@ const TESTS = [
   { name: 'daynight', args: ['daynight.js'], what: 'the cycle a player can see: the dial, the countdown, and the air half of idea 19' },
   { name: 'qol', args: ['qol.js'], what: 'M12 wave one: no selection cap, shared production, auto-mine, smart cast, autocast, signals' },
   { name: 'push', args: ['push.js'], what: 'a moving unit flows past a standing ally; enemies still block' },
+  { name: 'overlap', args: ['overlap.js'], what: 'units keep their drawn bodies apart; mining, repair, merges, melee reach and jams still work' },
   { name: 'controls', args: ['controls.js'], what: 'every global action is named, listed, rebindable and actually consulted, and no rebind lands on a hard-coded key' },
   { name: 'netaudio', args: ['netaudio.js'], what: "an alert is played and spoken only on the client of the player it is about -- both clients used to hear both players' supply alerts in a network game -- while the message record stays per player" },
   { name: 'ticker', args: ['ticker.js'], what: 'the simulation clock is a Worker timer a hidden or covered tab cannot throttle (a hidden host fed its peer eight frames a second), with a page-interval fallback; a key released while the window had no focus is forgotten, and the arrows are polled only with focus' },

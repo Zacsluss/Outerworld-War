@@ -2045,6 +2045,31 @@ const DATA = (() => {
     d.desc = DESC[id];
   }
 
+  // BODIES (seventh session, user item 1: "units should not overlap with each other"). How much room each unit's
+  // MODEL takes up, as a radius in pixels. `r` is the collision footprint -- Brood War's, and everything that is a
+  // rule reads it: pathing, weapon range, splash, clicks, placement. The art is not drawn at r: tools/bake.js scales a
+  // model up from it, and infantry again on top of that, so a marine is drawn 30 px wide on a 16 px footprint and a
+  // clump that kept only its footprints apart stood half inside its own pictures. G.separate keeps BODIES apart.
+  //
+  // Measured, not chosen: tools/bodies.js renders each model's silhouette through the bake pipeline and takes the
+  // median distance two copies must stand apart, over every direction and facing, before no pixel of one covers
+  // the other; the body is half of that. Re-bake the art and this table is stale -- re-run
+  // `node tools/bodies.js --table`, and test/overlap.js fails until you do. A unit not listed keeps body = r.
+  const BODY = {
+    scv: 17, marine: 16, firebat: 19, medic: 15, ghost: 16, vulture: 14, siege_tank: 22, goliath: 22, wraith: 23,
+    dropship: 21, science_vessel: 25, battlecruiser: 27, valkyrie: 21, spider_mine: 9, drone: 14, overlord: 24,
+    zergling: 16, hydralisk: 14, lurker: 19, mutalisk: 22, scourge: 12, queen: 27, guardian: 22, devourer: 23,
+    ultralisk: 32, defiler: 16, broodling: 9, infested_terran: 10, larva: 7, egg: 13, lurker_egg: 15, cocoon: 15,
+    brood_cocoon: 15, roach: 16, ravager: 24, baneling: 11, swarm_host: 21, locust: 10, viper: 32, infestor: 15,
+    overseer: 26, probe: 11, zealot: 22, dragoon: 18, high_templar: 14, dark_templar: 15, shuttle: 20, observer: 12,
+    scout: 24, corsair: 17, carrier: 30, arbiter: 24, scarab: 5, hallucination: 9, sentry: 11, immortal: 23,
+    colossus: 21, disruptor: 16, warp_prism: 19, phoenix: 22, void_ray: 19, tempest: 30, mothership: 65, sentinel: 19,
+    carrion_grub: 13, carrion_maw: 28, marauder: 16, reaper: 13, hellion: 20, cyclone: 22, widow_mine: 13, thor: 41,
+    banshee: 23, liberator: 23, viking: 27, viking_a: 26, medivac: 22, raven: 22, mule: 15
+  };
+  for (const id of Object.keys(BODY)) if (!units[id]) throw new Error('BODY names something that is not a unit: ' + id);
+  for (const id of Object.keys(units)) units[id].body = BODY[id] || units[id].r;
+
   const all = Object.assign({}, units, buildings);
   return { units, buildings, upgrades, techs, abilities, buildMenu, larvaMorphs, creepSpeed, buriedTells, derelictPresets, wildlifePresets, all };
 })();

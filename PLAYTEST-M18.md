@@ -494,3 +494,46 @@ and click three different spots.
 
 The rules are Liquipedia's for StarCraft II's Lower/Raise, all of them. The computer does not lower its own
 depots.
+
+---
+
+## 81. Units stand beside each other, not inside each other
+
+*(Seventh session, item 1: "units should not overlap with each other".)*
+
+**What was wrong, measured.** Every unit is drawn at 1.2–2.6 times the size of its collision circle (a Marine is
+about 30 px wide on a 16 px circle), and units only kept 85% of those circles apart. Twelve Marines told to one spot
+stood with 53% of their drawn area on top of other Marines; sixteen Zerglings 59%; some units were completely
+covered. Units now keep their **bodies** apart — the room each model really takes up, measured from its sprite — and
+those numbers are 3% and 2%. Weapon range, pathing, splash, clicking and building placement are untouched: only where
+units stand has changed.
+
+**How to reach it.** Skirmish, any race. Select a dozen of anything and right-click one spot. Also: set a Barracks or
+Gateway rally point and let units gather there.
+
+**What to look for.**
+- **A settled group reads as individual units.** Every Marine, Zergling and Zealot is visible on its own; models touch
+  but do not stack. Before, a dozen Marines were one blob.
+- **A group walking together** stays readable the whole way.
+- **Mining is unchanged.** Workers in the mineral line still slide through each other and through your army, as in
+  Brood War and StarCraft II, and income is the same as before (measured: 49–50 per worker per minute either way).
+- **Things that need units to touch still work:** an SCV repairing a Siege Tank stands right against it; two High
+  Templar or two Dark Templar merge where they meet; a unit told to follow another stands off without shoving it.
+- **Melee still lands.** Zealots fighting Zealots, Zerglings on Marines: enemies may come close enough to hit, so in a
+  brawl the models do touch a little.
+- **Fighting units hold their ground.** Send sixteen Zerglings at one Marine: the ones already biting stay put and the
+  rest slide round them to find room, instead of shoving the biters out of reach and walking back in.
+- **Chokes take longer**, because a body fills a one-tile gap. Sixteen Marines through a one-tile gap in a wall take
+  about 9 seconds (4 before). Everyone gets through; nobody gives up waiting in the queue.
+
+**Deliberately different, and what it costs.**
+- **Fewer melee units can hit one target at once.** Before, sixteen Zerglings could all bite one Marine by standing
+  inside each other; now about five fit round it (StarCraft II fits six or seven). Ten Zealots on one Zealot: three,
+  not ten. That is what "not overlapping" means for melee; the balance pass (still gated) should account for it.
+- **Air units keep their bodies apart too**, as they already separated before, so Mutalisks do not stack.
+- **The computer Zerg gets its Queens about a minute later** than before: its build order shifted (it builds its first
+  army sooner and mines more, but starts the Queen's Nest later). `test/queens.js` is red for that reason and waits for
+  the AI rebalance with the other economy reds.
+
+**If a unit's art changes** (a re-bake of the sprites), run `node tools/bodies.js --table` and paste the new table into
+`js/data.js`; `test/overlap.js` fails until you do.
