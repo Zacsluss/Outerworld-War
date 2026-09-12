@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "The game window. Core APIs only: the relay is spawned and killed on the Rust side (host_relay / stop_relay in src/main.rs), so the page never needs shell permissions and cannot shape the sidecar's arguments.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

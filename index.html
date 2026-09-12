@@ -52,7 +52,7 @@
     <input type="file" id="loadFile" accept=".json" hidden><input type="file" id="replayFile" accept=".json" hidden><input type="file" id="mapFile" accept=".json" hidden>
     <div class="row2"><button id="settingsBtn" class="small">SETTINGS</button><button id="codexBtn" class="small">CODEX</button><button id="editorBtn" class="small">MAP EDITOR</button></div>
     <details><summary>Campaign missions</summary><div class="row"><label>Mission</label><select id="mission"></select></div><button id="missionBtn" class="small">PLAY MISSION</button></details>
-    <details><summary>Multiplayer</summary><div class="row"><label>Server</label><input id="netUrl" style="flex:1"></div><div class="row"><label>Name</label><input id="netName" value="Player"><label>Room</label><input id="netRoom" placeholder="LAN" maxlength="8" style="width:6em"></div><button id="netConnect" class="small">CONNECT</button><div id="netStatus" class="sub"></div><div id="lobby"></div><div class="help">On a LAN: everyone opens this page from the same server address (see the LAN URL printed by serve.js), connects, and the host presses START. Leave Room empty.<br>Over the internet: the host runs PLAY-ONLINE.bat, then shares the https link it prints AND a room code. Everyone types the same code. The code is what keeps strangers out of your game.</div></details>
+    <details><summary>Multiplayer</summary><div class="row"><label>Server</label><input id="netUrl" style="flex:1"></div><div class="row"><label>Name</label><input id="netName" value="Player"><label>Room</label><input id="netRoom" placeholder="LAN" maxlength="8" style="width:6em"></div><button id="netConnect" class="small">CONNECT</button><button id="netHost" class="small" style="display:none">HOST A GAME</button><div id="netShare" class="sub" style="display:none"></div><div id="netStatus" class="sub"></div><div id="lobby"></div><div class="help">On a LAN: everyone opens this page from the same server address (see the LAN URL printed by serve.js), connects, and the host presses START. Leave Room empty.<br>Over the internet: the host runs PLAY-ONLINE.bat, then shares the https link it prints AND a room code. Everyone types the same code. The code is what keeps strangers out of your game.<span id="netDesktopHelp" style="display:none"><br>In the desktop app: the host presses HOST A GAME and reads out the address it shows; everyone else types that into Server and presses CONNECT. Over the internet the host still needs a tunnel or a port forward to that port.</span></div></details>
     <div class="help">Left click select, right click command. A attack-move, M move, S stop, H hold, P patrol, B build, V advanced build. Ctrl+1-9 control groups. F1 in-game help, F10 menu, +/- speed.</div>
   </div>
   <div class="panel" id="settingsPanel" style="display:none">
@@ -147,5 +147,6 @@
 <script src="js/ui.js"></script>
 <script src="js/hud.js"></script>
 <script src="js/codex.js"></script>
+<script src="js/desktop.js"></script>
 </body>
 </html>

@@ -357,7 +357,10 @@ listed here. Ordered by what I would do first.
 27. **Are larvae used from every hatchery?** **DONE** (entry 18, commit `6c2687e`): `AI.train` takes the
     larva from the fullest hall (`pickLarva()`, ties in `G.units` order) instead of the oldest larva in
     the game, which drained the oldest hall first.
-28. **Peer hosting in a Tauri build: ship the relay UNCHANGED as a sidecar.** Decisions (2026-09-11):
+28. **Peer hosting in a Tauri build: ship the relay UNCHANGED as a sidecar.** **DONE** (entry 31): `desktop/`
+    is the Tauri 2 project, the relay is `test/serve.js` byte for byte as a Node single-executable sidecar,
+    and the Windows build and installer were produced and driven end to end on this machine. As listed:
+    Decisions (2026-09-11):
     multiplayer is peer-hosted only, no server of yours; and (third session) the relay ships as it is, not
     as a Rust port. **No Tauri project exists in the repo yet** — the decision to sell wrapped in Tauri is
     recorded, nothing is built — so the task is the wrapper and the sidecar together: create the Tauri
@@ -1181,6 +1184,37 @@ The questions as they were put, kept for the record:
     expression evaluated against its literal; the derived `HOVER` diffed against the old six. **Canaries:**
     aistyles seed 1 clean (132), seed 11 clean (132), seed 5 its one known economy line (57 vs 61). `test/version.js` 27 of 27 with `MULE_HAUL` moved and `AI_CLOAK_RESERVE` named. **Gate:** 76
     of 76, 229 s. The stamp moved (the relocations): `b2d136a211dfe314`.
+31. **The desktop wrapper, with the relay shipped unchanged as a sidecar (task 28).** *(commit: desktop
+    wrapper; fourth session, prepared and built by a worktree agent)* **Inventory first:** Node 24 with the
+    single-executable build, cargo/rustc 1.98 with the VS Build Tools, WebView2 present; no Tauri CLI, no
+    bun (the CLI and postject were installed into `desktop/node_modules` only). `desktop/` is a Tauri 2
+    project that loads the page from a copy of what `test/serve.js` serves (`desktop/dist.js`: `index.html`,
+    `js/`, `assets/` -- not the repository root, which would embed the handoffs and `.git`). The relay is
+    `test/serve.js` byte for byte, built by `desktop/relay/build.js` into one self-contained executable with
+    Node's single-executable build (measured first: inside it `argv[2]` is still the port and `argv[3]` the
+    delay, and `__dirname` is the executable's directory, so the static half serves nothing, harmless) and
+    registered as `bundle.externalBin`. In the app the Multiplayer panel grows a HOST A GAME button
+    (`js/desktop.js`, hidden and inert in a browser): the Rust side (`src-tauri/src/main.rs`, `host_relay`)
+    picks a free port, spawns the sidecar with `[port, delay]`, waits for the line `server.listen` prints,
+    parses the LAN addresses out of it, and the page connects the ordinary client to `ws://localhost:<port>/ws`
+    and shows "Server 192.168.1.5:<port>, Room ..." to read out; STOP HOSTING, the window closing and the
+    app exiting all kill it, and on Windows a Job Object kills it when the app dies without saying so
+    (measured: a hard kill left `bw-relay.exe` running before it). Whatever a player types into Server --
+    `ip:port`, `ws://...`, a tunnel's `https://...` -- becomes the relay URL, and a `wss://` address insists on
+    a room code for the reason `ui.js` gives over https. Internet play still needs the host's tunnel or port
+    forward, as `PLAY-ONLINE.bat` describes. The CSP allows `'unsafe-eval'` on purpose: `Build.parts()`
+    reaches the `const` tables it stamps through `eval(name)`, and without it the stamp would silently drop
+    them (measured at `js/build.js`). **Checks:** `desktop/relay/check.js` (the built executable answers a room
+    join and refuses a three-letter code, 7 of 7; SKIP with a line when no binary is on disk),
+    `desktop/page-check.js` (22 of 22, two negative controls), `desktop/window-check.js` (the real window over
+    WebView2's DevTools port: host, an outside join, stop, WM_CLOSE, a hard kill -- 23 of 23 on the debug and
+    the release build in the agent's worktree, and 23 of 23 again after landing, the debug build compiled in
+    this checkout in 1 m 20 s), `cargo test` 3 of 3, `cargo build` with no warnings; `npx tauri build` produced the
+    NSIS installer (62.7 MB, unsigned). The three protocol suites keep running against `node test/serve.js`.
+    **Not done:** macOS is written and unbuilt (no Mac here); nothing is signed; the icon and identifier are
+    placeholders; the Firewall asks once on the first host; internet play from the app is untested (no
+    tunnel here). Build products (`node_modules`, `dist`, the sidecar, `target`) are ignored, not committed.
+    **Gate:** 76 of 76, 251 s. The stamp did not move.
 
 # 4. Considered and deliberately not done
 

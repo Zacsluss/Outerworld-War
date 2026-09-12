@@ -502,3 +502,21 @@ a player can notice: a Probe now puffs dust like the Reaper and the Vulture inst
 and a computer Protoss that researches Reaver Capacity now fills its Reavers to ten scarabs (`show me the
 money`, watch a hard Protoss's Reavers after its Robotics Support Bay finishes the research). Saves and
 replays from before this commit are refused (the stamp moved).
+
+## 57. Host a LAN game from the desktop build (task 28)
+
+Build it once: `cd desktop`, `npm install`, `npm run build`, then run `src-tauri\target\release\bw-desktop.exe`
+(or the installer under `src-tauri\target\release\bundle\nsis\`). On the main menu open **Multiplayer**.
+There is a **HOST A GAME** button under CONNECT that a browser never shows. Type a name, optionally a room
+code, press it. Within a second the status line says *Connected. Waiting in lobby...*, the lobby lists you
+with the host's star, Server reads `localhost:<port>`, the button reads **STOP HOSTING**, and a line says
+*Hosting. Others on your network: Server 192.168.1.5:<port> ... then CONNECT*. **The first time, Windows
+asks whether `bw-relay.exe` may accept connections: allow it on private networks** (decline, and you can
+still play alone but nobody on the LAN can join). On a second machine open the app, Multiplayer, type exactly
+that `ip:port` into Server, the same room code, CONNECT: both lobbies show two players; ADD AI and START as
+ever. Press **STOP HOSTING** or close the window: the other player's status turns to *Connection lost.* within
+a second and Task Manager shows no `bw-relay.exe`. Invisible parts, and what to run instead: that the
+executable is the reviewed relay -- `npm run check:relay` (7 checks, one of them the four-character code
+rule); that a crash cannot orphan the relay -- `npm run check:window` ends by killing the app hard and finds
+no relay left. Over the internet nothing here changes: tunnel or forward the port the share line shows,
+share the `https://` link and a room code, exactly as `PLAY-ONLINE.bat` says.

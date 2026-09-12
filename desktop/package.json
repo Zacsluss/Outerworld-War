@@ -1,0 +1,24 @@
+{
+  "name": "bw-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Brood War Remake wrapped in Tauri, with the multiplayer relay (test/serve.js, unchanged) shipped beside it as a sidecar executable. REVIEW-M17 task 28.",
+  "scripts": {
+    "icons": "node icons.js",
+    "build:relay": "node relay/build.js",
+    "check:relay": "node relay/check.js",
+    "check:page": "node page-check.js",
+    "check:window": "node window-check.js",
+    "build:dist": "node dist.js",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "postject": "^1.0.0-alpha.6"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

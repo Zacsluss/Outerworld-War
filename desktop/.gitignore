@@ -1,0 +1,7 @@
+# build products of the desktop wrapper (REVIEW-M17 task 28); the sources next to them are the repo content
+node_modules/
+dist/
+relay/build/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/bw-relay-*
