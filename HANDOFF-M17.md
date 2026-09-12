@@ -25,7 +25,7 @@ trust `git log -1`, not a hash written here.)
 `HANDOFF-M16.md`'s traps are still true. Three facts of the third session moved: `eightplayer` is 19 of 19 by
 hand now (its money line green since the geyser fix, its "nothing wedged" line green since task 29) and its bank
 line is the identity check for refactors again; `aistyles` seed 11 is clean (its first-wave line went green on
-task 30's re-deal); and the gate is **76 suites** (`abilities20` joined it).
+task 30's re-deal); and the gate was **76 suites** (`abilities20` joined it; `ticker` made it 77 in the fifth session).
 
 ---
 
@@ -34,7 +34,7 @@ task 30's re-deal); and the gate is **76 suites** (`abilities20` joined it).
 - **On GitHub since the fifth session:** `origin` is https://github.com/Zacsluss/Outerworld-War and its `main` is
   this branch. Local `m10-overnight` tracks `origin/main`, so `git push` publishes; GitHub's own initial commit (a
   stub README and .gitignore) was merged in with ours kept, so the history is fast-forward from there.
-- **76 test suites green.** `node test/all.js`, about four minutes on a quiet machine. That is the gate before
+- **77 test suites green.** `node test/all.js`, about four minutes on a quiet machine. That is the gate before
   any commit. One suite joined it this session: `abilities20` (task 20); forty-four suites moved onto
   `test/_harness.js` (task 21) with every count unchanged.
 - **14 commits since `95c00e9`** (the third session's docs commit), each gated. The build stamp is
@@ -138,6 +138,14 @@ simulation. `PLAYTEST-M17.md` items 59 and 60 are the hand tests.
    `PLAY-ONLINE.bat` says: share the link, host from the list, or agree a code for a game strangers must not see.
    The relay's rule that it never lists its rooms is gone by the user's decision; the private property survives
    for code-joined rooms, and the header comment says so.
+7. **The other player no longer freezes every second when the host's window is hidden or covered.** The
+   simulation's clock is a Worker timer, which a hidden tab cannot throttle (measured in the pane: 10 sim calls
+   in five hidden seconds from a page timer, 313 from the worker; the peer used to get eight frames in one burst
+   a second). A page interval remains the fallback where Workers do not exist or stay silent.
+8. **The camera no longer pans on its own after Alt-Tab.** A key the page never saw released (keydown, then
+   focus elsewhere) kept the arrows' scroll going; focus leaving or the tab hiding forgets every held key, and
+   the arrows are polled only with focus. `test/ticker.js` (17 checks, in the gate: 77 suites), three negative
+   controls. `PLAYTEST-M17.md` item 61.
 
 **Deliberately different from what was asked:** the lobby has no map preview -- a map is generated from the seed
 the relay picks at START, so there is nothing to draw before it -- and no password on a listed game: a private game
@@ -179,7 +187,8 @@ On top of everything in `HANDOFF-M13.md` to `HANDOFF-M17.md`'s earlier list. Eac
 ## Diagnostics available
 
 ```
-node test/all.js                                  76 suites, ~4 min, the pre-commit gate
+node test/all.js                                  77 suites, ~4 min, the pre-commit gate
+node test/ticker.js                               the Worker clock and the held-key guards, 17 checks in a second
 node test/eightplayer.js                          19/19 by hand; the bank line is the identity check for refactors
 node test/aistyles.js --seed=N [--frames=14400]   1 is the gate's; run 5 and 11 too after any AI change
 node test/abilities20.js                          every ability, 73 checks in two seconds
@@ -216,7 +225,7 @@ Read CLAUDE.md, then HANDOFF-M17.md (this file: the state, the known reds, the t
 sessions), then REVIEW-M17.md sections 2, 3 and 4 (every open task in section 1 is DONE and points at
 its entry; section 4 is what was deliberately not done), then PLAYTEST-M17.md.
 
-THE STATE: the review is finished. 76 suites green; the stamp is b2d136a211dfe314. Three known reds, none
+THE STATE: the review is finished. 77 suites green; the stamp is b2d136a211dfe314. Three known reds, none
 blocking: test/soak.js's Swarm Host line; test/aistyles.js seed 5's one economy line (57 vs 61);
 nothing else. test/eightplayer.js is 19/19 by hand and its bank line is the identity check for any
 refactor.
@@ -230,6 +239,10 @@ a click joins one, the lobby shows teams, ready marks and chat; a code-joined ro
 Relay messages list/leave/create/ready and a per-team addai; test/rooms.js section 12 (74 checks);
 PLAYTEST-M17 item 60. The desktop app's HOST A GAME now starts its relay and hosts a listed game;
 desktop/window-check.js was not re-driven (needs a Tauri build).
+
+THE CLOCK (fifth session): the simulation runs on a Worker timer (UI.makeTicker), so a hidden or
+covered host window no longer starves its peer; held keys are forgotten on blur and the arrows are
+polled only with focus (UI.armFocusGuards). test/ticker.js, 17 checks; PLAYTEST-M17 item 61.
 
 THERE IS NO LIST TO FINISH. What is left is gated or a product decision, and needs the user's explicit
 instruction before any of it starts:
@@ -249,7 +262,7 @@ measurement was right the first time; the one hypothesis -- that the corpse filt
 was checked by an interleaved A/B before it was kept), a negative control that goes cleanly RED with
 the feature removed, tools/control.js for controls, tools/patch.js for edits anchored on text, probes
 and specs written to files under .claude/review/ with the Write tool (bash mangles backslashes), and
-the gate (node test/all.js, 76 suites) green before the commit -- re-run test/rooms.js alone if it is
+the gate (node test/all.js, 77 suites) green before the commit -- re-run test/rooms.js alone if it is
 the one red (the relay ports collide with any other gate on the machine). After any AI or simulation
 change: aistyles seeds 1, 5, 11 and eightplayer by hand, and expect the samples to re-deal.
 

@@ -73,7 +73,7 @@ function setup() {
   G.recomputeSupply(); G.rebuildGrid(); G.updateVision();
   G.damage = () => 0; G.damageRaw = () => {};   // --sustain: nothing dies, so the load does not decay
   UI.viewAll = true;                            // draw every player's units, not just what P0 can see
-  clearInterval(UI.simTimer); UI.simTimer = null; UI.running = false;  // we drive the sim and the draw by hand
+  UI.stopSim(); UI.running = false;  // we drive the sim and the draw by hand (the clock may be a Worker: UI.makeTicker)
   // (4) pin the canvas so the window size does not decide the answer
   Render.resize(); const c = Render.canvas;
   Render.dpr = DPR; Render.W = W; Render.H = H; Render.viewW = W; Render.viewH = H - UI.consoleH;

@@ -585,3 +585,17 @@ Quicker: `node test/rooms.js` section 12 (the relay's list, host, join, ready, p
 browser and the team view rendered in a VM) and `node desktop/page-check.js` (the desktop app's HOST A GAME still
 starts its relay and connects). Not seen here: the desktop app's own window (`desktop/window-check.js` needs a Tauri
 build).
+
+## 61. The other player does not freeze when your window is hidden, and the camera does not pan on its own
+
+Host a LAN or internet game (item 60) and, once it is running, Alt-Tab away from it -- or cover its window
+completely with another window -- for ten seconds. **Working:** the other player keeps playing at full speed the
+whole time. **Before:** they froze every second and jumped eight frames at once: a hidden tab runs a page timer
+once a second and each run may tick at most eight frames. The simulation's clock is a Worker timer now, which the
+browser does not throttle. To see the number: with a game running, press F12 and paste
+`let n = 0, o = UI.simStep; UI.simStep = function () { n++; return o.call(this); }; setTimeout(() => console.log(n), 5000)`,
+then hide the tab for those five seconds: about 300 (was about 10).
+
+The camera: hold the down arrow, Alt-Tab away while holding it, release it there, come back. **Working:** the
+camera is still. **Before:** it kept panning down until you pressed the key again, because the release was never
+seen. Quicker: `node test/ticker.js` (17 checks). No stamp move; saves and replays are unaffected.

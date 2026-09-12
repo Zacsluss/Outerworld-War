@@ -69,6 +69,7 @@ const UI = {
     c.addEventListener('mousemove', e => this.onMove(e)); c.addEventListener('mousedown', e => this.onDown(e)); window.addEventListener('mouseup', e => this.onUp(e));
     c.addEventListener('contextmenu', e => e.preventDefault());
     window.addEventListener('keydown', e => this.onKey(e)); window.addEventListener('keyup', e => { this.keys[e.key] = false; });
+    this.armFocusGuards(window, document);   // a keyup that went to another window would otherwise leave the key held forever
     // The wheel zooms. Guarded on the console strip and on any modal, so scrolling over the command
     // card or the codex does not silently move the world behind it. Render.zoomAt clamps and re-clamps
     // the camera itself; the anchor is the cursor, so the tile under the pointer stays under it.
@@ -97,7 +98,7 @@ const UI = {
     document.getElementById('menu').style.display = 'none'; document.getElementById('game').style.display = 'block';
     this.running = true; this.menuCodex = false; this.lastT = performance.now(); this.accum = 0; this.lastR = performance.now();
     if (!this._loop) { this._loop = t => this.loop(t); requestAnimationFrame(this._loop); }
-    if (!this.simTimer) this.simTimer = setInterval(() => this.simStep(), 1000 / 60);
+    if (!this.simTimer) this.simTimer = this.makeTicker(() => this.simStep(), 1000 / 60);   // a Worker's timer: a hidden tab cannot throttle it (see makeTicker)
   },
   startFromLog(data, mode) {
     // A save is a seed plus a command log, so a different build re-simulates it into a different game and
@@ -132,6 +133,38 @@ const UI = {
     this.loading = { target, start: G.frame };
     const step = () => { const t0 = performance.now(); while (G.frame < target && !G.over && performance.now() - t0 < 40) { G.tick(); this.keepSnapshot(); } if (G.frame < target && !G.over) setTimeout(step, 0); else { this.loading = null; done(); } };
     setTimeout(step, 0);
+  },
+  // ---------------- the simulation's clock ----------------
+  // A page timer in a hidden tab -- or in a window another window covers, which Chromium counts as hidden --
+  // fires once or twice a second. Measured in the desktop app's browser pane on 2026-09-12: 312 simStep calls
+  // in five seconds while visible, 10 once hidden; a Worker's setInterval over the same hidden five seconds
+  // delivered 312 messages. In a network game simStep ticks at most eight frames a call, so a host who had
+  // Alt-Tabbed fed every peer a burst of eight frames a second: the freeze-every-second of the first internet
+  // game. The clock is a Worker's timer, whose message wakes the page; it falls back to setInterval where
+  // Workers, Blobs or object URLs do not exist (file://, the test harness) or where the worker never speaks
+  // (a CSP that forbids blob: workers reports an error, or nothing at all -- a silent one is given a second).
+  makeTicker(fn, ms) {
+    const t = { worker: null, id: 0, alive: false, fallback() { if (!t.id) t.id = setInterval(fn, ms); if (t.worker) { try { t.worker.terminate(); } catch (e) { } t.worker = null; } } };
+    try {
+      if (typeof Worker === 'function' && typeof Blob === 'function' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function')
+        t.worker = new Worker(URL.createObjectURL(new Blob(['setInterval(function () { postMessage(0); }, ' + ms + ');'], { type: 'text/javascript' })));
+    } catch (e) { t.worker = null; }
+    if (!t.worker) { t.id = setInterval(fn, ms); return t; }
+    t.worker.onmessage = () => { t.alive = true; fn(); };
+    t.worker.onerror = () => t.fallback();
+    setTimeout(() => { if (!t.alive) t.fallback(); }, 1000);
+    return t;
+  },
+  // Stops the clock start() made, whichever kind it is (test/perf_render.js drives the sim by hand).
+  stopSim() { const t = this.simTimer; this.simTimer = null; if (!t) return; if (typeof t === 'object') { if (t.id) clearInterval(t.id); if (t.worker) { try { t.worker.terminate(); } catch (e) { } t.worker = null; } } else clearInterval(t); },
+  // Keys the page never saw released. A keydown followed by Alt-Tab, a browser dialog or a covered window
+  // delivers no keyup, and `keys`, polled by scrollCam, kept the camera panning until the key was pressed
+  // again -- the "screen keeps panning down" of the first internet game. Focus leaving the window or the
+  // tab hiding forgets every held key and puts the mouse outside; scrollCam also polls the keys only while
+  // the document has focus.
+  armFocusGuards(win, doc) {
+    win.addEventListener('blur', () => { this.keys = {}; this.mouse.inside = false; });
+    doc.addEventListener('visibilitychange', () => { if (doc.hidden) { this.keys = {}; this.mouse.inside = false; } });
   },
   simStep() {
     if (!this.running) return; const now = performance.now(); const dt = Math.min(1, (now - this.lastT) / 1000); this.lastT = now;
@@ -280,7 +313,7 @@ const UI = {
   clampCam() { Render.clampCam(); },   // zoom-dependent, and centres the map when the view is wider than it
   scrollCam(dt) {
     const s = 900 * dt / Render.zoom; const m = this.mouse; let dx = 0, dy = 0;   // screen-constant speed: without /zoom, edge scroll crawls at the strategic view
-    if (this.keys.ArrowLeft) dx -= s; if (this.keys.ArrowRight) dx += s; if (this.keys.ArrowUp) dy -= s; if (this.keys.ArrowDown) dy += s;
+    if (document.hasFocus()) { if (this.keys.ArrowLeft) dx -= s; if (this.keys.ArrowRight) dx += s; if (this.keys.ArrowUp) dy -= s; if (this.keys.ArrowDown) dy += s; }   // polled only with focus: a key released elsewhere is a key held forever (armFocusGuards)
     if (document.hasFocus() && !this.menu && m.inside) { if (m.x <= 2) dx -= s; if (m.x >= Render.W - 3) dx += s; if (m.y <= 2) dy -= s; if (m.y >= Render.H - 3) dy += s; }
     if (dx || dy) { Render.camX += dx; Render.camY += dy; this.clampCam(); }
   },

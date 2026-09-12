@@ -109,6 +109,7 @@ const TESTS = [
   { name: 'qol', args: ['qol.js'], what: 'M12 wave one: no selection cap, shared production, auto-mine, smart cast, autocast, signals' },
   { name: 'push', args: ['push.js'], what: 'a moving unit flows past a standing ally; enemies still block' },
   { name: 'controls', args: ['controls.js'], what: 'every global action is named, listed, rebindable and actually consulted, and no rebind lands on a hard-coded key' },
+  { name: 'ticker', args: ['ticker.js'], what: 'the simulation clock is a Worker timer a hidden or covered tab cannot throttle (a hidden host fed its peer eight frames a second), with a page-interval fallback; a key released while the window had no focus is forgotten, and the arrows are polled only with focus' },
   { name: 'baked', args: ['baked.js'], what: 'every unit and building has a 3D model and a baked sheet, not the flat fallback' },
   { name: 'fields', args: ['fields.js'], what: 'every persistent field paints something -- an invisible force field is a wall with no wall' },
   { name: 'aiadapt', args: ['aiadapt.js'], what: 'the AI scouts for real: intel is vision-gated, and massing vs teching change what it builds' },
