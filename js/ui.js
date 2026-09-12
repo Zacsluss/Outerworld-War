@@ -1690,8 +1690,17 @@ window.addEventListener('DOMContentLoaded', () => {
     const menu = $('menu'); if (!menu || !menu.querySelectorAll) return;
     for (const p of menu.querySelectorAll('.panel')) p.style.display = p.id === id ? '' : 'none';
   };
+  // The front is three doors -- SINGLE PLAYER, MULTIPLAYER, SETTINGS -- the way a nineties RTS opened, and
+  // everything else stands behind one of them as a .panel of its own with a BACK to the door it came
+  // through. The skirmish form's BACK goes to Single Player, not to the front (see setupBack below).
   const sb = $('settingsBtn'); if (sb) sb.addEventListener('click', () => UI.showPanel('settingsPanel'));
   const sbk = $('settingsBack'); if (sbk) sbk.addEventListener('click', () => UI.showPanel('mainPanel'));
+  const spb = $('singleBtn'); if (spb) spb.addEventListener('click', () => UI.showPanel('singlePanel'));
+  const spk = $('singleBack'); if (spk) spk.addEventListener('click', () => UI.showPanel('mainPanel'));
+  const mpb = $('multiBtn'); if (mpb) mpb.addEventListener('click', () => UI.showPanel('multiPanel'));
+  const mpk = $('multiBack'); if (mpk) mpk.addEventListener('click', () => UI.showPanel('mainPanel'));
+  const cpb = $('campaignBtn'); if (cpb) cpb.addEventListener('click', () => UI.showPanel('campaignPanel'));
+  const cpk = $('campaignBack'); if (cpk) cpk.addEventListener('click', () => UI.showPanel('singlePanel'));
   // ---- Controls screen (M12 item 10) -------------------------------------------------------------
   // Built from UI.bindings() rather than from markup, so adding an action to BIND_DEFAULTS puts it on
   // this screen with no HTML change and no chance of the two lists disagreeing.
@@ -1862,14 +1871,14 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   const sr = $('seedRoll'); if (sr) sr.addEventListener('click', () => { const e = $('seed'); if (e) { e.value = String(1 + Math.floor(Math.random() * 999999)); refreshSetup(); } });
   const setupBtn = $('setupBtn'); if (setupBtn) setupBtn.addEventListener('click', () => { refreshSetup(); UI.showPanel('skirmishPanel'); });
-  const setupBack = $('setupBack'); if (setupBack) setupBack.addEventListener('click', () => UI.showPanel('mainPanel'));
-  // One start, two buttons. The main menu's START and the setup screen's START are the same click on
-  // the same settings -- if they could ever disagree, the summary on the main menu would be a lie.
+  const setupBack = $('setupBack'); if (setupBack) setupBack.addEventListener('click', () => UI.showPanel('singlePanel'));
+  // One start, two buttons. The Single Player screen's START and the setup screen's START are the same
+  // click on the same settings -- if they could ever disagree, the summary on that screen would be a lie.
   const startSkirmish = () => UI.start(UI.skirmishOptions(readSetup()));
   const startBtn = $('start'); if (startBtn) startBtn.addEventListener('click', startSkirmish);
   const setupStart = $('setupStart'); if (setupStart) setupStart.addEventListener('click', startSkirmish);
 
-  // ---- everything else on the main menu, unchanged ------------------------
+  // ---- everything else behind the three doors, unchanged --------------------
   const ms = $('mission'); if (ms) { for (const m of Missions.list) { const o = document.createElement('option'); o.value = m.id; o.textContent = `${RACE_INFO[m.race].name}: ${m.title}`; ms.appendChild(o); } $('missionBtn').addEventListener('click', () => { const m = Missions.get(ms.value); if (!m) return; UI.start({ players: [{ race: m.race, human: true, name: 'Player', team: 1 }, { race: m.enemy.race, human: false, difficulty: m.enemy.difficulty, name: 'Enemy', team: 2 }], seed: m.seed, layout: m.layout, mission: m.id }); }); }
   const hk = $('hotkeys'); if (hk) { try { hk.value = localStorage.getItem('bw_hotkeys') || 'bw'; } catch (e) { } UI.gridKeys = hk.value === 'grid'; hk.addEventListener('change', () => { UI.gridKeys = hk.value === 'grid'; try { localStorage.setItem('bw_hotkeys', hk.value); } catch (e) { } }); }
   // The codex opens with no game running -- it reads DATA, not G -- so it belongs on the main menu

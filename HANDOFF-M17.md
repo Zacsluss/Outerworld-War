@@ -9,6 +9,11 @@ trust `git log -1`, not a hash written here.)
 > the last one (README's burning Terran buildings: the sentence was deleted); section 4 holds sixteen things
 > deliberately not done. `PLAYTEST-M17.md` items 43-58 are how to see this session's work by hand.
 >
+> **FIFTH SESSION (2026-09-11): the main menu is three doors.** SINGLE PLAYER, MULTIPLAYER and SETTINGS on the
+> front, everything else behind one of them on a screen of its own with a BACK, in the shape of a nineties RTS menu
+> (a steel plate, a bronze frame, gold lettering, bevelled buttons). Presentation only: the stamp did not move.
+> `PLAYTEST-M17.md` item 59 is how to see it. The five leftover agent worktrees were removed on the user's word.
+>
 > **NEXT:** nothing is left on the review's list. What remains is gated or a product decision — the balance run
 > (every number in `HANDOFF.md` is stale, and the list of things it must price has grown), the claim order in
 > `AI.budget()`, and for the desktop build the Mac side, signing and a real icon. The kickoff prompt below says so.
@@ -99,6 +104,28 @@ signed, the icon is a placeholder.
 
 ---
 
+## What the fifth session changed, in a player's language
+
+One commit, presentation only (`index.html`, the panel wiring in `js/ui.js`, one line of `PLAY-ONLINE.bat`);
+the stamp did not move. `PLAYTEST-M17.md` item 59 is the hand test.
+
+1. **The front of the menu is three buttons -- SINGLE PLAYER, MULTIPLAYER, SETTINGS** -- on a steel plate with
+   the title in gold, in the shape of a nineties RTS menu. Nothing else on the front but a one-line footer.
+2. **Everything else stands behind one of the three**, each on a screen of its own with BACK: Single Player holds
+   the quick START GAME with its summary, SKIRMISH SETUP, CAMPAIGN (its own screen), LOAD SAVED GAME, WATCH
+   REPLAY, CONTINUE AUTOSAVE and MAP EDITOR; Multiplayer holds Server, Name, Room, CONNECT, the desktop app's
+   HOST A GAME and the lobby; Settings holds audio, hotkeys, CONTROLS and CODEX. The user asked because the
+   lobby and the room code could not be found: both sat inside a collapsed disclosure at the foot of the old menu.
+3. **Skirmish's BACK returns to Single Player**, the door it is behind, not to the front; Codex closes back to
+   Settings; a finished game still returns to the front.
+
+**Deliberately different from what was asked:** nothing. **Not done:** the in-game pause menu (F10) is drawn on
+the canvas by `hud.js` and was not restyled; the Controls and Skirmish screens took the new plate and buttons
+but their layouts are unchanged. Every element keeps its id, so the wiring, `test/skirmish.js`'s scrape,
+`test/controls.js` and `desktop/page-check.js` needed no change.
+
+---
+
 ## Traps found in the fourth session
 
 On top of everything in `HANDOFF-M13.md` to `HANDOFF-M17.md`'s earlier list. Each cost real time.
@@ -169,6 +196,10 @@ THE STATE: the review is finished. 76 suites green; the stamp is b2d136a211dfe31
 blocking: test/soak.js's Swarm Host line; test/aistyles.js seed 5's one economy line (57 vs 61);
 nothing else. test/eightplayer.js is 19/19 by hand and its bank line is the identity check for any
 refactor.
+
+THE MENU (fifth session): the front is three doors -- SINGLE PLAYER, MULTIPLAYER, SETTINGS -- with
+everything else behind them (PLAYTEST-M17 item 59). Presentation only; the in-game F10 menu on the
+canvas was not restyled. The five leftover agent worktrees are gone.
 
 THERE IS NO LIST TO FINISH. What is left is gated or a product decision, and needs the user's explicit
 instruction before any of it starts:

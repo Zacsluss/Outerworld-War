@@ -4,66 +4,151 @@
 <meta charset="utf-8">
 <title>Brood War Remake</title>
 <style>
-  html, body { margin: 0; padding: 0; background: #000; overflow: hidden; font-family: sans-serif; color: #ddd; }
+  /* ==================================================================================
+     The menu, in the shape a nineties RTS opened with: a steel plate on a dark field, the
+     title cut in gold, and three doors -- SINGLE PLAYER, MULTIPLAYER, SETTINGS. Everything
+     else lives behind one of the three, each section a .panel of its own with a BACK to the
+     door it came through. UI.showPanel shows exactly one .panel at a time, by id.
+     No images: the plate, the rivets and the bevels are gradients, so the page still loads
+     from disk with no assets and the look cannot rot when a file moves.
+     ================================================================================== */
+  html, body { margin: 0; padding: 0; background: #000; overflow: hidden; font-family: Verdana, "DejaVu Sans", Geneva, sans-serif; color: #cfd6e0; }
   #game { display: none; cursor: none; }
   /* margin:auto rather than align-items:center: the skirmish panel is tall, and a centred flex child
      taller than its container has its top clipped away with no way to scroll back to it. */
-  #menu { position: absolute; inset: 0; display: flex; justify-content: center; overflow: auto; background: radial-gradient(circle at 50% 30%, #1a2233, #05070a 70%); }
-  .panel { background: #151a22; border: 1px solid #3a4452; padding: 28px 36px; width: 420px; margin: auto; box-shadow: 0 0 40px #000; }
-  .panel.wide { width: 560px; }
-  h1 { margin: 0 0 4px; font-size: 30px; letter-spacing: 3px; color: #e8d890; }
-  .sub { color: #778; font-size: 12px; margin-bottom: 22px; }
+  #menu { position: absolute; inset: 0; display: flex; justify-content: center; overflow: auto;
+    background:
+      radial-gradient(ellipse at 50% 18%, rgba(80, 100, 135, .38), transparent 55%),
+      radial-gradient(circle at 12% 90%, rgba(140, 80, 30, .16), transparent 42%),
+      radial-gradient(circle at 88% 80%, rgba(40, 90, 120, .14), transparent 40%),
+      repeating-linear-gradient(0deg, rgba(255, 255, 255, .018) 0 1px, transparent 1px 3px),
+      linear-gradient(#0b0f16, #04060a); }
+  /* The plate: brushed steel with a bronze frame and a rivet in each corner. */
+  .panel { position: relative; width: 440px; margin: auto; padding: 30px 40px 26px; box-sizing: content-box;
+    background:
+      repeating-linear-gradient(90deg, rgba(255, 255, 255, .022) 0 2px, transparent 2px 5px),
+      linear-gradient(165deg, #262d39 0%, #181d26 45%, #11151c 100%);
+    border: 2px solid #6e5c33; outline: 1px solid #07090c;
+    box-shadow: inset 0 0 0 1px #3a3122, inset 0 0 0 4px #1b1f27, inset 0 0 0 5px #2c2416, 0 0 70px #000, 0 24px 48px rgba(0, 0, 0, .65); }
+  .panel::before { content: ''; position: absolute; inset: 7px; pointer-events: none;
+    background:
+      radial-gradient(circle, #d8bd76 0 1.5px, #7a6636 2px, #2a2418 2.8px, transparent 3.6px) 0 0 / 8px 8px no-repeat,
+      radial-gradient(circle, #d8bd76 0 1.5px, #7a6636 2px, #2a2418 2.8px, transparent 3.6px) 100% 0 / 8px 8px no-repeat,
+      radial-gradient(circle, #d8bd76 0 1.5px, #7a6636 2px, #2a2418 2.8px, transparent 3.6px) 0 100% / 8px 8px no-repeat,
+      radial-gradient(circle, #d8bd76 0 1.5px, #7a6636 2px, #2a2418 2.8px, transparent 3.6px) 100% 100% / 8px 8px no-repeat; }
+  .panel.wide { width: 580px; }
+  /* The title: gold, embossed, wide. Sub-screens carry the same face a size down with a rule under it. */
+  h1 { margin: 0 0 4px; text-align: center; font-family: Impact, "Arial Narrow", "Franklin Gothic Medium", "Helvetica Neue", sans-serif; font-weight: normal; font-size: 46px; line-height: 1; letter-spacing: 7px; padding-left: 7px;
+    color: #f0d27a; background: linear-gradient(#fff4c8 0%, #ecc65e 38%, #a3771f 58%, #f4dc90 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 2px 0 #3a2a08) drop-shadow(0 0 12px rgba(240, 200, 100, .35)); }
+  h1.h2 { font-size: 32px; letter-spacing: 5px; padding-left: 5px; }
+  .rule { height: 2px; margin: 10px 0 14px; background: linear-gradient(90deg, transparent, #8a7440 20%, #d8bd76 50%, #8a7440 80%, transparent); box-shadow: 0 1px 0 #000; }
+  .sub { color: #7f8a9c; font-size: 12px; line-height: 1.5; margin-bottom: 16px; text-align: center; }
   .row { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
-  label { width: 110px; color: #aab; font-size: 14px; }
-  select, input { background: #0e1117; color: #eee; border: 1px solid #3a4452; padding: 6px 8px; font-size: 14px; }
-  select:disabled, input:disabled { color: #5a6270; border-color: #262f3a; }
-  button { margin-top: 18px; width: 100%; padding: 12px; font-size: 18px; background: #2c3a4c; color: #fff; border: 1px solid #5a6a7c; cursor: pointer; letter-spacing: 2px; }
-  button:hover { background: #3c4c60; }
-  details { margin-top: 12px; color: #aab; } summary { cursor: pointer; font-size: 13px; letter-spacing: 1px; color: #cdd; } .chk { width: auto; margin-right: 12px; color: #ccd; } .lobbyList { margin: 8px 0; font-size: 13px; color: #dde; } .lp { padding: 3px 0; border-bottom: 1px solid #2a3340; } .lp a { color: #f66; text-decoration: none; margin-left: 8px; } #lbStart { margin-top: 10px; }
-  .row2 { display: flex; gap: 8px; } .row2 button, button.small { font-size: 13px; padding: 8px; margin-top: 8px; letter-spacing: 1px; }
-  .help { margin-top: 16px; font-size: 11px; color: #667; line-height: 1.5; }
+  label { width: 122px; color: #b8b09a; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; }
+  select, input { background: #0a0d12; color: #e8e2cc; border: 1px solid #4d4128; box-shadow: inset 0 1px 4px #000; padding: 6px 8px; font-size: 13px; font-family: inherit; }
+  select:focus, input:focus { outline: none; border-color: #b8984e; box-shadow: inset 0 1px 4px #000, 0 0 6px rgba(216, 189, 118, .35); }
+  select:disabled, input:disabled { color: #5a6270; border-color: #2a2a2a; }
+  /* The buttons: a bevelled steel bar with gold lettering, brighter under the mouse, pressed in on click. */
+  button { display: block; width: 100%; margin: 10px 0 0; padding: 0 12px; box-sizing: border-box; height: 46px; cursor: pointer;
+    font-family: Verdana, "DejaVu Sans", Geneva, sans-serif; font-weight: bold; font-size: 15px; line-height: 44px; letter-spacing: 3px; text-transform: uppercase; color: #e8d9a6;
+    background: linear-gradient(#5a6880 0%, #384354 47%, #262e3a 53%, #1b212a 100%);
+    border: 1px solid #07090c;
+    box-shadow: inset 0 1px 0 #93a1b8, inset 1px 0 0 #6f7c91, inset -1px 0 0 #10141a, inset 0 -1px 0 #0a0d11, 0 0 0 1px #4f4229, 0 2px 5px rgba(0, 0, 0, .6);
+    text-shadow: 0 1px 0 #000, 0 0 8px rgba(255, 220, 140, .25); }
+  button:hover { color: #fff3cc; background: linear-gradient(#72829d 0%, #48566d 47%, #303a49 53%, #232a36 100%);
+    box-shadow: inset 0 1px 0 #b3c0d6, inset 1px 0 0 #8593a9, inset -1px 0 0 #10141a, inset 0 -1px 0 #0a0d11, 0 0 0 1px #b1964f, 0 0 16px rgba(255, 210, 110, .35); }
+  button:active { transform: translateY(1px); background: linear-gradient(#1b212a, #2c3542); box-shadow: inset 0 2px 8px #000, 0 0 0 1px #4f4229; }
+  button:disabled { color: #6b6a60; cursor: default; }
+  button.big { height: 58px; line-height: 56px; font-size: 20px; letter-spacing: 6px; margin-top: 12px; }
+  button.small { height: 36px; line-height: 34px; font-size: 12px; letter-spacing: 2px; margin-top: 8px; }
+  button.back { margin-top: 18px; color: #c9c2ad; }
+  .row2 { display: flex; gap: 8px; } .row2 button { margin-top: 8px; }
+  button.inline { display: inline-block; width: auto; height: 30px; line-height: 28px; padding: 0 12px; font-size: 11px; letter-spacing: 1px; margin: 0; }
+  .chk { width: auto; margin-right: 12px; color: #ccd; text-transform: none; letter-spacing: 0; }
+  .lobbyList { margin: 8px 0; font-size: 13px; color: #dde; } .lp { padding: 4px 0; border-bottom: 1px solid #2a3340; } .lp a { color: #f66; text-decoration: none; margin-left: 8px; } #lbStart { margin-top: 10px; }
+  .help { margin-top: 16px; font-size: 11px; color: #6e7787; line-height: 1.55; }
+  .foot { margin-top: 22px; text-align: center; font-size: 9px; letter-spacing: 1.5px; color: #5c6473; text-transform: uppercase; white-space: nowrap; }
   /* Skirmish setup. A section rule instead of a second nested panel: the screen is one form with four
      parts, and boxing each part made it read as four unrelated dialogs stacked on top of each other. */
-  .sect { margin: 20px 0 6px; padding-bottom: 4px; font-size: 11px; letter-spacing: 2px; color: #8a94a4; border-bottom: 1px solid #2a3340; }
+  .sect { margin: 20px 0 6px; padding-bottom: 4px; font-size: 11px; letter-spacing: 3px; color: #b09a5c; border-bottom: 1px solid #3a3122; }
   .lb2 { width: auto; margin-left: 4px; }
   .grow { flex: 1; min-width: 0; }
   .oprow select { flex: 1; min-width: 0; }
-  button.inline { width: auto; margin-top: 0; padding: 6px 10px; font-size: 12px; letter-spacing: 1px; }
-  /* The summary line. It is the one thing on this screen that says, in words rather than in dropdowns,
-     what pressing START will actually produce -- so it is given the gold rule the title has. */
-  /* pre-line, because UI.skirmishSummary returns three plain-text lines: it is asserted in node, so it
-     cannot return markup, and three sentences run together are not a summary. */
-  .sum { margin-top: 18px; padding: 10px 12px; background: #10141b; border-left: 3px solid #e8d890; font-size: 12px; color: #b8c2cf; line-height: 1.6; min-height: 32px; white-space: pre-line; }
+  /* The summary line. It is the one thing on the single-player and skirmish screens that says, in words
+     rather than in dropdowns, what pressing START will actually produce -- so it is given the gold rule
+     the title has. pre-line, because UI.skirmishSummary returns three plain-text lines: it is asserted in
+     node, so it cannot return markup, and three sentences run together are not a summary. */
+  .sum { margin-top: 14px; padding: 10px 12px; background: #0c1016; border: 1px solid #23283a; border-left: 3px solid #d8bd76; font-size: 12px; color: #b8c2cf; line-height: 1.6; min-height: 32px; white-space: pre-line; text-align: left; }
 </style>
 </head>
 <body>
 <div id="menu">
+  <!-- The front: the title and the three doors. Nothing else. -->
   <div class="panel" id="mainPanel">
     <h1>BROOD WAR</h1>
+    <div class="rule"></div>
     <div class="sub">Fan remake. Three races, full tech trees, fog of war, AI opponents. No original assets.</div>
-    <!-- The match controls moved to #skirmishPanel so there is exactly one place a game is configured.
-         What stays here is the one-click start and a sentence saying what that click will produce, so
-         quick-start is still quick and is no longer a game you cannot see the shape of. -->
-    <div class="sum" id="menuSummary"></div>
-    <button id="start">START GAME</button>
-    <button id="setupBtn" class="small">SKIRMISH SETUP</button>
-    <div class="row2"><button id="loadBtn" class="small">LOAD SAVED GAME</button><button id="replayBtn" class="small">WATCH REPLAY</button></div>
-    <button id="autosaveBtn" class="small" style="display:none">CONTINUE AUTOSAVE</button>
-    <input type="file" id="loadFile" accept=".json" hidden><input type="file" id="replayFile" accept=".json" hidden><input type="file" id="mapFile" accept=".json" hidden>
-    <div class="row2"><button id="settingsBtn" class="small">SETTINGS</button><button id="codexBtn" class="small">CODEX</button><button id="editorBtn" class="small">MAP EDITOR</button></div>
-    <details><summary>Campaign missions</summary><div class="row"><label>Mission</label><select id="mission"></select></div><button id="missionBtn" class="small">PLAY MISSION</button></details>
-    <details><summary>Multiplayer</summary><div class="row"><label>Server</label><input id="netUrl" style="flex:1"></div><div class="row"><label>Name</label><input id="netName" value="Player"><label>Room</label><input id="netRoom" placeholder="LAN" maxlength="8" style="width:6em"></div><button id="netConnect" class="small">CONNECT</button><button id="netHost" class="small" style="display:none">HOST A GAME</button><div id="netShare" class="sub" style="display:none"></div><div id="netStatus" class="sub"></div><div id="lobby"></div><div class="help">On a LAN: everyone opens this page from the same server address (see the LAN URL printed by serve.js), connects, and the host presses START. Leave Room empty.<br>Over the internet: the host runs PLAY-ONLINE.bat, then shares the https link it prints AND a room code. Everyone types the same code. The code is what keeps strangers out of your game.<span id="netDesktopHelp" style="display:none"><br>In the desktop app: the host presses HOST A GAME and reads out the address it shows; everyone else types that into Server and presses CONNECT. Over the internet the host still needs a tunnel or a port forward to that port.</span></div></details>
-    <div class="help">Left click select, right click command. A attack-move, M move, S stop, H hold, P patrol, B build, V advanced build. Ctrl+1-9 control groups. F1 in-game help, F10 menu, +/- speed.</div>
+    <button id="singleBtn" class="big">Single Player</button>
+    <button id="multiBtn" class="big">Multiplayer</button>
+    <button id="settingsBtn" class="big">Settings</button>
+    <div class="foot">Left click selects &middot; right click commands &middot; F1 in-game help</div>
   </div>
+
+  <!-- Single Player: the one-click start with a sentence saying what it will produce, the skirmish form,
+       the campaign, saves, replays and the map editor. The match controls live on #skirmishPanel so there
+       is exactly one place a game is configured; START here is the same click on the same settings. -->
+  <div class="panel" id="singlePanel" style="display:none">
+    <h1 class="h2">SINGLE PLAYER</h1>
+    <div class="rule"></div>
+    <div class="sum" id="menuSummary"></div>
+    <button id="start">Start Game</button>
+    <button id="setupBtn" class="small">Skirmish Setup</button>
+    <button id="campaignBtn" class="small">Campaign</button>
+    <div class="row2"><button id="loadBtn" class="small">Load Saved Game</button><button id="replayBtn" class="small">Watch Replay</button></div>
+    <button id="autosaveBtn" class="small" style="display:none">Continue Autosave</button>
+    <button id="editorBtn" class="small">Map Editor</button>
+    <input type="file" id="loadFile" accept=".json" hidden><input type="file" id="replayFile" accept=".json" hidden><input type="file" id="mapFile" accept=".json" hidden>
+    <button id="singleBack" class="small back">Back</button>
+  </div>
+
+  <div class="panel" id="campaignPanel" style="display:none">
+    <h1 class="h2">CAMPAIGN</h1>
+    <div class="rule"></div>
+    <div class="sub">Scripted missions with briefings and their own objectives. Pick one and play it.</div>
+    <div class="row"><label>Mission</label><select id="mission" class="grow"></select></div>
+    <button id="missionBtn">Play Mission</button>
+    <button id="campaignBack" class="small back">Back</button>
+  </div>
+
+  <!-- Multiplayer: the relay client. The lobby renders into #lobby once CONNECT succeeds. HOST A GAME
+       and its help line are hidden here and shown by js/desktop.js inside the desktop app only. -->
+  <div class="panel" id="multiPanel" style="display:none">
+    <h1 class="h2">MULTIPLAYER</h1>
+    <div class="rule"></div>
+    <div class="sub">Lockstep over your LAN, or the internet through a tunnel. One room code, and everyone types it.</div>
+    <div class="row"><label>Server</label><input id="netUrl" class="grow"></div>
+    <div class="row"><label>Name</label><input id="netName" value="Player" class="grow"><label class="lb2">Room</label><input id="netRoom" placeholder="LAN" maxlength="8" style="width:6em"></div>
+    <button id="netConnect">Connect</button>
+    <button id="netHost" class="small" style="display:none">Host a Game</button>
+    <div id="netShare" class="sub" style="display:none"></div>
+    <div id="netStatus" class="sub"></div>
+    <div id="lobby"></div>
+    <div class="help">On a LAN: everyone opens this page from the same server address (see the LAN URL printed by serve.js), connects, and the host presses START. Leave Room empty.<br>Over the internet: the host runs PLAY-ONLINE.bat, then shares the https link it prints AND a room code. Everyone types the same code. The code is what keeps strangers out of your game.<span id="netDesktopHelp" style="display:none"><br>In the desktop app: the host presses HOST A GAME and reads out the address it shows; everyone else types that into Server and presses CONNECT. Over the internet the host still needs a tunnel or a port forward to that port.</span></div>
+    <button id="multiBack" class="small back">Back</button>
+  </div>
+
   <div class="panel" id="settingsPanel" style="display:none">
-    <h1>SETTINGS</h1>
+    <h1 class="h2">SETTINGS</h1>
+    <div class="rule"></div>
     <div class="sub">Audio starts muted every time the page loads. Unmuting lasts for this session only.</div>
     <div class="row"><label>Audio</label><label class="chk"><input type="checkbox" id="mute" checked> Mute all</label><label class="chk"><input type="checkbox" id="voice"> Voice</label><label class="chk"><input type="checkbox" id="music"> Music</label></div>
-    <div class="row"><label>Hotkeys</label><select id="hotkeys"><option value="bw">Brood War</option><option value="grid">Grid (QWE / ASD / ZXC)</option></select></div>
-    <div class="help">In game: Ctrl+M mutes, F10 opens the pause menu, and Settings there changes the same options.<br>
-      Tab cycles the selected kind, comma finds an idle worker, Ctrl+A selects the army, Backspace centres on the selection.</div>
-    <button id="controlsBtn" class="small">CONTROLS</button>
-    <button id="settingsBack" class="small">BACK</button>
+    <div class="row"><label>Hotkeys</label><select id="hotkeys" class="grow"><option value="bw">Brood War</option><option value="grid">Grid (QWE / ASD / ZXC)</option></select></div>
+    <div class="help">In game: A attack-move, M move, S stop, H hold, P patrol, B build, V advanced build. Ctrl+1-9 control groups, Tab cycles the selected kind, comma finds an idle worker, Ctrl+A selects the army, Backspace centres on the selection.<br>
+      Ctrl+M mutes, F1 is help, F3 the codex, F10 the pause menu (its Settings changes the same options), +/- the speed.</div>
+    <button id="controlsBtn" class="small">Controls</button>
+    <button id="codexBtn" class="small">Codex</button>
+    <button id="settingsBack" class="small back">Back</button>
   </div>
   <!-- ==================================================================================
        Controls (M12 item 10). The screen this milestone existed to add: every global action
@@ -74,10 +159,11 @@
        legible.
        =================================================================================== -->
   <div class="panel" id="controlsPanel" style="display:none">
-    <h1>CONTROLS</h1>
+    <h1 class="h2">CONTROLS</h1>
+    <div class="rule"></div>
     <div class="sub">Click a key to rebind it, then press the key you want. Escape cancels; Delete unbinds.</div>
     <div id="bindList"></div>
-    <div class="row2"><button id="bindReset" class="small">RESET TO DEFAULTS</button><button id="controlsBack" class="small">BACK</button></div>
+    <div class="row2"><button id="bindReset" class="small">Reset to Defaults</button><button id="controlsBack" class="small back">Back</button></div>
   </div>
   <!-- ==================================================================================
        Skirmish setup (M11 wave two, item 22). The surface for everything the sim already
@@ -89,13 +175,11 @@
        the simulation directly -- see the long comment above UI.skirmishOptions in js/ui.js
        for why that indirection is the whole point rather than an affectation.
 
-       It sits AFTER #settingsPanel in the document deliberately. The panel swap used to be
-       `settingsPanel.previousElementSibling`, so a new panel in between would have made
-       SETTINGS hide the wrong thing; UI.showPanel is id-based now, but the ordering is left
-       harmless anyway.
+       Its BACK returns to Single Player, the door it is behind, not to the front.
        ================================================================================== -->
   <div class="panel wide" id="skirmishPanel" style="display:none">
-    <h1>SKIRMISH</h1>
+    <h1 class="h2">SKIRMISH</h1>
+    <div class="rule"></div>
     <div class="sub">Everything below ends up in the options object the game starts from, so a seed and these settings are the whole match.</div>
 
     <div class="sect">PLAYERS</div>
@@ -105,7 +189,7 @@
 
     <div class="sect">MAP</div>
     <div class="row"><label>Map</label><select id="layout" class="grow"></select></div>
-    <div class="row"><label>Size</label><select id="mapSize" class="grow"></select><label class="lb2">Seed</label><input id="seed" type="number" value="1" style="width:88px"><button id="seedRoll" class="small inline">ROLL</button></div>
+    <div class="row"><label>Size</label><select id="mapSize" class="grow"></select><label class="lb2">Seed</label><input id="seed" type="number" value="1" style="width:88px"><button id="seedRoll" class="small inline">Roll</button></div>
     <div class="row"><label>Weather</label><select id="optHazard" class="grow"></select><select id="optNight" class="grow"></select></div>
     <div class="row"><label>Terrain</label><select id="optFeatures" class="grow"></select></div>
 
@@ -117,8 +201,8 @@
     <div class="row"><label>Starting bank</label><select id="optStart" class="grow"></select></div>
 
     <div class="sum" id="setupSummary"></div>
-    <button id="setupStart">START GAME</button>
-    <button id="setupBack" class="small">BACK</button>
+    <button id="setupStart">Start Game</button>
+    <button id="setupBack" class="small back">Back</button>
   </div>
 </div>
 <canvas id="game"></canvas>

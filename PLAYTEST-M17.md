@@ -529,3 +529,33 @@ lines and the same summary line as before; what changed is the file's head, two 
 watch the guard: edit one character inside the stub of a suite that has not moved (`test/cardsay.js`, say)
 and run `node .claude/review/agent-21/migrate.js --check` -- the file is reported `no stub group matches:
 untouched`, and nothing is written.
+
+---
+
+# The menu (fifth session) -- how to see it by hand
+
+## 59. Three doors on the front: SINGLE PLAYER, MULTIPLAYER, SETTINGS
+
+Open the game (`PLAY.bat`, or `node test/serve.js 8765` and `http://localhost:8765`). **Working:** a steel
+plate with the title cut in gold, a bronze frame with a rivet in each corner, and three bevelled buttons --
+SINGLE PLAYER, MULTIPLAYER, SETTINGS -- with nothing else on the front but a one-line footer. A button
+brightens under the mouse and presses in on the click. Each opens its own screen on the same plate with a
+BACK at the foot that returns to the front. **Before:** nine buttons, a summary box and two collapsed
+"Campaign missions" / "Multiplayer" disclosures at the foot; the lobby and the room code were inside the
+second one, where nobody found them.
+
+- **SINGLE PLAYER:** the summary line and START GAME (the same one-click start as before), SKIRMISH SETUP,
+  CAMPAIGN (its own screen: pick a mission, PLAY MISSION, BACK to Single Player), LOAD SAVED GAME and WATCH
+  REPLAY side by side, CONTINUE AUTOSAVE when an autosave exists, MAP EDITOR. Press SKIRMISH SETUP, then BACK:
+  you are on Single Player, not the front. Press START GAME: the game starts as it always did.
+- **MULTIPLAYER:** Server, Name and Room, CONNECT; in the desktop app HOST A GAME under it (item 57). Press
+  CONNECT with the server running: "Connected. Waiting in lobby..." and the lobby -- players, race, team, map,
+  ADD AI, speed, START MULTIPLAYER GAME -- appears on this screen. The Room box is the code: blank is the shared
+  LAN room, four or more letters or digits a private one (item 35).
+- **SETTINGS:** audio, hotkeys, the in-game key summary, CONTROLS (the rebinding screen, item 53), CODEX. Press
+  CODEX, then Escape: you are back on Settings.
+
+Presentation only: the stamp did not move, saves and replays are unaffected, every element keeps its id. Not
+restyled, on purpose: the in-game pause menu (F10), which `hud.js` draws on the canvas. Quicker:
+`node test/skirmish.js` section 10 (every id the wiring reaches for is on the page; every panel has an id),
+`node test/controls.js` (the Controls screen), `node desktop/page-check.js` (the HOST button's half).

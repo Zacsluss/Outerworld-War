@@ -35,7 +35,7 @@ echo     Get cloudflared from https://github.com/cloudflare/cloudflared/releases
 echo     (or use any tunnel you like -- ngrok, Tailscale Funnel, a port forward).
 echo.
 echo  3. Send your friends THE HTTPS LINK and A ROOM CODE you make up.
-echo     Everyone opens the link, expands Multiplayer, types the SAME room code
+echo     Everyone opens the link, opens MULTIPLAYER, types the SAME room code
 echo     and their name, and presses CONNECT. Then you press START.
 echo.
 echo     THE ROOM CODE IS THE ONLY THING KEEPING STRANGERS OUT. The link is not
