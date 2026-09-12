@@ -1385,11 +1385,20 @@ const DATA = (() => {
   // asymmetry is the mechanic and not an oversight: STARTING a chain costs a caster's attention and its
   // energy, CONTINUING one costs only the 25 minerals the tumour itself is worth.
   //
-  // `noApproach` -- FIXLIST-M15 C2 (item 3), and it is the ONLY flag of its kind in the game. `range`
-  // on a point ability normally means "get this close and then cast": Abilities.orderTick walks the
-  // caster to the spot first, which is what every other point ability relies on and what made these
-  // two read as unlimited. With the flag, range is a LIMIT -- refuse, say so, do not travel. Nothing
-  // else carries it, so nothing else changed.
+  // `noApproach` -- FIXLIST-M15 C2 (item 3), amended by TODO-M18 item 3, and it is the ONLY flag of its
+  // kind in the game. `range` on a point ability normally means "get this close and then cast":
+  // Abilities.orderTick walks the caster to the spot first from ANY distance, which is what every other
+  // point ability relies on and what made these two read as unlimited.
+  //
+  // With the flag the distance is BOUNDED rather than unlimited, and what happens at the bound depends
+  // on whether the caster can move at all:
+  //   a MOBILE caster (Queen, Overlord) walks into range and casts, up to CAST_APPROACH tiles of walk
+  //     (js/abilities.js, where the number is measured); past that it refuses and says the WALK ran out.
+  //   an IMMOBILE caster -- a tumour seeding its own child, which is a building and casts in issue(),
+  //     or a burrowed or sieged unit -- still refuses at its range, because it will never be closer.
+  // The flat refusal for a mobile caster was C2's, and the user asked for the walk back (item 3); what
+  // C2 was actually right about is the building, and that half is unchanged.
+  // Nothing else carries the flag, so nothing else changed.
   A('plant_tumour', 'Creep Tumour', 'C', 'point', { range: 3, energy: 25, noApproach: true });
   A('spawn_tumour', 'Spread Creep', 'C', 'point', { range: 9, noApproach: true });
   // 'instant', not 'toggle', and the reason is UI.buildCard: on a BUILDING it fires only the `instant`

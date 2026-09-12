@@ -259,21 +259,61 @@ const reach = J(`(() => {
   const said = () => { const l = p.msgs.slice(-1)[0]; return l ? l.text : ''; };
   const res = {};
 
-  // -- a MOBILE caster, far outside range 3: refuse, do not fly ---------------------------------
-  for (const kind of ['overlord', 'queen']) {
-    const near = legalTiles().sort((a, b) => distPt(a[0], a[1], hall.x / TILE, hall.y / TILE) - distPt(b[0], b[1], hall.x / TILE, hall.y / TILE));
-    const spot = near[Math.floor(near.length / 2)];
-    const sx = (spot[0] + 0.5) * TILE, sy = (spot[1] + 0.5) * TILE;
-    const u = G.spawnUnit(kind, 0, Math.max(TILE * 2, sx - 40 * TILE), sy);
-    u.energy = 200;
-    const d0 = distPt(u.x, u.y, sx, sy) / TILE, n0 = tumours();
-    p.msgs.length = 0; p.lastAlert = {};
-    Abilities.issue(u, 'plant_tumour', null, sx, sy);
-    let moved = 0;
-    for (let f = 0; f < 600; f++) { const px = u.x, py = u.y; G.tick(); moved += distPt(px, py, u.x, u.y); }
-    res[kind] = { orderedFromTiles: Math.round(d0), planted: tumours() - n0,
-      travelledTiles: Math.round(moved / TILE), energyLeft: Math.round(u.energy), said: said() };
-    G.kill(u, null, true);
+
+  // -- a MOBILE caster and the walk budget (TODO-M18 item 3) ------------------------------------
+  // FIXLIST-M15 C2 made an out-of-range tumour order a flat refusal, because an Overlord asked to plant
+  // one 17 tiles away flew 13 and planted it against a declared range of 3. The user asked for the walk
+  // back. So it walks -- bounded by CAST_APPROACH, READ FROM THE CONSTANT and never written as a literal
+  // here -- and past the bound it still refuses, but says the WALK ran out rather than the range.
+  {
+    // A FRESH legal tile per run. The first run plants ON its spot, which makes that tile illegal for the
+    // next one -- so re-deriving the list is all it takes, and without it the second caster is refused
+    // for a reason that has nothing to do with the walk (measured: the Queen walked into range, found a
+    // tumour already standing there and planted nothing).
+    const pick = () => {
+      const near = legalTiles().sort((a, b) => distPt(a[0], a[1], hall.x / TILE, hall.y / TILE) - distPt(b[0], b[1], hall.x / TILE, hall.y / TILE));
+      const s = near[Math.floor(near.length / 2)];
+      return [(s[0] + 0.5) * TILE, (s[1] + 0.5) * TILE];
+    };
+    const run = (kind, awayTiles, frames, fix) => {
+      const sp = pick(), sx = sp[0], sy = sp[1];
+      // To the RIGHT, into the middle of the map: the spot sits near the hall in the top-left corner, so
+      // putting the caster to its left clamps against the map edge and the walk under test barely happens.
+      const u = G.spawnUnit(kind, 0, Math.min((m.w - 4) * TILE, sx + awayTiles * TILE), sy); u.energy = 200;
+      // The field, not canMove = false: canMove is a GETTER (js/sim.js, !isBuilding || lifted), so
+      // assigning to it does nothing at all and the "immobile" caster walked and planted. This is the
+      // same field the branch under test reads, alongside sieged. The case that matters in play is a
+      // tumour seeding its own child, and that one is checked below through issue().
+      if (fix) u.burrowed = true;
+      const d0 = distPt(u.x, u.y, sx, sy) / TILE;
+      const atSpot = () => G.units.filter(t => t.alive && t.def.tumour && distPt(t.x, t.y, sx, sy) < TILE * 1.5).length;
+      const n0 = atSpot();
+      p.msgs.length = 0; p.lastAlert = {};
+      Abilities.issue(u, 'plant_tumour', null, sx, sy);
+      let moved = 0, energyAtPlant = null;
+      for (let f = 0; f < frames; f++) {
+        const px = u.x, py = u.y; G.tick(); moved += distPt(px, py, u.x, u.y);
+        // SAMPLED AT THE PLANT, because energy regenerates: read 2400 frames later it is back at the cap
+        // and says nothing about whether the 25 was ever spent.
+        if (energyAtPlant === null && atSpot() > n0) energyAtPlant = Math.round(u.energy);
+      }
+      // AT THE SPOT, not "how many tumours are on the map": over 2400 frames the tumours already standing
+      // seed children of their own, and counting those would make this check pass for the wrong reason.
+      const r = { orderedFromTiles: Math.round(d0), planted: atSpot() - n0, travelledTiles: Math.round(moved / TILE),
+        energyAtPlant, energyLeft: Math.round(u.energy), endedTilesAway: Math.round(distPt(u.x, u.y, sx, sy) / TILE),
+        // EVERY message of this run, not the last one: p.msgs was cleared above, and 600 frames of a live
+        // game bury a refusal under ordinary alerts ("Production facilities are idle").
+        said: p.msgs.map(msg => msg.text).join(' | ') };
+      G.kill(u, null, true);
+      return r;
+    };
+    const inside = Math.round(CAST_APPROACH * 0.55), outside = CAST_APPROACH + 20;
+    res.overlord = run('overlord', inside, 2400);
+    res.queen = run('queen', inside, 2400);
+    res.overlordFar = run('overlord', outside, 600);
+    res.queenFar = run('queen', outside, 600);
+    res.immobile = run('queen', inside, 300, true);
+    res.budget = CAST_APPROACH; res.range = DATA.abilities.plant_tumour.range;
   }
 
   // -- ...and IN range it still plants, which is the thing the limit must not break --------------
@@ -306,14 +346,22 @@ const reach = J(`(() => {
   }
   return res;
 })()`);
-ok(reach.overlord.planted === 0 && reach.overlord.travelledTiles === 0,
-  'AN OVERLORD ORDERED OUT OF RANGE REFUSES AND DOES NOT MOVE -- before C2 it flew 13 tiles and planted', JSON.stringify(reach.overlord));
-ok(reach.queen.planted === 0 && reach.queen.travelledTiles === 0,
-  '...and so does a Queen, who has the same ability and the same fault', JSON.stringify(reach.queen));
-ok(reach.overlord.energyLeft === 200 && reach.queen.energyLeft === 200,
-  '...and a refusal is FREE: the 25 energy is still in the pool', JSON.stringify([reach.overlord.energyLeft, reach.queen.energyLeft]));
-ok(/only reaches 3 tiles/.test(reach.overlord.said),
-  '...and the player is TOLD why, with the number -- B2\'s rule, not a silent dropped order', JSON.stringify(reach.overlord.said));
+ok(reach.overlord.planted === 1 && reach.overlord.travelledTiles > 5,
+  'AN OVERLORD ORDERED OUT OF RANGE NOW WALKS INTO RANGE AND PLANTS (TODO-M18 item 3): ordered from ' + reach.overlord.orderedFromTiles + ' tiles, travelled ' + reach.overlord.travelledTiles + ' -- it used to refuse outright', JSON.stringify(reach.overlord));
+ok(reach.queen.planted === 1 && reach.queen.travelledTiles > 5,
+  '...and so does a Queen, who has the same ability', JSON.stringify(reach.queen));
+ok(reach.overlord.endedTilesAway <= reach.range + 2 && reach.queen.endedTilesAway <= reach.range + 2,
+  '...and it plants from INSIDE the declared range rather than walking onto the spot, so the range still means something', JSON.stringify([reach.overlord.endedTilesAway, reach.queen.endedTilesAway]));
+ok(reach.overlord.energyAtPlant === 175 && reach.queen.energyAtPlant === 175,
+  '...and it pays the 25 energy exactly once, read at the frame the tumour appears (energy regenerates, so reading it later reads the cap)', JSON.stringify([reach.overlord.energyAtPlant, reach.queen.energyAtPlant]));
+ok(reach.overlordFar.planted === 0 && reach.overlordFar.travelledTiles === 0 && reach.queenFar.planted === 0 && reach.queenFar.travelledTiles === 0,
+  'THE WALK IS BOUNDED: ordered ' + reach.overlordFar.orderedFromTiles + ' tiles away, past the ' + reach.budget + '-tile budget, it refuses and does not take a step -- a misclick cannot send a Queen into an enemy main (start to start is 100 to 142 tiles on the shipped maps)', JSON.stringify(reach.overlordFar));
+ok(reach.overlordFar.energyLeft === 200 && reach.queenFar.energyLeft === 200,
+  '...and a refusal is still FREE: the 25 energy is in the pool', JSON.stringify([reach.overlordFar.energyLeft, reach.queenFar.energyLeft]));
+ok(/too far to walk/i.test(reach.overlordFar.said) && new RegExp(reach.budget + ' tiles').test(reach.overlordFar.said),
+  '...and the player is told that the WALK ran out, with the number -- not "only reaches 3 tiles", which would be a lie about a caster that walks ' + reach.budget, JSON.stringify(reach.overlordFar.said));
+ok(reach.immobile.planted === 0 && reach.immobile.travelledTiles === 0 && reach.immobile.energyLeft === 200 && /only reaches 3 tiles/.test(reach.immobile.said),
+  'A CASTER THAT CANNOT MOVE is still refused at its RANGE and told so -- burrowed or sieged, it will never be closer than it is now, and the same branch is what refuses a tumour seeding past its nine tiles (FIXLIST-M15 C2, the half that was right)', JSON.stringify(reach.immobile));
 ok(reach.inRange === 1, 'IN range it still plants, which is what the limit must not break', String(reach.inRange));
 ok(reach.tumourFar.isBuilding === true && reach.tumourFar.tilesAway > 9,
   'the reported half: a finished tumour, a legal creep tile ' + reach.tumourFar.tilesAway + ' tiles away against a range of 9', JSON.stringify(reach.tumourFar));

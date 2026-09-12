@@ -1503,7 +1503,13 @@ class AI {
   // May this player spend on creep at all right now? One place, because the Overlord that starts a
   // chain and the tumour that continues it have to answer to the same budget or the cheaper of the two
   // simply spends everything the other one saved.
-  tumourBudget() { return this.p.minerals >= 300 && this.count('creep_tumour') < 8; }
+  // The budget is the tumours that exist PLUS the ones already ordered and still walking. The second
+  // half is TODO-M18 item 3's: while an out-of-range plant was refused outright an unlanded order could
+  // be ignored, because it was never going to land. Now it walks in and plants, so two Overlords idle in
+  // the same think each saw seven and the game peaked at NINE against a bound of eight (test/tumour.js,
+  // seeds 6 and 13 -- measured, not predicted). A tumour seeding its own child needs no such term: a
+  // building casts in Abilities.issue and lands in the same frame it is ordered.
+  tumourBudget() { return this.p.minerals >= 300 && this.count('creep_tumour') + this.mine(u => u.order.type === 'ability' && u.order.abil === 'plant_tumour').length < 8; }
   // The hatchery this Queen should inject: HER OWN first (u.home, see homeQueens), then the nearest within
   // 26 tiles -- one of ours, finished, under the cap (twelve since REVIEW-M17 task 25, so a hall at its
   // natural three has room), and without an inject already booked against it in G.fields. Null when

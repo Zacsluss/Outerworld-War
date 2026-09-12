@@ -141,3 +141,42 @@ ceiling will hold it back on anything but a tall window). `HUD_MAX_FRAC` beside 
   in `HANDOFF-M17.md`.
 - **The world.** Zoom is still yours (mouse wheel); the HUD taking more of the screen means the viewport
   is shorter, and the camera clamp follows it automatically.
+
+---
+
+## 67. A Queen or Overlord walks into range to plant a creep tumour
+
+*(TODO-M18 item 3.)*
+
+**How to reach it.** Skirmish as **Zerg** (SINGLE PLAYER → SKIRMISH SETUP → race Zerg → START). Build a
+Spawning Pool and a Queen, or just select one of your starting **Overlords** — both have the ability.
+Select the caster, press **C** (Creep Tumour), and click a legal creep tile **well out of range**.
+
+**What to look for:**
+
+1. **It walks there and plants it.** Before, you got "Creep Tumour only reaches 3 tiles — pick a spot
+   closer in." and nothing happened. Now the caster moves off, stops as soon as the spot is within its
+   3 tiles, and plants.
+2. **It stops at the range, it does not walk onto the spot.** Watch where it ends up: about three tiles
+   short. The declared range still means something — it is the *cast* range, and the walk is what gets
+   you there.
+3. **The walk is bounded at 36 tiles.** Click a creep tile most of the way across the map and you get
+   **"That is too far to walk for Creep Tumour — 36 tiles is as far as it will go."** and the caster does
+   not move. That number is measured, not picked: on the three shipped maps your nearest other base is
+   18, 31 or 34 tiles away (so a real creep line always fits inside the budget) and the nearest *enemy*
+   start is 100 to 142 (so a misclick can never send a Queen into someone else's main).
+4. **A refusal is still free.** Check the caster's energy after a refusal — the 25 is still there.
+5. **A tumour spreading creep by itself is unchanged.** Select a finished creep tumour, press **C**
+   (Spread Creep), click past its 9 tiles: it still refuses with "only reaches 9 tiles". A building
+   cannot walk anywhere, so its range really is its limit — that half was right and was left alone.
+6. **Every other spell is untouched.** A Defiler ordered to Dark Swarm thirty tiles away still walks
+   thirty tiles and casts, as it always did. Only the two tumour abilities have a bound at all.
+
+**Where the knob is.** `CAST_APPROACH` at the top of [js/abilities.js](js/abilities.js), in tiles, with
+the measurement written beside it.
+
+**One thing this quietly fixed.** The computer's tumour budget counted the tumours that *exist*. That was
+enough while an out-of-range order was refused outright — an order that had not landed never would — but
+once the caster walks in and plants later, two Overlords could each see seven tumours and each plant, and
+a game peaked at **nine** against a cap of eight. The budget counts orders in flight now. You would only
+ever see this as "the Zerg AI has slightly too much creep"; it is pinned in `test/tumour.js`.

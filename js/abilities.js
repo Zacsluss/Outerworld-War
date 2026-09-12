@@ -10,6 +10,24 @@
 // changed. The reaper's jump jets and the hellion's air cushion are the same argument the vulture already makes
 // (M12 wave four).
 const HOVER = new Set(Object.keys(DATA.units).filter(id => DATA.units[id].hover));
+// HOW FAR A CASTER WILL WALK TO GET A noApproach ABILITY IN RANGE (TODO-M18 item 3: "a Queen or Overlord
+// should walk into range to plant a creep tumour"). Before this the order was refused outright, which is
+// FIXLIST-M15 C2's fix and was right about the BUILDING half and too blunt about the mobile one.
+//
+// MEASURED, not chosen (.claude/review/tumour-reach.js, on the three shipped maps):
+//
+//   Creep Tumour's declared range          3 tiles
+//   a tumour seeding its own child         9 tiles   (immobile: still a hard limit, see issue())
+//   Queen sight / Overlord sight          10 / 9 tiles
+//   a start to its NEAREST other base     18 (Blood Pit), 31 (Lost Ruins), 34 (Twilight Valley)
+//   a start to another START             100 .. 142
+//
+// A creep line that is doing anything useful reaches your natural, so the bound has to clear 34; a
+// misclick that would send a Queen into someone else's main is 100 or more away. 36 tiles sits above
+// every natural on every shipped map and at about a third of the shortest trek, so it never refuses a
+// real creep click and never accepts a trek. It is a WALK budget measured from where the caster stands,
+// not from the ability's range, so the two numbers stay separate things.
+const CAST_APPROACH = 36;
 const NO_BROODLING = new Set(['probe', 'reaver', 'dragoon', 'archon', 'dark_archon', 'ultralisk', 'scv']);
 
 // EQUIV's command_center morphs (Orbital, Fortress) were pushed into the js/sim.js table from here from M12 to M17, and
@@ -55,8 +73,14 @@ const Abilities = {
   // now because TWO paths need it and they were about to drift: orderTick for a mobile caster, and
   // issue() for a caster that is a BUILDING and never reaches orderTick at all.
   castRange(u, ab, t) { return (ab.range || 1) * TILE + (t ? t.r : 0) + u.r; },
-  // One sentence, said the same way by both paths. B2's rule: a refusal names what it needed.
+  // Two refusals now, because there are two reasons to refuse and they are not the same fact. B2's rule
+  // either way: a refusal names what it needed.
+  //   the first  -- an IMMOBILE caster (a tumour seeding a child, a burrowed or sieged unit). It will
+  //                 never be closer to that spot than it is now, so its range really is the limit.
+  //   the second -- a MOBILE caster past the walk budget. Its range is not the limit; the walk is, and
+  //                 saying "only reaches 3 tiles" to someone whose Queen happily walks 30 would be a lie.
   outOfRangeMsg(ab) { return ab.name + ' only reaches ' + (ab.range || 1) + ' tiles -- pick a spot closer in.'; },
+  tooFarToWalkMsg(ab) { return 'That is too far to walk for ' + ab.name + ' -- ' + CAST_APPROACH + ' tiles is as far as it will go.'; },
   // The burrow, arming and unburrow durations for a unit that has its own -- today only the Widow Mine.
   // Null for everything else, which is what keeps the generic 24-frame burrow the generic 24-frame
   // burrow. Reads the def, so the numbers have exactly one home (js/data.js) and every caller, the AI
@@ -397,12 +421,30 @@ const Abilities = {
     // plant a Creep Tumour 17 tiles away flew 13 tiles and planted it, against a declared range of 3.
     //
     // `noApproach` is a per-ability opt-out and NOT a change to the shared path, which is the whole
-    // of the decision: two abilities want a hard limit and twenty-six want walk-to. It is checked
+    // of the decision: two abilities want a bounded approach and twenty-six want walk-to. It is checked
     // BEFORE the immobile-caster branch so a flagged ability says why it refused instead of dropping
     // the order in silence, and before energy is spent a few lines below, so a refusal is free.
+    //
+    // TODO-M18 item 3 CHANGED WHAT THE FLAG MEANS FOR A MOBILE CASTER, and deliberately left the other
+    // half alone. FIXLIST-M15 C2 made the flag a flat refusal because an Overlord asked to plant a
+    // tumour 17 tiles away flew 13 and planted it against a declared range of 3. Two things were wrong
+    // there and only one of them was the walking: the ability travelled an UNBOUNDED distance, and the
+    // card said 3. So now it walks -- up to CAST_APPROACH, which is measured against the maps -- and
+    // past that it refuses and says the walk is what ran out, not the range.
+    //
+    // The IMMOBILE half is untouched and must stay untouched: a building casts in issue() and never
+    // reaches this function at all (see the comment there), and a burrowed or sieged unit is not going
+    // anywhere either. For those, range really is the limit.
+    //
+    // Nothing new goes in the command log. The order is already `{type:'ability', abil, x, y}` packed by
+    // CMD, and the approach happens inside this tick -- deterministic, replayed identically, and
+    // cancellable with Stop like any other move. That is the whole reason it is done HERE and not by the
+    // UI issuing a move plus a queued cast: a second command would be a new shape for ORDER_KEYS and
+    // test/cmdlog.js to carry, for no gain. (REVIEW-M17 entry 6 is the last time that went wrong.)
     if (distPt(u.x, u.y, tx, ty) > range) {
-      if (ab.noApproach) { p.msg(this.outOfRangeMsg(ab), 'error'); u.nextOrder(); return; }
-      if (!u.canMove || u.sieged || u.burrowed) { u.nextOrder(); return; }
+      const canWalk = u.canMove && !u.sieged && !u.burrowed;
+      if (!canWalk) { if (ab.noApproach) p.msg(this.outOfRangeMsg(ab), 'error'); u.nextOrder(); return; }
+      if (ab.noApproach && distPt(u.x, u.y, tx, ty) > range + CAST_APPROACH * TILE) { p.msg(this.tooFarToWalkMsg(ab), 'error'); u.nextOrder(); return; }
       u.moveTo(tx, ty, t); return;
     }
     u.facing = DMath.atan2(ty - u.y, tx - u.x); u.path = null;
