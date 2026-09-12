@@ -180,3 +180,79 @@ enough while an out-of-range order was refused outright — an order that had no
 once the caster walks in and plants later, two Overlords could each see seven tumours and each plant, and
 a game peaked at **nine** against a cap of eight. The budget counts orders in flight now. You would only
 ever see this as "the Zerg AI has slightly too much creep"; it is pinned in `test/tumour.js`.
+
+---
+
+## 68. Research that gets stuck — NOT reproduced, and here is everything that was ruled out
+
+*(TODO-M18 item 4. This entry is the record of a hunt, not a fix. One real fault was found on the way and
+is item 69.)*
+
+**What was asked.** "A research or upgrade begins and never finishes." Never reproduced, so the brief was
+to write a probe first and let it name the case rather than guess at one.
+
+**What was built.** Two probes, both kept in `.claude/review/` and both re-runnable:
+
+- `node .claude/review/stall-probe.js --minutes=25 --seeds=3,7,11` — plays three 25-minute
+  six-player games with hard AIs of all three races and reports every production slot whose progress
+  stops advancing for more than ten seconds, with the state of the building at that moment.
+- `node .claude/review/stall-scenes.js` — eleven directed scenes that each *create* a candidate cause on
+  a building that is mid-research and ask whether the research comes back. Every scene asserts its own
+  setup, because the first version had four scenes that silently did nothing and reported "ok".
+
+**The result: the reported stall did not happen.** 75 minutes of AI games produced 25 stalls over ten
+seconds. Every one was the rules working — a unit waiting on supply, a building waiting for its add-on to
+finish, a Protoss building with no power — except two, and those two were a different fault (item 69).
+
+**What is now ruled out, with the reason:**
+
+| candidate | verdict |
+|---|---|
+| a **lifted** building | **impossible.** `G.liftBuilding` refuses while anything is in the queue, so you cannot lift a building that is researching. |
+| a **morphed** building (Lair/Hive, Greater Spire) | **impossible.** `G.queueMorph` refuses while anything is in the queue. Driven in scenes 4 and 5: the morph is declined and the research finishes. |
+| a **killed** building | **works.** The player's reservation is cleared, and the research can be started again on a rebuilt one. Scenes 8 and 9. |
+| a destroyed **add-on** | **works.** Scene 10. |
+| a **cancelled and requeued** slot | **works.** Scene 7. |
+| an **unpowered** Protoss building | **freezes while dark, resumes when a new pylon goes up.** Scene 11. That is by design. |
+| a building that **changes owner** | **would leak** — the old owner keeps the reservation for ever and is silently refused if they ask again — **but nothing in the game can do it.** Mind Control explicitly refuses buildings, Infest takes a Command Center (which researches nothing), and capturing a derelict takes a neutral building nobody was researching in. Scene 6 proves the leak by forcing the owner change by hand; it is a hole with no door to it today. |
+
+**If it happens to you again**, the thing that would settle it in one line: open the browser console
+during the game and run
+
+```
+G.players[G.human].researching
+```
+
+If it lists something you are *not* currently researching, that is the leak above and the door it came
+through is worth knowing. If the building still shows the bar and the bar is not moving, run
+`UI.selection[0].prod` and say what the building is, what is in the queue, and whether it is lifted,
+unpowered or waiting on an add-on.
+
+---
+
+## 69. A unit cannot morph while it is riding in a transport
+
+*(Found by TODO-M18 item 4's probe. It is not the research stall that was reported — see item 68 — but it
+is a production slot that stops advancing, which is what the probe was told to look for.)*
+
+**What was wrong.** Load a Zergling into an Overlord and morph it into a Baneling and the cocoon sat at
+zero progress for as long as the ride lasted: the unit was out of the game and the 25/25 was spent. The
+simulation stops ticking anything inside a transport before it ever reaches the code that develops an
+egg. The computer did this to itself — it picked whichever Zergling came first, including one that was
+loaded — and, having been refused nothing, it would pick the same one again every think.
+
+**How to see the fix by hand.** Skirmish as Zerg. Build a Spawning Pool, research **Ventral Sacs** at the
+Lair so Overlords can carry, get some Zerglings and an Overlord, load a Zergling (select the Overlord,
+press **L** or right-click the Zergling), then select the loaded Zergling from the Overlord's cargo row
+in the console and press **B** for Baneling.
+
+- **It refuses,** and says "A unit cannot morph while it is inside a transport."
+- **Nothing is charged** — check your minerals and gas before and after.
+- **Unload it and press B again** and it morphs normally: the egg develops and a Baneling hatches.
+
+This is what Brood War and StarCraft II both do, and the reason it is refused rather than made to work is
+that an egg developing inside a transport raises questions about supply and about what happens when the
+transport dies that nothing else in this game has an answer for.
+
+**Where it was measured.** `.claude/review/stall-probe.js`, seed 7, 25 minutes, six hard AIs: two baneling
+cocoons frozen at progress 0 inside an Overlord for 240+ frames each. Pinned in `test/abilities20.js`.

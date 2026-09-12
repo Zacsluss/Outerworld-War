@@ -2,7 +2,7 @@
 
 Written when the fifth session paused for the night (2026-09-12). `HANDOFF-M17.md` has the state, the traps
 and the kickoff prompt; this file is the open list and nothing else. Four items are closed and struck through
-at the bottom with their commits. **Four are open** (3, 4, 6, 11, plus the gated economy pair 7a/7b), and
+at the bottom with their commits. **Three are open** (4 — not reproduced, 6 and 11, plus the gated economy pair 7a/7b), and
 each has partial, **ungated, unverified** work sitting in the locked worktrees — see "The three worktrees"
 below before you start any of them.
 
@@ -14,7 +14,8 @@ for edits, and the gate green before the commit.
 
 ## Open
 
-### 3. A Queen or Overlord should walk into range to plant a creep tumour
+### 3 (DONE). A Queen or Overlord should walk into range to plant a creep tumour
+*Kept for the record; what shipped is in Closed at the foot of this file.*
 Today an out-of-range cast is refused outright with "Creep Tumour only reaches 3 tiles — pick a spot closer
 in." (`Abilities.outOfRangeMsg`). It should move the caster toward the target until the target is in range,
 then cast, the way a build order moves a worker first.
@@ -26,7 +27,32 @@ command log carries, not a silent teleport or an unbounded walk. **Anything that
 is the suite that catches that class of mistake and `REVIEW-M17.md` entry 6 is the last time it happened.
 Decide and record whether this applies to every targeted ability or only the tumour.
 
-### 4. Some tech gets stuck during research
+### 4. Some tech gets stuck during research — STILL NOT REPRODUCED, and here is what is ruled out
+**The probes are written and committed** (`.claude/review/stall-probe.js`, `.claude/review/stall-scenes.js`)
+and 75 minutes of six-player hard-AI games across three seeds did not produce it. 25 stalls over ten
+seconds, every one of them the rules working (supply, an add-on still building, a Protoss blackout) except
+two, and those two were a different fault — now fixed, see Closed. **Do not start guessing from here; run
+the probes again after the user's next game, or get the one console line `PLAYTEST-M18.md` item 68 asks for.**
+
+Ruled out, each with the reason:
+- **a lifted building** — impossible. `G.liftBuilding` refuses while anything is in the queue.
+- **a morphed one (Lair/Hive, Greater Spire)** — impossible. `G.queueMorph` refuses while anything is in
+  the queue. Driven in scenes 4 and 5: the morph is declined and the research finishes.
+- **a killed building** — works. The reservation in `p.researching` IS cleared and it can be researched
+  again on a rebuilt one (scenes 8 and 9); REVIEW-M17 had already closed the other end of this at `CMD.bldg`.
+- **a destroyed add-on** — works (scene 10).
+- **a cancelled-and-requeued slot** — works (scene 7).
+- **an unpowered Protoss building** — freezes while dark and resumes with a new pylon. By design (scene 11).
+- **one that changed owner** — WOULD leak: `p.researching` is per player and `G.finishProduction` clears it
+  from the building's current owner, so the old one holds a reservation for ever and is refused in silence
+  if they ask again. **But nothing in the game can change a building's owner** — Mind Control explicitly
+  refuses buildings, Infest takes a Command Center (which researches nothing) and capturing a derelict
+  takes a neutral building. Scene 6 forces the handover by hand and shows the leak; it is a hole with no
+  door to it today, and the door is what to look for if a future ability opens one.
+
+The original brief, kept for the record:
+
+
 A research or upgrade begins and never finishes. **Not yet reproduced.** Write the probe first: long games,
 several AI opponents, all three races, a few seeds, 20+ minutes, reporting any production slot whose progress
 has not advanced for N frames and naming the building, the tech and the frame it stalled. `G.tickProduction`
@@ -178,5 +204,18 @@ then `git branch -d <branch>`.
   `test/qol.js` 33 checks, eight negative controls in `.claude/review/hud-controls.js`, `PLAYTEST-M18.md`
   item 66. Not scaled, on purpose: the mouse cursor, and the F10/F1/codex dialogs, which are not the
   console band.
+- ~~**3. A Queen or Overlord walks into range to plant a creep tumour.**~~ Bounded by `CAST_APPROACH` = 36
+  tiles, which is measured against the maps (a start's nearest other base is 18/31/34; a start to another
+  start is 100 to 142). An IMMOBILE caster — a tumour seeding its own child, a burrowed or sieged unit —
+  still refuses at its range, which is the half FIXLIST-M15 C2 was right about. It also found and fixed a
+  real AI bug: the tumour budget counted only the tumours that EXIST, so with the walk allowed two
+  Overlords each saw seven and the game peaked at nine against a cap of eight. Commit `b2a1442`,
+  `test/tumour.js`, `PLAYTEST-M18.md` item 67.
+- ~~**A unit cannot morph inside a transport.**~~ Not on the user's list — TODO item 4's probe found it.
+  A Zergling loaded into an Overlord and morphed left its cocoon at progress 0 for the whole ride, money
+  spent and unit gone, because `Unit.tick` returns at its `inside` guard before an egg ever reaches
+  `tickProduction`; the AI then picked the same loaded Zergling every think. Refused now, as Brood War and
+  StarCraft II both do, and the AI's seven morph sites skip loaded units. `test/abilities20.js`,
+  `PLAYTEST-M18.md` item 69.
 - ~~**7. The economy.**~~ Measured and reverted — see the gated section above. Not closed as "done"; closed as
   "answered, and the answer is that it needs the AI re-tuned first".

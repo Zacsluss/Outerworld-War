@@ -197,6 +197,14 @@ const Abilities = {
   },
   morph(u, toId) {
     const p = u.player, ud = DATA.units[toId];
+    // NOT INSIDE A TRANSPORT. Unit.tick returns at its `inside` guard before it reaches the egg's
+    // tickProduction call, so a cocoon in a Dropship or an Overlord sits at progress 0 until it is
+    // unloaded -- the unit is out of the game and the money is spent for as long as the ride lasts.
+    // Measured by TODO-M18 item 4's probe: two baneling cocoons frozen inside an Overlord on seed 7.
+    // Refused here rather than made to work, which is what Brood War and StarCraft II both do, and
+    // because an egg developing inside a transport raises questions about supply and unloading that
+    // nothing else in this game has an answer for.
+    if (u.inside) { p.msg('A unit cannot morph while it is inside a transport.', 'error'); return false; }
     if (!p.hasReq(ud)) { p.msg('Requires ' + p.missingReq(ud), 'error'); return false; }
     if (!p.canAfford(ud.min, ud.gas)) return false;
     if (G.supplyBlocked(p, ud, ud.sup - u.def.sup)) { G.supplyRefused(p); return false; } // pays only the difference; one voice for being supply blocked, see G.supplyRefused

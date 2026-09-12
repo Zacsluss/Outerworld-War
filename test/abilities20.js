@@ -495,6 +495,48 @@ const NEVER = ['build_basic', 'build_adv', 'morph_menu', 'restoration', 'optical
   ok('...until an enemy Science Vessel is in sight of it', out.detected === true && out.found === true, JSON.stringify([out.detected, out.found]));
 }
 
+
+// ============================================================================
+// A MORPH IS REFUSED FOR A UNIT INSIDE A TRANSPORT (TODO-M18 item 4's probe)
+// ============================================================================
+// MEASURED, not supposed: .claude/review/stall-probe.js watched 75 minutes of six-player hard-AI games
+// and reported exactly one kind of production slot it could not explain --
+//   {"what":"baneling","progress":0,"started":false,"inside":true,"insideOf":"overlord","egg":true}
+// frozen for 240+ frames, twice. Unit.tick returns at its `inside` guard BEFORE it reaches
+// `if (d.egg) { this.tickProduction(); return; }`, so an egg in a transport never develops: the unit is
+// out of the game and the money is spent for as long as the ride lasts. The AI had morphed a Zergling
+// that was riding in an Overlord, and would have gone on picking the same one every think.
+{
+  const out = R(ctx, `
+    const p = fresh('Z', 'T'); p.tech.add('volatile_bile'); const [x, y] = freeNear(p.startX + 200, p.startY + 200);
+    const ov = sp('overlord', 0, x, y); p.tech.add('ventral_sacs');
+    const z = sp('zergling', 0, x + 40, y); run(2);
+    G.loadUnit(ov, z); run(2);
+    const loaded = !!z.inside && ov.cargo.includes(z);
+    const min0 = p.minerals, gas0 = p.gas;
+    const refused = Abilities.morph(z, 'baneling');
+    // read the purse IMMEDIATELY: the workers are still mining, so 120 frames of anything makes the
+    // difference a measure of the economy rather than of the refusal.
+    const spent = (min0 - p.minerals) + (gas0 - p.gas);
+    run(120);
+    const told = said(/inside a transport/i);
+    // ...and OUT of the transport it morphs and the egg actually develops, which is the half that must
+    // not break: a check that only proved the refusal would pass with morph deleted entirely.
+    G.unloadCargo(ov, z); run(6);
+    const outNow = !z.inside;
+    const ok2 = Abilities.morph(z, 'baneling');
+    const eggAt0 = G.units.filter(u => u.alive && u.owner === 0 && u.def.egg).map(u => u.prod.length ? Math.round(u.prod[0].progress) : -1);
+    run(120);
+    const eggAfter = G.units.filter(u => u.alive && u.owner === 0 && u.def.egg).map(u => u.prod.length ? Math.round(u.prod[0].progress) : -1);
+    run(400);
+    const banelings = G.units.filter(u => u.alive && u.owner === 0 && u.def.id === 'baneling').length;
+    return { loaded, refused, told, spent, outNow, ok2, eggAt0, eggAfter, banelings };`);
+  ok('a Zergling really is inside the Overlord (scene check)', out.loaded === true, JSON.stringify(out.loaded));
+  ok('A MORPH IS REFUSED FOR A UNIT INSIDE A TRANSPORT, and nothing is charged for it -- the egg would have sat at progress 0 until it was unloaded, because Unit.tick returns at its inside guard before an egg ever reaches tickProduction (measured: two frozen baneling cocoons in 75 minutes of AI games)', out.refused === false && out.spent === 0, JSON.stringify({ refused: out.refused, spent: out.spent }));
+  ok('...and the player is told why rather than the click doing nothing', out.told === true, String(out.told));
+  ok('...while the SAME Zergling unloaded morphs normally and its egg develops and hatches', out.outNow === true && out.ok2 === true && out.eggAfter[0] > out.eggAt0[0] && out.banelings === 1, JSON.stringify({ outNow: out.outNow, ok2: out.ok2, eggAt0: out.eggAt0, eggAfter: out.eggAfter, banelings: out.banelings }));
+}
+
 ok('no JS errors', ctx.errors.length === 0, ctx.errors.slice(0, 3).join(' | '));
 ok('nothing threw inside a tick across every scene', R(ctx, 'return G.tickErrors;') === 0, String(R(ctx, 'return G.tickErrors;')));
 console.log(`\n${fail ? 'FAIL' : 'ALL PASS'}  ${pass} passed, ${fail} failed`);

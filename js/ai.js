@@ -879,17 +879,22 @@ class AI {
     // AI_COMP still decide everything that comes off a larva. All five are gated on a count relative
     // to the unit they consume, because a morph that eats its own source unconditionally converts the
     // whole army -- which is the mistake the Protoss archon clause below was written to stop.
-    if (this.race === 'Z' && p.hasTech('volatile_bile') && (counts.baneling || 0) < 6 && (counts.zergling || 0) > 6 && this.afford(25, 25)) { const z = this.mine(u => u.def.id === 'zergling' && u.order.type !== 'attack'); if (z.length) { Abilities.morph(z[0], 'baneling'); return; } }
-    if (this.race === 'Z' && p.hasTech('ravager_aspect') && (counts.ravager || 0) < (counts.roach || 0) / 2 && this.afford(25, 75)) { const r = this.mine(u => u.def.id === 'roach' && u.order.type !== 'attack'); if (r.length) { Abilities.morph(r[0], 'ravager'); return; } }
-    if (this.race === 'Z' && p.hasBuilding('infestation_pit') && (counts.swarm_host || 0) < 3 && (counts.roach || 0) > 4 && this.afford(50, 100)) { const r = this.mine(u => u.def.id === 'roach' && u.order.type !== 'attack'); if (r.length) { Abilities.morph(r[0], 'swarm_host'); return; } }
-    if (this.race === 'Z' && p.hasBuilding('infestation_pit') && p.hasBuilding('hive') && (counts.viper || 0) < 2 && this.afford(100, 200)) { const m = this.mine(u => u.def.id === 'mutalisk'); if (m.length > 4) { Abilities.morph(m[0], 'viper'); return; } }
+    // `!u.inside` on every one of these: a unit riding in a transport cannot morph (Abilities.morph
+    // refuses it, because an egg inside a transport never develops -- Unit.tick returns at its `inside`
+    // guard). Without the filter the AI picks the same loaded Zergling every think, is refused, and ends
+    // its think there -- a think a frame for the rest of the game, which is the livelock FIXLIST-M15 C1
+    // found with Overlords and creep tumours. (TODO-M18 item 4's probe measured the frozen cocoons.)
+    if (this.race === 'Z' && p.hasTech('volatile_bile') && (counts.baneling || 0) < 6 && (counts.zergling || 0) > 6 && this.afford(25, 25)) { const z = this.mine(u => u.def.id === 'zergling' && !u.inside && u.order.type !== 'attack'); if (z.length) { Abilities.morph(z[0], 'baneling'); return; } }
+    if (this.race === 'Z' && p.hasTech('ravager_aspect') && (counts.ravager || 0) < (counts.roach || 0) / 2 && this.afford(25, 75)) { const r = this.mine(u => u.def.id === 'roach' && !u.inside && u.order.type !== 'attack'); if (r.length) { Abilities.morph(r[0], 'ravager'); return; } }
+    if (this.race === 'Z' && p.hasBuilding('infestation_pit') && (counts.swarm_host || 0) < 3 && (counts.roach || 0) > 4 && this.afford(50, 100)) { const r = this.mine(u => u.def.id === 'roach' && !u.inside && u.order.type !== 'attack'); if (r.length) { Abilities.morph(r[0], 'swarm_host'); return; } }
+    if (this.race === 'Z' && p.hasBuilding('infestation_pit') && p.hasBuilding('hive') && (counts.viper || 0) < 2 && this.afford(100, 200)) { const m = this.mine(u => u.def.id === 'mutalisk' && !u.inside); if (m.length > 4) { Abilities.morph(m[0], 'viper'); return; } }
     // An Overseer costs eight SUPPLY as well as its minerals, because it gives up the overlord's
     // `supGive`. Exactly one, and only with room to lose it: an AI that morphs at 198/200 has supply
     // blocked itself to buy detection it already had, since every overlord in this game detects.
-    if (this.race === 'Z' && p.hasBuilding('lair') && (counts.overseer || 0) < 1 && p.supMax - p.supUsed >= 12 && this.afford(50, 50)) { const o = this.mine(u => u.def.id === 'overlord'); if (o.length > 2) { Abilities.morph(o[0], 'overseer'); return; } }
+    if (this.race === 'Z' && p.hasBuilding('lair') && (counts.overseer || 0) < 1 && p.supMax - p.supUsed >= 12 && this.afford(50, 50)) { const o = this.mine(u => u.def.id === 'overlord' && !u.inside); if (o.length > 2) { Abilities.morph(o[0], 'overseer'); return; } }
     // Zerg morphs: hydras -> lurkers, mutas -> guardians
-    if (this.race === 'Z' && p.hasTech('lurker_aspect') && (counts.lurker || 0) < (counts.hydralisk || 0) / 1.5 && this.afford(50, 100)) { const h = this.mine(u => u.def.id === 'hydralisk' && u.order.type !== 'attack' && u.done); if (h.length) { Abilities.morph(h[0], 'lurker'); return; } }
-    if (this.race === 'Z' && p.hasBuilding('greater_spire') && (counts.guardian || 0) < 4 && this.afford(50, 100)) { const m = this.mine(u => u.def.id === 'mutalisk'); if (m.length > 4) { Abilities.morph(m[0], 'guardian'); return; } }
+    if (this.race === 'Z' && p.hasTech('lurker_aspect') && (counts.lurker || 0) < (counts.hydralisk || 0) / 1.5 && this.afford(50, 100)) { const h = this.mine(u => u.def.id === 'hydralisk' && !u.inside && u.order.type !== 'attack' && u.done); if (h.length) { Abilities.morph(h[0], 'lurker'); return; } }
+    if (this.race === 'Z' && p.hasBuilding('greater_spire') && (counts.guardian || 0) < 4 && this.afford(50, 100)) { const m = this.mine(u => u.def.id === 'mutalisk' && !u.inside); if (m.length > 4) { Abilities.morph(m[0], 'guardian'); return; } }
     // Devourers, which nothing ever built: guardians hit ground, devourers hit air, and the greater spire
     // buys both. Gated on the enemy actually flying, the way scourge and corsairs already are.
     if (this.race === 'Z' && p.hasBuilding('greater_spire') && (counts.devourer || 0) < 3 && enemyAir && this.afford(150, 50)) { const m = this.mine(u => u.def.id === 'mutalisk'); if (m.length > 4) { Abilities.morph(m[0], 'devourer'); return; } }
