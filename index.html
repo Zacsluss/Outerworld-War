@@ -13,7 +13,7 @@
      from disk with no assets and the look cannot rot when a file moves.
      ================================================================================== */
   html, body { margin: 0; padding: 0; background: #000; overflow: hidden; font-family: Verdana, "DejaVu Sans", Geneva, sans-serif; color: #cfd6e0; }
-  #game { display: none; cursor: none; }
+  #game { display: none; cursor: default; }   /* the real cursor: UI.syncCursor dresses it in the game's art (it was hidden and painted onto the canvas, a frame late) */
   /* margin:auto rather than align-items:center: the skirmish panel is tall, and a centred flex child
      taller than its container has its top clipped away with no way to scroll back to it. */
   #menu { position: absolute; inset: 0; display: flex; justify-content: center; overflow: auto;

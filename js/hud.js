@@ -859,7 +859,14 @@ Object.assign(UI, {
     if (Render.mini) { ctx.imageSmoothingEnabled = false; ctx.drawImage(Render.mini, mr.x, mr.y, mr.s, mr.s); ctx.imageSmoothingEnabled = true; }
     const sc = mr.s / (G.map.w * TILE); const vis = UI.viewAll ? G.allVis() : p.vis;
     ctx.fillStyle = 'rgba(96,40,120,0.6)'; const m = G.map; for (let ty = 0; ty < m.h; ty += 2) for (let tx = 0; tx < m.w; tx += 2) if (m.creep[m.idx(tx, ty)] && vis[ty * m.w + tx]) ctx.fillRect(mr.x + tx * mr.s / m.w, mr.y + ty * mr.s / m.h, 2 * mr.s / m.w + .5, 2 * mr.s / m.h + .5);
-    if (Render.fogCanvas) { ctx.globalAlpha = 0.85; ctx.imageSmoothingEnabled = false; ctx.drawImage(Render.fogCanvas, mr.x, mr.y, mr.s, mr.s); ctx.imageSmoothingEnabled = true; ctx.globalAlpha = 1; }
+    // UNEXPLORED GROUND IS BLACK ON THE MINIMAP. The fog bitmap already says the right thing -- Render.drawFog
+    // writes alpha 255 for never-seen, 140 for seen-before and 0 for in-sight -- and the main view blits it
+    // as it is. The minimap blitted it at 0.85, so never-seen ground came out at 217 and fifteen percent of
+    // the terrain showed through: the "darkened and invisible" shapes of every unexplored base in the
+    // user's screenshot, which is also a small scouting leak, since the layout of a map you have not
+    // explored was readable off the corner of the screen. Full opacity makes never-seen ground the fog
+    // colour outright, and seen-before ground keeps its dim, so the map reveals as units uncover it.
+    if (Render.fogCanvas) { ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = false; ctx.drawImage(Render.fogCanvas, mr.x, mr.y, mr.s, mr.s); ctx.imageSmoothingEnabled = true; }
     for (const r of m.resources) { if (vis[r.y * m.w + r.x] === 0) continue; ctx.fillStyle = r.type === 'mineral' ? '#6fe0ff' : '#7ee07a'; ctx.fillRect(mr.x + r.x * sc * TILE, mr.y + r.y * sc * TILE, Math.max(2, r.w * sc * TILE), Math.max(1.5, r.h * sc * TILE)); }
     for (const u of G.units) { if (!u.alive || u.inside || u.def.larva || u.def.notUnit) continue; if (u.owner !== G.human && !G.canSee(G.human, u) && !(u.isBuilding && G.explored(G.human, Math.floor(u.x / TILE), Math.floor(u.y / TILE)))) continue; ctx.fillStyle = u.owner === G.human ? '#3fe83f' : G.players[u.owner].color; const s = u.isBuilding ? Math.max(3, u.def.w * TILE * sc) : 2.5; ctx.fillRect(mr.x + u.x * sc - s / 2, mr.y + u.y * sc - s / 2, s, s); }
     // Sensor Tower contacts (FIXLIST-M14 C2), AFTER the fog and after the units. A blip is something
@@ -1089,9 +1096,10 @@ Object.assign(UI, {
     if (scaled) { ctx.save(); ctx.scale(k, k); }
     this.drawMessagesBody();
     if (scaled) ctx.restore();
-    // OUTSIDE the HUD's scale on purpose: the cursor is drawn at the real pointer, which is in screen
-    // pixels, and a doubled cursor would sit in the wrong place as well as look wrong.
-    this.drawCursor(ctx);
+    // The cursor is the browser's now (see syncCursor): nothing is painted here, the shape is only kept in
+    // step with what the pointer is over. It was painted here, outside the HUD's scale, until the seventh
+    // session measured why the mouse felt late.
+    this.syncCursor();
   },
   drawMessagesBody() {
     const ctx = Render.ctx, W = this.conW, H = this.conH, p = G.players[G.human];
@@ -1099,11 +1107,64 @@ Object.assign(UI, {
     if (this.chat !== null && this.chat !== undefined) { HUD.bevel(ctx, 10, H - this.consoleBase - 40, 420, 24, false, 'rgba(8,10,14,0.9)'); HUD.text(ctx, '> ' + this.chat + (G.frame % 24 < 12 ? '_' : ''), 16, H - this.consoleBase - 23, '#e6eaf0', 13); }
     if (this.loading) { const k = (G.frame - this.loading.start) / Math.max(1, this.loading.target - this.loading.start); HUD.bevel(ctx, W / 2 - 160, H / 2 - 30, 320, 60, true, 'rgba(10,12,16,0.95)'); HUD.text(ctx, (this.loading.label || 'Loading... re-simulating') + ' ' + Math.round(k * 100) + '%', W / 2, H / 2 - 6, '#ffe45a', 14, true, 'center'); ctx.fillStyle = '#3fe83f'; ctx.fillRect(W / 2 - 140, H / 2 + 6, 280 * k, 8); }
   },
-  drawCursor(ctx) {
-    const m = this.mouse; if (!m.inside && m.x === 0 && m.y === 0) return; const x = m.x, y = m.y; ctx.save();
-    const overUnit = this.hover && y < Render.H - this.consoleH;
-    if (this.pending && y < Render.H - this.consoleH) { const enemy = this.hover && this.hover.owner !== G.human; const col = this.pending.kind === 'attack' || enemy ? '#ff4040' : '#3fe83f'; ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.stroke(); ctx.beginPath(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.moveTo(x + dx * 5, y + dy * 5); ctx.lineTo(x + dx * 14, y + dy * 14); } ctx.stroke(); }
-    else if (overUnit) { const col = this.hover.owner === G.human ? '#3fe83f' : '#ff4040'; ctx.strokeStyle = col; ctx.lineWidth = 2; const s = 7; ctx.beginPath(); ctx.moveTo(x - s, y - s + 4); ctx.lineTo(x - s, y - s); ctx.lineTo(x - s + 4, y - s); ctx.moveTo(x + s - 4, y - s); ctx.lineTo(x + s, y - s); ctx.lineTo(x + s, y - s + 4); ctx.moveTo(x + s, y + s - 4); ctx.lineTo(x + s, y + s); ctx.lineTo(x + s - 4, y + s); ctx.moveTo(x - s + 4, y + s); ctx.lineTo(x - s, y + s); ctx.lineTo(x - s, y + s - 4); ctx.stroke(); }
+  // ---------------- the cursor ----------------
+  // THE CURSOR IS THE BROWSER'S, WEARING OUR ART (seventh session: "the mouse feels a little bit laggy ...
+  // can we have the mouse look cool without adding latency to it?").
+  //
+  // It used to be PAINTED: #game hid the real cursor (cursor: none) and drawCursor drew one onto the canvas
+  // at UI.mouse inside the frame loop. A painted cursor can only be where the pointer was when that frame
+  // started, and it reaches the glass only after the whole frame has been drawn and composited -- at least a
+  // frame behind the hand at the best of times, and further behind whenever a big fight makes a frame slow,
+  // which is exactly when the mouse matters. There is no way to paint a cursor on a canvas without that.
+  //
+  // A CSS cursor is drawn by the browser from the pointer's own position, independently of the game loop, so
+  // it has none of it. The same drawings -- arrow, order reticle in green or red, the corner brackets over
+  // your own unit or an enemy's -- are rendered ONCE into small canvases and handed to CSS as images, so it
+  // looks the way it did. syncCursor only touches the style when the shape actually changes.
+  cursorShape() {
+    const m = this.mouse, inWorld = m.y < Render.H - this.consoleH;
+    if (this.pending && inWorld) return (this.pending.kind === 'attack' || (this.hover && this.hover.owner !== G.human)) ? 'order-enemy' : 'order-ally';
+    if (this.hover && inWorld) return this.hover.owner === G.human ? 'hover-own' : 'hover-enemy';
+    return 'arrow';
+  },
+  // Where the click lands, in the 32 px image's own pixels: the tip of the arrow, the centre of the others.
+  CURSOR_HOT: { arrow: [1, 1], 'order-ally': [16, 16], 'order-enemy': [16, 16], 'hover-own': [16, 16], 'hover-enemy': [16, 16] },
+  _cursorCSS: {},
+  cursorCSS(shape) {
+    if (this._cursorCSS[shape]) return this._cursorCSS[shape];
+    let css = 'default';
+    try {
+      const [hx, hy] = this.CURSOR_HOT[shape] || [1, 1];
+      const img = k => {
+        const cv = document.createElement('canvas'); cv.width = cv.height = 32 * k;
+        const c = cv.getContext && cv.getContext('2d'); if (!c || typeof cv.toDataURL !== 'function') return null;
+        c.scale(k, k); this.paintCursor(c, shape, hx, hy); return cv.toDataURL('image/png');
+      };
+      const u1 = img(1), u2 = img(2);
+      // Two forms: image-set for a sharp cursor on a scaled display, and a plain url for a browser that
+      // rejects image-set -- syncCursor tries the first and falls back to the second.
+      if (u1) css = { hi: '-webkit-image-set(url("' + u1 + '") 1x, url("' + (u2 || u1) + '") 2x) ' + hx + ' ' + hy + ', auto', lo: 'url("' + u1 + '") ' + hx + ' ' + hy + ', auto' };
+    } catch (e) { css = 'default'; }
+    return (this._cursorCSS[shape] = css);
+  },
+  syncCursor() {
+    const el = typeof Render !== 'undefined' ? Render.canvas : null; if (!el || !el.style) return;
+    const shape = this.cursorShape(); if (shape === this._cursorShape) return;
+    this._cursorShape = shape;
+    const css = this.cursorCSS(shape);
+    if (typeof css === 'string') { el.style.cursor = css; return; }
+    // Cleared first: a REJECTED assignment leaves the property as it was, so without this a browser that
+    // does not take image-set would keep showing the previous shape instead of falling back.
+    el.style.cursor = ''; el.style.cursor = css.hi;
+    if (!el.style.cursor) el.style.cursor = css.lo;
+    if (!el.style.cursor) el.style.cursor = 'default';   // never leave the pointer invisible
+  },
+  // The drawings themselves, unchanged from the painted cursor except that they are drawn at (x, y) into a
+  // 32 px image once per shape instead of onto the game canvas every frame.
+  paintCursor(ctx, shape, x, y) {
+    ctx.save();
+    if (shape === 'order-ally' || shape === 'order-enemy') { const col = shape === 'order-enemy' ? '#ff4040' : '#3fe83f'; ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.stroke(); ctx.beginPath(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.moveTo(x + dx * 5, y + dy * 5); ctx.lineTo(x + dx * 14, y + dy * 14); } ctx.stroke(); }
+    else if (shape === 'hover-own' || shape === 'hover-enemy') { const col = shape === 'hover-own' ? '#3fe83f' : '#ff4040'; ctx.strokeStyle = col; ctx.lineWidth = 2; const s = 7; ctx.beginPath(); ctx.moveTo(x - s, y - s + 4); ctx.lineTo(x - s, y - s); ctx.lineTo(x - s + 4, y - s); ctx.moveTo(x + s - 4, y - s); ctx.lineTo(x + s, y - s); ctx.lineTo(x + s, y - s + 4); ctx.moveTo(x + s, y + s - 4); ctx.lineTo(x + s, y + s); ctx.lineTo(x + s - 4, y + s); ctx.moveTo(x - s + 4, y + s); ctx.lineTo(x - s, y + s); ctx.lineTo(x - s, y + s - 4); ctx.stroke(); }
     else { ctx.fillStyle = '#e9f5ea'; ctx.strokeStyle = '#0a2a10'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 11, y + 11); ctx.lineTo(x + 6, y + 11); ctx.lineTo(x + 9, y + 17); ctx.lineTo(x + 6, y + 18); ctx.lineTo(x + 3, y + 12); ctx.lineTo(x, y + 15); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#3fe83f'; ctx.beginPath(); ctx.moveTo(x + 2, y + 3); ctx.lineTo(x + 8, y + 9); ctx.lineTo(x + 5, y + 9); ctx.lineTo(x + 2, y + 11); ctx.closePath(); ctx.fill(); }
     ctx.restore();
   },
@@ -1124,6 +1185,6 @@ Object.assign(UI, {
     HUD.text(ctx, m.title, Render.W / 2, y + 48, m.title === 'VICTORY' ? '#ffe45a' : m.title === 'DEFEAT' ? '#ff5050' : '#e6eaf0', 28, true, 'center');
     m.lines.forEach((l, i) => HUD.text(ctx, l, Render.W / 2, y + 80 + i * 22, '#c8d0d8', fs, false, 'center'));
     this.menuRects = []; m.items.forEach((it, i) => { const by = y + 96 + m.lines.length * 22 + i * 46; const hov = this.mouse.x >= x + 60 && this.mouse.x < x + w - 60 && this.mouse.y >= by && this.mouse.y < by + 38; HUD.bevel(ctx, x + 60, by, w - 120, 38, !hov, hov ? '#2f3a4c' : '#1e2530'); HUD.text(ctx, it[0], Render.W / 2, by + 25, '#e6eaf0', 15, true, 'center'); this.menuRects.push({ x: x + 60, y: by, w: w - 120, h: 38, fn: it[1] }); });
-    this.drawCursor(ctx);
+    this.syncCursor();
   },
 });

@@ -323,3 +323,83 @@ without that.
 **If you want the old pace back**, `const MINE_TIME = 190, GAS_TIME = 94` near the top of
 [js/sim.js](js/sim.js) — set it to 75 and 37. Saves and replays made at one pace will not load at the other;
 the build stamp refuses them, which is its job.
+
+---
+
+# The seventh session
+
+The user's ten-item list after playing the sixth session's build. Items 73 onward.
+
+---
+
+## 73. The HUD is 1.4 times its old size, not 2
+
+**How to reach it.** Start any game.
+
+**What to look for.** The console band is about 30% smaller than the sixth session left it: 274 px tall on a
+1080p or 1440p window (it was 392, and 196 before that), the minimap 243 px across, a command card button
+74 px. Everything still clicks where it is drawn — press a card button, click the minimap, click a
+selection portrait.
+
+**The knob.** `HUD_SCALE` near the top of [js/ui.js](js/ui.js). It is `1.4` now; `1` is the original size.
+
+---
+
+## 74. The minimap is black until your units uncover it
+
+**How to reach it.** Start any game and look at the minimap before moving anything.
+
+**What to look for.**
+- **Everything you have not seen is black.** Only the circle of ground around your starting base shows.
+  Before this, the terrain of every unexplored base showed through at about 15% — the dim shapes in the
+  screenshot — which also let you read the map's layout without scouting it.
+- **Send a worker across the map.** The minimap reveals behind it as it goes. Ground it has seen and left
+  stays visible but dimmed; ground in sight now is at full brightness.
+
+---
+
+## 75. The mouse is the real cursor again, still wearing the game's art
+
+**How to reach it.** Start any game and move the mouse quickly in circles.
+
+**What to look for.**
+- **It keeps up with your hand.** The cursor used to be *painted onto the game canvas* every frame with the
+  real one hidden, which puts it at least a frame behind the pointer and further behind whenever a busy
+  fight slows a frame down. It is now the operating system's cursor, drawn by the browser straight from
+  the pointer, so the game's frame rate cannot delay it.
+- **It still looks the same.** The green-and-white arrow; green corner brackets over your own unit, red over
+  an enemy; press **A** and the reticle is red, press **M** and it is green; hover the console and it is the
+  arrow again.
+- On a scaled display (125%/150%) it is drawn from a double-resolution image, so it stays sharp.
+
+**One thing that is different by design:** because it is the real cursor, a screenshot tool that hides the
+cursor will hide it — the painted one used to appear in screenshots.
+
+---
+
+## 76. Minerals: measured, and at StarCraft II's pace
+
+*(The user asked: "Minerals do not seem to have changed. They are still being gathered about 50% too fast.
+Did you actually change anything on mineral harvesting systems?")*
+
+**Yes — and the running game was measured to prove it.** A worker now spends 190 frames inside a patch where
+it spent 75. Measured in the page, in real time, at the default speed ("Fastest"): the simulation runs
+exactly 24 frames a second, and four workers brought in **48 minerals each per real minute**. It was 99.8.
+
+**Against StarCraft II.** Liquipedia gives Legacy of the Void's rate as 61.2 minerals per worker per minute on
+a near patch and 53.6 on a far one, in real time. So the game now mines **slightly slower** than StarCraft
+II, not faster. (The "SC2 is about 41" figure the sixth session started from turned out to be Heart of the
+Swarm's *game-time* number; in real time it is about 1.4 times that.)
+
+**Why it probably still felt fast.** About "50% too fast" is almost exactly what the *old* rate was against
+StarCraft II, so the page you played was most likely loaded before the change. **To check the one you are
+running:** open the browser console (F12) during a game and type `MINE_TIME` — it should say **190**. If it
+says 75, reload the page (Ctrl+F5).
+
+**Also:** the desktop app's bundled copy (`desktop/dist`) was a day old and still had the old rate. It has
+been refreshed; an installer built from it will match the browser version.
+
+**One thing that can still make income *feel* quicker than StarCraft II** even at the same rate: a worker
+here carries **8** minerals a trip, as in Brood War, where StarCraft II carries **5**, so the counter climbs
+in bigger steps. If you want that changed too, it is `WORKER_HAUL` in [js/sim.js](js/sim.js) — a balance
+decision, so it has not been touched.

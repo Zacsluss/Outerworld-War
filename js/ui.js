@@ -76,12 +76,16 @@ const Sound = {
 // draws (test/qol.js pins exactly that with forty selected units).
 //
 // HUD_MAX_FRAC is the guard for a short window: the band never takes more than this much of the height,
-// and hudK falls with it, so a 720p window gets a 302 px band at k 1.61 rather than a 374 px one drawn
-// half off the plate. It can never go BELOW the unscaled band either, so hudK is never less than 1 and
-// a window too short even for today's console behaves exactly as it does today.
+// and hudK falls with it. It can never go BELOW the unscaled band either, so hudK is never less than 1 and
+// a window too short even for the old console behaves exactly as it always did.
 //
+// 1.4, NOT 2. The sixth session doubled it as asked; the user played it and said "increased too much --
+// reduce it by about 30%", and 2 x 0.7 is 1.4. What that gives, by number (test/qol.js pins them):
+//   1920x1080 and 2560x1440   band 274 px (k 1.40), minimap 243, card button 74
+//   1280x720                  band 262 px, 36% of the height -- the ceiling no longer bites at 720p
+//   800x400                   band 168 px at k 1.20: the ceiling's own case, 42% of the height
 // Set HUD_SCALE to 1 and every number in the table above comes back unchanged.
-const HUD_SCALE = 2, HUD_MAX_FRAC = 0.42;
+const HUD_SCALE = 1.4, HUD_MAX_FRAC = 0.42;
 const UI = {
   // What the band would be unscaled. A fixed height left no map at all in a short window.
   get consoleBase() { return Math.round(clamp(Render.H * 0.26, 140, 196)); },
@@ -462,6 +466,7 @@ const UI = {
     if (this.miniDrag) { const [wx, wy] = this.miniToWorld(m.x, m.y); this.centerOn(wx, wy); }
     if (this.placing) { const d = this.placing.def; this.placing.tx = Math.floor(m.wx / TILE - d.w / 2 + 0.5); this.placing.ty = Math.floor(m.wy / TILE - d.h / 2 + 0.5); if (d.onGeyser) { const g = G.map.resources.find(r => r.type === 'geyser' && m.wx >= r.x * TILE - 16 && m.wx < (r.x + r.w) * TILE + 16 && m.wy >= r.y * TILE - 16 && m.wy < (r.y + r.h) * TILE + 16); if (g) { this.placing.tx = g.x; this.placing.ty = g.y; } } }
     this.hover = (m.y < Render.H - this.consoleH) ? this.unitAt(m.wx, m.wy) : null;
+    if (this.syncCursor) this.syncCursor();   // the cursor's SHAPE follows the pointer on the event, not on the next frame
     // B1: the ring. A resource only reads as hovered when nothing is standing on it, so a worker
     // mining a patch still highlights as the worker -- the unit is what a click there would select.
     this.hoverRes = (!this.hover && m.y < Render.H - this.consoleH) ? this.resourceAt(m.wx, m.wy) : (this.hover ? this.resourceUnder(this.hover) : null);

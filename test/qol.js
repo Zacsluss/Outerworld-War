@@ -84,7 +84,7 @@ const r = vm.runInContext(`(() => {
   // stops it eating a short window. These are the numbers, not a shape -- a check that only asserted
   // "bigger than before" would pass on a scale of 1.01.
   out.hudScale = {};
-  for (const wh of [[1280, 720], [1920, 1080], [2560, 1440], [800, 320]]) {   // 320: the only shape where HUD_MAX_FRAC bites below the 140 floor, so the band cannot grow at all
+  for (const wh of [[1280, 720], [1920, 1080], [2560, 1440], [800, 400], [800, 320]]) {   // 400: HUD_MAX_FRAC's own case at 1.4; 320: where it bites below the 140 floor, so the band cannot grow at all
     Render.W = wh[0]; Render.H = wh[1];
     out.hudScale[wh[0] + 'x' + wh[1]] = { base: UI.consoleBase, ch: UI.consoleH, k: +UI.hudK.toFixed(3), frac: +(UI.consoleH / wh[1]).toFixed(3), mini: Math.round(UI.miniRect().s), btn: Math.round(UI.cardRect().bw) };
   }
@@ -138,6 +138,61 @@ const r = vm.runInContext(`(() => {
     HUD.sprite(Render.ctx, 'marine', '#f40404', 30, 0, 0); HUD.sprite(Render.ctx, 'marine', '#f40404', 30, 0, 0, 'rgba(60,230,60,0.8)');
     Sprites.icon = realIcon; Sprites.tinted = realTint; Render.W = 1280; Render.H = 720;
     out.spriteRaster = { dest: 30, kBig: +kBig.toFixed(3), kOne, icon: spyI, tint: spyT }; }
+
+  // ---- 2c. UNEXPLORED GROUND IS BLACK ON THE MINIMAP (seventh session) ----
+  // The fog bitmap is alpha 255 for never-seen ground; the minimap blitted it at 0.85, so fifteen percent of
+  // the terrain of every unexplored base showed through. Read the alpha in force at the moment the fog
+  // bitmap is drawn onto the minimap rectangle.
+  {
+    start(); G.human = 0; UI.mode = 'play';
+    Render.ctx = __mkCtx(); Render.W = 1280; Render.H = 720; Render.dpr = 1;
+    Render.fogCanvas = { width: G.map.w, height: G.map.h, getContext: () => __mkCtx() };
+    UI.select([]); __calls.length = 0; UI.drawConsole();
+    let alpha = 1, fogAlpha = null;
+    for (const c of __calls) {
+      if (c.op === '=globalAlpha') alpha = c.a[0];
+      if (c.op === 'drawImage' && c.a[0] === Render.fogCanvas) { fogAlpha = alpha; break; }
+    }
+    out.minimapFog = { drawn: fogAlpha !== null, alpha: fogAlpha };
+  }
+
+  // ---- 2d. THE CURSOR IS THE BROWSER'S (seventh session: "the mouse feels a little bit laggy") ----
+  // A cursor PAINTED on the canvas is at least one frame behind the pointer, and further whenever a frame is
+  // slow; a CSS cursor is drawn by the browser from the pointer itself. The art is rendered into images once.
+  {
+    start(); G.human = 0; UI.mode = 'play';
+    Render.ctx = __mkCtx(); Render.W = 1280; Render.H = 720; Render.dpr = 1;
+    let writes = 0; const style = {}; let cur = '';
+    Object.defineProperty(style, 'cursor', { get: () => cur, set: v => { writes++; cur = v; }, configurable: true });
+    Render.canvas = { style };
+    // images need a toDataURL the stub document does not have
+    const realCreate = document.createElement;
+    document.createElement = t => { const e = realCreate(t); e.toDataURL = () => 'data:image/png;base64,QUJD'; return e; };
+    UI._cursorCSS = {}; UI._cursorShape = null;
+    const own = G.spawnUnit('marine', 0, P().startX + 90, P().startY + 90);
+    const foe = G.spawnUnit('marine', 1, P().startX + 190, P().startY + 90);
+    const shapeAt = (mx, my, pending, hover) => { UI.mouse.x = mx; UI.mouse.y = my; UI.pending = pending; UI.hover = hover; return UI.cursorShape(); };
+    out.cursor = {
+      arrow: shapeAt(400, 300, null, null),
+      orderMove: shapeAt(400, 300, { kind: 'move' }, null),
+      orderAttack: shapeAt(400, 300, { kind: 'attack' }, null),
+      orderOnEnemy: shapeAt(400, 300, { kind: 'move' }, foe),
+      hoverOwn: shapeAt(400, 300, null, own),
+      hoverEnemy: shapeAt(400, 300, null, foe),
+      overConsole: shapeAt(400, Render.H - 10, { kind: 'attack' }, foe),
+    };
+    UI.pending = null; UI.hover = null; UI.mouse.x = 400; UI.mouse.y = 300;
+    UI.syncCursor(); writes = 0; for (let i = 0; i < 10; i++) UI.syncCursor();   // the first call sets the shape; the next ten must write nothing
+    out.cursor.writesForOneShape = writes; out.cursor.css = String(cur).slice(0, 40);
+    UI.hover = foe; UI.syncCursor(); UI.syncCursor();
+    out.cursor.writesAfterChange = writes; out.cursor.css2 = String(cur).slice(0, 40);
+    // nothing is painted at the pointer: drive the pass that used to draw it and look for the pointer's coordinates
+    UI.hover = null; UI.mouse.x = 777; UI.mouse.y = 333; UI.pending = { kind: 'attack' };
+    __calls.length = 0; UI.drawMessages();
+    out.cursor.paintedAtPointer = __calls.filter(c => (c.op === 'moveTo' || c.op === 'arc') && c.a[0] >= 770 && c.a[0] <= 800 && c.a[1] >= 320 && c.a[1] <= 360).length;
+    UI.pending = null;
+    document.createElement = realCreate;
+  }
 
   // ---- 3. multi-building production goes to the shortest queue ----
   start(); G.human = 0;
@@ -288,15 +343,24 @@ ok(!r.gridDrew.threw && r.gridDrew.calls > 0, 'the console draws 130 units witho
 ok(r.gridDrew.hotspots > 0, '...and every tile it draws is clickable', JSON.stringify(r.gridDrew));
 ok(!r.strip40.threw && r.strip40.sel === 40 && r.strip40.hotspots === 40 && r.strip40.onPlate === 40, 'forty units through the console itself: forty tiles, every one on the console band (REVIEW-M17 task 1: the HUD drew eighteen and put the rest below the screen)', JSON.stringify(r.strip40));
 ok(r.strip40.offScreen === 0, '...and none of them below the bottom of the screen', JSON.stringify(r.strip40));
+ok(r.cursor.arrow === 'arrow' && r.cursor.orderMove === 'order-ally' && r.cursor.orderAttack === 'order-enemy' && r.cursor.orderOnEnemy === 'order-enemy'
+  && r.cursor.hoverOwn === 'hover-own' && r.cursor.hoverEnemy === 'hover-enemy' && r.cursor.overConsole === 'arrow',
+  'the cursor picks the same five shapes the painted one drew -- arrow, green or red order reticle, own or enemy brackets -- and the plain arrow over the console', JSON.stringify(r.cursor));
+ok(/url\(/.test(r.cursor.css) && r.cursor.writesForOneShape === 0 && r.cursor.writesAfterChange > 0 && /url\(/.test(r.cursor.css2),
+  'THE CURSOR IS A CSS CURSOR wearing that art, and the style is written only when the shape changes (nothing at all for ten frames of the same shape)', JSON.stringify(r.cursor));
+ok(r.cursor.paintedAtPointer === 0,
+  '...and NOTHING is painted at the pointer any more: a cursor painted onto the canvas is at least a frame behind the hand, which is the lag the user felt', String(r.cursor.paintedAtPointer));
+ok(r.minimapFog.drawn && r.minimapFog.alpha === 1,
+  'the minimap blits the fog OPAQUE, so never-seen ground is black rather than fifteen percent terrain (it was drawn at 0.85: every unexplored base was readable off the minimap)', JSON.stringify(r.minimapFog));
 ok(!r.strip40narrow.threw && r.strip40narrow.hotspots === 40 && r.strip40narrow.onPlate === 40 && r.strip40narrow.offScreen === 0 && r.strip40narrow.tileW >= 22,
   'forty of them still fit in the NARROWEST window the doubled HUD has to work in (1024x768), at a tile no smaller than the smallest the game drew before it was scaled at all -- the shrink floor is 22 SCREEN pixels, not 22 console units (TODO-M18 item 5; measured as ten lost to "+10 more")', JSON.stringify(r.strip40narrow));
 
-ok(r.hudScale['1920x1080'].ch === 392 && r.hudScale['1920x1080'].k === 2 && r.hudScale['2560x1440'].ch === 392 && r.hudScale['2560x1440'].k === 2,
-  'the console band is DOUBLED where there is room for it: 196 -> 392 px at 1080p and at 1440p (TODO-M18 item 5; it was a fixed 196 at every viewport from 1366x768 up)', JSON.stringify(r.hudScale));
-ok(r.hudScale['1920x1080'].mini === 348 && r.hudScale['1920x1080'].btn === 106,
-  '...and everything on it doubles with it, because it all derives from the band: the minimap 174 -> 348 and the card button 53 -> 106', JSON.stringify(r.hudScale['1920x1080']));
-ok(r.hudScale['1280x720'].frac <= 0.42 && r.hudScale['1280x720'].k > 1.5 && r.hudScale['1280x720'].k < 2,
-  'a short window gets as much of the doubling as fits and no more: 720p takes 42% of the height at k 1.61, not 52% at k 2', JSON.stringify(r.hudScale['1280x720']));
+ok(r.hudScale['1920x1080'].ch === 274 && r.hudScale['1920x1080'].k === 1.398 && r.hudScale['2560x1440'].ch === 274 && r.hudScale['2560x1440'].k === 1.398,
+  'the console band is 1.4 times its old size where there is room: 196 -> 274 px at 1080p and at 1440p (TODO-M18 item 5 doubled it; the user played that and asked for about 30% less)', JSON.stringify(r.hudScale));
+ok(r.hudScale['1920x1080'].mini === 243 && r.hudScale['1920x1080'].btn === 74,
+  '...and everything on it scales with it, because it all derives from the band: the minimap 174 -> 243 and the card button 53 -> 74', JSON.stringify(r.hudScale['1920x1080']));
+ok(r.hudScale['800x400'].frac <= 0.42 && r.hudScale['800x400'].k > 1 && r.hudScale['800x400'].k < 1.4,
+  'a short window gets as much of the growth as fits and no more: 400 px tall takes 42% of the height at k 1.2, not 49% at k 1.4', JSON.stringify(r.hudScale['800x400']));
 ok(r.hudScale['800x320'].k === 1 && r.hudScale['800x320'].ch === r.hudScale['800x320'].base && r.hudScale['800x320'].ch === 140,
   'a window too short even for the unscaled console behaves exactly as it did before -- hudK never goes below 1, so nothing is drawn off the plate', JSON.stringify(r.hudScale['800x320']));
 ok(r.cardClicks.same && r.cardClicks.n > 0 && r.cardClicks.onBand && r.cardClicks.k !== 1,
@@ -305,8 +369,8 @@ ok(r.miniHit.inside && !r.miniHit.above && r.miniHit.onBand,
   'the minimap hit test scales with the minimap: its own centre is inside it and a point above the band is not', JSON.stringify(r.miniHit));
 ok(r.iconRaster.gotIcon.includes(r.iconRaster.wantIcon) && !r.iconRaster.gotIcon.includes(r.iconRaster.ikConsole),
   'a card icon is rasterised at the size it is DRAWN at (' + r.iconRaster.wantIcon + ' px, not the console-unit ' + r.iconRaster.ikConsole + '), so a doubled HUD is sharp rather than a stretched small one', JSON.stringify(r.iconRaster));
-ok(r.spriteRaster.icon[0] === 48 && r.spriteRaster.tint[0] === 48 && r.spriteRaster.icon[1] === 30 && r.spriteRaster.tint[1] === 30,
-  '...and the rule behind it, stated on its own: a 30 px destination asks the painter for 48 where the HUD is at 1.61 and for 30 where it is at 1 -- icons and selection-strip portraits alike', JSON.stringify(r.spriteRaster));
+ok(r.spriteRaster.icon[0] === Math.round(30 * r.spriteRaster.kBig) && r.spriteRaster.icon[0] > 30 && r.spriteRaster.tint[0] === r.spriteRaster.icon[0] && r.spriteRaster.icon[1] === 30 && r.spriteRaster.tint[1] === 30,
+  '...and the rule behind it, stated on its own: a 30 px destination asks the painter for 30 x hudK where the HUD is scaled (' + r.spriteRaster.icon[0] + ' at ' + r.spriteRaster.kBig + ') and for 30 where it is not -- icons and selection-strip portraits alike', JSON.stringify(r.spriteRaster));
 
 
 ok(r.multiCard.gotCard, 'three barracks selected together still get a production card', JSON.stringify(r.multiCard));
