@@ -62,7 +62,15 @@ class Player {
   }
   upgLevel(k) { return k ? (this.upg[k] || 0) : 0; }
   hasTech(t) { return this.tech.has(t); }
-  msg(text, kind = 'info') { if (!this.human) return; const last = this.lastAlert[text] || -9999; if (G.frame - last < 72) return; this.lastAlert[text] = G.frame; this.msgs.push({ text, t: G.frame, kind }); if (this.msgs.length > 6) this.msgs.shift(); if (typeof Sound !== 'undefined') Sound.alert(kind); if (typeof Voice !== 'undefined' && (kind === 'attack' || kind === 'nuke' || text.endsWith('complete.') || text === RACE_INFO[this.race].supplyMsg || text.startsWith('Mission') || text.startsWith('Nuclear'))) Voice.announce(text); }
+  msg(text, kind = 'info') { if (!this.human) return; const last = this.lastAlert[text] || -9999; if (G.frame - last < 72) return; this.lastAlert[text] = G.frame; this.msgs.push({ text, t: G.frame, kind }); if (this.msgs.length > 6) this.msgs.shift();
+    // THE SPEAKER IS LOCAL, THE RECORD IS NOT. `human` means "a human player", which in a network game is
+    // every human -- and the simulation is identical on every client, so each client used to play and speak
+    // the OTHER player's supply alerts too (the user heard their opponent's "spawn more overlords", and the
+    // opponent heard theirs). The text is still recorded on the player it is about: the console draws from
+    // G.players[G.human].msgs, a rejoiner needs its own history, and thirteen suites read it. G.alert's
+    // minimap ping was already gated this way; these two calls were the ones that were not.
+    if (this.id !== G.human) return;
+    if (typeof Sound !== 'undefined') Sound.alert(kind); if (typeof Voice !== 'undefined' && (kind === 'attack' || kind === 'nuke' || text.endsWith('complete.') || text === RACE_INFO[this.race].supplyMsg || text.startsWith('Mission') || text.startsWith('Nuclear'))) Voice.announce(text); }
   canAfford(min, gas, quiet) { if (this.minerals < min) { if (!quiet) this.msg('Not enough minerals.', 'error'); return false; } if (this.gas < gas) { if (!quiet) this.msg('Not enough vespene gas.', 'error'); return false; } return true; }
   hasBuilding(id) {
     for (const u of G.units) { if (u.alive && u.owner === this.id && u.isBuilding && u.done && (u.def.id === id || (EQUIV[id] || []).includes(u.def.id))) return true; }

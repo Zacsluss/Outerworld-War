@@ -599,3 +599,18 @@ then hide the tab for those five seconds: about 300 (was about 10).
 The camera: hold the down arrow, Alt-Tab away while holding it, release it there, come back. **Working:** the
 camera is still. **Before:** it kept panning down until you pressed the key again, because the release was never
 seen. Quicker: `node test/ticker.js` (17 checks). No stamp move; saves and replays are unaffected.
+
+## 62. You hear your own announcements, and only yours
+
+A two-human game (item 60). Let one player run out of supply -- stop building depots, pylons or overlords and keep
+making units until the top bar is at the cap. **Working:** that player hears the alert tone and the spoken line
+("Additional supply depots required.", "You must construct additional pylons.", "Spawn more overlords."); the other
+player hears nothing and their own console says nothing. Swap, and it is the other way round. The same for an
+attack warning, a nuclear launch and a completed upgrade. **Before:** every client played and spoke BOTH players'
+alerts -- the simulation is identical on every machine, and the sound was gated on "is a human player" rather than
+"is the player sitting here", which is the same person in single player and two different people in a game.
+
+The console text was never wrong, on purpose: it reads the local player's own list. That list is still kept for
+every player, which is what lets a rejoining client show its own history. Quicker: `node test/netaudio.js`
+(10 checks). Saves and replays from before this commit are refused: the guard lives inside a stamped class, so
+the stamp moved even though no simulation result changed.

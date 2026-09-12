@@ -47,7 +47,7 @@ exist only in a chat transcript.
 
 ## Non-negotiable
 
-- **`node test/all.js` is the gate before any commit.** 77 suites, ~4 minutes. Green means green. A red
+- **`node test/all.js` is the gate before any commit.** 78 suites, ~4 minutes. Green means green. A red
   `rooms` with `EADDRINUSE` is another gate or a stray server on the relay ports (8793-8798), not a fault:
   re-run `node test/rooms.js` alone, then the gate.
 - **Determinism.** Never `Math.random()` in simulation code — use `G.rand()`. Anything a replay or a
