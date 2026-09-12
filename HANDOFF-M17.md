@@ -34,7 +34,7 @@ task 30's re-deal); and the gate was **76 suites** (`abilities20` joined it; `ti
 - **On GitHub since the fifth session:** `origin` is https://github.com/Zacsluss/Outerworld-War and its `main` is
   this branch. Local `m10-overnight` tracks `origin/main`, so `git push` publishes; GitHub's own initial commit (a
   stub README and .gitignore) was merged in with ours kept, so the history is fast-forward from there.
-- **78 test suites green.** `node test/all.js`, about four minutes on a quiet machine. That is the gate before
+- **79 test suites green.** `node test/all.js`, about four minutes on a quiet machine. That is the gate before
   any commit. One suite joined it this session: `abilities20` (task 20); forty-four suites moved onto
   `test/_harness.js` (task 21) with every count unchanged.
 - **14 commits since `95c00e9`** (the third session's docs commit), each gated. The build stamp is
@@ -187,7 +187,8 @@ On top of everything in `HANDOFF-M13.md` to `HANDOFF-M17.md`'s earlier list. Eac
 ## Diagnostics available
 
 ```
-node test/all.js                                  78 suites, ~4 min, the pre-commit gate
+node test/all.js                                  79 suites, ~4 min, the pre-commit gate
+node test/seldraw.js                              the queued-order lines, and that a dead unit draws no bar, 21 checks
 node test/netaudio.js                             an alert is heard only by the player it is about, 10 checks
 node test/ticker.js                               the Worker clock and the held-key guards, 17 checks in a second
 node test/eightplayer.js                          19/19 by hand; the bank line is the identity check for refactors
@@ -226,7 +227,7 @@ Read CLAUDE.md, then HANDOFF-M17.md (this file: the state, the known reds, the t
 sessions), then REVIEW-M17.md sections 2, 3 and 4 (every open task in section 1 is DONE and points at
 its entry; section 4 is what was deliberately not done), then PLAYTEST-M17.md.
 
-THE STATE: the review is finished. 78 suites green; the stamp is af56c841f794af2f. Three known reds, none
+THE STATE: the review is finished. 79 suites green; the stamp is af56c841f794af2f. Three known reds, none
 blocking: test/soak.js's Swarm Host line; test/aistyles.js seed 5's one economy line (57 vs 61);
 nothing else. test/eightplayer.js is 19/19 by hand and its bank line is the identity check for any
 refactor.
@@ -263,7 +264,7 @@ measurement was right the first time; the one hypothesis -- that the corpse filt
 was checked by an interleaved A/B before it was kept), a negative control that goes cleanly RED with
 the feature removed, tools/control.js for controls, tools/patch.js for edits anchored on text, probes
 and specs written to files under .claude/review/ with the Write tool (bash mangles backslashes), and
-the gate (node test/all.js, 78 suites) green before the commit -- re-run test/rooms.js alone if it is
+the gate (node test/all.js, 79 suites) green before the commit -- re-run test/rooms.js alone if it is
 the one red (the relay ports collide with any other gate on the machine). After any AI or simulation
 change: aistyles seeds 1, 5, 11 and eightplayer by hand, and expect the samples to re-deal.
 

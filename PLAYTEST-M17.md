@@ -614,3 +614,22 @@ The console text was never wrong, on purpose: it reads the local player's own li
 every player, which is what lets a rejoining client show its own history. Quicker: `node test/netaudio.js`
 (10 checks). Saves and replays from before this commit are refused: the guard lives inside a stamped class, so
 the stamp moved even though no simulation result changed.
+
+## 63. Shift-queued orders draw a route, and a dead unit's health bar does not linger
+
+Select one of your own units and **shift-right-click** three or four places. **Working:** a faint line runs from
+the unit to where it is going now and on through every stored stop, with a small diamond at each; it shortens as
+the unit reaches each one and is gone when the queue empties. **Green** is a move, **red** an attack or
+attack-move (shift-A then a click), **yellow** a patrol -- Brood War's three colours. It draws only for your own
+current selection and only when something is queued, so a screen of gathering workers draws nothing.
+
+The health bar: **there was nothing to fix.** A probe drove the real renderer frame by frame across a death
+(`node .claude/review/death-probe.js`): the sprite and the bar stop on the same drawn frame, in every case --
+selected, unselected and wounded, and an enemy in sight -- and a 40-unit battle drew 18,816 bars across 29 deaths
+with none for a dead unit. What stays on the ground for up to 45 seconds is the CORPSE, which is the unit's own
+sprite tinted and lying down, and it is meant to. `node test/seldraw.js` pins both halves so a future change
+cannot introduce the bug that was reported.
+
+One real case of a dead thing's bar is left on purpose: an enemy building destroyed while you could not see it
+keeps its remembered bar in the fog, because removing it would tell you the building is dead (item 34).
+Presentation only -- the stamp did not move, saves and replays are unaffected.

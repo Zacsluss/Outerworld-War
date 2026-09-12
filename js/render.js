@@ -370,6 +370,9 @@ const Render = {
     this.drawHazard(ctx);
     // Night, in the same slot and for the same reason: it is weather, not interface.
     this.drawNight(ctx, list);
+    // Under the selection rings and over everything the world draws, because a queued route is
+    // interface -- the same slot, and for the same reason, as the rings and the rally lines below it.
+    this.drawOrderQueue(ctx);
     for (const u of UI.selection) { if (!u.alive || u.inside) continue; this.drawSelection(ctx, u, true); }
     this.drawRallies(ctx);
     if (UI.hover && UI.hover.alive && !UI.selection.includes(UI.hover)) this.drawSelection(ctx, UI.hover, false);
@@ -1535,6 +1538,109 @@ const Render = {
         ctx.restore();
       }
     }
+  },
+  // ==========================================================================
+  // QUEUED ORDERS -- where a shift-queued unit goes next, and in what order.
+  // ==========================================================================
+  // Shift-queuing has worked since M11 and was INVISIBLE: you queued five stops, saw nothing, and had
+  // to hold the route in your head. That is the same fault the line-formation preview had further down
+  // this file, where the drawing IS the feature -- a mechanic nobody can see is a mechanic nobody uses.
+  // So this is Brood War's own shape: a line from the unit to where it is going now, on through every
+  // stored stop in the order nextOrder() will take them, with a mark at each.
+  //
+  // COLOUR SAYS WHAT THE STOP IS. Three, because three is what this size can carry, and Brood War's
+  // three because the player already knows them: GREEN go there (move, follow, gather, build, repair,
+  // load, land, ...), RED fight there (attack, attack-move), YELLOW walk it back and forth (patrol).
+  //
+  // ONLY FOR THE CURRENT SELECTION, only for YOUR OWN units -- an enemy unit can be selected and its
+  // queue is knowledge you do not have -- and only for a unit that has something QUEUED. That last
+  // one is a deliberate difference from "draw every selected unit's current destination": fifty
+  // selected workers would draw fifty lines to fifty patches every frame, which is noise, and the ask
+  // was for the stored orders. A unit with an empty queue costs one array read and nothing else.
+  //
+  // THE COST RULE is REVIEW-M17 entry 28's: a per-frame ctx.filter set was most of a battle's cost, so
+  // nothing here sets one, nothing here allocates per frame (three reused number arrays, cleared with
+  // length = 0), and the whole screen is at most three strokes and three fills whatever the selection
+  // size -- not one path per line. Nothing is drawn at all when nothing is queued.
+  Q_COLS: ['rgba(90,255,90,0.5)', 'rgba(255,80,80,0.55)', 'rgba(255,225,80,0.55)'],   // 0 go, 1 fight, 2 patrol
+  _qSeg: null, _qDot: null, _qx: 0, _qy: 0,
+  orderKind(type) { return (type === 'attack' || type === 'attackmove') ? 1 : type === 'patrol' ? 2 : 0; },
+  // Where an order means to end up, written into _qx/_qy rather than returned, so a frame that walks
+  // four hundred queued stops allocates nothing. False for an order with nowhere to be (idle, hold,
+  // merge) and for one whose target has gone, which is also what stops a line to a dead unit.
+  orderDest(u, o) {
+    if (!o) return false;
+    switch (o.type) {
+      case 'move': case 'attackmove': case 'patrol': case 'unload':
+        // A move onto a unit follows that unit, so the stop is wherever it is now.
+        if (o.target && o.target.alive) { this._qx = o.target.x; this._qy = o.target.y; }
+        else { this._qx = o.x; this._qy = o.y; }
+        return true;
+      case 'attack': case 'follow': case 'repair': case 'load': case 'pickup': case 'nydus': case 'construct': {
+        const t = o.target; if (!t || !t.alive) return false;
+        this._qx = t.x; this._qy = t.y; return true;
+      }
+      case 'gather': {
+        // TWO KINDS OF TARGET. A mineral order carries a map RESOURCE, whose x/y are TILE coordinates
+        // and whose pixel centre is cx/cy (js/map.js); a gas order carries the extractor, which is a
+        // Unit with pixel x/y. Reading .x off a patch would draw every gather line at the top-left of
+        // the map, so the resource is told apart by the field only it has.
+        const t = o.target; if (!t) return false;
+        if (t.cx !== undefined) { if (!(t.amount > 0)) return false; this._qx = t.cx; this._qy = t.cy; return true; }
+        if (!t.alive) return false; this._qx = t.x; this._qy = t.y; return true;
+      }
+      case 'return': { const t = o.depot; if (!t || !t.alive) return false; this._qx = t.x; this._qy = t.y; return true; }
+      case 'build': { const d = o.def; if (!d) return false; this._qx = (o.tx + d.w / 2) * TILE; this._qy = (o.ty + d.h / 2) * TILE; return true; }
+      case 'land': { const d = u.def; this._qx = (o.tx + d.w / 2) * TILE; this._qy = (o.ty + d.h / 2) * TILE; return true; }
+      default: return false;
+    }
+  },
+  drawOrderQueue(ctx) {
+    const sel = UI.selection; if (!sel || !sel.length) return;
+    const seg = this._qSeg || (this._qSeg = [[], [], []]), dot = this._qDot || (this._qDot = [[], [], []]);
+    for (let k = 0; k < 3; k++) { seg[k].length = 0; dot[k].length = 0; }
+    let any = false;
+    for (const u of sel) {
+      if (!u.alive || u.inside || u.owner !== G.human) continue;
+      const q = u.queue; if (!q || !q.length) continue;
+      // The line starts where the unit is DRAWN, not where the simulation has it, so it does not
+      // shiver against the sprite between sim frames. _x/_y are the draw pass's own (RENDER_ONLY in
+      // js/snapshot.js) and are already set for this frame by the collect loop in frame().
+      let x = u._x || u.x, y = u._y || u.y;
+      if (this.orderDest(u, u.order)) {
+        const k = this.orderKind(u.order.type);
+        seg[k].push(x, y, this._qx, this._qy); dot[k].push(this._qx, this._qy);
+        x = this._qx; y = this._qy; any = true;
+      }
+      for (const o of q) {
+        if (!this.orderDest(u, o)) continue;
+        const k = this.orderKind(o.type);
+        seg[k].push(x, y, this._qx, this._qy); dot[k].push(this._qx, this._qy);
+        x = this._qx; y = this._qy; any = true;
+      }
+    }
+    if (!any) return;
+    // Width and marker size in SCREEN pixels, the same rule the selection ring is written under: a
+    // 1.5 px line scaled to 0.3 px is a line nobody can see, and this is the one drawing whose whole
+    // job is to be readable while you are looking at the whole map.
+    const z = this.zoom, r = 3 / z;
+    ctx.save(); ctx.lineWidth = 1.25 / z; ctx.lineJoin = 'round';
+    for (let k = 0; k < 3; k++) {
+      const s = seg[k]; if (!s.length) continue;
+      ctx.strokeStyle = this.Q_COLS[k]; ctx.fillStyle = this.Q_COLS[k];
+      ctx.beginPath();
+      for (let i = 0; i < s.length; i += 4) { ctx.moveTo(s[i], s[i + 1]); ctx.lineTo(s[i + 2], s[i + 3]); }
+      ctx.stroke();
+      // A diamond at each stop. Not a ring: the rally indicator, the order acknowledgement and the
+      // resource hover are all rings already, and a fourth ring would read as one of those three.
+      const d = dot[k]; ctx.beginPath();
+      for (let i = 0; i < d.length; i += 2) {
+        const dx = d[i], dy = d[i + 1];
+        ctx.moveTo(dx, dy - r); ctx.lineTo(dx + r, dy); ctx.lineTo(dx, dy + r); ctx.lineTo(dx - r, dy); ctx.closePath();
+      }
+      ctx.fill();
+    }
+    ctx.restore();
   },
   drawSelection(ctx, u, sel) {
     const col = u.owner === G.human ? '#3fe83f' : G.allied(G.human, u.owner) ? '#f0e040' : '#ff3c3c';
