@@ -278,7 +278,9 @@ listed here. Ordered by what I would do first.
     only the declared→consulted direction, so a rebind that collides with a hard-coded key is a silent
     two-actions-on-one-key. Fix: a `RESERVED` list that `setBinding` refuses, and the reverse assertion.
     Cost M.
-16. **Presentation cost, unmeasured — measure before touching** (`test/perf_render.js` needs a browser):
+16. **Presentation cost, unmeasured — measure before touching** **DONE** (entry 28): measured; two of the
+    seven were real (the corpse filter, the editor minimap) and are fixed; the five others measured under
+    0.2 ms a frame and are left alone. As listed: (`test/perf_render.js` needs a browser):
     the fog `ImageData` is rebuilt every drawn frame though vision changes every third sim frame
     (`render.js` ~510); one `createRadialGradient` per additive particle per frame (`fx.js` ~144) and
     per Pylon/Nexus/Cannon per frame (`sprites_buildings.js` ~286, six lines above a comment that says
@@ -1092,6 +1094,31 @@ The questions as they were put, kept for the record:
     `setBinding`'s answer, the chord rule dropped, `F[2-8]` restored, an arrow dropped from the list. Also in
     this commit: the user's decision on README's burning Terran buildings (delete the sentence) is applied.
     **Gate:** 75 of 75, 299 s. The stamp did not move (`f5ab8a213468977c`).
+28. **Presentation cost, measured, and the two that were real (task 16).** *(commit: task 16; fourth session)*
+    **Measured first** (`.claude/review/perf-probe.js`: `test/perf_render.js`'s harness -- the 200-supply
+    battle at 1920x1080, paced draws -- with per-frame counts of the canvas calls the task suspected and A/B
+    timings with each suspect switched off; three runs, the browser pane fronted, because a hidden pane
+    throttles timers and the first run's numbers were ten times too high). With 516 units alive and nothing
+    dying: the world pass **3.0 ms median** (the target is 6); fog off 2.9, particles off 2.9, decals off 2.9,
+    building overlays off 2.7; the fog `ImageData` rebuild alone **0.03-0.08 ms**; the HUD with the minimap's
+    715 `fillRect`s **0.4 ms**; ten thousand sprite-cache hits 1.4-2.0 ms, so the key built twice per unit is
+    under 0.1 ms a frame. None of those five is a cost, and none is touched. The same battle 300 ticks
+    later with deaths (134 alive, 260 decals of which 119 corpses, 672 particles): the world pass 1.9 ms and
+    **0.7 ms without the decal pass** -- 119 `ctx.filter` sets and 134 radial gradients a frame; the corpse
+    filter is 1.2 ms of the frame, most of a battle's aftermath. The editor minimap: **16,385 `fillRect`s a
+    frame on 128x128 (1.2 ms), 65,537 on 256x256 (8.3 ms median, 92 ms at the 95th percentile)**.
+    - `js/fx.js`: a settled corpse (its twelve-frame fall over) is filtered ONCE into a canvas of its own
+      (`FX.stain`, keyed by sprite frame and filter string, bounded at 512, cleared on `reset()`) and blitted;
+      the fall keeps the live filter, since its look changes every frame.
+    - `js/editor.js`: the minimap terrain is a bitmap (`minimapBitmap`) rebuilt when a checksum over the height
+      and rock grids changes -- two byte reads a tile, taken each frame, which needs no flag at every writer --
+      and drawn with one `drawImage`.
+    **After** (the same probe): the decal pass alone, 119 settled corpses, ten alternations of ten draws each so load drift hits both arms -- **stained 0.6 ms median against 1.7 ms with the live filter** (means 0.60 and 1.89); by kind, with the stain in: all 0.6, without the scorch marks 0.3 (their 134 radial gradients a frame are the rest, and small), without the corpses 0.2; `ctx.filter` is set twice a frame (the two corpses still falling), not 119 times. The editor minimap: **0.1 ms on 128x128 (was 1.2), 0.2-0.4 ms on 256x256 (was 8.3)**, one `drawImage` and one `fillRect` a frame. (The whole-frame A/B under the agents' load was too noisy to read on its own; the interleaved pair is the measurement.) `FX.STAIN` is the runtime switch the probe flips. **Test:** `test/review17ui.js` section 13 (6 checks): forty settled
+    corpses draw with no filter set and one blit each, the stained copies are cached and reused, a falling
+    corpse keeps the live filter, `reset()` clears the cache; the editor minimap is one blit and under eight
+    fills on a 128x128 map, unchanged it reuses the bitmap, a painted tile rebuilds it in place. **Negative
+    controls** (restored byte-identical): the settled test forced false (every corpse filtered live again) -> three clean reds (40 filter sets, nothing cached); the bitmap's key check disabled (rebuilt every frame) -> one clean red (builds 2 and 3 where 1 and 2 were expected). Neither file is stamped: no stamp move. **Gate:** 75 of
+    75, 217 s.
 
 # 4. Considered and deliberately not done
 

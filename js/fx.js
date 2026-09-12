@@ -6,7 +6,21 @@
 const FX = {
   particles: [], decals: [], seen: new WeakSet(), rnd: Math.random,
   MAX_PARTICLES: 700, MAX_DECALS: 260, // render-side only; a 200-supply brawl otherwise spawns thousands and the frame cost doubles
-  reset() { this.particles = []; this.decals = []; this.seen = new WeakSet(); this.tracks.length = 0; this.trackI = 0; this._ambF = -1; },
+  reset() { this.particles = []; this.decals = []; this.seen = new WeakSet(); this.tracks.length = 0; this.trackI = 0; this._ambF = -1; this.stained.clear(); },
+  // A settled corpse drawn through ctx.filter cost a filter per corpse per frame: measured 119 filter sets
+  // and 1.2 ms of a 1.9 ms frame in a battle's aftermath (REVIEW-M17 task 16). The filtered sprite is the
+  // same every frame once the fall is over, so it is rendered once into a canvas of its own and blitted.
+  // Keyed by the sprite frame and the filter string; bounded, and cleared with the rest on reset().
+  stained: new Map(), STAIN_CAP: 512, STAIN: true,   // STAIN: the switch the perf probe flips to compare against the live filter
+  stain(s, key, filter) {
+    const k = key + '|' + filter; let c = this.stained.get(k); if (c) return c;
+    const W = s.sub ? s.S : s.cv.width, H = s.sub ? s.S : s.cv.height;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d');
+    x.filter = filter; if (s.sub) x.drawImage(s.cv, s.sx, s.sy, s.S, s.S, 0, 0, s.S, s.S); else x.drawImage(s.cv, 0, 0);
+    c = { cv, ox: s.ox, oy: s.oy };
+    if (this.stained.size >= this.STAIN_CAP) this.stained.delete(this.stained.keys().next().value);   // the oldest goes; a corpse re-stains itself next frame
+    this.stained.set(k, c); return c;
+  },
   p(o) { const ps = this.particles; if (ps.length >= this.MAX_PARTICLES) { let worst = 0; for (let i = 1; i < 8; i++) if (ps[i] && ps[i].life < ps[worst].life) worst = i; ps[worst] = ps[ps.length - 1]; ps.pop(); } ps.push(Object.assign({ vx: 0, vy: 0, life: 0.5, max: 0.5, size: 3, col: [255, 200, 80], add: true, grav: 0, kind: 'dot', shrink: true }, o)); },
   burst(x, y, n, spd, o) { for (let i = 0; i < n; i++) { const a = this.rnd() * Math.PI * 2, s = spd * (0.3 + this.rnd() * 0.7); this.p(Object.assign({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s }, o, { life: o.life * (0.6 + this.rnd() * 0.6), max: o.life })); } },
   fire(x, y, n, spd, r = 1) { this.burst(x, y, n, spd, { life: 0.35 * r, size: 5 * r, col: [255, 170, 60], add: true }); this.burst(x, y, Math.ceil(n / 2), spd * 0.6, { life: 0.45 * r, size: 7 * r, col: [255, 80, 20], add: true }); },
@@ -189,11 +203,15 @@ const FX = {
         // pose starts part-way down.
         const D = this.deathRows(def.id); let anim = k < 1 ? 'a2' : 'i';
         if (D && k >= 0.25) { const v = ((d.born + (d.x | 0) + (d.y | 0)) % D.v + D.v) % D.v; anim = 'd' + (v * D.f + Math.min(D.f - 1, Math.floor((k - 0.25) / 0.75 * D.f))); }
-        const s = Sprites.unit(fake, Sprites.dirOf(d.facing, fake), anim); ctx.save(); ctx.globalAlpha = a * (0.85 + (1 - k) * 0.15); ctx.filter = k < 1 ? `brightness(${1 - k * 0.45}) sepia(${k * 0.6})` : (d.kind === 'corpse' ? 'brightness(0.55) sepia(0.6) hue-rotate(-30deg)' : 'brightness(0.35) grayscale(0.7)'); ctx.translate(d.x, d.y + k * 3);
+        const dir = Sprites.dirOf(d.facing, fake), s = Sprites.unit(fake, dir, anim); ctx.save(); ctx.globalAlpha = a * (0.85 + (1 - k) * 0.15);
+        // The fall (twelve frames) keeps the live filter, since it changes every frame; a settled corpse blits its stained copy (see stain()).
+        const settled = k >= 1, filter = settled ? (d.kind === 'corpse' ? 'brightness(0.55) sepia(0.6) hue-rotate(-30deg)' : 'brightness(0.35) grayscale(0.7)') : `brightness(${1 - k * 0.45}) sepia(${k * 0.6})`;
+        if (!settled || !this.STAIN) ctx.filter = filter; ctx.translate(d.x, d.y + k * 3);
         // The 2D squash used to BE the death animation. On the baked path it is only the last of the
         // settle on top of a real pose, so it drops to a tenth; with no baked rows it is untouched.
         if (!D) { ctx.rotate((d.kind === 'corpse' ? 0.6 : 0.25) * k * (d.def.length % 2 ? 1 : -1)); ctx.scale(1 + k * 0.1, 1 - k * 0.3); } else if (k < 1) ctx.scale(1 + k * 0.05, 1 - k * 0.08);
-        Sprites.draw(ctx, s, 0, 0); ctx.restore(); }
+        if (settled && this.STAIN) { const c = this.stain(s, d.def + '|' + dir + '|' + anim + '|' + d.kind, filter); ctx.drawImage(c.cv, -c.ox, -c.oy); } else Sprites.draw(ctx, s, 0, 0);
+        ctx.restore(); }
       ctx.globalAlpha = 1;
     }
   },

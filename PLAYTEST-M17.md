@@ -458,3 +458,14 @@ menu** to **F11**. In a game, F11 opens the pause menu and F11 or Esc closes it.
 it, whatever pause was bound to. Invisible from normal play: Shift+F3 after moving the codex off F3 no
 longer saves a camera slot (the four slots are F2 F4 F6 F7, as the F1 help says). Quicker:
 `node test/controls.js`. Saves and replays are unaffected (the stamp did not move).
+
+## 54. A field of corpses and the editor minimap no longer cost the frame (task 16)
+
+Presentation only; the picture is the same. Two things to feel rather than see: after a large battle
+(a hundred corpses on screen, `show me the money` armies on both sides) the frame rate holds; and in the
+**Map Editor** on a 256x256 map (the largest size) the editor no longer stutters -- its minimap used to
+repaint 65,537 rectangles every frame. To measure: `node .claude/review/perf-probe.js` and open the URL it
+prints with the browser pane in front (a hidden tab throttles the timers and every number reads high); the
+`carnage` scene's `noDecals` A/B and the `editorMini` block are the two that moved. The five other costs the
+review suspected (the fog rebuild, particle gradients, building glows, the HUD minimap, sprite keys) measured
+under 0.2 ms a frame and were left alone. Saves and replays are unaffected (the stamp did not move).

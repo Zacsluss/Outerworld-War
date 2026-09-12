@@ -25,6 +25,10 @@
 //     tells the truth about F-keys, and three pieces of dead code are gone.
 // 12. THE FOG SHOWED WHAT IS THERE, NOT WHAT YOU SAW: G.rememberSeen kept the memory since M11 and the
 //     renderer drew live enemy buildings on explored ground (REVIEW-M17 decision 10).
+// 13. TWO PRESENTATION COSTS, MEASURED (task 16): a canvas filter per settled corpse per frame (119 filter
+//     sets, 1.2 ms of a 1.9 ms frame after a battle) and a fillRect per tile per frame in the editor minimap
+//     (65,537 on a 256x256 map, 8.3 ms). A settled corpse is filtered once into a cached canvas; the minimap
+//     is a bitmap rebuilt only when the map changes. The five other suspects measured under 0.2 ms and stay.
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
 let pass = 0, fail = 0;
@@ -254,6 +258,42 @@ R(ctx, `G.init({ players: [{ race: 'T', human: true, name: 'H' }, { race: 'Z', h
   ok('...and the draw list takes the memory pass (the wiring; the method itself is exercised above)', /for \(const g of this\.remembered\(seen, visNow, inView\)\) list\.push\(g\);/.test(render));
 }
 
+// ============================================================================
+// 13. a settled corpse costs no filter per frame; the editor minimap is one blit, rebuilt only on a change
+// ============================================================================
+// Measured before (.claude/review/perf-probe.js, 1920x1080, the perf_render battle after 300 ticks with
+// deaths): 119 corpses, 119 ctx.filter sets a frame, the decal pass 1.2 ms of a 1.9 ms frame; the editor
+// minimap 16,385 fillRects a frame on 128x128 (1.2 ms) and 65,537 on 256x256 (8.3 ms, 92 ms p95).
+{
+  const out = R(ctx, `
+    // a counting context: every method a no-op that counts, plus a counted \`filter\` setter
+    const counts = {}; const cctx = new Proxy({ canvas: { width: 1280, height: 720 }, measureText: () => ({ width: 10 }), createImageData: (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }), createRadialGradient: () => ({ addColorStop() { } }), createLinearGradient: () => ({ addColorStop() { } }), _filter: 'none' },
+      { get: (t, k) => k === 'filter' ? t._filter : (k in t ? t[k] : (() => { counts[k] = (counts[k] || 0) + 1; })), set: (t, k, v) => { if (k === 'filter') { counts.filterSet = (counts.filterSet || 0) + 1; t._filter = v; } else t[k] = v; return true; } });
+    const reset = () => { for (const k of Object.keys(counts)) delete counts[k]; };
+    // a sprite source the corpse pass can draw from, without the whole sprite pipeline
+    if (typeof Sprites === 'undefined') globalThis.Sprites = { unit: () => ({ cv: { width: 32, height: 32 }, ox: 16, oy: 16 }), dirOf: () => 0, draw(c, s, x, y) { c.drawImage(s.cv, x - s.ox, y - s.oy); } };
+    G.init({ players: [{ race: 'T', human: true, name: 'H' }, { race: 'Z', human: false, difficulty: 'easy', name: 'C' }], seed: 3, layout: 'temple' }); G.human = 0; Render.zoom = 1;
+    FX.reset(); const N = 40;
+    for (let i = 0; i < N; i++) FX.decals.push({ kind: 'corpse', def: 'marine', owner: 0, facing: 0, born: G.frame - 40, x: 100 + i * 20, y: 100, r: 10, t: 0, max: 600, seed: 0.5 });
+    const all = () => true;
+    reset(); FX.drawDecals(cctx, all, all); const settled = { filterSets: counts.filterSet || 0, drawImages: counts.drawImage || 0, cached: FX.stained.size };
+    reset(); FX.drawDecals(cctx, all, all); const again = { filterSets: counts.filterSet || 0, drawImages: counts.drawImage || 0, cached: FX.stained.size };
+    FX.decals.push({ kind: 'corpse', def: 'marine', owner: 0, facing: 0, born: G.frame - 3, x: 900, y: 100, r: 10, t: 0, max: 600, seed: 0.5 });   // still falling: the live filter
+    reset(); FX.drawDecals(cctx, all, all); const falling = { filterSets: counts.filterSet || 0 };
+    FX.reset(); const afterReset = FX.stained.size;
+    // the editor minimap
+    Editor.canvas = { width: 1280, height: 720 }; Editor.ctx = cctx; Editor.W = 128; Editor.H = 128; Editor.blank();
+    reset(); Editor.drawMinimap(); const mini1 = { fillRects: counts.fillRect || 0, drawImages: counts.drawImage || 0, key: Editor._mini && Editor._mini.key, builds: Editor._mini && Editor._mini.builds };
+    reset(); Editor.drawMinimap(); const mini2 = { fillRects: counts.fillRect || 0, drawImages: counts.drawImage || 0, key: Editor._mini && Editor._mini.key, builds: Editor._mini && Editor._mini.builds };
+    const cv1 = Editor._mini && Editor._mini.cv; Editor.height[Editor.idx(10, 10)] = 2; Editor.drawMinimap(); const mini3 = { key: Editor._mini && Editor._mini.key, sameCanvas: Editor._mini && Editor._mini.cv === cv1, builds: Editor._mini && Editor._mini.builds };
+    return { settled, again, falling, afterReset, mini1, mini2, mini3, tiles: Editor.W * Editor.H };`);
+  ok('forty settled corpses draw with NO filter set and one blit each (before: a filter per corpse per frame)', out.settled.filterSets === 0 && out.settled.drawImages >= 40, JSON.stringify(out.settled));
+  ok('...the stained copies are cached, one per sprite frame and filter, and reused next frame', out.settled.cached >= 1 && out.again.cached === out.settled.cached && out.again.filterSets === 0, JSON.stringify([out.settled.cached, out.again]));
+  ok('...a corpse still falling keeps the live filter (its look changes every frame)', out.falling.filterSets === 1, JSON.stringify(out.falling));
+  ok('...and FX.reset() clears the cache with everything else', out.afterReset === 0, String(out.afterReset));
+  ok('the editor minimap is one blit and a handful of fills, not a fill per tile (before: ' + out.tiles + ' + 1 fillRects a frame)', out.mini1.drawImages === 1 && out.mini1.fillRects < 8, JSON.stringify(out.mini1));
+  ok('...drawn again unchanged it reuses the bitmap, and a painted tile rebuilds it in place', out.mini1.builds === 1 && out.mini2.builds === 1 && out.mini3.builds === 2 && out.mini3.key !== out.mini1.key && out.mini3.sameCanvas === true, JSON.stringify([out.mini1, out.mini2, out.mini3]));
+}
+
 ok('no JS errors', ctx.errors.length === 0, ctx.errors.slice(0, 3).join(' | '));
-console.log(`\n${fail ? 'FAIL' : 'ALL PASS'}  ${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+console.log(`\n${fail ? 'FAIL' : 'ALL PASS'}  ${pass} passed, ${fail} failed`);process.exit(fail ? 1 : 0);

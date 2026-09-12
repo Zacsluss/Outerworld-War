@@ -242,14 +242,24 @@ const Editor = {
     this.camY = clamp(Math.round((sy - r.y) / r.s - this.viewTilesY() / 2), 0, Math.max(0, this.H - this.viewTilesY()));
     return true;
   },
+  // The terrain of the minimap is a bitmap baked once and rebuilt when the map changes, not a fillRect
+  // per tile per frame: measured 16,385 fillRects and 1.2 ms a frame on a 128x128 map, 65,537 and 8.3 ms
+  // (92 ms at the 95th percentile) on 256x256 (REVIEW-M17 task 16). "Changed" is a checksum over the
+  // height and rock grids taken each frame -- two byte reads a tile, which is cheaper than a fillRect a
+  // tile by a wide margin and needs no flag in every place the grids are written.
+  MINI_COLOURS: { rock: [0x2b, 0x2b, 0x2f], high: [0x7a, 0x6a, 0x4e], ramp: [0x9a, 0x8a, 0x5e], low: [0x4a, 0x44, 0x36] },
+  minimapBitmap() {
+    let sum = 2166136261; const h = this.height, rk = this.rocks; for (let i = 0; i < h.length; i++) { sum ^= h[i] + (rk[i] ? 4 : 0); sum = (sum * 16777619) >>> 0; }
+    const key = this.W + 'x' + this.H + ':' + sum; if (this._mini && this._mini.key === key) return this._mini.cv;
+    const cv = (this._mini && this._mini.cv.width === this.W && this._mini.cv.height === this.H) ? this._mini.cv : Object.assign(document.createElement('canvas'), { width: this.W, height: this.H });
+    const c = cv.getContext('2d'), img = c.createImageData(this.W, this.H), d = img.data, C = this.MINI_COLOURS;
+    for (let i = 0; i < h.length; i++) { const col = rk[i] ? C.rock : h[i] === 2 ? C.high : h[i] === 1 ? C.ramp : C.low; const o = i * 4; d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = 255; }
+    c.putImageData(img, 0, 0); this._mini = { key, cv, builds: (this._mini ? this._mini.builds : 0) + 1 }; return cv;   // builds: how many times the bitmap was rebuilt (the test reads it)
+  },
   drawMinimap() {
     const ctx = this.ctx, r = this.minimapRect();
     ctx.fillStyle = '#0b0e13'; ctx.fillRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4);
-    for (let y = 0; y < this.H; y++) for (let x = 0; x < this.W; x++) {
-      const i = this.idx(x, y);
-      ctx.fillStyle = this.rocks[i] ? '#2b2b2f' : this.height[i] === 2 ? '#7a6a4e' : this.height[i] === 1 ? '#9a8a5e' : '#4a4436';
-      ctx.fillRect(r.x + x * r.s, r.y + y * r.s, r.s, r.s);
-    }
+    ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(this.minimapBitmap(), r.x, r.y, r.w, r.h); ctx.restore();
     for (const b of this.bases) { ctx.fillStyle = b.main ? '#5ac8ff' : '#ffdc5a'; ctx.fillRect(r.x + b.x * r.s - 1, r.y + b.y * r.s - 1, 4, 4); }
     ctx.strokeStyle = '#e6eaf0'; ctx.lineWidth = 1;
     ctx.strokeRect(r.x + this.camX * r.s + .5, r.y + this.camY * r.s + .5, this.viewTilesX() * r.s, this.viewTilesY() * r.s);
