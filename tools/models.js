@@ -1234,4 +1234,4 @@ const BUILDINGS = {
     r.children.push(P('box', [0.5, 0.06, 0.18], [0.55, 0.5, -h / 2 + 0.28], TEAM));
     return r; },
 };
-module.exports = { UNITS, BUILDINGS, C, deathWrap };
+module.exports = { UNITS, BUILDINGS, deathWrap };   // C (the palette) is internal: no consumer outside this file (REVIEW-M17 task 24)

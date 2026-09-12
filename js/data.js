@@ -161,8 +161,8 @@ const DATA = (() => {
   // station mends it, it stims, it fits a bunker and it costs one cargo slot in a dropship instead of
   // two. Its weapon is normal damage at range 3, so it beats workers and zerglings and loses to
   // anything with armour -- the opposite end of the harass problem from the vulture's mines.
-  // It is in HOVER (js/abilities.js) with the vulture, because jump jets over a minefield is the whole
-  // fantasy of the unit and that Set is already the mechanism.
+  // `hover: true` puts it in HOVER (js/abilities.js derives that Set from the defs) with the vulture, because jump
+  // jets over a minefield is the whole fantasy of the unit and that Set is already the mechanism.
   //
   // `req: ['academy']` and NOT a bare Barracks, for two measured reasons rather than for flavour.
   // (1) Off a bare Barracks it competes with the Refinery's first hundred gas -- the Terran AI spent
@@ -292,8 +292,9 @@ const DATA = (() => {
     gw: W(18, 'normal', 6, 30, { upgKey: 'shipW', upgDmg: 2 }), abil: ['viking_mode'], upgA: 'shipA' });
   // MEDIVAC -- the dropship and the medic in one hull, and both halves are the EXISTING code paths
   // rather than new ones: `cargo: 8` is the dropship's, `heal` is the medic's ability, and the
-  // autocast is Abilities.medicAuto, dispatched for the medivac from Abilities.tickTerran because
-  // js/sim.js dispatches it by the literal id 'medic' and this branch does not own js/sim.js.
+  // autocast is Abilities.medicAuto, dispatched for the medivac from G.tickTerran (js/game.js) after the
+  // projectile pass, not from Unit.tick's 'medic' line: the two run at different points in the frame, and
+  // moving it would change results (REVIEW-M17 task 22).
   //
   // It does NOT make the dropship obsolete: a dropship is 100/100 for eight slots off a bare Control
   // Tower, the medivac is 100/100 off a Control Tower AND an Academy, is slower, and spends its energy
@@ -318,7 +319,7 @@ const DATA = (() => {
   // a MULE dropped on a saturated patch does less than one dropped on a fresh expansion, and one
   // dropped and forgotten while its patch runs dry does nothing at all.
   //
-  // WHAT MAKES IT FAST is `Abilities.tickTerran`, not this table: it takes MULE_HAUL extra minerals out
+  // WHAT MAKES IT FAST is `Unit.muleHaul` (js/sim.js, run from G.tickTerran), not this table: it takes MULE_HAUL extra minerals out
   // of the patch on the same trip and carries them home, so it mines about four times an SCV's rate
   // AND strips the patch four times as fast. That second half is deliberate and is the interesting
   // part under M11's attrition economy -- a MULE is income borrowed from the end of the game.
@@ -350,7 +351,7 @@ const DATA = (() => {
   // burns. A full Overlord is 200 energy against 200 hp. That is exactly SC2's rule for energy units,
   // so it is listed for the balance run rather than special-cased here.
   U('overlord', { name: 'Overlord', race: 'Z', hp: 200, size: 'large', min: 100, sup: 0, supGive: 8, time: 600, speed: 0.83, sight: 9, r: 18, hk: 'O', from: 'larva', bio: true, fly: true, det: true, energy: 200,
-    abil: ['unload', 'plant_tumour', 'overseer_aspect'], upgA: 'flyA', speedTech: ['pneumatized', 2.5], cargoTech: 'ventral_sacs', sightTech: ['antennae', 11] });
+    abil: ['unload', 'plant_tumour', 'overseer_aspect'], upgA: 'flyA', speedTech: ['pneumatized', 2.5], cargoTech: ['ventral_sacs', 8], sightTech: ['antennae', 11] });   // cargoTech is [tech, slots] like speedTech: no cargo at all until Ventral Sacs. G.cargoCap is the one reader (REVIEW-M17 task 22)
   U('zergling', { name: 'Zergling', race: 'Z', hp: 35, size: 'small', min: 50, sup: 0.5, time: 420, speed: 5.49, sight: 5, r: 7, hk: 'Z', from: 'larva', req: ['spawning_pool'], bio: true, cargoSize: 1, pair: true,
     gw: W(5, 'normal', 0.5, 8, { upgKey: 'meleeW', cdTech: ['adrenal', 6] }), abil: ['burrow', 'baneling_aspect'], upgA: 'carapace', speedTech: ['metabolic', 6.58] });   // Brood War's own pair: 5.49 base, 6.58 boosted. The table had 2.61/5.49 -- the boosted value was BW's base, and the base was invented under it, leaving a zergling slower than a high templar.
   U('hydralisk', { name: 'Hydralisk', race: 'Z', hp: 80, size: 'medium', min: 75, gas: 25, sup: 1, time: 420, speed: 3.66, sight: 6, r: 10, hk: 'H', from: 'larva', req: ['hydralisk_den'], bio: true, cargoSize: 2,
@@ -496,7 +497,7 @@ const DATA = (() => {
   U('brood_cocoon', { name: 'Brood Cocoon', race: 'Z', hp: 200, armor: 10, size: 'medium', min: 0, gas: 0, speed: 0, sight: 4, r: 12, bio: true, egg: true });
 
   // ============================ PROTOSS UNITS ============================
-  U('probe', { name: 'Probe', race: 'P', hp: 20, sh: 20, size: 'small', min: 50, sup: 1, time: 300, speed: 4.92, sight: 8, r: 8, hk: 'P', from: 'nexus', worker: true, mech: true, cargoSize: 1,
+  U('probe', { name: 'Probe', race: 'P', hp: 20, sh: 20, size: 'small', min: 50, sup: 1, time: 300, speed: 4.92, sight: 8, r: 8, hk: 'P', from: 'nexus', worker: true, mech: true, cargoSize: 1, hover: true,
     gw: W(5, 'normal', 0.4, 22, { upgKey: null }), abil: ['gather', 'build_basic', 'build_adv'], upgA: 'gA' });
   U('zealot', { name: 'Zealot', race: 'P', hp: 100, sh: 60, armor: 1, size: 'small', min: 100, sup: 2, time: 600, speed: 4, sight: 7, r: 9, hk: 'Z', from: 'gateway', bio: true, cargoSize: 2,
     gw: W(8, 'normal', 0.4, 22, { hits: 2, upgKey: 'gW' }), upgA: 'gA', speedTech: ['leg_enhancements', 6.4] });
@@ -515,12 +516,12 @@ const DATA = (() => {
   // read it yet (G.mergeUnits charges nothing and neither is ever in a production queue), which is
   // precisely how the spider mine's undefined build time survived until the AI was taught to repair.
   // Zero costs nothing to spell out and cannot become NaN.
-  U('archon', { name: 'Archon', race: 'P', hp: 10, sh: 350, size: 'large', min: 0, gas: 0, sup: 4, time: 300, speed: 4.92, sight: 8, r: 16, bio: true, cargoSize: 4, name2: 'Archon',
+  U('archon', { name: 'Archon', race: 'P', hp: 10, sh: 350, size: 'large', min: 0, gas: 0, sup: 4, time: 300, speed: 4.92, sight: 8, r: 16, bio: true, cargoSize: 4, hover: true, name2: 'Archon',
     gw: W(30, 'normal', 2, 20, { upgKey: 'gW', upgDmg: 3, targets: 'both', splash: [0.5, 1, 1.5] }), upgA: 'gA' });
-  U('dark_archon', { name: 'Dark Archon', race: 'P', hp: 25, sh: 200, armor: 1, size: 'large', min: 0, gas: 0, sup: 4, time: 300, speed: 4.92, sight: 10, r: 16, bio: true, cargoSize: 4, energy: 200,
+  U('dark_archon', { name: 'Dark Archon', race: 'P', hp: 25, sh: 200, armor: 1, size: 'large', min: 0, gas: 0, sup: 4, time: 300, speed: 4.92, sight: 10, r: 16, bio: true, cargoSize: 4, energy: 200, hover: true,
     abil: ['feedback', 'mind_control', 'maelstrom'], upgA: 'gA' });
   U('reaver', { name: 'Reaver', race: 'P', hp: 100, sh: 80, size: 'large', min: 200, gas: 100, sup: 4, time: 1050, speed: 1.78, sight: 10, r: 18, hk: 'V', from: 'robotics_facility', req: ['robotics_support_bay'], mech: true, cargoSize: 4,
-    gw: W(100, 'normal', 8, 60, { upgKey: null, scarab: true, splash: [0.6, 1.2, 1.8], dmgTech: ['scarab_damage', 25] }), abil: ['build_scarab'], upgA: 'gA', scarabs: 0, scarabTech: ['reaver_capacity', 10] });
+    gw: W(100, 'normal', 8, 60, { upgKey: null, scarab: true, splash: [0.6, 1.2, 1.8], dmgTech: ['scarab_damage', 25] }), abil: ['build_scarab'], upgA: 'gA', scarabs: 0, scarabCap: 5, scarabTech: ['reaver_capacity', 10] });   // the hangar: empty at birth, scarabCap deep, scarabTech[1] deep once scarabTech[0] is researched. G.hangarCap (js/game.js) is the one reader (REVIEW-M17 task 22)
   U('shuttle', { name: 'Shuttle', race: 'P', hp: 80, sh: 60, armor: 1, size: 'large', min: 200, sup: 2, time: 900, speed: 4.44, sight: 8, r: 16, hk: 'S', from: 'robotics_facility', mech: true, fly: true, cargo: 8,
     abil: ['unload'], upgA: 'airA', speedTech: ['gravitic_drive', 6.67] });
   U('observer', { name: 'Observer', race: 'P', hp: 40, sh: 20, size: 'small', min: 25, gas: 75, sup: 1, time: 600, speed: 3.33, sight: 9, r: 8, hk: 'O', from: 'robotics_facility', req: ['observatory'], mech: true, fly: true, det: true, cloaked: true, permaCloak: true,
@@ -530,7 +531,7 @@ const DATA = (() => {
   U('corsair', { name: 'Corsair', race: 'P', hp: 100, sh: 80, armor: 1, size: 'medium', min: 150, gas: 100, sup: 2, time: 600, speed: 6.67, sight: 9, r: 14, hk: 'O', from: 'stargate', mech: true, fly: true, energy: 200,
     aw: W(5, 'explosive', 5, 8, { upgKey: 'airW', targets: 'air', splash: [0.6, 1, 1.4] }), abil: ['disruption_web'], upgA: 'airA' });
   U('carrier', { name: 'Carrier', race: 'P', hp: 300, sh: 150, armor: 4, size: 'large', min: 350, gas: 250, sup: 6, time: 2100, speed: 3.33, sight: 11, r: 22, hk: 'C', from: 'stargate', req: ['fleet_beacon'], mech: true, fly: true,
-    gw: W(6, 'normal', 8, 37, { upgKey: 'airW', targets: 'both', interceptor: true }), abil: ['build_interceptor'], upgA: 'airA', interceptors: 0, interceptorTech: ['carrier_capacity', 8] });
+    gw: W(6, 'normal', 8, 37, { upgKey: 'airW', targets: 'both', interceptor: true }), abil: ['build_interceptor'], upgA: 'airA', interceptors: 0, interceptorCap: 4, interceptorTech: ['carrier_capacity', 8] });   // the Carrier's hangar, read the same way as the Reaver's: G.hangarCap
   U('arbiter', { name: 'Arbiter', race: 'P', hp: 200, sh: 150, armor: 1, size: 'large', min: 100, gas: 350, sup: 4, time: 2400, speed: 5, sight: 9, r: 18, hk: 'A', from: 'stargate', req: ['arbiter_tribunal'], mech: true, fly: true, energy: 200, cloakField: 8,
     gw: W(10, 'explosive', 5, 45, { upgKey: 'airW', targets: 'both' }), abil: ['recall', 'stasis_field', 'summon_mothership'], upgA: 'airA' });
   U('interceptor', { name: 'Interceptor', race: 'P', hp: 40, sh: 40, size: 'small', min: 25, time: 300, speed: 13, sight: 6, r: 5, mech: true, fly: true, hk: 'I', from: 'carrier', notUnit: true, gw: W(6, 'normal', 2, 45, { upgKey: 'airW', targets: 'both' }), upgA: 'airA' });
@@ -878,7 +879,7 @@ const DATA = (() => {
   // has one thing to choose to build, and the choice is legible: a Reactor doubles marine output, and
   // it is the slot Suppressing Fire's Barracks would otherwise have used for nothing.
   //
-  // `reactor: true` is the flag the simulation reads (Abilities.tickTerran), not the id, so a second
+  // `reactor: true` is the flag the simulation reads (G.tickTerran, which calls Unit.reactorTick), not the id, so a second
   // parent later is a one-word change to `addons` and nothing else.
   //
   // `req: ['academy']` is FIXLIST-M14 A4, and it is the answer to "the Reactor gives no prerequisite

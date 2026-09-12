@@ -493,3 +493,12 @@ finish a fight -- **all four re-dock** and the count reads 4/4 (before: one of t
 ever at 3/4); and kill a Carrier with its Interceptors out -- **all of them die with it on the same frame**
 (before: every other one lived one frame longer, and a save taken that frame carried two live Interceptors
 of a dead ship). Saves and replays from before this commit are refused (the stamp moved).
+
+## 56. Small refactors, results unchanged (tasks 22, 24)
+
+Nothing to see; the identity check is `node test/eightplayer.js`, whose bank line must read
+`377/324 804/283 147/103 222/70 302/214 392/64 221/653 303/167` with 19 of 19, as it did before. Two things
+a player can notice: a Probe now puffs dust like the Reaper and the Vulture instead of leaving tyre tracks;
+and a computer Protoss that researches Reaver Capacity now fills its Reavers to ten scarabs (`show me the
+money`, watch a hard Protoss's Reavers after its Robotics Support Bay finishes the research). Saves and
+replays from before this commit are refused (the stamp moved).

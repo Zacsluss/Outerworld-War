@@ -151,6 +151,13 @@ const AI_COMP = {
 //   BASE_R       how far around a hall counts as "that base"
 const HALL_PULL = 8, ANCHOR_PULL = 6, ANCHOR_CAP = 6, GUARD_COST = 4, BASE_PULL = 40, BASE_R = 14;
 const SENSOR_NEAR = 20, SENSOR_CALM = 24 * 25;
+// The AI cloaks a Wraith, a Banshee or a Ghost only with this much energy in hand OVER the toggle's cost. The toggles
+// cost 25 (DATA.abilities.cloak_wraith, cloak_ghost) and the three clauses were written against a bare 50: a cloak
+// drains energy every frame it is up (Unit.tick), so a unit that cloaks at exactly 25 uncloaks a few seconds later in
+// front of whatever it hid from. Cost plus reserve rather than the literal, so the cost stays in the table and the
+// reserve is the deliberate number; 25 + 25 = 50 keeps every AI game identical (REVIEW-M17 task 22, which made the
+// other energy gates in micro() read their ability -- each already equalled it). Stamped (BUILD.TUNING).
+const AI_CLOAK_RESERVE = 25;
 const AI_RESEARCH = {
   T: ['stim', 'siege_tech', 'u238', 'infW', 'infA', 'ion_thrusters', 'spider_mines_tech', 'vehW', 'charon', 'vehA', 'irradiate_tech', 'emp_tech', 'personnel_cloaking', 'lockdown_tech', 'yamato_tech', 'shipW', 'shipA', 'cloaking_field', 'suppress_inf', 'suppress_veh', 'restoration_tech', 'optical_flare_tech', 'caduceus', 'moebius', 'ocular', 'apollo', 'titan', 'colossus_reactor', 'drilling_claws'],
   // M12's five Zerg researches, placed by what they unlock rather than appended. `volatile_bile` and
@@ -915,8 +922,11 @@ class AI {
         if (arbs.length >= 2 && (counts.arbiter || 0) > 2) { Abilities.merge(arbs, 'summon_mothership'); return; }
       }
     }
-    // Reaver scarabs / carrier interceptors
-    for (const u of this.mine(u => (u.def.id === 'reaver' || u.def.id === 'carrier') && !u.prod.length)) { if (u.def.id === 'reaver' && u.scarabs < 5) G.queueUnit(u, 'scarab'); if (u.def.id === 'carrier' && u.interceptors < (p.hasTech('carrier_capacity') ? 8 : 4)) G.queueUnit(u, 'interceptor'); }
+    // Reaver scarabs / carrier interceptors, up to G.hangarCap, which reads the capacity techs. The Reaver half read a
+    // bare 5 until REVIEW-M17 task 22, so Reaver Capacity was researched (AI_RESEARCH.P) and never used. No AI in the
+    // eight-player identity game ever owned a Reaver or a Carrier (measured: zero samples in 14400 frames), so its banks
+    // could not see this change; a Protoss AI that buys the tech now fills the hangar to ten.
+    for (const u of this.mine(u => (u.def.id === 'reaver' || u.def.id === 'carrier') && !u.prod.length)) { if (u.def.id === 'reaver' && u.scarabs < G.hangarCap(u, 'scarab')) G.queueUnit(u, 'scarab'); if (u.def.id === 'carrier' && u.interceptors < G.hangarCap(u, 'interceptor')) G.queueUnit(u, 'interceptor'); }
     // The composition is a priority order, so spending on a cheaper unit every time the preferred one is a few
     // minerals short ratchets the army towards the cheapest thing in the list (this is what turned Protoss into
     // an all-zealot army while gas piled up). Bank for the top pick instead, but never stall on it for long.
@@ -1256,7 +1266,13 @@ class AI {
   seenEnemyArmy() {
     let sup = 0;
     for (const u of G.units) { if (!u.alive || u.def.worker || u.def.larva || u.def.egg || u.def.notUnit) continue; if (G.allied(u.owner, this.p.id) || G.players[u.owner].neutral) continue; if (u.isBuilding) { if ((u.def.gw || u.def.aw) && u.done && G.explored(this.p.id, Math.floor(u.x / TILE), Math.floor(u.y / TILE))) sup += 4; continue; } if (!u.hasWeapon()) continue; if (!G.canSee(this.p.id, u)) continue; sup += u.def.sup || 1; } // a defended base costs more army than an open field
-    if (sup > (this.seenSup || 0)) this.seenSup = sup; else this.seenSup = (this.seenSup || 0) * 0.995;
+    // The decay is per FRAME, not per call (REVIEW-M17 task 22): budget() asks through overrun() while the enemy reads as
+    // massing and army() asks while gathering, and a think that did both used to decay it twice -- six of the 2,954
+    // thinks that asked in the eight-player identity game, whose banks did not move for it. The walk above still runs
+    // on every call, so a fresh sighting is never missed; only the second decay in a frame is. Thinks spent attacking
+    // or defending still do not decay it; that is a separate question and is left as it was.
+    const decays = this.seenFrame !== G.frame; this.seenFrame = G.frame;
+    if (sup > (this.seenSup || 0)) this.seenSup = sup; else if (decays) this.seenSup = (this.seenSup || 0) * 0.995;
     return this.seenSup;
   }
   army() {
@@ -1622,7 +1638,7 @@ class AI {
     if (p.race === 'Z') this.zergCreep();
     if (p.race === 'P') this.protossMacro();
     // Terran: scan where our units are being hit by something we cannot see (burrowed lurkers, cloaked units)
-    if (p.race === 'T' && this.turn(p.id, 4)) { const cs = this.mine(u => u.def.id === 'comsat_station' && u.done && u.energy >= 50)[0]; if (cs) { const hit = this.mine(u => !u.isBuilding && G.frame - u.lastHit < 24 && u.lastHitBy && u.lastHitBy.alive && u.lastHitBy.isCloaked && !G.detected(u.lastHitBy, p.id))[0];
+    if (p.race === 'T' && this.turn(p.id, 4)) { const cs = this.mine(u => u.def.id === 'comsat_station' && u.done && u.energy >= DATA.abilities.scanner_sweep.energy)[0]; if (cs) { const hit = this.mine(u => !u.isBuilding && G.frame - u.lastHit < 24 && u.lastHitBy && u.lastHitBy.alive && u.lastHitBy.isCloaked && !G.detected(u.lastHitBy, p.id))[0];
       if (hit) Abilities.issue(cs, 'scanner_sweep', null, hit.lastHitBy.x, hit.lastHitBy.y);
       // A comsat parked at 200/200 is four scans thrown away, and it was the second largest pool of
       // unspent energy in the audit. Once the bar is nearly full the regeneration is wasted anyway, so
@@ -1639,10 +1655,11 @@ class AI {
     // a saturated main is worth a fraction of a MULE on a base with two SCVs, because Brood War caps a
     // patch at two miners and a third just queues (MINERS_PER_PATCH in js/sim.js).
     //
-    // The 100-energy floor rather than 50 leaves headroom so an Orbital that also grew a Comsat can
-    // still afford a scan; dropping at exactly 50 would starve the vision that keeps the army alive.
+    // The floor is a MULE plus a scan (100), not a MULE (50): an Orbital that also grew a Comsat can still afford
+    // the scan, where dropping at exactly the MULE's cost would starve the vision that keeps the army alive. Both
+    // terms read the table (REVIEW-M17 task 22).
     if (p.race === 'T' && this.turn(p.id, 3)) {
-      const oc = this.mine(u => u.def.id === 'orbital_command' && u.done && !u.lifted && u.energy >= 100)[0];
+      const oc = this.mine(u => u.def.id === 'orbital_command' && u.done && !u.lifted && u.energy >= DATA.abilities.mule.energy + DATA.abilities.scanner_sweep.energy)[0];
       if (oc) {
         let best = null, bw = 1e9;
         for (const h of this.halls()) {
@@ -1729,20 +1746,20 @@ class AI {
       // The Raven blinds a defended position. The cluster test is the enemy's, not ours: what the field
       // is worth is proportional to how many of their eyes are inside it, and dropping it on our own
       // army would blind nothing (Abilities.tickFields skips anyone allied with the owner).
-      else if (d === 'raven' && u.energy >= 75 && this.turn(u.id, 2)) {
+      else if (d === 'raven' && u.energy >= DATA.abilities.jam_field.energy && this.turn(u.id, 2)) {
         const c = this.cluster(u, 9, 3, o => !G.allied(o.owner, p.id) && !o.def.larva);
         if (c && !Abilities.inField(c.x, c.y, 'jam')) Abilities.issue(u, 'jam_field', null, c.x, c.y);
       }
       // The Banshee cloaks for the same reason and off the same research as the Wraith. It is a
       // separate clause rather than an extra `||` on the wraith one below because the wraith clause is
       // far down the else-if chain, behind several that a banshee would never match anyway.
-      else if (d === 'banshee' && !u.cloaked && u.energy >= 50 && p.hasTech('cloaking_field') && this.turn(u.id, 4) && G.near(u.x, u.y, 8 * TILE).some(o => !G.allied(o.owner, p.id) && o.hasWeapon())) Abilities.instant(u, 'cloak_wraith');
-      else if (d === 'high_templar' && u.energy >= 75 && p.hasTech('psi_storm_tech') && this.turn(u.id, 1)) { const c = this.cluster(u, 9, 3, o => !G.allied(o.owner, p.id) && !o.isBuilding); if (c) Abilities.issue(u, 'psi_storm', null, c.x, c.y); }
+      else if (d === 'banshee' && !u.cloaked && u.energy >= DATA.abilities.cloak_wraith.energy + AI_CLOAK_RESERVE && p.hasTech('cloaking_field') && this.turn(u.id, 4) && G.near(u.x, u.y, 8 * TILE).some(o => !G.allied(o.owner, p.id) && o.hasWeapon())) Abilities.instant(u, 'cloak_wraith');
+      else if (d === 'high_templar' && u.energy >= DATA.abilities.psi_storm.energy && p.hasTech('psi_storm_tech') && this.turn(u.id, 1)) { const c = this.cluster(u, 9, 3, o => !G.allied(o.owner, p.id) && !o.isBuilding); if (c) Abilities.issue(u, 'psi_storm', null, c.x, c.y); }
       // Dark Swarm is as much a defensive spell as an offensive one, and the cluster test below already
       // says "our ground units are being shot at". Gating it on the army being on the attack meant the
       // Zerg AI, which spends most of a losing game in `defend`, never cast it when it needed it most.
-      else if (d === 'defiler' && u.energy >= 100 && this.turn(u.id, 1)) { const c = this.cluster(u, 9, 3, o => o.owner === p.id && !o.fly && !o.isBuilding && o.hasWeapon() && G.frame - o.lastHit < 48); if (c && !Abilities.inField(c.x, c.y, 'swarm')) Abilities.issue(u, 'dark_swarm', null, c.x, c.y); else if (p.hasTech('plague_tech') && u.energy >= 150) { const e = this.cluster(u, 9, 4, o => !G.allied(o.owner, p.id)); if (e) Abilities.issue(u, 'plague', null, e.x, e.y); } }
-      else if (d === 'science_vessel' && u.energy >= 75 && p.hasTech('irradiate_tech') && this.turn(u.id, 2)) { const t = G.near(u.x, u.y, 9 * TILE).find(o => !G.allied(o.owner, p.id) && o.def.bio && !o.isBuilding && !o.fx.irradiate && o.maxHp >= 80); if (t) Abilities.issue(u, 'irradiate', t); }
+      else if (d === 'defiler' && u.energy >= DATA.abilities.dark_swarm.energy && this.turn(u.id, 1)) { const c = this.cluster(u, 9, 3, o => o.owner === p.id && !o.fly && !o.isBuilding && o.hasWeapon() && G.frame - o.lastHit < 48); if (c && !Abilities.inField(c.x, c.y, 'swarm')) Abilities.issue(u, 'dark_swarm', null, c.x, c.y); else if (p.hasTech('plague_tech') && u.energy >= DATA.abilities.plague.energy) { const e = this.cluster(u, 9, 4, o => !G.allied(o.owner, p.id)); if (e) Abilities.issue(u, 'plague', null, e.x, e.y); } }
+      else if (d === 'science_vessel' && u.energy >= DATA.abilities.irradiate.energy && p.hasTech('irradiate_tech') && this.turn(u.id, 2)) { const t = G.near(u.x, u.y, 9 * TILE).find(o => !G.allied(o.owner, p.id) && o.def.bio && !o.isBuilding && !o.fx.irradiate && o.maxHp >= 80); if (t) Abilities.issue(u, 'irradiate', t); }
       // M12 item 11. FIRST among the Queen's clauses, because inject is what a Queen is for: it is the
       // only ability in the game that produces anything, and at 25 energy against Spawn Broodling's
       // 150 it almost never costs a cast that would otherwise have happened. Offered only on a hall
@@ -1752,7 +1769,7 @@ class AI {
       // clause that matches on `d === 'queen'` and then finds nothing to do would swallow the Queen's
       // three older clauses for that tick.
       else if (d === 'queen' && u.energy >= DATA.abilities.larva_inject.energy && this.turn(u.id, 2) && this.injectHall(u)) Abilities.issue(u, 'larva_inject', this.injectHall(u));
-      else if (d === 'queen' && u.energy >= 150 && p.hasTech('spawn_broodling_tech') && this.turn(u.id, 2)) { const t = G.near(u.x, u.y, 9 * TILE).find(o => !G.allied(o.owner, p.id) && !o.fly && !o.isBuilding && !NO_BROODLING.has(o.def.id) && o.def.sup >= 2); if (t) Abilities.issue(u, 'spawn_broodling', t); }
+      else if (d === 'queen' && u.energy >= DATA.abilities.spawn_broodling.energy && p.hasTech('spawn_broodling_tech') && this.turn(u.id, 2)) { const t = G.near(u.x, u.y, 9 * TILE).find(o => !G.allied(o.owner, p.id) && !o.fly && !o.isBuilding && !NO_BROODLING.has(o.def.id) && o.def.sup >= 2); if (t) Abilities.issue(u, 'spawn_broodling', t); }
       // A homed Queen idle away from her hall flies back to it (REVIEW-M17 task 26). supportUnits() no
       // longer moves her, so this is the only thing that does: it carries a Queen hatched at one hall to
       // the hall she was made for, and brings her home after planting a tumour. Ahead of the tumour
@@ -1760,7 +1777,7 @@ class AI {
       else if (d === 'queen' && u.home && u.order.type === 'idle' && distPt(u.x, u.y, u.home.x, u.home.y) > 5 * TILE) u.setOrder({ type: 'move', x: u.home.x + 48, y: u.home.y + 40 });
       else if (d === 'medic' && u.order.type === 'idle' && this.rally && distPt(u.x, u.y, this.rally.x, this.rally.y) > 8 * TILE) { const a = this.armyUnits()[0]; if (a) u.setOrder({ type: 'follow', target: a }); }
       else if (d === 'vulture' && u.mines > 0 && p.hasTech('spider_mines_tech') && u.order.type === 'idle' && this.turn(u.id, 4)) { Abilities.issue(u, 'spider_mine', null, u.x + (G.rand() - .5) * 64, u.y + (G.rand() - .5) * 64); }
-      else if (d === 'arbiter' && u.energy >= 100 && p.hasTech('stasis_tech') && this.turn(u.id, 2)) { const c = this.cluster(u, 9, 4, o => !G.allied(o.owner, p.id) && !o.isBuilding); if (c) Abilities.issue(u, 'stasis_field', null, c.x, c.y); }
+      else if (d === 'arbiter' && u.energy >= DATA.abilities.stasis_field.energy && p.hasTech('stasis_tech') && this.turn(u.id, 2)) { const c = this.cluster(u, 9, 4, o => !G.allied(o.owner, p.id) && !o.isBuilding); if (c) Abilities.issue(u, 'stasis_field', null, c.x, c.y); }
       // The rest of the spell book. Every one of these had working code in js/abilities.js, a place on
       // the command card and an entry in the tech tree, and no line anywhere that made the AI press it,
       // so a player never saw them. Each sits AFTER the existing clause for the same unit, and an
@@ -1768,7 +1785,7 @@ class AI {
       // below the energy for it, a templar still prefers storm, a vessel still prefers irradiate.
       // Lockdown, which was researched and never pressed. Sits before the nuke clause so a ghost with
       // no nuke still has a job; a nuke-carrying ghost matches the clause below instead.
-      else if (d === 'ghost' && p.nukes === 0 && u.energy >= 100 && p.hasTech('lockdown_tech') && this.turn(u.id, 2)) {
+      else if (d === 'ghost' && p.nukes === 0 && u.energy >= DATA.abilities.lockdown.energy && p.hasTech('lockdown_tech') && this.turn(u.id, 2)) {
         const t = G.near(u.x, u.y, 8 * TILE).find(o => !G.allied(o.owner, p.id) && !o.isBuilding && o.def.mech && !o.fx.lockdown && o.def.sup >= 2); if (t) Abilities.issue(u, 'lockdown', t);
       }
       // Repair. SCVs never repaired anything, so a damaged tank line, a bunker or a cracked building
@@ -1777,51 +1794,54 @@ class AI {
         const hurt = this.mine(o => o !== u && o.hp < o.maxHp * 0.85 && repairableDef(o.def) && distPt(o.x, o.y, u.x, u.y) < 12 * TILE)[0];
         if (hurt) u.setOrder({ type: 'repair', target: hurt });
       }
+      // 150 here is not a cost -- Infest has none (DATA.abilities.infest) -- it is the bar this clause has always set, and
+      // it is kept as the literal it is (REVIEW-M17 task 22): read from the table it would be undefined and never fire.
       else if (d === 'queen' && u.energy >= 150 && this.turn(u.id, 4)) {
         // Infest: a Terran command centre under 50% is a free infested terran factory. Niche, and the
         // only reason it is here is that "every ability the game has" should mean every one.
         const cc = G.near(u.x, u.y, 8 * TILE).find(o => !G.allied(o.owner, p.id) && o.isBuilding && o.def.id === 'command_center' && o.hp < o.maxHp * 0.5);
         if (cc) Abilities.issue(u, 'infest', cc);
       }
-      else if (d === 'medic' && this.turn(u.id, 2) && u.energy >= 50) {
+      else if (d === 'medic' && this.turn(u.id, 2) && u.energy >= DATA.abilities.restoration.energy) {
         const hurt = this.mine(o => o !== u && !o.isBuilding && o.fx && (o.fx.plague > 0 || o.fx.irradiate) && distPt(o.x, o.y, u.x, u.y) < 9 * TILE)[0];
         if (hurt && p.hasTech('restoration_tech')) Abilities.issue(u, 'restoration', hurt);
-        else if (u.energy >= 75 && p.hasTech('optical_flare_tech')) { const e = G.near(u.x, u.y, 9 * TILE).find(o => !G.allied(o.owner, p.id) && !o.isBuilding && !o.fly && o.def.sight >= 7 && !o.fx.blind); if (e) Abilities.issue(u, 'optical_flare', e); }
+        else if (u.energy >= DATA.abilities.optical_flare.energy && p.hasTech('optical_flare_tech')) { const e = G.near(u.x, u.y, 9 * TILE).find(o => !G.allied(o.owner, p.id) && !o.isBuilding && !o.fly && o.def.sight >= 7 && !o.fx.blind); if (e) Abilities.issue(u, 'optical_flare', e); }
       }
-      else if (d === 'science_vessel' && this.turn(u.id, 2) && u.energy >= 100) {
+      else if (d === 'science_vessel' && this.turn(u.id, 2) && u.energy >= Math.max(DATA.abilities.emp.energy, DATA.abilities.defensive_matrix.energy)) {
         const emp = p.hasTech('emp_tech') ? this.cluster(u, 8, 3, o => !G.allied(o.owner, p.id) && (o.maxSh > 0 || o.maxEnergy > 0)) : null;
         if (emp) Abilities.issue(u, 'emp', null, emp.x, emp.y);
         else { const hurt = this.mine(o => !o.isBuilding && o.hp < o.maxHp * 0.5 && o.def.sup >= 2 && !o.fx.matrix && distPt(o.x, o.y, u.x, u.y) < 10 * TILE)[0]; if (hurt) Abilities.issue(u, 'defensive_matrix', hurt); }
       }
-      else if (d === 'battlecruiser' && u.energy >= 150 && p.hasTech('yamato_tech') && this.turn(u.id, 2)) {
+      else if (d === 'battlecruiser' && u.energy >= DATA.abilities.yamato.energy && p.hasTech('yamato_tech') && this.turn(u.id, 2)) {
         const t = G.near(u.x, u.y, 10 * TILE).find(o => !G.allied(o.owner, p.id) && (o.maxHp >= 200 || o.isBuilding)); if (t) Abilities.issue(u, 'yamato', t);
       }
-      else if (d === 'wraith' && !u.cloaked && u.energy >= 50 && p.hasTech('cloaking_field') && this.turn(u.id, 4) && G.near(u.x, u.y, 8 * TILE).some(o => !G.allied(o.owner, p.id) && o.hasWeapon())) Abilities.instant(u, 'cloak_wraith');
-      else if (d === 'queen' && this.turn(u.id, 2) && u.energy >= 75) {
+      else if (d === 'wraith' && !u.cloaked && u.energy >= DATA.abilities.cloak_wraith.energy + AI_CLOAK_RESERVE && p.hasTech('cloaking_field') && this.turn(u.id, 4) && G.near(u.x, u.y, 8 * TILE).some(o => !G.allied(o.owner, p.id) && o.hasWeapon())) Abilities.instant(u, 'cloak_wraith');
+      else if (d === 'queen' && this.turn(u.id, 2) && u.energy >= Math.max(DATA.abilities.ensnare.energy, DATA.abilities.parasite.energy)) {
         const c = p.hasTech('ensnare_tech') ? this.cluster(u, 9, 3, o => !G.allied(o.owner, p.id) && !o.isBuilding && !o.fx.ensnare) : null;
         if (c) Abilities.issue(u, 'ensnare', null, c.x, c.y);
         else { const big = G.near(u.x, u.y, 12 * TILE).find(o => !G.allied(o.owner, p.id) && !o.isBuilding && o.def.sup >= 2 && !o.fx.parasite); if (big) Abilities.issue(u, 'parasite', big); }
       }
-      else if (d === 'defiler' && u.energy < 100 && p.hasTech('consume_tech') && this.turn(u.id, 2)) {
+      else if (d === 'defiler' && u.energy < DATA.abilities.dark_swarm.energy && p.hasTech('consume_tech') && this.turn(u.id, 2)) {
         const food = this.mine(o => o.def.id === 'zergling' && distPt(o.x, o.y, u.x, u.y) < 2 * TILE)[0]; if (food) Abilities.issue(u, 'consume', food);
       }
-      else if (d === 'dark_archon' && this.turn(u.id, 2) && u.energy >= 50) {
-        const caster = G.near(u.x, u.y, 10 * TILE).find(o => !G.allied(o.owner, p.id) && o.maxEnergy > 0 && o.energy >= 50);
+      else if (d === 'dark_archon' && this.turn(u.id, 2) && u.energy >= DATA.abilities.feedback.energy) {
+        // Feedback burns the target's energy as damage, so a target worth the cast holds at least the cast's energy.
+        const caster = G.near(u.x, u.y, 10 * TILE).find(o => !G.allied(o.owner, p.id) && o.maxEnergy > 0 && o.energy >= DATA.abilities.feedback.energy);
         if (caster) Abilities.issue(u, 'feedback', caster);
-        else if (u.energy >= 100 && p.hasTech('maelstrom_tech')) { const c = this.cluster(u, 10, 3, o => !G.allied(o.owner, p.id) && !o.isBuilding && o.def.bio); if (c) Abilities.issue(u, 'maelstrom', null, c.x, c.y); }
-        else if (u.energy >= 150 && p.hasTech('mind_control_tech')) { const t = G.near(u.x, u.y, 8 * TILE).find(o => !G.allied(o.owner, p.id) && !o.isBuilding && o.def.sup >= 2); if (t) Abilities.issue(u, 'mind_control', t); }
+        else if (u.energy >= DATA.abilities.maelstrom.energy && p.hasTech('maelstrom_tech')) { const c = this.cluster(u, 10, 3, o => !G.allied(o.owner, p.id) && !o.isBuilding && o.def.bio); if (c) Abilities.issue(u, 'maelstrom', null, c.x, c.y); }
+        else if (u.energy >= DATA.abilities.mind_control.energy && p.hasTech('mind_control_tech')) { const t = G.near(u.x, u.y, 8 * TILE).find(o => !G.allied(o.owner, p.id) && !o.isBuilding && o.def.sup >= 2); if (t) Abilities.issue(u, 'mind_control', t); }
       }
-      else if (d === 'corsair' && u.energy >= 125 && p.hasTech('disruption_web_tech') && this.turn(u.id, 2)) {
+      else if (d === 'corsair' && u.energy >= DATA.abilities.disruption_web.energy && p.hasTech('disruption_web_tech') && this.turn(u.id, 2)) {
         const c = this.cluster(u, 9, 3, o => !G.allied(o.owner, p.id) && !o.fly && o.hasWeapon()); if (c) Abilities.issue(u, 'disruption_web', null, c.x, c.y);
       }
-      else if (d === 'high_templar' && u.energy >= 100 && p.hasTech('hallucination_tech') && this.turn(u.id, 4) && this.state === 'attack') {
+      else if (d === 'high_templar' && u.energy >= DATA.abilities.hallucination.energy && p.hasTech('hallucination_tech') && this.turn(u.id, 4) && this.state === 'attack') {
         const friend = this.mine(o => !o.isBuilding && o.def.sup >= 2 && distPt(o.x, o.y, u.x, u.y) < 9 * TILE)[0]; if (friend) Abilities.issue(u, 'hallucination', friend);
       }
-      else if (d === 'arbiter' && u.energy >= 150 && p.hasTech('recall_tech') && this.turn(u.id, 4) && this.state === 'attack' && this.target && this.target.alive) {
+      else if (d === 'arbiter' && u.energy >= DATA.abilities.recall.energy && p.hasTech('recall_tech') && this.turn(u.id, 4) && this.state === 'attack' && this.target && this.target.alive) {
         const stranded = this.mine(o => !o.isBuilding && o.hasWeapon() && distPt(o.x, o.y, this.target.x, this.target.y) > 30 * TILE).length;
         if (stranded >= 6) Abilities.issue(u, 'recall', null, u.x, u.y);
       }
-      else if (d === 'ghost' && p.nukes > 0 && u.energy > 50 && this.turn(u.id, 4) && u.order.type !== 'ability') { const t = this.target; if (t && t.alive) { if (p.hasTech('personnel_cloaking') && !u.cloaked) Abilities.instant(u, 'cloak_ghost'); Abilities.issue(u, 'nuke', null, t.x, t.y); } }
+      else if (d === 'ghost' && p.nukes > 0 && u.energy > DATA.abilities.cloak_ghost.energy + AI_CLOAK_RESERVE && this.turn(u.id, 4) && u.order.type !== 'ability') { const t = this.target; if (t && t.alive) { if (p.hasTech('personnel_cloaking') && !u.cloaked) Abilities.instant(u, 'cloak_ghost'); Abilities.issue(u, 'nuke', null, t.x, t.y); } }
       // ---- M12 wave four: the seven Zerg additions with something to press --------------------
       // An idle Overlord is a supply crate that happens to fly. Planting from one is how the tumour
       // chain STARTS -- a tumour can only be seeded on creep, so something has to walk to the edge of
@@ -1983,7 +2003,7 @@ class AI {
     }
     const dT = this.sty().dropT || 1; // a drop is harassment by definition, so the harasser starts them earlier and runs twice as many
     if (this.state !== 'gather' || G.frame < 24 * 60 * 6 * dT || G.frame - this.lastDrop < 24 * 180 * dT || !this.rally) return;
-    const t = this.mine(u => !u.isBuilding && (u.def.cargo || (u.def.cargoTech && p.hasTech(u.def.cargoTech))) && !u.cargo.length && u.order.type === 'idle' && u.def.id !== 'overlord')[0] || this.mine(u => u.def.id === 'overlord' && p.hasTech('ventral_sacs') && !u.cargo.length)[0]; if (!t) return;
+    const t = this.mine(u => !u.isBuilding && G.cargoCap(u) && !u.cargo.length && u.order.type === 'idle' && u.def.id !== 'overlord')[0] || this.mine(u => u.def.id === 'overlord' && p.hasTech('ventral_sacs') && !u.cargo.length)[0]; if (!t) return;
     const cargo = this.armyUnits().filter(u => !u.fly && u.def.cargoSize && u.def.cargoSize <= 2 && distPt(u.x, u.y, this.rally.x, this.rally.y) < 8 * TILE && u.order.type !== 'attack'); let slots = 8; const chosen = []; for (const u of cargo) { if (u.def.cargoSize <= slots) { chosen.push(u); slots -= u.def.cargoSize; } if (slots <= 0) break; } if (chosen.length < 4) return;
     const en = this.enemies()[0]; if (!en) return; const eb = en.startBase; const cx = G.map.w * TILE / 2, cy = G.map.h * TILE / 2; const away = DMath.atan2(eb.cy - cy, eb.cx - cx); const x = clamp(eb.cx + DMath.cos(away) * 5 * TILE, 64, G.map.w * TILE - 64), y = clamp(eb.cy + DMath.sin(away) * 5 * TILE, 64, G.map.h * TILE - 64);
     this.dropOp = { transport: t, units: chosen, phase: 'load', x, y, tx: eb.cx, ty: eb.cy, t0: G.frame }; t.setOrder({ type: 'move', x: this.rally.x, y: this.rally.y });

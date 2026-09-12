@@ -322,7 +322,9 @@ listed here. Ordered by what I would do first.
     ~800-900 lines; the low-risk first slice is the 42 sim-only suites that share a byte-identical stub.
     Cost L — a 90-file diff, every suite's PASS/FAIL count diffed against the baseline log. A milestone,
     not a review.
-22. **Small refactors, results unchanged:** the scarab/interceptor caps (`hasTech('reaver_capacity')
+22. **Small refactors, results unchanged:** **DONE** (entry 30): every item below except the `suppresses` cache
+    (measured, and left with the reason on the getter); the eight-player banks byte-identical after each. As
+    listed: the scarab/interceptor caps (`hasTech('reaver_capacity')
     ? 10 : 5`) are written three times and the defs carry `scarabTech`/`interceptorTech` that nothing
     reads (and the AI's reaver loop reads the literal 5, so Reaver Capacity is bought and never used);
     cargo capacity is written twice; `Unit.suppresses` iterates `p.tech` on every `damage()` call and
@@ -337,7 +339,9 @@ listed here. Ordered by what I would do first.
     `supportUnits()` member, injects her own hall first, and flies back when idle away from it. (The fault
     as listed: `supportUnits()` listed `queen`, so once the army left she went with it, out of
     `injectHall`'s 26-tile reach, and stopped injecting.)
-24. **`tools/`:** `raster.js` exports `mesh`, `V`, `M` and `models.js` exports `C` with no consumer;
+24. **`tools/`:** **DONE** (entry 30): the four exports are gone (zero consumers, counted); the bake is
+    untouched with the `META.dirs` note on the line that writes it. As listed: `raster.js` exports `mesh`,
+    `V`, `M` and `models.js` exports `C` with no consumer;
     `bake.js` writes `META.dirs` into `assets/atlas.js` (16) while five units bake at 32 and
     `js/atlas.js` never reads it. Cosmetic; a re-bake is not worth it for this alone.
 25. **Spawn Larva should raise a hatchery's larvae to 12; today it only refills to 3.** **DONE** (entry 18,
@@ -1147,6 +1151,36 @@ The questions as they were put, kept for the record:
     fixes each turned its red green; re-run here with the fixes in: each fix reverted -> its check red
     (the dock radius back to `p.r` -> one clean red (one of four never docks); the walk without the copy -> one clean red (two of four alive on the frame)). **Canaries** (the stamp moves: `abilities.js`, `game.js`): aistyles seed 1 clean (132), seed 11 clean (132), seed 5 its one known economy line (57 vs 61). **Eight-player
     banks:** 377/804/147/222/302/392/221/303, byte-identical -- no Carrier or Reaver ever existed in that game. **Gate:** 76 of 76, 238 s. The stamp moved: `b5b590f19b33fa33`.
+30. **Small refactors, results unchanged (task 22), and the four dead `tools/` exports (task 24).** *(commit:
+    tasks 22, 24; fourth session, prepared by a worktree agent)* **The rule was that `test/eightplayer.js`'s
+    bank line must not move**, and it was run after every item: `377/324 804/283 147/103 222/70 302/214 392/64
+    221/653 303/167` and 19 of 19 before, after each of the seven, and after the merged spec on a fresh tree
+    (`.claude/review/agent-2224/NOTES.md` has the table); here again after the merged specs on the tree at c5c99af, the same line, 19 of 19. **Done:** `G.hangarCap` reads
+    `scarabCap`/`scarabTech` and `interceptorCap`/`interceptorTech` off the def for the three `game.js` sites
+    and the AI loop, whose Reaver half read a bare 5 -- measured, no AI in the identity game ever owned a
+    Reaver or a Carrier (zero samples in 14,400 frames), so the banks could not see it, and a probe shows a
+    Protoss AI with the tech now holds **ten scarabs by frame 5888** where the control with the 5 put back
+    stops at five; `G.cargoCap` reads `cargoTech: ['ventral_sacs', 8]` for the six sites that spelled the
+    Overlord's capacity out; the five M12 blocks that `abilities.js` justified by a branch that could not edit
+    `sim.js` or `game.js` went where their comments said -- `EQUIV.command_center` into the table, `MULE_HAUL`,
+    `Unit.muleHaul` and `Unit.reactorTick` into `sim.js`, the walks as `G.tickTerran` and `G.tickZergNet`
+    called from `G.tick` at the same point of the frame (the point in the frame is the contract: a MULE hauled
+    from inside `tickGather` or a Medivac healed from `Unit.tick` would change results, and the comments say
+    so); 26 energy gates in `micro()` read `DATA.abilities`, the three cloak gates as cost + `AI_CLOAK_RESERVE`
+    (25, in TUNING) so 25 + 25 is the 50 they always were (a probe evaluates all 26 against the literals: 26 of
+    26 equal; the comsat's 180 and Infest's 150 are not costs and stay); `HOVER` is derived from `hover: true`,
+    the Probe, Archon and Dark Archon brought up to the six the mine trigger always spared (the Probe now
+    puffs dust instead of leaving tracks -- presentation); `seenSup` decays at most once per frame instead of
+    once per call (it was called twice on a think where the enemy read as massing while the AI gathered -- 6
+    of 2,954 thinks -- and the banks did not move for it). **Measured and left:** `Unit.suppresses` costs 4.6
+    ms over 5,270 calls in the eight-player game and a cache cannot be proved sound while tests `clear()` and
+    `delete()` from `p.tech` and the snapshot decoder rebuilds it; the getter says so. **Task 24:** `mesh`,
+    `V`, `M`, `C` had no consumer in `js/`, `tools/`, `test/` or `assets/` (counted) and left the two
+    `module.exports`; `META.dirs` is written and never read (`sprites.js` takes each unit's `cols`), noted on
+    the line, no re-bake. **Negative controls:** the Reaver's 5 put back (stops at five); every energy
+    expression evaluated against its literal; the derived `HOVER` diffed against the old six. **Canaries:**
+    aistyles seed 1 clean (132), seed 11 clean (132), seed 5 its one known economy line (57 vs 61). `test/version.js` 27 of 27 with `MULE_HAUL` moved and `AI_CLOAK_RESERVE` named. **Gate:** 76
+    of 76, 229 s. The stamp moved (the relocations): `b2d136a211dfe314`.
 
 # 4. Considered and deliberately not done
 

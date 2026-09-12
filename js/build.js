@@ -111,7 +111,7 @@ const BUILD = {
     'WIDE_BODY', 'MINE_TIME', 'GAS_TIME', 'LARVA_TIME', 'LARVA_NATURAL', 'MAX_QUEUE', 'WORKER_HAUL', 'GAS_DEPLETED', 'MODE_TRANS', 'MINERS_PER_PATCH', 'CREEP_SEED', 'CREEP_GROW',
     'D', 'SUPPLY_CAP', 'PATH_BUDGET', 'DAY_CYCLE', 'NIGHT_SIGHT', 'NIGHT_DET', 'NIGHT_AIR', 'WRECK_LIFE_BUILDING', 'WRECK_LIFE_UNIT',
     'FERRY_PICKUP', 'FERRY_WAIT', 'FACE_FLANK', 'FACE_REAR', 'MULE_HAUL', 'BLINK_ESCAPE',
-    'HALL_PULL', 'ANCHOR_PULL', 'ANCHOR_CAP', 'GUARD_COST', 'BASE_PULL', 'BASE_R', 'SENSOR_NEAR', 'SENSOR_CALM', 'G.cell'],
+    'HALL_PULL', 'ANCHOR_PULL', 'ANCHOR_CAP', 'GUARD_COST', 'BASE_PULL', 'BASE_R', 'SENSOR_NEAR', 'SENSOR_CALM', 'AI_CLOAK_RESERVE', 'G.cell'],
   // Top-level functions, hashed by source.
   HELPERS: ['repairableDef', 'dist', 'distPt', 'clamp', 'setUnitId', 'daylightAt', 'hitFacing', 'gasBuildings',
     'Replay.applyPending'],   // the one method of Replay that decides simulation order; the rest is save/load plumbing

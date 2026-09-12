@@ -418,13 +418,23 @@ const G = {
     const t = this.map.findFreeTile(b.tx + Math.floor(b.def.w / 2), b.ty + b.def.h, 10, (x, y) => this.map.walkable(x, y));
     if (t) return [(t[0] + .5) * TILE, (t[1] + .5) * TILE]; return [b.x, b.y + b.r + 16];
   },
+  // How many scarabs a Reaver, or interceptors a Carrier, may hold right now: the def's base cap, or its researched
+  // one once the capacity tech has landed (scarabCap / scarabTech, interceptorCap / interceptorTech in js/data.js).
+  // One reader for what used to be the same ternary written out with its own literals in finishProduction, the
+  // autocast pass, queueUnit and the AI's production loop -- where the Reaver half read a bare 5, so Reaver Capacity
+  // was bought and never used (REVIEW-M17 task 22). Abilities.dockTick's 8 is a different number: what a hangar can
+  // physically take back, which is above the unresearched cap because launched Interceptors are not counted against it.
+  hangarCap(b, uid) {
+    const d = b.def, p = b.player;
+    return uid === 'scarab' ? (p.hasTech(d.scarabTech[0]) ? d.scarabTech[1] : d.scarabCap) : (p.hasTech(d.interceptorTech[0]) ? d.interceptorTech[1] : d.interceptorCap);
+  },
   finishProduction(b, it) {
     const p = this.players[b.owner];
     if (it.kind === 'unit') {
       const ud = DATA.units[it.id];
       if (it.id === 'nuke') { p.nukes++; b.hasNuke = true; p.msg('Nuclear missile ready.'); return; }
-      if (it.id === 'scarab') { b.scarabs = Math.min(b.scarabs + 1, b.player.hasTech('reaver_capacity') ? 10 : 5); return; }
-      if (it.id === 'interceptor') { b.interceptors = Math.min(b.interceptors + 1, b.player.hasTech('carrier_capacity') ? 8 : 4); return; }
+      if (it.id === 'scarab') { b.scarabs = Math.min(b.scarabs + 1, this.hangarCap(b, 'scarab')); return; }
+      if (it.id === 'interceptor') { b.interceptors = Math.min(b.interceptors + 1, this.hangarCap(b, 'interceptor')); return; }
       const count = ud.pair ? 2 : 1;
       for (let i = 0; i < count; i++) {
         let u;
@@ -478,10 +488,14 @@ const G = {
   liftBuilding(b) { if (!b.def.canLift || b.prod.length || (b.addon && !b.addon.done)) return; b.lifted = true; b.fly = true; this.map.unblock(b.tx, b.ty, b.def.w, b.def.h, b.id); b.order = { type: 'idle' }; if (b.addon) { b.addon.parent = null; b.addon = null; } this.recomputeSupply(); },
 
   // ---------------- transports ----------------
+  // How much a transport, or a Bunker, can hold: the def's `cargo`, or -- for the Overlord, which has none until
+  // Ventral Sacs -- cargoTech's [tech, slots] once the tech is in, else nothing. The one reader; the ferry order in
+  // js/sim.js, loadUnit, the AI's drop and the three UI gates each spelled it out before (REVIEW-M17 task 22).
+  cargoCap(t) { const d = t.def; return d.cargo || (d.cargoTech && t.player.hasTech(d.cargoTech[0]) ? d.cargoTech[1] : 0); },
   cargoUsed(t) { return t.cargo.reduce((s, c) => s + (c.def.cargoSize || 1), 0); },
   loadUnit(t, u) {
     if (!t.alive || !u.alive || u.inside || u.isBuilding || u.fly) return false;
-    const cap = t.def.cargo || (t.def.cargoTech && t.player.hasTech(t.def.cargoTech) ? 8 : 0); if (!cap) return false;
+    const cap = this.cargoCap(t); if (!cap) return false;
     if (t.def.bunker && !['marine', 'firebat', 'ghost', 'medic', 'scv'].includes(u.def.id)) return false;
     if (this.cargoUsed(t) + (u.def.cargoSize || 1) > cap) { t.player.msg('Transport is full.', 'error'); return false; }
     if (u.order.type === 'gather' && u.order.target && u.order.target.miner === u) u.order.target.miner = null;
@@ -797,7 +811,7 @@ const G = {
           // ammo: only up to the cap, and only if nothing is already in the queue for it
           const p = this.players[u.owner];
           const isScarab = id === 'build_scarab';
-          const cap = isScarab ? (p.hasTech('reaver_capacity') ? 10 : 5) : (p.hasTech('carrier_capacity') ? 8 : 4);
+          const cap = this.hangarCap(u, ab.unit);
           const have = (isScarab ? u.scarabs : u.interceptors) + u.prod.length;
           if (have >= cap) continue;
           const ud = DATA.units[ab.unit];
@@ -891,7 +905,7 @@ const G = {
     const p = this.players[b.owner], ud = DATA.units[uid];
     if (!ud || !b.done || b.lifted) return false;
     if (!((b.def.produces || []).includes(uid) || (b.def.id === 'reaver' && uid === 'scarab') || (b.def.id === 'carrier' && uid === 'interceptor'))) { p.msg(b.def.name + ' does not train ' + ud.name + '.', 'error'); return false; }
-    if (uid === 'scarab' || uid === 'interceptor') { const max = uid === 'scarab' ? (p.hasTech('reaver_capacity') ? 10 : 5) : (p.hasTech('carrier_capacity') ? 8 : 4); const have = (uid === 'scarab' ? b.scarabs : b.interceptors) + b.prod.length; if (have >= max) return false; }
+    if (uid === 'scarab' || uid === 'interceptor') { const max = this.hangarCap(b, uid); const have = (uid === 'scarab' ? b.scarabs : b.interceptors) + b.prod.length; if (have >= max) return false; }
     if (b.prod.length >= MAX_QUEUE) return false;
     if (!p.hasReq(ud)) { p.msg('Requires ' + p.missingReq(ud), 'error'); return false; }
     if (uid === 'nuke' && b.hasNuke) return false;
@@ -1060,6 +1074,63 @@ const G = {
       if (mendSh && u.maxSh && u.sh < u.maxSh) u.sh = Math.min(u.maxSh, u.sh + mendSh * dt);
     }
   },
+  // ================= the Terran per-frame pass (M12 wave four) =================
+  // Three things in ONE walk of the units: the MULE's haul, the Medivac's heal autocast, the Reactor's second slot.
+  // They were written in js/abilities.js and run from Abilities.tickFields because M12's three race branches edited
+  // in parallel and the Terran one owned neither js/sim.js nor this file; the branches merged at M13, and the bodies
+  // now live where that comment said they belonged -- Unit.muleHaul beside Unit.tickGather and Unit.reactorTick
+  // beside Unit.tickProduction (js/sim.js) -- with the walk here, called from tick() at the same point of the frame
+  // it always ran from: after every unit has ticked and the projectiles have landed, before the fields (REVIEW-M17
+  // task 22, identity-checked: the eight-player banks did not move). THE POINT IN THE FRAME IS THE CONTRACT. Folding
+  // the MULE into tickGather would debit the patch before the other workers on it have mined this frame; folding the
+  // Medivac into Unit.tick's medic line would heal before this frame's projectiles land. Both change results, so
+  // neither is done.
+  //
+  // COST. One property read and one branch per living unit per frame. The tick is dominated by unit separation at
+  // ~0.9 ms of ~3 ms at 500 units; this is a flag test in the same order of magnitude as the reap filter that already
+  // runs once a second. Nothing here allocates.
+  //
+  // DETERMINISM. The units in order, no G.rand, no wall clock, no Set or Map iteration.
+  tickTerran() {
+    for (const u of this.units) {
+      if (!u.alive) continue;
+      const d = u.def;
+      if (d.mule) { u.muleHaul(); continue; }
+      // The Medivac's heal autocast. js/sim.js runs this for `d.id === 'medic'` on the same (frame + id) % 8 stagger,
+      // and the stagger matters for more than cost: M9 found that every `(G.frame + id) % N` gate in micro() was only
+      // ever true for a fraction of the ids, so the residues are kept identical to the medic's rather than invented here.
+      if (d.id === 'medivac' && u.done && !u.disabled && u.order.type !== 'ability' && (this.frame + u.id) % 8 === 0) Abilities.medicAuto(u);
+      if (d.reactor && u.done && u.parent) u.parent.reactorTick();
+    }
+  },
+  // Per-frame bookkeeping for the two M12 Zerg structures whose state js/sim.js has no way to notice. It ran from
+  // Abilities.tickFields because that was the only per-frame hook the M12 Zerg branch owned, and a second one meant
+  // a line in tick() below, which that branch could not touch; merged at M13, the line is there and the pass is here,
+  // called right where tickFields used to reach it (REVIEW-M17 task 22). Staggered to one frame in twelve and it
+  // reads two properties per unit, so it costs about forty property reads a frame amortised at 500 units.
+  //
+  // Two jobs:
+  //   NYDUS -- the hub's `nydusLink` is the newest living mouth. js/sim.js's 'nydus' order reads one link per
+  //   building, so a network of N worms is expressed as "every worm points home, the canal points at the newest".
+  //   When that worm dies the canal has to fall back to the next newest, or the whole network silently stops
+  //   working and nothing tells the player why.
+  //   CRAWLERS -- an uprooted crawler still carries `def.creep`. GameMap.recomputeCreep skips it while it is
+  //   `lifted`, but nothing calls recomputeCreep when it stands back up: landBuilding does not, and creepR has
+  //   already reached def.creep so Unit.tickBuilding's growth step never fires again. Keyed on the tile it is
+  //   standing on so the recompute happens once per move, not once per frame.
+  tickZergNet() {
+    if (this.frame % 12) return;
+    let recreep = false;
+    for (const u of this.units) {
+      if (!u.alive || !u.isBuilding) continue;
+      if (u.nydusNet) {
+        if (u.nydusNet.some(w => !w.alive)) u.nydusNet = u.nydusNet.filter(w => w.alive);
+        if (!u.nydusLink || !u.nydusLink.alive) u.nydusLink = u.nydusNet.length ? u.nydusNet[u.nydusNet.length - 1] : null;
+      }
+      if (u.def.crawler) { const key = u.lifted ? -1 : u.tx * 4096 + u.ty; if (u.creepKey !== key) { u.creepKey = key; recreep = true; } }
+    }
+    if (recreep) this.map.recomputeCreep(this.units);   // one recompute per pass however many crawlers moved
+  },
   // ---------------- main tick ----------------
   tick() {
     if (this.over || this.paused) return;
@@ -1089,7 +1160,10 @@ const G = {
       for (let ty = y0; ty <= y1 && !hit; ty++) for (let tx = x0; tx <= x1; tx++) { const b = m.blocked[m.idx(tx, ty)]; if (b < 0) continue; const bb = this.byId.get(b); if (bb && bb.alive && bb.isBuilding && !bb.lifted) { hit = bb; break; } }
       if (hit) this.nudgeOut(u, hit);
     }
-    Combat.tickProjectiles(); Abilities.tickFields();
+    Combat.tickProjectiles();
+    // The M12 per-frame passes, in the order Abilities.tickFields ran them until REVIEW-M17 task 22 moved them here.
+    this.tickTerran(); this.tickZergNet();
+    Abilities.tickFields();
     this.map.tickHazard(this.frame, this.units);   // weather; inert unless the layout declares a hazard. Contract is documented above GameMap.hazardState.
     this.tickAuras();
     for (const p of this.players) if (p.ai && this.frame % 4 === p.id % 4) p.ai.tick();

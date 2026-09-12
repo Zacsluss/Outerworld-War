@@ -45,6 +45,9 @@ const DEASE = [0.55, 1];   // where in the fall each frame sits
 // radius and infantry have tiny radii. This is a render-only boost: sim radii are untouched, so a marine
 // just draws bigger than its footprint, which is what Brood War does too.
 const ART_SCALE = { marine: 1.32, firebat: 1.32, medic: 1.32, ghost: 1.28, zergling: 1.35, zealot: 1.3, dark_templar: 1.3, high_templar: 1.24 };
+// `dirs` is written into assets/atlas.js and nothing reads it: js/atlas.js indexes a sheet by `dir * S` and js/sprites.js
+// takes each unit's own `cols` (32 for the FINE_DIRS five, DIRS otherwise). Left in rather than re-baking every sheet to
+// drop one unread field (REVIEW-M17 task 24). The per-unit `cols` is the number that matters.
 const META = { el: EL, dirs: DIRS, walk: WALK, atk: ATK, idle: IDLE, dvar: DVAR, dframes: DFR, death: DVAR * DFR };
 const atlas = Object.assign({}, META, { units: {}, buildings: {} });
 const t0 = Date.now(); let frames = 0; const PREVIEW = [];

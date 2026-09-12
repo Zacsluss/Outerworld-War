@@ -207,4 +207,4 @@ function encodePNG(w, h, rgba) {
 // Sheet assembler: frames[row][col] = {rgba,S}
 function sheet(frames, S) { const cols = frames[0].length, rows = frames.length; const W = cols * S, H = rows * S; const out = new Uint8Array(W * H * 4); for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const f = frames[r][c]; for (let y = 0; y < S; y++) out.set(f.subarray(y * S * 4, (y + 1) * S * 4), ((r * S + y) * W + c * S) * 4); } return { W, H, out }; }
 
-module.exports = { Renderer, encodePNG, sheet, mesh, V, M };
+module.exports = { Renderer, encodePNG, sheet };   // mesh, V and M are internal: no consumer in js/, tools/, test/ or assets/ (REVIEW-M17 task 24)

@@ -853,8 +853,8 @@ const UI = {
         else if (u.def.worker && t.isBuilding && !t.done && t.def.race === 'T') u.setOrder({ type: 'construct', target: t }, shift);
         else if (u.def.worker && t.def.depot && t.done && u.carrying) u.setOrder({ type: 'return', then: u.lastRes, depot: t }, shift);
         else if (u.def.id === 'scv' && (t.def.mech || t.isBuilding) && t.hp < t.maxHp && t.done !== false) u.setOrder({ type: 'repair', target: t }, shift);
-        else if ((t.def.cargo || t.def.bunker || (t.def.cargoTech && t.player.hasTech(t.def.cargoTech))) && !u.fly && !u.isBuilding && t !== u) u.setOrder({ type: 'load', target: t }, shift);
-        else if ((u.def.cargo || (u.def.cargoTech && u.player.hasTech(u.def.cargoTech))) && !t.fly && !t.isBuilding) u.setOrder({ type: 'pickup', target: t }, shift);
+        else if ((G.cargoCap(t) || t.def.bunker) && !u.fly && !u.isBuilding && t !== u) u.setOrder({ type: 'load', target: t }, shift);
+        else if (G.cargoCap(u) && !t.fly && !t.isBuilding) u.setOrder({ type: 'pickup', target: t }, shift);
         else if (t.def.nydus && t.nydusLink && t.nydusLink.alive && !u.fly) u.setOrder({ type: 'nydus', target: t }, shift);
         else if (t.isBuilding && !t.lifted) { const [gx, gy] = goal(u); u.setOrder({ type: 'move', x: gx, y: gy }, shift); }
         else u.setOrder({ type: 'follow', target: t }, shift);
@@ -1141,7 +1141,7 @@ const UI = {
     if (mobile.some(x => x.cargo.length) && !abils.includes('unload')) B(Math.min(8, i++), 'Unload', 'U', setPending('unload'));
     // A ferry route. Offered on anything that can actually carry something, loaded or not -- the whole
     // point is to set it up BEFORE there is anything to move.
-    if (mobile.some(x => x.def.cargo || (x.def.cargoTech && x.player.hasTech(x.def.cargoTech)))) B(i++, 'Ferry', 'Y', setPending('ferry'));
+    if (mobile.some(x => G.cargoCap(x))) B(i++, 'Ferry', 'Y', setPending('ferry'));
     // mixed selections still get the merge buttons when at least two templar of a kind are selected
     for (const [id, want] of [['summon_archon', 'high_templar'], ['summon_dark_archon', 'dark_templar']]) if (!abils.includes(id) && i <= 8 && mobile.filter(x => x.def.id === want && !x.disabled).length >= 2) { const ab = DATA.abilities[id]; B(i++, ab.name, ab.hk, () => Abilities.merge(mobile, id), { abil: id }); }
     return btns;

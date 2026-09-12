@@ -46,7 +46,7 @@ const edits = [
   ['game.js', s => s.replace('const SUPPLY_CAP = 500;', 'const SUPPLY_CAP = 501;')],
   ['game.js', s => s.replace(/^function daylightAt\(frame\) \{/m, 'function daylightAt(frame) { /* edited */')],   // a function declaration
   ['map.js', s => s.replace('const CHURN_SLOW = 0.25', 'const CHURN_SLOW = 0.26')],                  // HANDOFF-M16 trap 8
-  ['abilities.js', s => s.replace("const HOVER = new Set(['vulture',", "const HOVER = new Set(['__edited', 'vulture',")],   // a Set
+  ['abilities.js', s => s.replace("const NO_BROODLING = new Set(['probe',", "const NO_BROODLING = new Set(['__edited', 'probe',")],   // a Set (HOVER, the old anchor here, is derived from DATA since REVIEW-M17 task 22)
   ['sim.js', s => s.replace('vulture: 0.22', 'vulture: 0.23')],                                        // TURN, which the old list DID name
 ];
 for (const [file, edit] of edits) {

@@ -4,7 +4,14 @@
 // economy, production. Deterministic fixed-step at TPS.
 // ============================================================================
 const SIEGE_W = { dmg: 70, type: 'explosive', range: 12, minRange: 2, cd: 75, hits: 1, upgDmg: 5, upgKey: 'vehW', targets: 'ground', splash: [0.3, 0.8, 1.25], ff: true };
-const EQUIV = { hatchery: ['lair', 'hive'], lair: ['hive'], spire: ['greater_spire'], command_center: [], nexus: [] };
+// "A Lair still counts as a Hatchery." Player.hasBuilding reads this, Player.hasReq through that, js/missions.js for
+// objectives and test/techtree.js for the tree. `command_center` was an empty array until M12 gave it two morphs, and
+// without them morphing your only Command Center makes hasBuilding('command_center') false, so a Barracks or an
+// Engineering Bay can no longer be built -- a player who pressed the Orbital button silently lost half a tech tree.
+// From M12 to M17 the two ids were pushed into this array at load from js/abilities.js, because that wave's three
+// race branches edited in parallel and the Terran one did not own this file; the branches merged at M13, so the
+// entry lives where the table is (REVIEW-M17 task 22). test/terran12.js section 11 pins it.
+const EQUIV = { hatchery: ['lair', 'hive'], lair: ['hive'], spire: ['greater_spire'], command_center: ['orbital_command', 'planetary_fortress'], nexus: [] };
 // A body wider than this needs a path with CLEARANCE rather than one found for a point -- see the
 // comment on Pathfinder.find (FIXLIST-M14 C6). Half a tile: a unit standing dead centre in a tile
 // pokes (r - 16) px into its neighbour, so 16 is exactly the radius at which that stops being zero.
@@ -15,7 +22,17 @@ const MINE_TIME = 75, GAS_TIME = 37, LARVA_TIME = 342, MAX_QUEUE = 5;
 // Spawn Larva stacks past it to DATA.abilities.larva_inject.cap (twelve; REVIEW-M17 task 25), so the two
 // numbers are different things now and every reader names the one it means. Stamped (BUILD.TUNING).
 const LARVA_NATURAL = 3;
-const WORKER_HAUL = 8, GAS_DEPLETED = 2;   // a trip's minerals or gas, and a depleted geyser's; MULE_HAUL in js/abilities.js sits on top of the eight (REVIEW-M17: four literals before)
+const WORKER_HAUL = 8, GAS_DEPLETED = 2;   // a trip's minerals or gas, and a depleted geyser's; MULE_HAUL below sits on top of the eight (REVIEW-M17: four literals before)
+// How much a MULE takes out of a patch ON TOP of the eight a worker takes, on the same trip, and
+// carries home with it. Three times a worker's haul on a round trip that is also faster, which is
+// roughly four SCVs for seventy-five seconds.
+//
+// IT COMES OUT OF THE PATCH. That is the whole design of the thing under M11's attrition economy: a
+// MULE is not free minerals, it is minerals borrowed from the end of the game, and a base that has had
+// MULEs dropped on it all match runs dry visibly sooner. The alternative -- crediting the player
+// without debiting the field -- would have been three characters shorter and would have quietly made
+// the one economy mechanic in the game the one thing that does not obey it.
+const MULE_HAUL = 16;   // read by Unit.muleHaul; declared in js/abilities.js until REVIEW-M17 task 22
 const MODE_TRANS = 40;
 // unit id -> the tech that gives it +50 max energy (each such tech carries `energy: '<unit>'` in js/data.js)
 const ENERGY_TECH = (() => { const m = {}; for (const [id, t] of Object.entries(DATA.techs)) if (t.energy) m[t.energy] = id; return m; })();                     // frames a mode change locks a unit: siege and unsiege, the Viking transform, an abducted tank's forced unsiege (three literals before)
@@ -172,6 +189,10 @@ class Unit {
   //   rank 1 at 2 kills, 2 at 5, 3 at 10.
   // Does this unit's own production line have suppressing fire? Read off the tech table rather than a
   // list of unit ids, so a new tech with { suppress: true } on a new building needs no code here.
+  // NOT CACHED PER PLAYER, on purpose (REVIEW-M17 task 22): the walk over p.tech cost 4.6 ms across the 5,270
+  // damage() calls of the eight-player game, nothing against its 66 s of ticks -- and a cache would have to be
+  // invalidated by every path that changes p.tech, which includes tests that clear() and delete() from it and the
+  // snapshot decoder that replaces the Set. A cache that misses one of those is a desync, not a slowdown.
   get suppresses() {
     if (!this.def.gw && !this.def.aw) return false;
     const p = this.player; if (!p || !p.tech.size) return false;
@@ -326,6 +347,25 @@ class Unit {
   }
 
   // ---------------- larva ----------------
+  // The Reactor: a second unit built in parallel with the first. tickProduction above only ever advances `prod[0]`;
+  // this advances `prod[1]` under exactly the same rules -- the same supply gate, the same `it.started` latch, the
+  // same cwal cheat multiplier, the same finishProduction on completion. It was written in js/abilities.js and run from
+  // Abilities.tickFields because M12's Terran branch did not own this file; merged at M13, it sits beside the function
+  // it mirrors (REVIEW-M17 task 22) and is still called from the same point of the frame, G.tickTerran -- after every
+  // unit has ticked -- not from tickProduction itself, which would advance the second slot before the first.
+  // BOTH SLOTS MUST BE UNITS. A Barracks can research Suppressing Fire, and a reactor that let a marine slide out
+  // from behind a research would make the add-on a research-cancel button as well as a throughput bonus.
+  reactorTick() {
+    if (!this.alive || !this.done || this.lifted || this.prod.length < 2) return;
+    if (this.prod[0].kind !== 'unit' || this.prod[1].kind !== 'unit') return;
+    const it = this.prod[1], p = this.player, ud = DATA.units[it.id];
+    if (!it.started) {
+      if (!it.reserved && G.supplyBlocked(p, ud)) return;
+      it.started = true;
+    }
+    it.progress += (G.cheats.cwal && p.human) ? 10 : 1;
+    if (it.progress >= it.total) { this.prod.splice(1, 1); G.finishProduction(this, it); }
+  }
   tickLarva() {
     if (!this.hatch || !this.hatch.alive) { G.kill(this, null, true); return; }
     if ((G.frame + this.id) % 60 === 0) { const a = G.rand() * Math.PI * 2; this.wx = this.hatch.x + DMath.cos(a) * 60; this.wy = this.hatch.y + (this.hatch.def.h / 2) * TILE + 14 + G.rand() * 18; }
@@ -430,7 +470,7 @@ class Unit {
       // It only ever picks up IDLE units. Loading anything standing nearby would hijack a worker on its
       // way to a patch, and a shuttle that steals your economy is worse than no shuttle.
       case 'ferry': {
-        const cap = d.cargo || (d.cargoTech && this.player.hasTech(d.cargoTech) ? 8 : 0);
+        const cap = G.cargoCap(this);
         if (!cap) { this.nextOrder(); break; }
         const tx = o.leg === 'b' ? o.bx : o.ax, ty = o.leg === 'b' ? o.by : o.ay;
         if (!this.moveTo(tx, ty)) break;                       // still on the way
@@ -652,6 +692,31 @@ class Unit {
       if (o.phase === 'inside') { if (--o.t <= 0) { g.occupant = null; this.inside = null; g.geyser.amount -= WORKER_HAUL; const amt = g.geyser.amount > 0 ? WORKER_HAUL : GAS_DEPLETED; if (g.geyser.amount < 0) g.geyser.amount = 0; this.carrying = { type: 'gas', amt }; this.x = g.x; this.y = g.y + g.r + this.r; this.applyOrder({ type: 'return', then: g }); } return; }
       if (this.moveToRect(g, 6)) { if (!g.occupant || !g.occupant.alive || g.occupant.order.type !== 'gather') { g.occupant = this; o.phase = 'inside'; o.t = GAS_TIME; this.inside = g; } }
     }
+  }
+  // A MULE takes MULE_HAUL extra minerals out of the patch it just worked and carries them home on the same trip.
+  // See MULE_HAUL at the top of the file for why it debits the patch rather than crediting the player out of nothing.
+  //
+  // The hook is the frame the payload appears: tickGather above sets `carrying` and hands the unit a 'return' order
+  // in one step, so a `carrying` without our tag is a pickup that has not been topped up yet. The tag goes on
+  // unconditionally, before any of the reasons this might do nothing, so a MULE standing on a patch that ran dry
+  // cannot be topped up twice on the way home.
+  //
+  // `lastRes` rather than `order.then`: tickGather sets `lastRes` on every gather tick and it survives whatever the
+  // order queue does next, whereas `then` is only there if the return order is still the current one.
+  //
+  // Written in js/abilities.js and run from Abilities.tickFields while M12's Terran branch did not own this file;
+  // merged at M13, it lives beside the gather it tops up (REVIEW-M17 task 22). It is still called from G.tickTerran,
+  // after every unit has ticked, and NOT from tickGather: hauled from inside the gather it would debit the patch
+  // before the other workers on it have mined this frame, which changes what they carry home.
+  muleHaul() {
+    const c = this.carrying;
+    if (!c || c.type !== 'mineral' || c.hauled) return;
+    c.hauled = true;
+    const res = this.lastRes;
+    if (!res || res.type !== 'mineral' || res.amount <= 0) return;   // the patch died on this very trip
+    const extra = Math.min(res.amount, MULE_HAUL);
+    res.amount -= extra; c.amt += extra;
+    if (res.amount <= 0) G.removeResource(res);
   }
   tickReturn() {
     const o = this.order;

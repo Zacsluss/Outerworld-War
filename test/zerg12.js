@@ -403,7 +403,7 @@ run(`(() => {
     // ...and back onto the tile it started on, which must work and must put its creep back exactly.
     sunk.x = (home[0] + 1) * TILE; sunk.y = (home[1] + 1) * TILE;
     G.landBuilding(sunk, home[0], home[1]);
-    this.tick(24);                             // Abilities.tickZergNet runs one frame in twelve
+    this.tick(24);                             // G.tickZergNet runs one frame in twelve
     const back = { lifted: !!sunk.lifted, blocked: m.blocked[m.idx(sunk.tx, sunk.ty)] === sunk.id, creep: this.creepCount(), tx: sunk.tx, ty: sunk.ty };
     return { rooted, liftedState, off: off ? { tx: off[0], ty: off[1], reason: offReason } : null, offRooted, back, home, needsCreep: !!DATA.buildings.sunken_colony.needsCreep, spore: !!DATA.buildings.spore_colony.needsCreep };
   })()`);

@@ -2,43 +2,18 @@
 // ============================================================================
 // Abilities & spells, status fields, auto-cast behaviours.
 // ============================================================================
-// Things a spider mine will not trigger on. The reaper's jump jets and the hellion's air cushion are
-// the same argument the vulture already makes: nothing that never touches the ground sets off a
-// pressure mine. (M12 wave four.)
-const HOVER = new Set(['vulture', 'probe', 'archon', 'dark_archon', 'reaper', 'hellion']);
+// Things a spider mine will not trigger on: nothing that never touches the ground sets off a pressure mine.
+// Derived from `hover: true` on the unit defs (js/data.js) rather than listed here, so the render's idea of what
+// hovers (no tyre tracks, dust instead -- js/render.js) and the mine's cannot disagree again. They did: this Set
+// named six units and the defs flagged three (REVIEW-M17 task 22). The Set is what the simulation reads, so the
+// defs were brought up to it -- the Probe, the Archon and the Dark Archon gained the flag, and nothing about mines
+// changed. The reaper's jump jets and the hellion's air cushion are the same argument the vulture already makes
+// (M12 wave four).
+const HOVER = new Set(Object.keys(DATA.units).filter(id => DATA.units[id].hover));
 const NO_BROODLING = new Set(['probe', 'reaver', 'dragoon', 'archon', 'dark_archon', 'ultralisk', 'scv']);
 
-// ---------------------------------------------------------------------------------------------
-// M12 wave four, and the one line of this milestone that belongs in another file.
-//
-// EQUIV (js/sim.js) is the table that says "a Lair still counts as a Hatchery". Player.hasBuilding
-// reads it, Player.hasReq reads it through that, test/techtree.js reads it, and js/missions.js reads it
-// for objectives. Its `command_center` entry is an EMPTY array, written when nothing morphed off a
-// Command Center -- and now two things do. Without this, morphing your only Command Center makes
-// `hasBuilding('command_center')` false, and a Barracks or an Engineering Bay can no longer be built:
-// a player who pressed the Orbital button would silently lose half a tech tree.
-//
-// The correct fix is one line in js/sim.js:
-//     command_center: ['orbital_command', 'planetary_fortress']
-// This branch does not own js/sim.js, and three race branches are editing in parallel, so the entry is
-// EXTENDED IN PLACE here instead -- js/abilities.js loads after js/sim.js in index.html and in every
-// test harness, `const EQUIV` binds the object and not its contents, and pushing is additive, so the
-// Zerg and Protoss branches can do the same to their own keys without touching this one. It is
-// idempotent and it runs once at load, so it is deterministic and invisible to snapshots.
-// REPLACE THIS with the sim.js line the moment those branches are merged.
-if (typeof EQUIV !== 'undefined' && Array.isArray(EQUIV.command_center)) {
-  for (const id of ['orbital_command', 'planetary_fortress']) if (!EQUIV.command_center.includes(id)) EQUIV.command_center.push(id);
-}
-// How much a MULE takes out of a patch ON TOP of the eight a worker takes, on the same trip, and
-// carries home with it. Three times a worker's haul on a round trip that is also faster, which is
-// roughly four SCVs for seventy-five seconds.
-//
-// IT COMES OUT OF THE PATCH. That is the whole design of the thing under M11's attrition economy: a
-// MULE is not free minerals, it is minerals borrowed from the end of the game, and a base that has had
-// MULEs dropped on it all match runs dry visibly sooner. The alternative -- crediting the player
-// without debiting the field -- would have been three characters shorter and would have quietly made
-// the one economy mechanic in the game the one thing that does not obey it.
-const MULE_HAUL = 16;
+// EQUIV's command_center morphs (Orbital, Fortress) were pushed into the js/sim.js table from here from M12 to M17, and
+// MULE_HAUL was declared here; both live in js/sim.js now, the reasoning with them (REVIEW-M17 task 22).
 // M12 wave four. The five new Zerg morph-aspects are checked exactly the way the three older ones
 // are -- "can this player have the thing it turns into" -- but on their own line rather than by
 // extending that or-chain, because two other races are adding to the same function this milestone
@@ -230,7 +205,7 @@ const Abilities = {
     u.lifted = true; u.fly = false;
     G.map.unblock(u.tx, u.ty, u.def.w, u.def.h, u.id);
     u.order = { type: 'idle' }; u.queue = []; u.path = null; u.target = null;
-    u.creepKey = -1; G.map.recomputeCreep(G.units);   // its creep patch leaves with it; see tickZergNet
+    u.creepKey = -1; G.map.recomputeCreep(G.units);   // its creep patch leaves with it; see G.tickZergNet
     G.effects.push({ kind: 'ring', x: u.x, y: u.y, r: u.r, t: 12, color: '#c8f' });
     return true;
   },
@@ -738,108 +713,11 @@ const Abilities = {
     }
   },
   changeOwner(t, pid) { if (t.order.type === 'gather' && t.order.target && t.order.target.miner === t) t.order.target.miner = null; if (t.order.type === 'gather' && t.order.phase === 'inside' && t.order.target) { t.order.target.occupant = null; t.inside = null; } if (t.order.type === 'construct' && t.order.target && t.order.target.builder === t) t.order.target.builder = null; t.owner = pid; t.order = { type: 'idle' }; t.queue = []; t.path = null; t.target = null; t.carrying = null; t.wave = 0; if (typeof UI !== 'undefined' && UI.onUnitDied) UI.onUnitDied(t); G.recomputeSupply(); if (t.player.human) t.player.msg('Unit mind controlled.'); },
-  // ================= M12 wave four: the Terran per-frame pass =================
-  // Three things that have no other home in the files this branch owns, in ONE walk of G.units.
-  //
-  // WHERE THIS BELONGS, so the next person does not have to work it out. All three of these are
-  // per-unit simulation and their natural home is js/sim.js -- the MULE's haul beside Unit.tickGather,
-  // the Reactor beside Unit.tickProduction, the Medivac beside the line that dispatches
-  // Abilities.medicAuto for the literal id 'medic'. This branch does not own js/sim.js and three race
-  // branches are editing in parallel, so they are gathered here and called from tickFields, which
-  // G.tick already runs unconditionally once a frame. The exact hooks are listed in the handoff.
-  //
-  // COST. One property read and one branch per living unit per frame. The tick is dominated by unit
-  // separation at ~0.9 ms of ~3 ms at 500 units; this is a flag test in the same order of magnitude as
-  // the reap filter that already runs once a second. Nothing here allocates.
-  //
-  // DETERMINISM. G.units in order, no G.rand, no wall clock, no Set or Map iteration.
-  tickTerran() {
-    for (const u of G.units) {
-      if (!u.alive) continue;
-      const d = u.def;
-      if (d.mule) { this.muleHaul(u); continue; }
-      // The Medivac's heal autocast. js/sim.js runs this for `d.id === 'medic'` on the same
-      // (frame + id) % 8 stagger, and the stagger matters for more than cost: M9 found that every
-      // `(G.frame + id) % N` gate in micro() was only ever true for a fraction of the ids, so the
-      // residues are kept identical to the medic's rather than invented here.
-      if (d.id === 'medivac' && u.done && !u.disabled && u.order.type !== 'ability' && (G.frame + u.id) % 8 === 0) this.medicAuto(u);
-      if (d.reactor && u.done && u.parent) this.reactorTick(u.parent);
-    }
-  },
-  // A MULE takes MULE_HAUL extra minerals out of the patch it just worked and carries them home on the
-  // same trip. See MULE_HAUL at the top of the file for why it debits the patch rather than crediting
-  // the player out of nothing.
-  //
-  // The hook is the frame the payload appears: Unit.tickGather sets `carrying` and hands the unit a
-  // 'return' order in one step, so a `carrying` without our tag is a pickup that has not been topped up
-  // yet. The tag goes on unconditionally, before any of the reasons this might do nothing, so a MULE
-  // standing on a patch that ran dry cannot be topped up twice on the way home.
-  //
-  // `lastRes` rather than `order.then`: Unit.tickGather sets `lastRes` on every gather tick and it
-  // survives whatever the order queue does next, whereas `then` is only there if the return order is
-  // still the current one.
-  muleHaul(u) {
-    const c = u.carrying;
-    if (!c || c.type !== 'mineral' || c.hauled) return;
-    c.hauled = true;
-    const res = u.lastRes;
-    if (!res || res.type !== 'mineral' || res.amount <= 0) return;   // the patch died on this very trip
-    const extra = Math.min(res.amount, MULE_HAUL);
-    res.amount -= extra; c.amt += extra;
-    if (res.amount <= 0) G.removeResource(res);
-  },
-  // The Reactor: a second unit built in parallel with the first.
-  //
-  // Unit.tickProduction only ever advances `prod[0]`, so this advances `prod[1]` under exactly the same
-  // rules -- the same supply gate, the same `it.started` latch, the same cwal cheat multiplier, the
-  // same finishProduction on completion. Duplicating those four lines rather than generalising them is
-  // deliberate: the alternative is a change to Unit.tickProduction, which this branch does not own.
-  //
-  // BOTH SLOTS MUST BE UNITS. A Barracks can research Suppressing Fire, and a reactor that let a
-  // marine slide out from behind a research would make the add-on a research-cancel button as well as
-  // a throughput bonus. One thing, legibly.
-  reactorTick(b) {
-    if (!b.alive || !b.done || b.lifted || b.prod.length < 2) return;
-    if (b.prod[0].kind !== 'unit' || b.prod[1].kind !== 'unit') return;
-    const it = b.prod[1], p = b.player, ud = DATA.units[it.id];
-    if (!it.started) {
-      if (!it.reserved && G.supplyBlocked(p, ud)) return;
-      it.started = true;
-    }
-    it.progress += (G.cheats.cwal && p.human) ? 10 : 1;
-    if (it.progress >= it.total) { b.prod.splice(1, 1); G.finishProduction(b, it); }
-  },
-  // Per-frame bookkeeping for the two M12 Zerg structures whose state js/sim.js has no way to notice.
-  // It lives here, and is called from tickFields, for one reason: tickFields is the only per-frame
-  // hook this file owns, and giving it a second one would mean a new line in G.tick -- js/game.js,
-  // which this change may not touch. Staggered to one frame in twelve and it reads two properties per
-  // unit, so it costs about forty property reads a frame amortised at 500 units.
-  //
-  // Two jobs:
-  //   NYDUS -- the hub's `nydusLink` is the newest living mouth. js/sim.js's 'nydus' order reads one
-  //   link per building, so a network of N worms is expressed as "every worm points home, the canal
-  //   points at the newest". When that worm dies the canal has to fall back to the next newest, or
-  //   the whole network silently stops working and nothing tells the player why.
-  //   CRAWLERS -- an uprooted crawler still carries `def.creep`. GameMap.recomputeCreep skips it while
-  //   it is `lifted`, but nothing calls recomputeCreep when it stands back up: G.landBuilding does not,
-  //   and creepR has already reached def.creep so Unit.tickBuilding's growth step never fires again.
-  //   Keyed on the tile it is standing on so the recompute happens once per move, not once per frame.
-  tickZergNet() {
-    if (G.frame % 12) return;
-    let recreep = false;
-    for (const u of G.units) {
-      if (!u.alive || !u.isBuilding) continue;
-      if (u.nydusNet) {
-        if (u.nydusNet.some(w => !w.alive)) u.nydusNet = u.nydusNet.filter(w => w.alive);
-        if (!u.nydusLink || !u.nydusLink.alive) u.nydusLink = u.nydusNet.length ? u.nydusNet[u.nydusNet.length - 1] : null;
-      }
-      if (u.def.crawler) { const key = u.lifted ? -1 : u.tx * 4096 + u.ty; if (u.creepKey !== key) { u.creepKey = key; recreep = true; } }
-    }
-    if (recreep) G.map.recomputeCreep(G.units);   // one recompute per pass however many crawlers moved
-  },
+  // The Terran per-frame pass (MULE haul, Medivac heal, Reactor slot) and the Zerg one (Nydus links, crawler creep)
+  // ran from here from M12 to M17 because tickFields was the only per-frame hook those branches owned. They are
+  // G.tickTerran and G.tickZergNet now (js/game.js; the bodies Unit.muleHaul and Unit.reactorTick in js/sim.js),
+  // called from G.tick immediately before this, so the order within the frame is what it was (REVIEW-M17 task 22).
   tickFields() {
-    this.tickTerran();
-    this.tickZergNet();
     this.tickProtoss();
     const fs = G.fields;
     for (let i = fs.length - 1; i >= 0; i--) {

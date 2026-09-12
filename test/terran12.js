@@ -296,7 +296,7 @@ ok(mule.diedAfter <= D.u.mule.lifetime, 'on schedule: it cannot outlive its life
 // writes to it -- so the guarantee is structural. Both halves are pinned: the source, and the clock.
 ok(mule.ticked === 100, 'its clock runs down one frame at a time and nothing tops it up', mule.ticked + ' of 100');
 ok(mule.renewed <= 0 && mule.second === 2, 'a second Call Down makes a SECOND MULE; it does not renew the first', JSON.stringify([mule.renewed, mule.second]));
-ok(!/lifetime/.test(run('String(Abilities.tickTerran) + String(Abilities.muleHaul) + String(Abilities.reactorTick)')),
+ok(!/lifetime/.test(run('String(G.tickTerran) + String(Unit.prototype.muleHaul) + String(Unit.prototype.reactorTick)')),
   'the M12 per-frame pass never mentions `lifetime`, so it cannot extend one');
 ok(D.u.mule.lifetime > 0 && !D.u.mule.notUnit, 'the lifetime is on the def, where Unit.tick reads it every frame');
 
@@ -537,8 +537,8 @@ const zl = json(`(() => {
 ok(zl.t === 24 && zl.digT === 0 && zl.times === null, 'CONTROL: a Zergling still burrows in the generic 24 frames and has no arming delay at all', JSON.stringify(zl));
 
 console.log('\n--- 11. determinism and the shared tables ---');
-{ const srcs = run('[Abilities.tickTerran, Abilities.muleHaul, Abilities.reactorTick, Abilities.cast, Abilities.instant].map(f => typeof f === "function" ? String(f) : "MISSING")');
-  ok(!srcs.includes('MISSING'), 'the five ability functions exist (String(undefined) would pass the next check on nothing)', srcs.map((s, i) => s === 'MISSING' ? i : null).filter(x => x !== null).join(','));
+{ const srcs = run('[G.tickTerran, Unit.prototype.muleHaul, Unit.prototype.reactorTick, Abilities.cast, Abilities.instant].map(f => typeof f === "function" ? String(f) : "MISSING")');   // the Terran pass moved to G and Unit in REVIEW-M17 task 22
+  ok(!srcs.includes('MISSING'), 'the five M12 functions exist (String(undefined) would pass the next check on nothing)', srcs.map((s, i) => s === 'MISSING' ? i : null).filter(x => x !== null).join(','));
   ok(!/Math\.random|Date\.now|performance\./.test(srcs.join('')), 'no Math.random, Date or performance in the new ability code'); }
 ok(!/Math\.random|Date\.now/.test(run('String(AI.prototype.micro)')), 'nor in AI.micro');
 ok(json('EQUIV.command_center').includes('orbital_command') && json('EQUIV.command_center').includes('planetary_fortress'),
