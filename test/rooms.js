@@ -27,8 +27,12 @@ const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fa
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const servers = [];
+// BW_COUNTDOWN defaults to 0 for every relay this file starts: sections 1-13 are about rooms, the delay,
+// cheats, kicks and rejoins, and each of them starts a game -- they would all pay the five-second start
+// countdown for a thing they do not test. Section 14 passes its own and times it for real. A caller's env
+// still wins, and so does one set in the environment.
 function serve(port, delay, env) {
-  const s = spawn(process.execPath, [path.join(__dirname, 'serve.js'), String(port), String(delay)], { stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({}, process.env, env || {}) });
+  const s = spawn(process.execPath, [path.join(__dirname, 'serve.js'), String(port), String(delay)], { stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({ BW_COUNTDOWN: '0' }, process.env, env || {}) });
   s.stdout.on('data', () => { }); s.stderr.on('data', d => console.log('  [relay err] ' + String(d).trim()));
   servers.push(s); return s;
 }
@@ -426,6 +430,155 @@ function client(port, tag) {
     ok((html.v.match(/class="lbTeam"/g) || []).length === 2 && /Team 1/.test(html.v) && /Team 2/.test(html.v) && /data-addai="2"/.test(html.v) && /id="lbStart"/.test(html.v) && /id="lbLeave"/.test(html.v) && /data-kick="8"/.test(html.v) && /id="lbReady"/.test(html.v), 'the lobby view groups the players by team, with add-AI per team, kick, READY, START and LEAVE for the host', html.v.slice(0, 200));
     vm.runInContext(`Net.handle({ t: 'lobbies', rooms: [] })`, c);
     ok(vm.runInContext('Net.lobby === null && Net.browsing === true', c) && /HOST GAME/.test(html.v), 'a list arriving while in a lobby means the relay has us out of it (left, or kicked): back to the browser', html.v.slice(0, 120));
+  }
+
+
+  // =========================================================================
+  // 13. the AI slot is a real slot: race, difficulty, PLAY STYLE and team, editable and removable by the
+  //     host and by nobody else -- and game privacy (items 1, 10, 13)
+  // =========================================================================
+  const PZ = PORT + 6;
+  serve(PZ, 3, { BW_COUNTDOWN: '0' });   // section 14 is where the countdown is timed; this one is about the slots
+  await sleep(500);
+  const N1 = client(PZ, 'N1'), N2 = client(PZ, 'N2'), N3 = client(PZ, 'N3');
+  await N1.open; await N2.open; await N3.open;
+  N3.send({ t: 'list' });
+  N1.send({ t: 'join', name: 'Ada', race: 'T', create: true, title: 'Slots' }); await sleep(250);
+  const scode = N1.lobby ? N1.lobby.room : 'NOROOM';
+  N2.send({ t: 'join', name: 'Ben', race: 'Z', room: scode }); await sleep(250);
+  N1.send({ t: 'addai', race: 'P', difficulty: 'hard', style: 'rusher', team: 2 }); await sleep(250);
+  const aiOf = c => (c.lobby && c.lobby.players.find(p => p.ai)) || null;
+  let slotAI = aiOf(N1);
+  ok(slotAI && slotAI.race === 'P' && slotAI.difficulty === 'hard' && slotAI.style === 'rusher' && slotAI.team === 2,
+    'ADD A.I. carries race, difficulty, PLAY STYLE and team (the lobby hardcoded R/normal and had no style at all)', JSON.stringify(slotAI));
+  N1.send({ t: 'set', id: slotAI.id, race: 'Z', difficulty: 'easy', style: 'turtle', team: 1 }); await sleep(250);
+  slotAI = aiOf(N1);
+  ok(slotAI && slotAI.race === 'Z' && slotAI.difficulty === 'easy' && slotAI.style === 'turtle' && slotAI.team === 1,
+    'the host edits an AI slot after adding it -- an AI has no socket, so the host naming its id is the only way it can change', JSON.stringify(slotAI));
+  N1.send({ t: 'set', id: slotAI.id, style: 'wizard' }); await sleep(200);
+  ok(aiOf(N1).style === 'turtle', 'a style the relay does not know is refused, leaving the one that was set (the AI constructor would fall back to standard, silently)', JSON.stringify(aiOf(N1)));
+  N2.send({ t: 'set', id: slotAI.id, race: 'T' }); await sleep(200);
+  ok(aiOf(N1).race === 'Z', 'a player who is not the host cannot touch an AI slot', JSON.stringify(aiOf(N1)));
+  const benId = N1.lobby.players.find(p => p.name === 'Ben').id;
+  N1.send({ t: 'set', id: benId, race: 'P' }); await sleep(200);
+  ok(N1.lobby.players.find(p => p.name === 'Ben').race === 'Z', 'not even the host may change another HUMAN player\'s race out from under them', JSON.stringify(N1.lobby.players.map(p => p.name + '/' + p.race)));
+  N2.send({ t: 'set', race: 'P' }); await sleep(200);
+  ok(N1.lobby.players.find(p => p.name === 'Ben').race === 'P', 'a player still sets their own race with no id at all, exactly as every older client does', JSON.stringify(N1.lobby.players.map(p => p.name + '/' + p.race)));
+  N1.send({ t: 'kick', id: slotAI.id }); await sleep(200);
+  ok(!aiOf(N1), 'an AI slot is removable', JSON.stringify(N1.lobby.players.map(p => p.name)));
+  // GAME PRIVACY: the same room, in the list or out of it, with the code unchanged either way
+  N1.send({ t: 'set', listed: false }); await sleep(250);
+  ok(N1.lobby.listed === false && (lastList(N3) || { rooms: [] }).rooms.length === 0,
+    'MAKE PRIVATE takes the game out of every browser list (the push used to be skipped by "if (L.listed)", so a game went private and stayed on screen)', JSON.stringify(lastList(N3)));
+  N1.send({ t: 'set', listed: true }); await sleep(250);
+  ok(N1.lobby.listed === true && (lastList(N3) || { rooms: [] }).rooms.length === 1 && lastList(N3).rooms[0].code === scode,
+    'MAKE PUBLIC puts it back, under the same code', JSON.stringify(lastList(N3)));
+  // THE POINT OF ALL OF IT: the style reaches the started game, which is where js/ai.js reads it
+  N1.send({ t: 'addai', race: 'T', difficulty: 'hard', style: 'harasser', team: 2 }); await sleep(250);
+  N1.send({ t: 'start' }); await sleep(400);
+  const startedAI = N1.started && N1.started.players.find(p => !p.human);
+  ok(startedAI && startedAI.style === 'harasser' && startedAI.difficulty === 'hard',
+    'the play style rides into the started game -- js/ai.js reads it off G.setup.players[i].style, so this is the whole plumbing a styled network AI needs', JSON.stringify(startedAI));
+  N1.close(); N2.close(); N3.close(); await sleep(300);
+
+  // =========================================================================
+  // 14. the start countdown, and the relay owns the clock (item 12)
+  // =========================================================================
+  const PK = PORT + 7;
+  serve(PK, 3, { BW_COUNTDOWN: '3' });   // three, not five: the same mechanism, two seconds cheaper
+  await sleep(500);
+  const N4 = client(PK, 'N4'), N5 = client(PK, 'N5'); await N4.open; await N5.open;
+  N4.send({ t: 'join', name: 'Cass', race: 'T', create: true, title: 'Count' }); await sleep(250);
+  const ccode = N4.lobby ? N4.lobby.room : 'NOROOM';
+  N5.send({ t: 'join', name: 'Dee', race: 'Z', room: ccode }); await sleep(250);
+  const speedBeforeCount = N5.lobby.speed;
+  const tz0 = Date.now();
+  N4.send({ t: 'start' }); await sleep(300);
+  ok(N5.lobby && N5.lobby.state === 'starting' && !N5.started && !N4.started,
+    'START no longer starts the game: the room goes to "starting" and the relay begins counting', JSON.stringify(N5.lobby && N5.lobby.state));
+  N4.send({ t: 'set', speed: 0 }); N4.send({ t: 'addai', race: 'Z' }); await sleep(250);
+  ok(N5.lobby.speed === speedBeforeCount && !N5.lobby.players.some(p => p.ai),
+    'nothing may change while the count runs: the player list the game is built from must not move under it', JSON.stringify({ speed: N5.lobby.speed, players: N5.lobby.players.length }));
+  const N6 = client(PK, 'N6'); await N6.open; N6.send({ t: 'join', name: 'Eve', race: 'P', room: ccode }); await sleep(250);
+  ok(!!N6.error && N6.lobby === null, 'and nobody new joins mid-countdown', String(N6.error));
+  for (let i = 0; i < 60 && !N5.started; i++) await sleep(100);
+  const elapsed = Date.now() - tz0;
+  const digits = N5.msgs.filter(m => m.t === 'countdown').map(m => m.n).join(',');
+  ok(N4.started && N5.started, 'the countdown ends in a start for everyone', JSON.stringify({ a: !!N4.started, b: !!N5.started }));
+  ok(digits === '3,2,1', 'every client is SENT each digit by the relay -- nothing is timed locally, so no client can reach zero early', digits);
+  ok(elapsed >= 2800, 'and the relay really waited: a three-count took at least 2.8 s', elapsed + ' ms');
+  N4.close(); N5.close(); N6.close(); await sleep(400);
+  // cancelling: by the host, and by anyone walking out
+  const N7 = client(PK, 'N7'), N8 = client(PK, 'N8'); await N7.open; await N8.open;
+  N7.send({ t: 'join', name: 'Fay', race: 'T', create: true, title: 'Cancel' }); await sleep(250);
+  const dcode = N7.lobby ? N7.lobby.room : 'NOROOM';
+  N8.send({ t: 'join', name: 'Gus', race: 'Z', room: dcode }); await sleep(250);
+  N7.send({ t: 'start' }); await sleep(1100);
+  N7.send({ t: 'cancel' }); await sleep(2600);
+  const cm = N8.msgs.filter(m => m.t === 'countdown').pop();
+  ok(!N7.started && !N8.started && N7.lobby.state === 'lobby', 'the host cancels the countdown and no game starts', JSON.stringify({ started: !!N7.started, state: N7.lobby.state }));
+  ok(cm && cm.cancelled === true && cm.n === 0 && /cancel/i.test(String(cm.msg || '')), 'and every client is told, with the reason', JSON.stringify(cm));
+  N7.send({ t: 'set', speed: 2 }); await sleep(250);
+  ok(N8.lobby.speed === 2, 'a cancelled lobby is editable again', JSON.stringify(N8.lobby.speed));
+  N7.send({ t: 'start' }); await sleep(1100);
+  N8.close(); await sleep(2600);
+  ok(!N7.started && N7.lobby.state === 'lobby',
+    'a player DROPPING mid-countdown cancels it too: a count that reached zero with a slot that had walked out would build a different player list on each client', JSON.stringify({ started: !!N7.started, state: N7.lobby.state }));
+  N7.close(); await sleep(300);
+
+  // =========================================================================
+  // 15. the client half of the finished lobby, in a VM (items 1, 10, 12, 13)
+  // =========================================================================
+  {
+    const html = { v: '' }; const el = () => ({ get innerHTML() { return html.v; }, set innerHTML(v) { html.v = v; }, querySelectorAll: () => [], value: '', onchange: null, style: {} });
+    const c = { console, location: { protocol: 'http:', host: 'localhost' }, document: { getElementById: el }, TPS: 24, WebSocket: function () { } };
+    vm.createContext(c);
+    // data.js and map.js too, so PLAYER_COLORS, MAP_LAYOUTS and GameMap.mirrorPt are the REAL ones and the
+    // preview is measured against the map it claims to draw rather than a stub of it.
+    for (const f of ['data.js', 'map.js', 'net.js']) vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'), c, { filename: f });
+    const lobbyMsg = extra => Object.assign({
+      t: 'lobby', room: 'ABC123', title: 'T', listed: true, state: 'lobby', speed: 6, layout: 'temple', count: 0,
+      players: [{ id: 7, name: 'Me', race: 'T', team: 1, host: true }, { id: 8, name: 'Other', race: 'Z', team: 2, ready: true },
+        { id: -1, name: 'Computer 0', ai: true, difficulty: 'hard', style: 'rusher', race: 'P', team: 2 }],
+    }, extra || {});
+    c.__msg = lobbyMsg();
+    vm.runInContext('Net.id = 7; Net.handle(__msg)', c);
+    const asHost = html.v;
+    ok(/data-slot="-1" data-field="race"/.test(asHost) && /data-slot="-1" data-field="difficulty"/.test(asHost) && /data-slot="-1" data-field="style"/.test(asHost) && /data-slot="-1" data-field="team"/.test(asHost),
+      'the host sees race, difficulty, play style and team as dropdowns on the AI slot (the AI row used to be the words "AI, normal")', asHost.slice(0, 160));
+    ok(/value="rusher" selected/.test(asHost) && /value="hard" selected/.test(asHost), 'and they show what the slot is set to', asHost.slice(0, 160));
+    ok(/data-slot="7" data-field="race"/.test(asHost) && !/data-slot="8" data-field="race"/.test(asHost), 'the host edits their own race and nobody else\'s human slot', asHost.slice(0, 160));
+    ok(/id="lbStart"/.test(asHost) && /MAKE PRIVATE/.test(asHost) && /id="lbLeave"/.test(asHost) && /QUIT/.test(asHost), 'START / MAKE PRIVATE / QUIT, in the shape of the screenshots', asHost.slice(0, 160));
+    ok(/GAME SETTINGS/.test(asHost) && /Locked/.test(asHost) && /Alliances/.test(asHost) && /lbSetNote/.test(asHost), 'a settings column, with locked alliances stated as a fact and a note saying which StarCraft II rows are absent and why', asHost.slice(0, 160));
+    // the map preview: Lost Ruins is a four-start map, and the four dots are the four seats' colours
+    const dots = (asHost.match(/<circle/g) || []).length;
+    const firstColor = vm.runInContext('PLAYER_COLORS[0]', c);
+    ok(/<svg class="lbPrev"/.test(asHost) && dots >= 4 && asHost.includes('fill="' + firstColor + '"'),
+      'the map preview draws the real start positions (four on Lost Ruins) in the seats\' own colours -- they come from the layout, which the seed never touched', dots + ' circles');
+    ok(/class="lbSwatch"/.test(asHost) && asHost.includes('background:' + firstColor), 'each slot shows the colour it will play in', asHost.slice(0, 160));
+    // a player who is NOT the host: no AI dropdowns, no START, no privacy button, their own race only
+    c.__msg2 = lobbyMsg({ players: [{ id: 7, name: 'Me', race: 'T', team: 1 }, { id: 8, name: 'Boss', race: 'Z', team: 2, host: true }, { id: -1, name: 'Computer 0', ai: true, difficulty: 'hard', style: 'rusher', race: 'P', team: 2 }] });
+    vm.runInContext('Net.handle(__msg2)', c);
+    ok(!/data-slot="-1"/.test(html.v) && !/id="lbStart"/.test(html.v) && !/MAKE P/.test(html.v) && /data-slot="7" data-field="race"/.test(html.v) && /Rusher/.test(html.v),
+      'a guest sees the AI\'s settings but cannot change them, and has no START or privacy button', html.v.slice(0, 160));
+    // the countdown, entirely from the relay
+    c.__msg3 = lobbyMsg({ state: 'starting', count: 5 });
+    vm.runInContext('Net.handle(__msg3); Net.handle({ t: "countdown", n: 5 })', c);
+    ok(/class="lbCd"/.test(html.v) && /class="lbCdN">5</.test(html.v) && !/id="lbStart"/.test(html.v) && /id="lbCancel"/.test(html.v),
+      'a counting lobby draws the relay\'s digit, drops START and offers the host CANCEL', html.v.slice(0, 160));
+    vm.runInContext('Net.handle({ t: "countdown", n: 3 })', c);
+    ok(/class="lbCdN">3</.test(html.v), 'and redraws it as the relay counts down', html.v.slice(0, 160));
+    vm.runInContext('Net.handle(__msg); Net.handle({ t: "countdown", n: 0, cancelled: true, msg: "Fay <b>cancelled</b> it." })', c);
+    ok(/lbCancelled/.test(html.v) && /&lt;b&gt;/.test(html.v) && !/<b>cancelled/.test(html.v), 'a cancelled start says why, with the reason escaped like every other string off the wire', html.v.slice(0, 200));
+    // the escaping contract, on the fields the finished lobby added
+    // The GUEST's view on purpose: the host sees an AI's difficulty and style as dropdowns built from local
+    // tables, so a hostile value never reaches that markup and would prove nothing. A guest sees them
+    // printed. (A negative control found exactly this: deleting the escaping changed the host's view not
+    // at all.) Player 7 is not the host here.
+    c.__msg4 = lobbyMsg({ players: [{ id: 7, name: '<svg/onload=x()>', race: 'T', team: 1 }, { id: 8, name: 'Boss', race: 'Z', team: 1, host: true }, { id: -1, name: 'AI', ai: true, difficulty: '<i>x</i>', style: '<i>y</i>', race: 'P', team: 2 }] });
+    vm.runInContext('Net.handle(__msg4)', c);
+    ok(/&lt;svg\/onload/.test(html.v) && !/<svg\/onload/.test(html.v) && /&lt;i&gt;x&lt;\/i&gt;/.test(html.v) && /&lt;i&gt;y&lt;\/i&gt;/.test(html.v) && !/<i>x<\/i>/.test(html.v) && !/<i>y<\/i>/.test(html.v),
+      'every new field off the wire is escaped: the name, and the AI difficulty and style a guest sees printed', html.v.slice(0, 200));
   }
 
   await sleep(200);

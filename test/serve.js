@@ -44,6 +44,15 @@ const MAX_PLAYERS = 8;          // humans + AI, the same ceiling `addai` has alw
 // they keep their humans alive with `power overwhelming`. Behind a tunnel every socket is 127.0.0.1, so
 // the address is read from the forwarding headers cloudflared and ngrok set before the socket's own.
 const MIN_CODE = 4, JOIN_LIMIT = Math.max(1, parseInt(process.env.BW_JOIN_LIMIT || '60')), CHEATS = process.env.BW_CHEATS === '1';
+// THE COUNTDOWN BEFORE A GAME UNLOCKS, and THE RELAY OWNS IT (the user's item 12: "this will help the
+// game start time stay equal"). Every client counting 5-4-3-2-1 off its own clock would reach zero at
+// five slightly different moments -- which is precisely the skew lockstep then has to wait out on the
+// first frames. The relay broadcasting each number means every client draws the same digit at the same
+// moment and the start message that follows is one message to everybody.
+// Configurable, and 0 turns it off: test/net.js and test/net_many.js set BW_COUNTDOWN=0 because they are
+// lockstep and rejoin suites with no business paying five seconds a game for a menu. test/rooms.js runs
+// a relay WITH one and times the real thing.
+const COUNTDOWN = (() => { const n = parseInt(process.env.BW_COUNTDOWN, 10); return Number.isFinite(n) ? Math.max(0, Math.min(10, n)) : 5; })();
 const joins = new Map();        // address -> recent join timestamps
 function joinAllowed(ip) { const now = Date.now(); const arr = (joins.get(ip) || []).filter(t => now - t < 60000); if (arr.length >= JOIN_LIMIT) { joins.set(ip, arr); return false; } arr.push(now); joins.set(ip, arr); return true; }
 const DEFAULT_ROOM = 'LAN';
@@ -63,7 +72,7 @@ const server = http.createServer((req, res) => {
 const clients = new Map(); let nextId = 1;
 const rooms = new Map();        // code -> lobby. Created on demand, deleted when the last client leaves.
 // players: {id, name, race, team, ai, difficulty, gone}
-function newLobby(code) { return { code, players: [], state: 'lobby', layout: 'temple', seed: 0, started: null, history: [], lastF: {}, gone: {}, title: '', listed: false }; }   // listed: made by `join {create}` and shown to browsers
+function newLobby(code) { return { code, players: [], state: 'lobby', layout: 'temple', seed: 0, started: null, history: [], lastF: {}, gone: {}, title: '', listed: false, count: 0, timer: null }; }   // state: 'lobby' | 'starting' (the countdown) | 'playing'   // listed: made by `join {create}` and shown to browsers
 // Normalised hard, because this is a thing humans read out over voice chat: case-folded, anything that
 // is not a letter or a digit dropped, and capped. So "ab-12", "AB12" and "  ab12  " are one room.
 function roomCode(s) { const k = String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8); return k || DEFAULT_ROOM; }
@@ -77,6 +86,14 @@ function frame(text) { return frameRaw(1, Buffer.from(text, 'utf8')); }
 // believed and streamed into memory. (REVIEW-M17)
 const MAX_FRAME = 16 * 1024 * 1024;
 function raceOf(r) { return /^[TZPR]$/.test(r) ? r : 'R'; }
+// Difficulty and play style for an AI slot. The style list is MIRRORED from AI.prototype.styleDeltas()
+// rather than read from it: the relay is a plain node process that never loads js/ai.js, and pulling the
+// whole simulation in to validate one string is the worse trade. It is only a FILTER -- the AI
+// constructor validates again against its own table and falls back to 'standard' (js/ai.js, "own keys
+// only"), so a style this list lets through that the game does not know is a standard AI, never a crash.
+const AI_DIFFS = ['easy', 'normal', 'hard'], AI_STYLES = ['standard', 'turtle', 'rusher', 'expander', 'harasser'];
+function diffOf(d, fallback) { return AI_DIFFS.includes(d) ? d : (fallback || 'normal'); }
+function styleOf(s, fallback) { return AI_STYLES.includes(s) ? s : (fallback || 'standard'); }
 function teamOf(t, fallback) { return Number.isInteger(t) && t >= 1 && t <= MAX_PLAYERS ? t : fallback; }
 function send(c, msg) { try { c.socket.write(frame(JSON.stringify(msg))); } catch (e) { } }
 // Room-scoped. A client that has not joined yet has no `room` and hears nothing, which is what stops
@@ -84,7 +101,10 @@ function send(c, msg) { try { c.socket.write(frame(JSON.stringify(msg))); } catc
 function inRoom(L) { const out = []; for (const c of clients.values()) if (c.room === L.code) out.push(c); return out; }
 function broadcast(L, msg, except) { for (const c of inRoom(L)) if (c !== except) send(c, msg); }
 function hostOf(L) { return L.players.find(q => !q.ai && !q.gone) || null; }
-function lobbyState(L) { const host = hostOf(L); return { t: 'lobby', room: L.code, title: L.title, listed: !!L.listed, players: L.players.map(p => ({ id: p.id, name: p.name, race: p.race, team: p.team, ai: !!p.ai, difficulty: p.difficulty, gone: !!p.gone, ready: !!p.ready || !!p.ai, host: host ? p.id === host.id : false })), layout: L.layout, state: L.state, speed: L.speed == null ? 6 : L.speed }; }
+// The style rides here and in startMsg's player list, and that is the WHOLE plumbing an AI play style
+// needs: js/ai.js's constructor reads it off G.setup.players[id].style, and G.setup is the options object
+// Net.startGame builds. So a styled network AI costs no change to any stamped file. (item 1)
+function lobbyState(L) { const host = hostOf(L); return { t: 'lobby', room: L.code, title: L.title, listed: !!L.listed, players: L.players.map(p => ({ id: p.id, name: p.name, race: p.race, team: p.team, ai: !!p.ai, difficulty: p.difficulty, style: p.style, gone: !!p.gone, ready: !!p.ready || !!p.ai, host: host ? p.id === host.id : false })), layout: L.layout, state: L.state, speed: L.speed == null ? 6 : L.speed, count: L.count | 0 }; }
 // The browser. A row per listed room that still has someone in it; pushed to every browsing client (one
 // that sent `list` and is in no room) whenever a listed room changes, and sent once to a `list`.
 function lobbyRow(L) { const h = hostOf(L); return { code: L.code, title: L.title, host: h ? h.name : '', players: L.players.length, humans: L.players.filter(p => !p.ai).length, cap: MAX_PLAYERS, state: L.state, layout: L.layout }; }
@@ -108,6 +128,39 @@ function sendRejoin(L, c, idx, snap, snapFrame, snapApplied) {
   console.log('  ' + tag(L) + 'rejoin sent ' + (snap ? 'from a snapshot at frame ' + snapFrame + ' plus ' + hist.length + ' commands' : 'as ' + hist.length + ' commands from frame 0'));
 }
 function startMsg(L, idx) { return { room: L.code, seed: L.seed, layout: L.layout, players: L.started, you: idx, delay: DELAY, gone: L.gone, speed: L.speed == null ? 6 : L.speed, cheats: CHEATS }; }
+// The body of the old start case, now reached either straight away (COUNTDOWN 0) or when the count runs
+// out. Everything the game is built from is read HERE, at zero, not when START was pressed -- which is
+// why the room is frozen in between.
+function beginGame(L) {
+  L.state = 'playing'; L.count = 0; L.timer = null; pushLobbies();
+  L.seed = Math.floor(Math.random() * 1e9); const races = ['T', 'Z', 'P'];
+  L.started = L.players.map(p => ({ name: p.name, race: p.race === 'R' ? races[Math.floor(Math.random() * 3)] : p.race, team: p.team, human: !p.ai, difficulty: p.difficulty, style: p.style }));
+  L.history = []; L.lastF = {}; L.gone = {};
+  for (const cl of inRoom(L)) { const idx = L.players.findIndex(p => p.id === cl.id); if (idx >= 0) send(cl, Object.assign({ t: 'start' }, startMsg(L, idx))); }
+  console.log(tag(L) + 'game started: ' + L.started.map(p => p.name + '/' + p.race + (p.human ? '' : '/' + p.difficulty + '/' + (p.style || 'standard'))).join(', ') + ' on ' + L.layout + ' seed ' + L.seed);
+}
+// While it runs the room state is 'starting': join, set, addai and kick all refuse, because the player
+// list beginGame() reads must not move under the count. Anyone leaving cancels it -- a game that counted
+// to zero with a slot that had walked out would hand every client a different player list -- and the host
+// may cancel by hand.
+function beginCountdown(L) {
+  L.state = 'starting'; L.count = COUNTDOWN; broadcast(L, lobbyState(L)); pushLobbies();
+  const tick = () => {
+    if (L.state !== 'starting') return;                       // cancelled between ticks
+    if (L.count <= 0) { L.timer = null; beginGame(L); return; }
+    broadcast(L, { t: 'countdown', n: L.count });
+    L.count--; L.timer = setTimeout(tick, 1000);
+  };
+  tick();
+}
+function cancelCountdown(L, why) {
+  if (L.timer) { clearTimeout(L.timer); L.timer = null; }
+  if (L.state !== 'starting') return;
+  L.state = 'lobby'; L.count = 0;
+  broadcast(L, { t: 'countdown', n: 0, cancelled: true, msg: String(why || '') });
+  broadcast(L, lobbyState(L)); pushLobbies();
+  console.log(tag(L) + 'countdown cancelled: ' + (why || ''));
+}
 function onMessage(c, m) {
   // `join` and `list` are the only messages a client with no room may send: one puts it in a room, the
   // other makes it a browser that is told the listed rooms until it joins one.
@@ -174,18 +227,41 @@ function onMessage(c, m) {
     // startMsg(), so the next player to rejoin loaded a DIFFERENT MAP than everyone else was playing;
     // and `addai` grew lobby.players out of step with the running game. Neither is reachable from the
     // UI, which is why nothing caught them, but a relay must not trust that its clients are the UI.
-    case 'set': if (me && !L.started) { if (m.race) me.race = raceOf(m.race); if (m.team) me.team = teamOf(m.team, me.team); if (typeof m.ready === 'boolean') me.ready = m.ready; if (isHost && typeof m.layout === 'string' && m.layout.length <= 64) L.layout = m.layout; if (isHost && m.speed != null) L.speed = Math.max(0, Math.min(6, m.speed | 0)); if (isHost && typeof m.title === 'string' && m.title.trim()) L.title = m.title.trim().slice(0, 40); } broadcast(L, lobbyState(L)); if (L.listed) pushLobbies(); break; // everyone must run the same speed or lockstep just makes the fast clients wait
-    case 'addai': if (isHost && !L.started && L.players.length < MAX_PLAYERS) { L.players.push({ id: -(nextId++), name: 'Computer ' + L.players.filter(p => p.ai).length, race: raceOf(m.race), team: teamOf(m.team, L.players.length + 1), ai: true, difficulty: ['easy', 'normal', 'hard'].includes(m.difficulty) ? m.difficulty : 'normal' }); broadcast(L, lobbyState(L)); if (L.listed) pushLobbies(); } break;   // `team`: the lobby's add-AI is per team
-    case 'kick': if (isHost && L.state === 'lobby' && m.id !== c.id) { L.players = L.players.filter(p => p.id !== m.id); const kc = clients.get(m.id); if (kc) { kc.room = null; kc.browsing = true; send(kc, { t: 'error', msg: 'The host removed you from the game.' }); send(kc, lobbies()); } broadcast(L, lobbyState(L)); if (L.listed) pushLobbies(); } break;   // the kicked client leaves the room too: it used to keep hearing every broadcast, and a re-sent join put it straight back
-    case 'start': {
-      if (!isHost || L.state !== 'lobby' || L.players.filter(p => !p.ai).length < 1) return; L.state = 'playing'; if (L.listed) pushLobbies();
-      L.seed = Math.floor(Math.random() * 1e9); const races = ['T', 'Z', 'P'];
-      L.started = L.players.map(p => ({ name: p.name, race: p.race === 'R' ? races[Math.floor(Math.random() * 3)] : p.race, team: p.team, human: !p.ai, difficulty: p.difficulty }));
-      L.history = []; L.lastF = {}; L.gone = {};
-      for (const cl of inRoom(L)) { const idx = L.players.findIndex(p => p.id === cl.id); if (idx >= 0) send(cl, Object.assign({ t: 'start' }, startMsg(L, idx))); }
-      console.log(tag(L) + 'game started: ' + L.started.map(p => p.name + '/' + p.race).join(', ') + ' on ' + L.layout + ' seed ' + L.seed);
-      break;
+    // Gated on the STATE now, not only on L.started: L.started is built at zero of the countdown, so a
+    // gate that read it alone would have let every setting change while the count was running.
+    case 'set': {
+      if (L.state === 'lobby' && !L.started) {
+        // WHOSE SLOT. A message with no id means the sender's own, which is every set the client sent
+        // before AI slots became editable. An AI slot has no socket of its own, so the host naming its id
+        // is the only way it can ever change -- and the second half of the test is what stops a non-host,
+        // or the host, editing another HUMAN's race out from under them.
+        const t = (m.id != null) ? L.players.find(p => p.id === m.id) : me;
+        if (t && (t === me || (isHost && t.ai))) {
+          if (m.race) t.race = raceOf(m.race);
+          if (m.team) t.team = teamOf(m.team, t.team);
+          if (t.ai && m.difficulty) t.difficulty = diffOf(m.difficulty, t.difficulty);
+          if (t.ai && m.style) t.style = styleOf(m.style, t.style);
+        }
+        if (me && typeof m.ready === 'boolean') me.ready = m.ready;
+        if (isHost && typeof m.layout === 'string' && m.layout.length <= 64) L.layout = m.layout;
+        if (isHost && m.speed != null) L.speed = Math.max(0, Math.min(6, m.speed | 0));
+        if (isHost && typeof m.title === 'string' && m.title.trim()) L.title = m.title.trim().slice(0, 40);
+        // GAME PRIVACY (the SC2 lobby's row, and a real one): listed means every browser on this server
+        // sees the game, unlisted means only the code reaches it. The code never changes, so going private
+        // does not lock out the people already in the room.
+        if (isHost && typeof m.listed === 'boolean') L.listed = m.listed;
+      }
+      // Unconditional, unlike before: a game that has just gone PRIVATE has to leave every browser's list,
+      // and "if (L.listed)" is exactly the test that would skip that push.
+      broadcast(L, lobbyState(L)); pushLobbies(); break;   // everyone must run the same speed or lockstep just makes the fast clients wait
     }
+    case 'addai': if (isHost && L.state === 'lobby' && !L.started && L.players.length < MAX_PLAYERS) { L.players.push({ id: -(nextId++), name: 'Computer ' + L.players.filter(p => p.ai).length, race: raceOf(m.race), team: teamOf(m.team, L.players.length + 1), ai: true, difficulty: diffOf(m.difficulty), style: styleOf(m.style) }); broadcast(L, lobbyState(L)); pushLobbies(); } break;   // `team`: the lobby's add-AI is per team
+    case 'kick': if (isHost && L.state === 'lobby' && m.id !== c.id) { L.players = L.players.filter(p => p.id !== m.id); const kc = clients.get(m.id); if (kc) { kc.room = null; kc.browsing = true; send(kc, { t: 'error', msg: 'The host removed you from the game.' }); send(kc, lobbies()); } broadcast(L, lobbyState(L)); if (L.listed) pushLobbies(); } break;   // the kicked client leaves the room too: it used to keep hearing every broadcast, and a re-sent join put it straight back
+    case 'start':
+      if (!isHost || L.state !== 'lobby' || L.players.filter(p => !p.ai).length < 1) return;
+      if (COUNTDOWN > 0) beginCountdown(L); else beginGame(L);
+      break;
+    case 'cancel': if (isHost && L.state === 'starting') cancelCountdown(L, (me ? me.name : 'The host') + ' cancelled the start.'); break;
     case 'snap': {
       const ps = L.pendingSnaps && L.pendingSnaps.get(m.req); if (!ps || ps.donor !== c.id) break;
       const target = clients.get(ps.want); L.pendingSnaps.delete(m.req);
@@ -202,7 +278,7 @@ function onMessage(c, m) {
     // `leave` is the lobby's LEAVE button: out of the room and back to the list on the same socket. The
     // host leaving hands the room to the next human (hostOf), and the last human leaving empties it. In
     // a running game closing the socket is the way out, so `leave` there is ignored.
-    case 'leave': if (L.state === 'lobby') { L.players = L.players.filter(p => p.id !== c.id); if (!L.players.some(p => !p.ai)) L.players = []; c.room = null; c.browsing = true; broadcast(L, lobbyState(L)); if (!inRoom(L).length && L.code !== DEFAULT_ROOM) rooms.delete(L.code); send(c, lobbies()); pushLobbies(); console.log(tag(L) + (me ? me.name : 'client ' + c.id) + ' left the lobby'); } break;
+    case 'leave': if (L.state !== 'playing') { if (L.state === 'starting') cancelCountdown(L, (me ? me.name : 'Someone') + ' left, so the start was cancelled.'); L.players = L.players.filter(p => p.id !== c.id); if (!L.players.some(p => !p.ai)) L.players = []; c.room = null; c.browsing = true; broadcast(L, lobbyState(L)); if (!inRoom(L).length && L.code !== DEFAULT_ROOM) rooms.delete(L.code); send(c, lobbies()); pushLobbies(); console.log(tag(L) + (me ? me.name : 'client ' + c.id) + ' left the lobby'); } break;
     case 'chat': if (me) broadcast(L, { t: 'chat', from: me.name, text: String(m.text).slice(0, 200) }); break;
     case 'ping': send(c, { t: 'pong' }); break;
   }
@@ -220,7 +296,12 @@ function leave(c) {
     }
     if (!inRoom(L).length) { L.players = []; L.state = 'lobby'; L.started = null; L.history = []; L.lastF = {}; L.gone = {}; L.pendingSnaps = null; console.log(tag(L) + 'all players gone, back to lobby'); }   // `started` too: `set` and `addai` gate on it, so the second game in the LAN room could change no race, team, map or speed (REVIEW-M17)
   }
-  else { L.players = L.players.filter(p => p.id !== c.id); if (!L.players.some(p => !p.ai)) L.players = []; broadcast(L, lobbyState(L)); }
+  else {
+    // ...including one that drops mid-countdown: beginGame() reads the player list at zero, so a slot that
+    // walked out during the count would have been in some clients' game and not others'.
+    if (L.state === 'starting') cancelCountdown(L, (idx >= 0 ? L.players[idx].name : 'A player') + ' disconnected, so the start was cancelled.');
+    L.players = L.players.filter(p => p.id !== c.id); if (!L.players.some(p => !p.ai)) L.players = []; broadcast(L, lobbyState(L));
+  }
   // An empty room is forgotten, so a relay that has hosted a thousand games holds a thousand nothings.
   // The default room is kept: it is the one a client with no code lands in, and re-creating it every
   // time would be churn for no gain.

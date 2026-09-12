@@ -7,7 +7,7 @@
 const fs = require('fs'), vm = require('vm'), path = require('path'), { spawn } = require('child_process');
 const root = path.join(__dirname, '..'); const FRAMES = parseInt(process.argv[2] || '14400'), PORT = parseInt(process.argv[3] || '8790');
 if (typeof WebSocket === 'undefined') { console.error('needs Node 22+ (global WebSocket)'); process.exit(2); }
-const server = spawn(process.execPath, [path.join(__dirname, 'serve.js'), String(PORT)], { stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({}, process.env, { BW_CHEATS: '1' }) });   // this file keeps its humans alive with `power overwhelming`; cheats are off in a network game otherwise
+const server = spawn(process.execPath, [path.join(__dirname, 'serve.js'), String(PORT)], { stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({}, process.env, { BW_CHEATS: '1', BW_COUNTDOWN: '0' }) });   // this file keeps its humans alive with `power overwhelming`; cheats are off in a network game otherwise. BW_COUNTDOWN=0: the 5-4-3-2-1 before a game unlocks is test/rooms.js section 13's, and this suite has no business paying five seconds a game for it
 server.stdout.on('data', d => { const s = String(d).trim(); if (s) console.log('  [relay] ' + s); });
 server.stderr.on('data', d => console.log('  [relay err] ' + String(d).trim()));
 process.on('exit', () => { try { server.kill(); } catch (e) { } });

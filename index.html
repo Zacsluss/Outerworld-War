@@ -80,12 +80,40 @@
   .lbTeam { border: 1px solid #2c2416; background: #0c1016; min-height: 74px; }
   .lbTeamHead { display: flex; justify-content: space-between; padding: 5px 8px; background: #161b23; border-bottom: 1px solid #2c2416; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
   .lbTeamBtns a { color: #d8bd76; text-decoration: none; margin-left: 10px; font-size: 10px; } .lbTeamBtns a:hover { color: #fff3cc; }
-  .lp { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 12px; border-bottom: 1px solid #1a1f27; } .lp.gone { color: #7a8290; }
-  .lbReady { color: #8fb07a; width: 12px; text-align: center; } .lbStar { color: #e8c25a; } .lbName { font-weight: bold; flex: 1; } .lbRace { color: #aab4c4; } .lbRace select { padding: 2px 4px; font-size: 11px; }
-  .lbKick { color: #f66; text-decoration: none; } .lbNone { padding: 8px; color: #5c6473; font-size: 11px; font-style: italic; }
+  .lp { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 12px; border-bottom: 1px solid #1a1f27; flex-wrap: wrap; } .lp.gone { color: #7a8290; } .lp.me { background: #131a24; }
+  .lbReady { color: #8fb07a; width: 12px; text-align: center; } .lbStar { color: #e8c25a; } .lbName { font-weight: bold; flex: 1; min-width: 70px; }
+  /* The seat's colour. Not a picker -- see Net.slotColor. */
+  .lbSwatch { width: 10px; height: 10px; border: 1px solid #0b0e13; box-shadow: 0 0 0 1px #3a3122; flex: none; }
+  .lbTag { color: #8f98a8; font-style: normal; font-size: 9px; letter-spacing: 1px; margin-left: 6px; text-transform: uppercase; }
+  .lbSlotOpts { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; flex-basis: 100%; order: 2; }
+  .lbSel { width: auto; height: 22px; padding: 1px 4px; font-size: 10px; margin: 0; }
+  .lbSel.grow { flex: 1; width: 100%; }
+  .lbFixed { color: #aab4c4; font-size: 11px; padding: 0 3px; }
+  .lbKick { color: #f66; text-decoration: none; order: 1; } .lbNone { padding: 8px; color: #5c6473; font-size: 11px; font-style: italic; }
   .lbLink { display: inline-block; margin: 6px 0; color: #d8bd76; font-size: 11px; text-decoration: none; }
+  /* Slots on the left, the settings column on the right, in the shape of the StarCraft II lobby. */
+  .lbBody { display: grid; grid-template-columns: 1fr 184px; gap: 10px; align-items: start; }
+  .lbSlots { min-width: 0; }
+  .lbSettings { border: 1px solid #2c2416; background: #0c1016; padding: 8px; }
+  .lbSetHead { font-size: 10px; letter-spacing: 1.5px; color: #d8bd76; text-transform: uppercase; margin-bottom: 6px; }
+  .lbSetRow { display: flex; align-items: center; gap: 6px; margin: 7px 0; font-size: 11px; color: #b8c2cf; flex-wrap: wrap; }
+  .lbSetRow label { width: 100%; flex: none; font-size: 9px; letter-spacing: 1.5px; color: #8f98a8; text-transform: uppercase; margin: 0 0 2px; }
+  .lbSetRow span { flex: 1; min-width: 0; }
+  .lbCodeVal { color: #e8d9a6; letter-spacing: 2px; }
+  .lbSetNote { margin-top: 8px; font-size: 9px; line-height: 1.5; color: #5c6473; }
+  .lbPrev { display: block; width: 100%; height: auto; background: #0b0e13; border: 1px solid #23283a; }
+  .lbPrevNone { padding: 26px 0; text-align: center; color: #5c6473; font-size: 10px; }
+  .lbPrevName { text-align: center; font-size: 10px; color: #b8c2cf; margin: 4px 0 8px; }
+  /* The start countdown. Every digit here came from the relay, never from a local timer. */
+  .lbCd { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 10px 0; padding: 8px; border: 1px solid #3a3122; background: #0c1016; }
+  .lbCdT { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #8f98a8; }
+  .lbCdN { font-size: 30px; font-weight: bold; color: #e8c25a; line-height: 1; }
+  .lbCancelled { color: #d8a05a; }
+  .lbButtons { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+  .lbButtons button { margin: 0; width: auto; flex: none; padding: 0 14px; }
+  .lbWait { margin: 0; }
   .lbChat { height: 90px; overflow: auto; background: #0b0e13; border: 1px solid #23283a; padding: 6px 8px; font-size: 12px; margin-top: 10px; } .lbChat b { color: #e8d9a6; }
-  #lbChat { width: 100%; box-sizing: border-box; margin-top: 6px; } #lbStart { margin-top: 8px; }
+  #lbChat { width: 100%; box-sizing: border-box; margin-top: 6px; }
   .help { margin-top: 16px; font-size: 11px; color: #6e7787; line-height: 1.55; }
   .foot { margin-top: 22px; text-align: center; font-size: 9px; letter-spacing: 1.5px; color: #5c6473; text-transform: uppercase; white-space: nowrap; }
   /* Skirmish setup. A section rule instead of a second nested panel: the screen is one form with four

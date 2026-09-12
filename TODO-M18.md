@@ -2,8 +2,9 @@
 
 Written when the fifth session paused for the night (2026-09-12). `HANDOFF-M17.md` has the state, the traps
 and the kickoff prompt; this file is the open list and nothing else. Four items are closed and struck through
-at the bottom with their commits. **Nine are open**, and eight of those have partial, **ungated, unverified**
-work sitting in three locked worktrees — see "The three worktrees" below before you start any of them.
+at the bottom with their commits. **Five are open** (3, 4, 5, 6, 11, plus the gated economy pair 7a/7b), and
+each has partial, **ungated, unverified** work sitting in the locked worktrees — see "The three worktrees"
+below before you start any of them.
 
 The gate is **79 suites** (`node test/all.js`, ~4 min) and it is green at `7be866a`. Every rule in `CLAUDE.md`
 applies to every item here: measure before fixing, a negative control that goes cleanly RED, `tools/patch.js`
@@ -12,12 +13,6 @@ for edits, and the gate green before the commit.
 ---
 
 ## Open
-
-### 1. AI settings cannot be changed in the multiplayer lobby
-*With items 10, 12, 13 — one piece of work.* The skirmish screen lets you pick each opponent's race,
-difficulty, play style and team. The lobby's ADD AI hardcodes race `R` and difficulty `normal`
-(`test/serve.js`, the `addai` case). Every AI slot should get race, difficulty and play style
-(`UI.setupStyles()`, the same list the skirmish screen uses) editable by the host, and be removable.
 
 ### 3. A Queen or Overlord should walk into range to plant a creep tumour
 Today an out-of-range cast is refused outright with "Creep Tumour only reaches 3 tiles — pick a spot closer
@@ -60,25 +55,6 @@ line / base cluster and go idle if that is exhausted. Decide what "the same area
 terms (resources are placed in clusters around base locations) and record why. Check it still resumes when a
 new hall finishes nearby, and that `AI.economy` can still move workers to a new base deliberately.
 
-### 10 + 13. Finish the lobby, self-contained, in the shape of StarCraft II's
-*The user supplied screenshots; items 1 and 12 belong to this work.* Today's lobby (PLAYTEST item 60) has the
-game list, HOST GAME, join-by-code, team columns, ready marks, kick, map and speed, and chat. The SC2 target
-adds: per-slot colour and handicap, an A.I. row with difficulty/race/build dropdowns, "Add A.I." and "Add
-Player" buttons, a right-hand Settings panel (Category, Mode, Game Duration, Game Speed, Locked Alliances,
-Game Privacy), a map preview thumbnail with name and author, and START / MAKE PUBLIC / QUIT.
-
-**Do not add an inert control.** Check `G.init` and `UI.skirmishOptions()` for what the simulation actually
-honours, and record which SC2 rows were deliberately left out. Specifically:
-- **Handicap scales a player's income — that is a simulation change and therefore GATED balance.** Leave it
-  out, or make it visibly inert and say so loudly.
-- **Per-player colour**: check whether wiring it would move the build stamp (`PLAYER_COLORS`, `NOT_SIM` in
-  `js/build.js`). Do not move the stamp for a cosmetic.
-- Everything from another client that reaches `innerHTML` goes through `Net.esc()`; every new field is a new
-  injection point and needs its own assertion. `test/rooms.js` already pins a `<svg/onload=x()>` name.
-- Keep `Net.connect(url, name, race, room)` — join-by-code with no browsing — working exactly as it is:
-  `test/net.js` and `test/net_many.js` use it and must stay green. Run both by hand.
-- Do not break the rejoin path (`test/net.js` phase 3).
-
 ### 11. Dragoons wobble very fast after they move
 Look at `Unit.moveTo` (`js/sim.js`): `TURN.dragoon = 0.25` rad/frame, the arrive radius, and
 `if (Math.abs(diff) > 1.2) step *= TURN[this.def.id] ? 0.15 : 0.45`. Oscillating between two facings, between
@@ -87,11 +63,6 @@ wobble. **Measure it**: record a dragoon's `facing`, `x`, `y` and order state pe
 move, and report the amplitude and period. Then fix the cause the probe names. Turn rates and the arrive radius
 affect every unit, so prefer the narrowest fix the measurement supports and check `test/eightplayer.js` to see
 how far it reaches.
-
-### 12. A 5-4-3-2-1 countdown before a network game unlocks
-"This will help the game start time stay equal." After START, before the simulation is unlocked, every client
-shows the same numbers and begins simulating on the same frame. **The relay should decide it** — a countdown
-each client times for itself is a desync waiting to happen.
 
 ---
 
@@ -179,5 +150,19 @@ then `git branch -d <branch>`.
   with none for a dead unit. What lingers is the corpse, by design. Pinned so it cannot regress. Commit
   `7be866a`. One dead thing's bar is left on purpose: a remembered enemy building's ghost in the fog, because
   removing it would leak that the building is dead.
+- ~~**1 + 10 + 12 + 13. The multiplayer lobby.**~~ Finished in the shape of the user's StarCraft II
+  screenshots, and self-contained. Every AI slot is race + difficulty + **play style** + team, editable by the
+  host and removable; the style rides through the relay into `G.setup.players[i].style`, which js/ai.js
+  already reads, so **no stamped file changed and the build stamp did not move** (`af56c841f794af2f`). A
+  settings column with a **real map preview** (the layout's start positions, mirrored exactly as
+  `GameMap.generate` mirrors them, in the seats' colours), game **privacy** as a host setting, and a bottom
+  bar of START / MAKE PUBLIC / QUIT. **START now runs a relay-timed 5-4-3-2-1 countdown** during which the
+  room is frozen, nobody may join, and anyone leaving cancels it. `test/rooms.js` sections 13-15 (107 checks
+  now), twelve negative controls in `.claude/review/lobby-controls.js`, `PLAYTEST-M18.md` items 64-65.
+  **Deliberately left out, and said so on screen:** handicap (it scales income, so it is gated balance),
+  Category/Mode/Game Duration (nothing simulates them), a Locked Alliances *switch* (alliances are always
+  locked, so it is stated as a fact), a colour *picker* (a chosen colour must be read in `G.init` or
+  `Player`, both stamped — TODO said not to move the stamp for paint, so the lobby SHOWS each seat's colour
+  instead), and a map author line (nothing records one).
 - ~~**7. The economy.**~~ Measured and reverted — see the gated section above. Not closed as "done"; closed as
   "answered, and the answer is that it needs the AI re-tuned first".
