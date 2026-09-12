@@ -285,6 +285,83 @@ const r = vm.runInContext(`(() => {
     out.aiRetasks = { workers: aiw.length, mining: aiw.filter(w => w.order.type === 'gather' || w.order.type === 'return').length };
   }
 
+  // ---- 4c. A BUILDER THAT FINISHES STAYS WHERE IT IS (seventh session) ----
+  // Measured before the fix: a Terran SCV came off every construction and walked about ten tiles back to the
+  // patch it had last mined -- even one that had been idle before it was told to build, and even from the
+  // Refinery it had just made. A Probe never did. Each case is driven through setOrder, the way the UI does.
+  {
+    const scene = (race, mode, id) => {
+      start(); G.human = 0;
+      const p = P(); p.minerals = 5000; p.gas = 5000;
+      for (const pl of G.players) if (pl.id !== 0) pl.ai = null;
+      const hall = G.units.find(u => u.alive && u.owner === 0 && u.def.depot);
+      for (let f = 0; f < 240; f++) G.tick();
+      const wd = race === 'T' ? 'scv' : 'probe';
+      let w = G.units.find(u => u.alive && u.owner === 0 && u.def.id === wd && (u.order.type === 'gather' || u.order.type === 'return'));
+      if (!w) { w = G.spawnUnit(wd, 0, hall.x + 60, hall.y + 80); const n = G.findNearestResource(w, 'mineral'); w.applyOrder({ type: 'gather', target: n, phase: 'goto' }); for (let f = 0; f < 400; f++) G.tick(); }
+      if (mode === 'idle') { w.stop(); for (let f = 0; f < 24; f++) G.tick(); }
+      const def = DATA.buildings[id];
+      let tx, ty;
+      if (def.onGeyser) { const g = G.map.resources.find(res => res.type === 'geyser' && Math.hypot(res.cx - hall.x, res.cy - hall.y) < 12 * TILE); tx = g.x; ty = g.y; }
+      else { const t = G.map.findFreeTile(Math.floor(hall.x / TILE) + 6, Math.floor(hall.y / TILE) + 6, 12, (x, y) => !G.map.canPlace(def, x, y, p, G.units, null)); tx = t[0]; ty = t[1]; }
+      w.setOrder({ type: 'build', def, tx, ty });
+      let done = false;
+      for (let f = 0; f < 24 * 90 && !done; f++) { G.tick(); const b = G.units.find(u => u.alive && u.owner === 0 && u.def === def && u.tx === tx && u.ty === ty); done = !!(b && b.done); }
+      const at = { x: w.x, y: w.y };
+      for (let f = 0; f < 24 * 15; f++) G.tick();
+      return { done, order: w.order.type, moved: +(Math.hypot(w.x - at.x, w.y - at.y) / TILE).toFixed(1) };
+    };
+    out.builderStays = { scvMining: scene('T', 'mining', 'supply_depot'), scvIdle: scene('T', 'idle', 'supply_depot'), scvGas: scene('T', 'mining', 'refinery'), probe: scene('P', 'mining', 'pylon') };
+    // ...and what it WAS told still happens: two depots shift-queued on one SCV are both built
+    start(); G.human = 0;
+    { const p = P(); p.minerals = 5000; for (const pl of G.players) if (pl.id !== 0) pl.ai = null;
+      const hall = G.units.find(u => u.alive && u.owner === 0 && u.def.depot);
+      const def = DATA.buildings.supply_depot;
+      const w = G.spawnUnit('scv', 0, hall.x + 60, hall.y + 90);
+      const a = G.map.findFreeTile(Math.floor(hall.x / TILE) + 6, Math.floor(hall.y / TILE) + 6, 12, (x, y) => !G.map.canPlace(def, x, y, p, G.units, null));
+      w.setOrder({ type: 'build', def, tx: a[0], ty: a[1] });
+      const b2 = G.map.findFreeTile(a[0] + 4, a[1], 12, (x, y) => (Math.abs(x - a[0]) > 2 || Math.abs(y - a[1]) > 2) && !G.map.canPlace(def, x, y, p, G.units, null));
+      w.setOrder({ type: 'build', def, tx: b2[0], ty: b2[1] }, true);
+      for (let f = 0; f < 24 * 120; f++) G.tick();
+      out.builderStays.queuedTwo = G.units.filter(u => u.alive && u.owner === 0 && u.def === def && u.done).length; }
+  }
+
+  // ---- 4d. A SELECTED WORKER STAYS SELECTED INSIDE A REFINERY (seventh session, item 6) ----
+  {
+    start(); G.human = 0; UI.mode = 'play';
+    for (const pl of G.players) if (pl.id !== 0) pl.ai = null;
+    const p = P(); p.minerals = 5000; p.gas = 5000; p.vis.fill(2);
+    const hall = G.units.find(u => u.alive && u.owner === 0 && u.def.depot);
+    const g = G.map.resources.find(res => res.type === 'geyser' && Math.hypot(res.cx - hall.x, res.cy - hall.y) < 12 * TILE);
+    const ref = G.placeBuilding(DATA.buildings.refinery, g.x, g.y, 0); G.completeBuilding(ref);
+    // the per-frame prune; before it was extracted it was this inline filter in UI.loop, which is kept as the fallback so the check reads red (not a crash) against the old code
+    const prune = () => UI.pruneSelection ? UI.pruneSelection() : (UI.selection = UI.selection.filter(u => u.alive && !u.inside));
+    const w = G.spawnUnit('scv', 0, ref.x + 40, ref.y + 60);
+    UI.select([w]);
+    w.setOrder({ type: 'gather', target: ref, phase: 'goto' });
+    let wentIn = false, keptWhileIn = true, framesIn = 0;
+    for (let f = 0; f < 24 * 20 && !(wentIn && framesIn > 10); f++) {
+      G.tick(); prune();
+      if (w.inside) { wentIn = true; framesIn++; if (!UI.selection.includes(w)) keptWhileIn = false; }
+    }
+    // the unit panel says what it is doing while it is out of sight
+    Render.ctx = __mkCtx(); Render.W = 1280; Render.H = 720; Render.dpr = 1; __calls.length = 0;
+    const insideNow = !!w.inside;
+    UI.drawConsole();
+    const said = __calls.filter(c => c.op === 'fillText').map(c => String(c.a[0])).join(' | ');
+    // ...and it can be ordered out: a move sends it out of the Refinery and on its way
+    const x0 = w.x;
+    w.setOrder({ type: 'move', x: ref.x + 400, y: ref.y });
+    for (let f = 0; f < 96; f++) { G.tick(); prune(); }
+    // CONTROL: a Marine loaded into a Bunker is cargo, and leaves the selection as it always did
+    const bunker = G.placeBuilding(DATA.buildings.bunker, Math.floor(hall.x / TILE) + 8, Math.floor(hall.y / TILE) + 6, 0); G.completeBuilding(bunker);
+    const m = G.spawnUnit('marine', 0, bunker.x + 40, bunker.y + 40);
+    UI.select([m]); G.loadUnit(bunker, m); prune();
+    out.gasSelect = { wentIn, keptWhileIn, framesIn, insideWhenDrawn: insideNow, panelSaysGas: /Harvesting gas/.test(said),
+      orderedOut: !w.inside && Math.abs(w.x - x0) > 20,
+      bunkerCargoDropped: !!m.inside && !UI.selection.includes(m) };
+  }
+
   // ---- 5. smart casting: the RIGHT caster, not the first one ----
   // The naive reading of this feature is "one press, one cast", and that was already true: the ability
   // branch in execPending returns after the first unit for point and unit abilities alike. What was NOT
@@ -343,6 +420,24 @@ ok(!r.gridDrew.threw && r.gridDrew.calls > 0, 'the console draws 130 units witho
 ok(r.gridDrew.hotspots > 0, '...and every tile it draws is clickable', JSON.stringify(r.gridDrew));
 ok(!r.strip40.threw && r.strip40.sel === 40 && r.strip40.hotspots === 40 && r.strip40.onPlate === 40, 'forty units through the console itself: forty tiles, every one on the console band (REVIEW-M17 task 1: the HUD drew eighteen and put the rest below the screen)', JSON.stringify(r.strip40));
 ok(r.strip40.offScreen === 0, '...and none of them below the bottom of the screen', JSON.stringify(r.strip40));
+ok(r.builderStays.scvMining.done && r.builderStays.scvMining.order === 'idle' && r.builderStays.scvMining.moved === 0,
+  'A TERRAN SCV THAT FINISHES A BUILDING STAYS WHERE IT IS (it walked about ten tiles back to the patch it had last mined)', JSON.stringify(r.builderStays.scvMining));
+ok(r.builderStays.scvIdle.done && r.builderStays.scvIdle.order === 'idle' && r.builderStays.scvIdle.moved === 0,
+  '...including one that was idle before it was told to build (it went back to a patch it had mined minutes earlier)', JSON.stringify(r.builderStays.scvIdle));
+ok(r.builderStays.scvGas.done && r.builderStays.scvGas.order === 'idle' && r.builderStays.scvGas.moved === 0,
+  '...and one that built a Refinery (it walked away from its own gas, back to the minerals)', JSON.stringify(r.builderStays.scvGas));
+ok(r.builderStays.probe.done && r.builderStays.probe.order === 'idle' && r.builderStays.probe.moved === 0,
+  'a Protoss Probe stays where it is, as it always did (the CONTROL: Probes never passed through the Terran construction path)', JSON.stringify(r.builderStays.probe));
+ok(r.builderStays.queuedTwo === 2,
+  'what a builder WAS told still happens: two depots shift-queued on one SCV are both built', String(r.builderStays.queuedTwo));
+ok(r.gasSelect.wentIn && r.gasSelect.framesIn > 10 && r.gasSelect.keptWhileIn,
+  'A SELECTED WORKER STAYS SELECTED WHILE IT IS INSIDE A REFINERY HARVESTING GAS (the selection dropped anything inside anything, every frame)', JSON.stringify(r.gasSelect));
+ok(r.gasSelect.insideWhenDrawn && r.gasSelect.panelSaysGas,
+  '...and the unit panel shows it as "Harvesting gas" while it is out of sight -- a line that existed and could never be seen', JSON.stringify(r.gasSelect));
+ok(r.gasSelect.orderedOut,
+  '...and an order brings it out of the Refinery and on its way, so keeping it selected cannot strand it inside', JSON.stringify(r.gasSelect));
+ok(r.gasSelect.bunkerCargoDropped,
+  'CONTROL: a Marine loaded into a Bunker is cargo and still leaves the selection, as in both StarCraft games', JSON.stringify(r.gasSelect));
 ok(r.cursor.arrow === 'arrow' && r.cursor.orderMove === 'order-ally' && r.cursor.orderAttack === 'order-enemy' && r.cursor.orderOnEnemy === 'order-enemy'
   && r.cursor.hoverOwn === 'hover-own' && r.cursor.hoverEnemy === 'hover-enemy' && r.cursor.overConsole === 'arrow',
   'the cursor picks the same five shapes the painted one drew -- arrow, green or red order reticle, own or enemy brackets -- and the plain arrow over the console', JSON.stringify(r.cursor));

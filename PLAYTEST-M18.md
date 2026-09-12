@@ -403,3 +403,44 @@ been refreshed; an installer built from it will match the browser version.
 here carries **8** minerals a trip, as in Brood War, where StarCraft II carries **5**, so the counter climbs
 in bigger steps. If you want that changed too, it is `WORKER_HAUL` in [js/sim.js](js/sim.js) — a balance
 decision, so it has not been touched.
+
+---
+
+## 77. A builder that finishes a building stays where it is
+
+*(Seventh session, item 5 — "after a unit is done building something, they should not move anywhere at all.
+This bug may only be on the Terran, but investigate protoss as well.")*
+
+**How to reach it.** Skirmish as Terran. Select an SCV that is mining and build a Supply Depot a little way
+from the mineral line.
+
+**What to look for.**
+- **When the depot finishes, the SCV stays beside it, idle.** It used to walk straight back to the patch it had
+  last mined — about ten tiles — without being told.
+- **Try an SCV that was standing idle first.** Same result. It used to go back to a patch it had mined
+  minutes earlier, because the game never forgot which one.
+- **Build a Refinery.** The SCV stays next to it. It used to walk away from the gas it had just built, back to
+  the minerals. (StarCraft II sends a Refinery's builder into it automatically. That was not added, because
+  "should not move anywhere at all" was the instruction — say if you want that one exception.)
+- **Shift-queue two depots on one SCV.** It builds both, then stays. What it was *told* still happens.
+- **Protoss was checked and was already right:** a Probe that places a Pylon stays where it is. A Zerg Drone
+  becomes the building, so it has nowhere to go.
+
+---
+
+## 78. A worker you have selected stays selected while it harvests gas
+
+*(Seventh session, item 6.)*
+
+**How to reach it.** Build a Refinery (or Assimilator / Extractor), select one worker, and right-click the
+Refinery.
+
+**What to look for.**
+- **When it goes inside, it stays selected.** The unit is out of sight, as it should be, but it is still in
+  your selection and the console still shows it — the unit panel reads **"Harvesting gas"**. It used to drop
+  out of the selection the instant it went in, every time.
+- **Right-click somewhere else while it is inside.** It comes out of the Refinery and goes. (It leaves
+  without the gas it was in the middle of collecting — that is how the game has always handled it.)
+- **Press Backspace (centre on selection)** with only that worker selected: the camera goes to the Refinery.
+- **Load a Marine into a Bunker** with the Marine selected: it leaves the selection, as in both StarCraft
+  games — it is cargo then, shown in the Bunker's own panel. Only gas buildings keep a worker selected.

@@ -406,7 +406,17 @@ const G = {
     if (b.def.creep) { if (!b.creepR) b.creepR = Math.min(b.def.creep, CREEP_SEED); this.map.recomputeCreep(this.units); }
     if (b.def.psi) this.map.recomputePsi(b.owner, this.units);
     
-    if (b.builder && b.builder.alive && b.builder.order.type === 'construct' && b.builder.order.target === b) { const w = b.builder; w.nextOrder(); if (w.order.type === 'idle' && w.lastRes) { const r = w.lastRes; if ((r.type === 'mineral' && r.amount > 0) || (r.type === 'gas' && r.alive)) w.applyOrder({ type: 'gather', target: r, phase: 'goto' }); } }
+    // A BUILDER THAT FINISHES STAYS WHERE IT IS (seventh session: "when all builder units finish building a
+    // building, they seem to return back to the mineral line when not instructed. This is a bug."). It used
+    // to be sent back to `lastRes`, the patch it last mined, whenever it came off the construction idle --
+    // and `lastRes` survives everything, so an SCV that had been standing idle for minutes before it was
+    // told to build still walked back to the minerals afterwards, and one that built a Refinery walked away
+    // from the gas it had just made. Measured (.claude/review/builder-after.js): three of three Terran cases
+    // walked about ten tiles back to a mineral patch; Protoss never did, because a Probe is released in
+    // Unit.tickBuild and never passed through here. This behaviour came in with the very first commit and
+    // nothing asked for it. What the builder does now is what it was TOLD: its shift-queued orders, if it
+    // has any, and otherwise nothing.
+    if (b.builder && b.builder.alive && b.builder.order.type === 'construct' && b.builder.order.target === b) { b.builder.nextOrder(); }
     b.builder = null;
     if (b.def.tier === 'addon' && b.parent) { b.parent.addon = b; }
     if (b.def.onGeyser) { b.alive = true; b.type = 'gas'; }

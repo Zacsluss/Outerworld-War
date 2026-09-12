@@ -234,7 +234,7 @@ const UI = {
     this.scrollCam(dt);
     for (let i = this.markers.length - 1; i >= 0; i--) if (--this.markers[i].t <= 0) this.markers.splice(i, 1);
     for (let i = this.pings.length - 1; i >= 0; i--) if (--this.pings[i].t <= 0) this.pings.splice(i, 1);
-    this.selection = this.selection.filter(u => u.alive && !u.inside);
+    this.pruneSelection();
     Render.frame(G.paused ? 1 : Math.min(1, this.accum / step));
     if (typeof Music !== 'undefined' && Music.poll) Music.poll();   // combat music state; render-side, reads the sim and never writes it
     this.drawConsole(); this.drawTop(); this.drawMessages();
@@ -722,6 +722,15 @@ const UI = {
   },
   // ---------------- commands ----------------
   ownSel() { return this.selection.filter(u => u.owner === G.human && u.alive); },
+  // WHO STAYS SELECTED. The dead leave, and so does anything loaded into a Bunker or a transport -- it is
+  // cargo then, shown in the carrier's own panel, the way both StarCraft games do it. A worker INSIDE A GAS
+  // BUILDING does not leave (seventh session, item 6). This pass used to drop every unit that was `inside`
+  // anything, every frame, so a worker selected on its way to a Refinery vanished from the selection the
+  // moment it went in and never came back, and the unit panel's own "Harvesting gas" line -- which existed --
+  // could never be seen. The simulation was already safe for it: an order given to a worker inside a gas
+  // building brings it out first (Unit.applyOrder, REVIEW-M17), so it can stay selected and be commanded.
+  keepSelected(u) { return !!u && u.alive && (!u.inside || !!(u.inside.def && u.inside.def.onGeyser)); },
+  pruneSelection() { this.selection = this.selection.filter(u => this.keepSelected(u)); },
   // Idle worker, which Brood War has no equivalent of and StarCraft II players reach for constantly.
   // Cycles rather than selecting them all: the point is to find the one that stopped, not to gather a
   // crowd. It wraps and remembers where it was, so pressing it repeatedly walks the whole set.
@@ -742,8 +751,9 @@ const UI = {
   // Put the camera on what is selected. StarCraft II has this and Brood War does not; hunting for a
   // group you just recalled by number is the reason people want it.
   centerOnSelection() {
-    const sel = this.selection.filter(u => u.alive && !u.inside); if (!sel.length) return;
-    let x = 0, y = 0; for (const u of sel) { x += u.x; y += u.y; }
+    // A worker inside a Refinery is centred on at the Refinery: its own x/y is frozen where it went in.
+    const sel = this.selection.filter(u => this.keepSelected(u)); if (!sel.length) return;
+    let x = 0, y = 0; for (const u of sel) { const at = u.inside || u; x += at.x; y += at.y; }
     this.centerOn(x / sel.length, y / sel.length);
   },
   // The distinct kinds in the selection, in a stable order, for Tab cycling.
