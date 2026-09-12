@@ -31,6 +31,9 @@ task 30's re-deal); and the gate is **76 suites** (`abilities20` joined it).
 
 ## State
 
+- **On GitHub since the fifth session:** `origin` is https://github.com/Zacsluss/Outerworld-War and its `main` is
+  this branch. Local `m10-overnight` tracks `origin/main`, so `git push` publishes; GitHub's own initial commit (a
+  stub README and .gitignore) was merged in with ours kept, so the history is fast-forward from there.
 - **76 test suites green.** `node test/all.js`, about four minutes on a quiet machine. That is the gate before
   any commit. One suite joined it this session: `abilities20` (task 20); forty-four suites moved onto
   `test/_harness.js` (task 21) with every count unchanged.
@@ -206,7 +209,8 @@ first** — committing this file moves it.
 ```
 Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
 Branch: m10-overnight. HEAD: <run git log -1 --format=%h>. Working tree clean. (master is 170+
-commits behind and unmerged; nothing lives there.)
+commits behind and unmerged; nothing lives there.) origin = https://github.com/Zacsluss/Outerworld-War,
+whose main IS this branch (m10-overnight tracks origin/main; git push publishes).
 
 Read CLAUDE.md, then HANDOFF-M17.md (this file: the state, the known reds, the traps of four
 sessions), then REVIEW-M17.md sections 2, 3 and 4 (every open task in section 1 is DONE and points at
