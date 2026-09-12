@@ -1,4 +1,146 @@
-# HANDOFF — M18 (the seventh session: the user's second list)
+# HANDOFF — M18 (the eighth session: the menus, researched)
+
+Written at the end of the eighth session (2026-09-12). Branch `m10-overnight`, which is `origin/main`. **Everything is
+committed and pushed; there are no open pull requests, no other branches and no extra worktrees.** Trust `git log -1`
+for HEAD, not a hash written here.
+
+> **READ `TODO-M18.md` FOR THE OPEN LIST** (its first section is this session's five items, with commits).
+> `PLAYTEST-M18.md` items 88–92 are how to see this session's work by hand. `RESEARCH-LOBBY.md` sections 5 and 6 are its
+> research. The seventh session's handoff follows this one and its traps are all still true.
+
+---
+
+## The state
+
+- **The gate is 85 suites and 2 are red, the same two the user accepted as waiting on the rebalance:** `aistyles` and
+  `queens` (the computer's pacing under the slower economy). Nothing this session touched the simulation: the build
+  stamp is still `71053b300e9bf18a`, and the new suites are `menus` (79 checks) and `hotkeys` (31).
+- **By hand, because `js/net.js` changed** (its connection and lobby drawing): `node test/net_many.js` 51/51, and
+  `desktop/page-check.js` 22/22. `desktop/dist` refreshed. In the browser: the name prompt, Single Player, the skirmish
+  lobby to a started game, MULTIPLAYER to the list and to TRY AGAIN, and a rebound SCV key trained on its new letter.
+- **Negative controls:** 40 for the menus (`.claude/review/menus/controls-menus.js`) and 26 for the command-card keys
+  (`controls-hotkeys.js`); every one goes cleanly red.
+- **The decision still waiting on the user:** the AI rebalance (TODO-M18 7b) is gated -- "no rebalance yet, still more
+  bugs to fix". `test/balance.js` and `test/proxy.js` stay untouched until an explicit go, double-checked.
+
+---
+
+## What changed this session, in a player's language
+
+The user's message: the menus and the lobby looked unresearched. The research is OpenRA (read from its source: its
+main menu, its skirmish lobby, its first-launch prompt, its hotkeys panel) and StarCraft II (its Versus A.I. lobby and
+its hotkey editor, through the open-source editor that reproduces it).
+
+1. **The main menu is the title and three buttons.** The tagline and the control hints are gone.
+2. **The game asks your name the first time it opens**, before the main menu, and never again (it is changed in
+   Settings → Multiplayer). An invite link waits for the name.
+3. **Single Player is only its doors**: Skirmish Setup, Campaign, Load Saved Game, Watch Replay, Continue Autosave,
+   Map Editor. There is no Start Game button on it.
+4. **Skirmish Setup is the multiplayer lobby**, the same screen -- teams, slots with race / difficulty / style / team,
+   add A.I., shuffle, the map preview and the rules column, the chat -- without what only other humans need (READY,
+   latency, spectators, lock, privacy, room code, invite). BACK instead of QUIT, and a Seed row. START needs a computer
+   opponent and a start position for everyone. The setup is remembered; maps made in the editor are offered.
+5. **Multiplayer is one click**: it connects and shows the game list. The server box only appears when the server
+   cannot be reached, says which server, and has TRY AGAIN.
+6. **Settings has a Codex tab.**
+7. **The Hotkeys dropdown is gone; the Controls tab is every key.** Standard or Grid at the top; Interface keys; and
+   for each race, every command card drawn as the game draws it, where any button's key can be changed. A command on
+   many cards (Move, Set Rally) is one key everywhere. A letter used twice on a card, or taken by an Interface key, turns
+   red and says why. Reset a key, a card, or everything. The command card shows a chosen letter in the button's corner,
+   and F1's help lists the keys as they are set.
+
+**Deliberately different from the letter of the request, and why:** the skirmish lobby keeps the chat box (OpenRA's
+skirmish lobby keeps it too; here it logs every change) and gains a Seed row (the one setting a relay room picks by
+itself). Command card keys are letters only: every other key is a global binding or reserved, and those are read first.
+
+**Not done:** nothing from the list. Still open from before: the AI rebalance (gated), a rematch lobby, ratings, choosing
+a start position, the research stall (TODO-M18 item 4, not reproduced).
+
+---
+
+## Traps found this session
+
+1. **The skirmish lobby and the multiplayer lobby are the same markup, so they have the same ids.** Every lookup inside a
+   lobby goes through `Net.finder(container)`; `document.getElementById` would bind the skirmish lobby's START to the
+   multiplayer room. The skirmish lobby's markup is taken out of the page when it is left or started.
+2. **Every command-card button must name its command.** `UI.currentCard` resolves keys through `UI.cardKeyFor(b.cmd,
+   ...)`; a button with no `cmd` cannot be rebound. New general commands go through `C()` and `UI.CARD_COMMANDS`; a unit,
+   building, upgrade or tech passes `cmd: 'unit:' + id` (and so on). **`test/hotkeys.js` section 1 turns red** if
+   `UI.cardCatalog()` no longer matches `buildCard` -- update the catalogue in the same change.
+3. **Grid's letter for slot 0 is Q.** A check that rebinds the first button to Q cannot tell a choice from Grid; the tests
+   use K.
+4. **Cancel has no command on purpose.** In Grid only the `hk !== 'Escape'` guard in `currentCard` keeps it on Escape.
+5. **The first-launch prompt is versioned** (`bw_intro`, `INTRO_VERSION` in the boot code). Raise the version to ask
+   everyone again, as OpenRA does when its prompt gains a setting.
+6. **`UI.enterMultiplayer` compares the address actually connected (`Net.url`)**, not the typed one: Settings writes
+   `Net.urlTyped` the moment the box changes, so comparing typed values kept a stale connection.
+7. **Bash heredocs ate `\\'` in a patch spec again** and left `test/all.js` unparseable. Write specs with the Write tool.
+8. **The browser pane's screenshot is a zoomed crop of a large viewport.** For a whole screen, scale the page for the
+   screenshot only (`document.body.style` width/height 100vw/100vh, `transformOrigin '0 0'`, `transform 'scale(0.66)'`),
+   or translate the panel under the capture; verify state with `javascript_tool`.
+
+## Diagnostics added this session
+
+`.claude/review/menus/` -- the patch scripts and text for both commits, `controls-menus.js` (40), `controls-hotkeys.js`
+(26), and the gate logs.
+
+---
+
+## Kickoff prompt for a fresh chat
+
+Paste everything inside the fence into an empty chat. **Replace the HEAD hash with `git log -1 --format=%h` first** --
+committing this file moves it.
+
+```
+Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
+Branch: m10-overnight. HEAD: <run git log -1 --format=%h>. Working tree clean.
+origin = https://github.com/Zacsluss/Outerworld-War, whose main IS this branch (git push publishes).
+Everything is pushed; there are no open PRs, no other branches, no extra worktrees. Keep it that way.
+
+READ IN THIS ORDER, then start:
+  1. CLAUDE.md          -- the working agreement. Every line was earned; none is optional.
+  2. HANDOFF-M18.md     -- state, what changed for a player, the traps (the eighth session's first).
+  3. TODO-M18.md        -- the open list; its first section is the eighth session's five items with commits.
+  4. PLAYTEST-M18.md    -- items 88-92, the menus and the command-card keys, by hand.
+  5. RESEARCH-LOBBY.md  -- sections 5 and 6: what OpenRA and StarCraft II do, and what was built from it.
+
+THE STATE: the gate (node test/all.js, 85 suites, ~5 min) is 2 RED, both known and accepted by the user as waiting
+on the AI rebalance: aistyles and queens. Build stamp 71053b300e9bf18a (unchanged: no simulation change this session).
+
+THE SINGLE NEXT ACTION: ask the user for their playtest of PLAYTEST-M18 items 88-92 and their next list. The user's
+last word on the rebalance was "no rebalance yet - still more bugs to fix". Do NOT start TODO-M18 7b, test/balance.js
+or test/proxy.js without an explicit go, and double-check when it comes.
+
+IF ASKED TO CHANGE A MENU OR THE LOBBY: research first and say what was researched (the user asked for exactly that).
+The skirmish lobby is Net.roomHtml / Net.bindRoom with `local`, driven by UI.Skirmish; test/menus.js runs the real
+boot against a page built from index.html. IF ASKED TO ADD A COMMAND-CARD BUTTON: give it a `cmd` and update
+UI.cardCatalog; test/hotkeys.js holds the two together.
+
+HOW THIS PROJECT WORKS, none of it negotiable:
+  - node test/all.js is the gate before EVERY commit. Relay ports: 8793-8800 rooms, 8810-8813 lobby, 8840 spectate.
+    A red rooms/lobby with EADDRINUSE is a stray server: re-run that suite alone, then the gate. Touch nothing in
+    js/ or test/ while the gate runs.
+  - MEASURE BEFORE FIXING. Build the probe first; make it assert its own setup.
+  - EVERY new behaviour gets a negative control that goes cleanly RED.
+  - tools/patch.js <spec.js> for every text-anchored edit. Write specs and probes with the Write tool: bash mangles
+    backslashes AND backticks here, heredocs included. Never sed -i a CRLF file.
+  - Determinism: never Math.random() in sim code (G.rand()), never a native transcendental in a stamped file (DMath).
+    Anything a replay must reproduce goes through the command log (test/cmdlog.js).
+  - The comments are load-bearing. Do not delete reasoning.
+
+AFTER ANY AI OR SIMULATION CHANGE, by hand, recording ALL the numbers:
+  node test/aistyles.js --seed=1 / --seed=5 / --seed=11
+  node test/eightplayer.js
+  node test/net_many.js     (after any relay or net change)
+Expect the samples to RE-DEAL. A different deal is not a failure; a new KIND of failure is.
+
+CLOSE every piece of work the way CLAUDE.md says: a kickoff prompt, a numbered list of what changed FOR A PLAYER, and
+how to playtest each item by hand, written into the repo. Commit and push; leave nothing unmerged.
+```
+
+---
+
+# The seventh session (the user's second list), kept for the record
 
 Written at the end of the seventh session (2026-09-12). Branch `m10-overnight`, which is `origin/main`. **Everything is
 committed and pushed; there are no open pull requests, no other branches and no extra worktrees.** Trust `git log -1`
@@ -105,7 +247,7 @@ model's body from the bake pipeline (`--table` prints the table for `js/data.js`
 
 ---
 
-## Kickoff prompt for a fresh chat
+## The seventh session's kickoff prompt (SUPERSEDED by the one at the top of this file)
 
 Paste everything inside the fence into an empty chat. **Replace the HEAD hash with `git log -1 --format=%h` first** —
 committing this file moves it.

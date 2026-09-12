@@ -741,15 +741,139 @@ const UI = {
     b.fn(); Sound.click();
   },
   // the command card as the player sees it right now (rebuilt on demand so input never depends on render timing)
-  // The single choke point for the card: build it, page it, then relabel for grid hotkeys. Paginating
+  // The single choke point for the card: build it, page it, then give every button its key. Paginating
   // HERE rather than in buildCard means every one of buildCard's many early returns is covered without
   // each having to remember, and the grid keys are assigned to the slot a button actually occupies on
   // the page it is on rather than the slot it asked for.
   GRID_KEYS: 'QWERASDFZXCV',
   currentCard() {
     const btns = this.paginate(this.buildCard());
-    if (this.gridKeys) for (const b of btns) if (b.hk !== 'Escape') b.hk = this.GRID_KEYS[b.slot] || '';
+    for (const b of btns) if (b.hk !== 'Escape') b.hk = this.cardKeyFor(b.cmd, b.slot, b.hk);
     return btns;
+  },
+  // ---- the command card's keys, every one of them the player's to choose ----
+  // Eighth session, the user's item 5: "All controls in Hotkeys should be customizable". StarCraft II's model
+  // (RESEARCH-LOBBY.md section 5): a key belongs to a COMMAND, not to a button, so a command on many cards -- Move,
+  // Stop, Set Rally, a Marine from any Barracks -- is one key and changes everywhere at once. Every button buildCard
+  // makes names its command: 'unit:marine', 'bld:barracks' (placed from a build menu, added on, or morphed into),
+  // 'upg:', 'tech:', 'abil:' and the general commands 'cmd:move' and the rest (CARD_COMMANDS). Cancel keeps Escape.
+  //
+  // A key is resolved in one place, cardKeyFor: the player's own key for that command if they chose one, otherwise the
+  // layout's -- Standard is each command's own letter from the tables, Grid is the slot's letter from QWER / ASDF / ZXCV.
+  // The two layouts keep separate sets of choices, as StarCraft II's profiles do. Keys are letters: every other key the
+  // game reads is a global binding or reserved (UI.RESERVED), and onKey reads those first.
+  CARD_COMMANDS: {
+    move: ['Move', 'M'], stop: ['Stop', 'S'], attack: ['Attack', 'A'], patrol: ['Patrol', 'P'], hold: ['Hold Position', 'H'],
+    gather: ['Gather', 'G'], return: ['Return Cargo', 'C'], repair: ['Repair', 'R'], build: ['Build', 'B'], buildAdv: ['Build Advanced', 'V'],
+    rally: ['Set Rally', 'R'], selectLarvae: ['Select Larvae', 'S'], lift: ['Lift Off', 'L'], land: ['Land', 'L'], ferry: ['Ferry', 'Y'],
+  },
+  CARD_CMD_RE: /^(unit|bld|upg|tech|abil|cmd):[a-z0-9_]+$/i,
+  cardKeyStore() {
+    if (this._cardKeys) return this._cardKeys;
+    let s = {}; try { s = JSON.parse(localStorage.getItem('bw_cardkeys') || '{}') || {}; } catch (e) { s = {}; }
+    // Read back through the same rule setCardKey writes by, so a hand-edited or stale entry is dropped, not obeyed.
+    const clean = o => { const out = {}; if (o && typeof o === 'object') for (const k of Object.keys(o)) if (this.CARD_CMD_RE.test(k) && typeof o[k] === 'string' && /^[A-Z]?$/.test(o[k])) out[k] = o[k]; return out; };
+    return this._cardKeys = { standard: clean(s.standard), grid: clean(s.grid) };
+  },
+  cardKeys() { return this.cardKeyStore()[this.gridKeys ? 'grid' : 'standard']; },
+  cardKeyFor(cmd, slot, dflt) {
+    const own = this.cardKeys();
+    if (cmd && Object.prototype.hasOwnProperty.call(own, cmd)) return own[cmd];
+    return this.gridKeys ? (this.GRID_KEYS[slot] || '') : dflt;
+  },
+  // A letter, or '' for no key at all. Anything else is refused and nothing is stored.
+  setCardKey(cmd, key) {
+    if (!this.CARD_CMD_RE.test(String(cmd))) return false;
+    const k = String(key == null ? '' : key).toUpperCase(); if (!/^[A-Z]?$/.test(k)) return false;
+    this.cardKeys()[cmd] = k; this.saveCardKeys(); return true;
+  },
+  resetCardKey(cmd) { delete this.cardKeys()[cmd]; this.saveCardKeys(); },
+  resetCardKeys() { const s = this.cardKeyStore(); s.standard = {}; s.grid = {}; this.saveCardKeys(); },
+  saveCardKeys() {
+    const s = this.cardKeyStore();
+    try { if (!Object.keys(s.standard).length && !Object.keys(s.grid).length) localStorage.removeItem('bw_cardkeys'); else localStorage.setItem('bw_cardkeys', JSON.stringify(s)); } catch (e) { }
+  },
+  keyName(k) { return !k ? '' : k === ' ' ? 'Space' : k.startsWith('ctrl+') ? 'Ctrl+' + k.slice(5).toUpperCase() : k.length === 1 ? k.toUpperCase() : k; },
+  // EVERY COMMAND CARD, for the Controls tab: per race the units, the larva and the egg, the buildings (and a flying one's
+  // card), and the two build menus, each button with its command, label, Standard letter, slot and page. Built from DATA
+  // by buildCard's own rules with everything researched and nothing queued -- and test/hotkeys.js holds it against
+  // buildCard itself, card by card, so the list a player edits is the card they will see.
+  cardCatalog() {
+    if (this._catalog) return this._catalog;
+    const K = this.CARD_COMMANDS, out = { T: [], Z: [], P: [] }, races = Object.keys(out);
+    const C = id => ({ cmd: 'cmd:' + id, label: K[id][0], hk: K[id][1] });
+    const unit = id => ({ cmd: 'unit:' + id, label: DATA.units[id].name, hk: DATA.units[id].hk });
+    const bld = id => ({ cmd: 'bld:' + id, label: DATA.buildings[id].name, hk: DATA.buildings[id].hk });
+    const abil = (id, label) => { const ab = DATA.abilities[id]; return ab ? { cmd: 'abil:' + id, label: label || ab.name, hk: ab.hk } : null; };
+    const cancel = { label: 'Cancel', hk: 'Escape', pin: true };
+    const card = (race, key, name, kind, btns) => { btns = btns.filter(Boolean); if (btns.length) out[race].push({ key, name, kind, buttons: this.cardSlots(btns) }); };
+    const units = Object.keys(DATA.units).filter(id => { const d = DATA.units[id]; return races.includes(d.race) && !d.notUnit && !d.mine && !d.neutral; });
+    // The worker first, then the larva and the egg, then the rest in the tables' order: the order a player meets them.
+    const rank = id => { const d = DATA.units[id]; return d.worker && !d.mule ? 0 : d.larva ? 1 : d.egg ? 2 : 3; };
+    units.sort((a, b) => rank(a) - rank(b));
+    for (const id of units) {
+      const d = DATA.units[id];
+      if (d.larva) card(d.race, 'unit:' + id, d.name, 'unit', DATA.larvaMorphs.map(unit).concat([C('rally')]));
+      else if (d.egg) { if (id === 'egg') card(d.race, 'unit:' + id, d.name, 'unit', [C('rally'), cancel]); }
+      else if (d.worker) card(d.race, 'unit:' + id, d.name, 'unit', [C('move'), C('stop'), C('attack'), C('gather'), C('return'), id === 'scv' ? C('repair') : null, C('build'), C('buildAdv'), id === 'drone' ? abil('burrow', 'Burrow') : null]);
+      else {
+        // Six abilities at most (buildCard's `i > 10`), and 'Unload' says what it does rather than 'Unload All'.
+        const abils = (d.abil || []).filter(a => DATA.abilities[a] && DATA.abilities[a].kind !== 'menu').slice(0, 6);
+        const carries = !!(d.cargo || d.cargoTech);
+        card(d.race, 'unit:' + id, d.name, 'unit', [C('move'), C('stop'), (d.gw || d.aw) ? C('attack') : null, C('patrol'), C('hold')]
+          .concat(abils.map(a => abil(a, a === 'unload' ? 'Unload' : null)))
+          .concat([carries && !abils.includes('unload') ? abil('unload', 'Unload') : null, carries ? C('ferry') : null]));
+      }
+    }
+    for (const id of Object.keys(DATA.buildings)) {
+      const d = DATA.buildings[id]; if (!races.includes(d.race) || d.neutral) continue;
+      const btns = (d.produces || []).map(unit)
+        .concat((d.upg || []).map(u => ({ cmd: 'upg:' + u, label: DATA.upgrades[u].name, hk: DATA.upgrades[u].hk })))
+        .concat((d.tech || []).map(t => ({ cmd: 'tech:' + t, label: DATA.techs[t].name, hk: DATA.techs[t].hk })))
+        .concat((d.addons || []).map(bld), d.morphTo ? [bld(d.morphTo)] : [], (d.morphOptions || []).map(bld), (d.abil || []).map(a => abil(a)))
+        .concat([d.spawnsLarva ? C('selectLarvae') : null, (d.produces || []).length || d.spawnsLarva ? C('rally') : null, d.canLift ? C('lift') : null]);
+      card(d.race, 'bld:' + id, d.name, 'building', btns);
+      if (d.canLift) card(d.race, 'bld:' + id + ':flying', d.name + ' (flying)', 'building', [C('land')]);
+    }
+    for (const race of races) for (const menu of ['basic', 'adv']) {
+      const w = DATA.units[RACE_INFO[race].worker];
+      card(race, 'menu:' + race + ':' + menu, (w ? w.name + ': ' : '') + (menu === 'basic' ? 'Build' : 'Build Advanced'), 'menu', DATA.buildMenu[race][menu].map(bld).concat([cancel]));
+    }
+    return this._catalog = out;
+  },
+  // Where each button lands, by UI.paginate's rule: pinned buttons on the last slot of every page, the rest in order,
+  // and a page's last free slot given to More when there is more than one page.
+  cardSlots(btns) {
+    const last = this.CARD_SLOTS - 1, pinned = btns.filter(b => b.pin), flow = btns.filter(b => !b.pin);
+    const cap = pinned.length ? last : last + 1;
+    let per = cap, pages = Math.max(1, Math.ceil(flow.length / per));
+    if (pages > 1) { per = cap - 1; pages = Math.max(1, Math.ceil(flow.length / per)); }
+    return flow.map((b, i) => Object.assign({}, b, { slot: i % per, page: Math.floor(i / per) }))
+      .concat(pinned.map(b => Object.assign({}, b, { slot: last, page: -1 })))
+      .concat(pages > 1 ? [{ label: 'More', hk: 'Tab', more: true, slot: pinned.length ? last - 1 : last, page: -1 }] : []);
+  },
+  // How many cards each command is on, for the Controls tab to say what a change reaches.
+  cardUses() {
+    if (this._cardUses) return this._cardUses;
+    const n = {}; for (const race of Object.keys(this.cardCatalog())) for (const c of this.cardCatalog()[race]) for (const b of c.buttons) if (b.cmd) n[b.cmd] = (n[b.cmd] || 0) + 1;
+    return this._cardUses = n;
+  },
+  // What is wrong with a card's keys as they stand, by command: a letter two buttons on one page share (onKey presses
+  // the first), or a letter an Interface binding holds (onKey reads those before the card, so the button never hears it).
+  cardClashes(card) {
+    const out = {}, binds = this.bindings();
+    const pages = [...new Set(card.buttons.map(b => b.page).filter(p => p >= 0))]; if (!pages.length) pages.push(0);
+    for (const pg of pages) {
+      const on = card.buttons.filter(b => b.page === pg || b.page === -1).map(b => ({ b, k: b.hk === 'Escape' ? '' : String(b.more ? (this.gridKeys ? this.GRID_KEYS[b.slot] : '') : this.cardKeyFor(b.cmd, b.slot, b.hk)).toUpperCase() }));
+      for (const x of on) {
+        if (!x.k || !x.b.cmd) continue;
+        const twin = on.find(y => y !== x && y.k === x.k);
+        if (twin) out[x.b.cmd] = x.k + ' is also ' + twin.b.label + ' on this card';
+        const g = Object.keys(binds).find(id => binds[id].key && binds[id].key.length === 1 && binds[id].key.toUpperCase() === x.k);
+        if (g) out[x.b.cmd] = x.k + ' is ' + binds[g].label + ' (Interface), which is read first';
+      }
+    }
+    return out;
   },
   // ---------------- commands ----------------
   ownSel() { return this.selection.filter(u => u.owner === G.human && u.alive); },
@@ -1119,13 +1243,16 @@ const UI = {
     const kinds = this.subgroupKinds();
     const pick = kinds.length > 1 ? sel.find(x => x.def.id === kinds[this.subgroup % kinds.length]) : null;
     const u = (sel[0].def.egg && sel.find(x => x.def.larva)) || pick || sel[0];
-    const B = (slot, label, hk, fn, o = {}) => btns.push(Object.assign({ slot, label, hk, fn }, o));
+    // `cmd` is the command the button's key belongs to (UI.cardKeyFor). An ability button's is its ability; C() is the
+    // general commands', whose labels and letters live in UI.CARD_COMMANDS so the Controls tab lists the same ones.
+    const B = (slot, label, hk, fn, o = {}) => btns.push(Object.assign({ slot, label, hk, fn, cmd: o.abil ? 'abil:' + o.abil : undefined }, o));
+    const C = (slot, id, fn, o) => B(slot, this.CARD_COMMANDS[id][0], this.CARD_COMMANDS[id][1], fn, Object.assign({ cmd: 'cmd:' + id }, o));
     // Why a greyed button is greyed, for UI.press to say out loud. Player.missingReq already knew;
     // nothing ever asked it on behalf of the command card.
     const why = def => { const m = p.missingReq(def); return m ? 'Requires ' + m : null; };
     const setPending = (kind, abil) => () => { this.pending = { kind, abil }; };
     if (this.cardMenu === 'basic' || this.cardMenu === 'adv') {
-      const list = DATA.buildMenu[p.race][this.cardMenu]; list.forEach((id, i) => { const d = DATA.buildings[id]; const ok = p.hasReq(d); B(i, d.name, d.hk, () => { this.placing = { def: d, builder: u, tx: Math.floor(this.mouse.wx / TILE - d.w / 2 + .5), ty: Math.floor(this.mouse.wy / TILE - d.h / 2 + .5) }; }, { cost: d, enabled: ok, dim: !ok, why: why(d) }); });
+      const list = DATA.buildMenu[p.race][this.cardMenu]; list.forEach((id, i) => { const d = DATA.buildings[id]; const ok = p.hasReq(d); B(i, d.name, d.hk, () => { this.placing = { def: d, builder: u, tx: Math.floor(this.mouse.wx / TILE - d.w / 2 + .5), ty: Math.floor(this.mouse.wy / TILE - d.h / 2 + .5) }; }, { cmd: 'bld:' + id, cost: d, enabled: ok, dim: !ok, why: why(d) }); });
       B(this.CARD_SLOTS - 1, 'Cancel', 'Escape', () => { this.cardMenu = null; }, { pin: true }); return btns;
     }
     // The morphed larva stays in the selection. larvaMorph reuses the object, so the egg IS the larva
@@ -1157,12 +1284,12 @@ const UI = {
         B(0, d.name, d.hk, () => {
           const l = sel.find(x => x.def.larva);
           if (l && G.larvaMorph(l, id)) this.selection = this.selection.filter(x => x.alive);
-        }, { cost: d, enabled: ok, dim: !ok, why: why(d) });
+        }, { cmd: 'unit:' + id, cost: d, enabled: ok, dim: !ok, why: why(d) });
       });
-      B(0, 'Set Rally', 'R', setPending('rally'));
+      C(0, 'rally', setPending('rally'));
       return btns;
     }
-    if (u.def.egg) { B(6, 'Set Rally', 'R', setPending('rally')); B(this.CARD_SLOTS - 1, 'Cancel', 'Escape', () => { for (const e of sel) G.cancelProd(e, 0); }, { pin: true }); return btns; }
+    if (u.def.egg) { C(6, 'rally', setPending('rally')); B(this.CARD_SLOTS - 1, 'Cancel', 'Escape', () => { for (const e of sel) G.cancelProd(e, 0); }, { pin: true }); return btns; }
     // Several buildings at once. Brood War shows the first one's card and applies what you press to all
     // of them that can do it, which is what makes "select every hatchery, press S" work. The card is
     // built from `u` as before; only the actions below fan out. Buildings that cannot do the thing are
@@ -1170,9 +1297,9 @@ const UI = {
     if (u.isBuilding && sel.length > 1) {
       const halls = sel.filter(b => b.isBuilding && b.done && !b.lifted);
       const lv = []; for (const b of halls) if (b.def.spawnsLarva) for (const l of b.larvae) if (l.alive && l.def.larva) lv.push(l);
-      if (lv.length) B(7, 'Select Larvae', 'S', () => { this.selection = lv.slice(0, 24); this.cardMenu = null; this.pending = null; },
+      if (lv.length) C(7, 'selectLarvae', () => { this.selection = lv.slice(0, 24); this.cardMenu = null; this.pending = null; },
         { count: lv.length, enabled: true });
-      if (halls.some(b => b.def.produces.length || b.def.spawnsLarva)) B(6, 'Set Rally', 'R', setPending('rally'));
+      if (halls.some(b => b.def.produces.length || b.def.spawnsLarva)) C(6, 'rally', setPending('rally'));
       // The union of what the selection can train, in the first building's order so the card is stable.
       const seen = new Set(); let j = 0;
       for (const b of halls) for (const id of b.def.produces) {
@@ -1184,7 +1311,7 @@ const UI = {
           const able = halls.filter(b2 => b2.def.produces.includes(id));
           let best = null; for (const b2 of able) if (!best || b2.prod.length < best.prod.length) best = b2;
           if (best) G.queueUnit(best, id);
-        }, { cost: ud, enabled: ok, dim: !ok, why: why(ud) });
+        }, { cmd: 'unit:' + id, cost: ud, enabled: ok, dim: !ok, why: why(ud) });
         if (j > 5) break;
       }
       return btns;
@@ -1205,10 +1332,10 @@ const UI = {
       // stable frame to frame and does not jitter between two equal buildings
       const target = () => (bldGroup ? bldGroup.slice().sort((a, b) => a.prod.length - b.prod.length || a.id - b.id)[0] : u);
       if (!u.done) { B(this.CARD_SLOTS - 1, 'Cancel', 'Escape', () => G.cancelBuilding(u), { pin: true }); return btns; }
-      if (u.lifted) { B(0, 'Land', 'L', () => { this.placing = { def: d, builder: u, land: true, tx: 0, ty: 0 }; }, {}); return btns; }
-      for (const id of d.produces) { const ud = DATA.units[id]; const ok = p.hasReq(ud); B(i++, ud.name, ud.hk, () => G.queueUnit(target(), id), { cost: ud, enabled: ok, dim: !ok, why: why(ud) }); }
-      for (const id of d.upg) { const ud = DATA.upgrades[id]; const lvl = p.upgLevel(id); if (lvl >= 3) continue; const rq = ud.req[lvl]; const ok = !rq || p.hasBuilding(rq); B(i++, ud.name + ' L' + (lvl + 1), ud.hk, () => G.queueUpgrade(u, id), { cost: { min: ud.min[lvl], gas: ud.gas[lvl], time: ud.time[lvl] }, enabled: ok && !p.researching.has(id), dim: !ok || p.researching.has(id), why: !ok && rq ? 'Requires ' + DATA.buildings[rq].name : p.researching.has(id) ? 'Already researching.' : null }); }
-      for (const id of d.tech) { const td = DATA.techs[id]; if (p.tech.has(id)) continue; const ok = !td.req || p.hasReq(td); B(i++, td.name, td.hk, () => G.queueTech(u, id), { cost: td, enabled: ok && !p.researching.has(id), dim: !ok || p.researching.has(id), why: !ok ? why(td) : p.researching.has(id) ? 'Already researching.' : null }); }
+      if (u.lifted) { C(0, 'land', () => { this.placing = { def: d, builder: u, land: true, tx: 0, ty: 0 }; }); return btns; }
+      for (const id of d.produces) { const ud = DATA.units[id]; const ok = p.hasReq(ud); B(i++, ud.name, ud.hk, () => G.queueUnit(target(), id), { cmd: 'unit:' + id, cost: ud, enabled: ok, dim: !ok, why: why(ud) }); }
+      for (const id of d.upg) { const ud = DATA.upgrades[id]; const lvl = p.upgLevel(id); if (lvl >= 3) continue; const rq = ud.req[lvl]; const ok = !rq || p.hasBuilding(rq); B(i++, ud.name + ' L' + (lvl + 1), ud.hk, () => G.queueUpgrade(u, id), { cmd: 'upg:' + id, cost: { min: ud.min[lvl], gas: ud.gas[lvl], time: ud.time[lvl] }, enabled: ok && !p.researching.has(id), dim: !ok || p.researching.has(id), why: !ok && rq ? 'Requires ' + DATA.buildings[rq].name : p.researching.has(id) ? 'Already researching.' : null }); }
+      for (const id of d.tech) { const td = DATA.techs[id]; if (p.tech.has(id)) continue; const ok = !td.req || p.hasReq(td); B(i++, td.name, td.hk, () => G.queueTech(u, id), { cmd: 'tech:' + id, cost: td, enabled: ok && !p.researching.has(id), dim: !ok || p.researching.has(id), why: !ok ? why(td) : p.researching.has(id) ? 'Already researching.' : null }); }
       // AN ADD-ON KEEPS ITS OWN CARD -- FIXLIST-M14 B5 (item 15). This block used to copy the add-on's
       // tech, abilities and production onto its PARENT, which is what put "Apollo Reactor" on a
       // Starport and Scanner Sweep on a Command Center. Measured across all seven Terran parent/add-on
@@ -1223,19 +1350,19 @@ const UI = {
       //
       // The one thing this changes for a player: Scanner Sweep and building a nuke are now done from
       // the add-on, which is where Brood War does them.
-      if (!u.addon) for (const id of d.addons) { const ad = DATA.buildings[id]; const ok = p.hasReq(ad); B(i++, ad.name, ad.hk, () => G.queueAddon(u, id), { cost: ad, enabled: ok, dim: !ok, why: why(ad) }); }
-      if (d.morphTo) { const nd = DATA.buildings[d.morphTo]; const ok = p.hasReq(nd); B(i++, nd.name, nd.hk, () => G.queueMorph(u, d.morphTo), { cost: nd, enabled: ok, dim: !ok, why: why(nd) }); }
-      if (d.morphOptions) for (const id of d.morphOptions) { const nd = DATA.buildings[id]; const ok = p.hasReq(nd); B(i++, nd.name, nd.hk, () => G.queueMorph(u, id), { cost: nd, enabled: ok, dim: !ok, why: why(nd) }); }
+      if (!u.addon) for (const id of d.addons) { const ad = DATA.buildings[id]; const ok = p.hasReq(ad); B(i++, ad.name, ad.hk, () => G.queueAddon(u, id), { cmd: 'bld:' + id, cost: ad, enabled: ok, dim: !ok, why: why(ad) }); }
+      if (d.morphTo) { const nd = DATA.buildings[d.morphTo]; const ok = p.hasReq(nd); B(i++, nd.name, nd.hk, () => G.queueMorph(u, d.morphTo), { cmd: 'bld:' + d.morphTo, cost: nd, enabled: ok, dim: !ok, why: why(nd) }); }
+      if (d.morphOptions) for (const id of d.morphOptions) { const nd = DATA.buildings[id]; const ok = p.hasReq(nd); B(i++, nd.name, nd.hk, () => G.queueMorph(u, id), { cmd: 'bld:' + id, cost: nd, enabled: ok, dim: !ok, why: why(nd) }); }
       // Abilities.label, not ab.name: a toggle's button says what pressing it will DO (a Supply Depot's Lower / Raise).
       if (d.abil) for (const id of d.abil) { const ab = DATA.abilities[id]; if (!Abilities.available(u, id)) continue; if (ab.kind === 'instant') B(i++, Abilities.label(u, id), ab.hk, () => Abilities.issue(u, id), { abil: id }); else B(i++, ab.name, ab.hk, () => { this.pending = { kind: 'ability', abil: id }; }, { energy: ab.energy, abil: id }); }
       // Select Larvae, as Brood War has it on S. Without this the only way to morph is to click each
       // larva individually, which is not how anyone plays Zerg: you select the hall, take its larvae,
       // and press the morph key once per larva.
       if (d.spawnsLarva) { const lv = u.larvae.filter(l => l.alive && l.def.larva);
-        B(7, 'Select Larvae', 'S', () => { this.selection = lv.slice(); this.cardMenu = null; this.pending = null; },
+        C(7, 'selectLarvae', () => { this.selection = lv.slice(); this.cardMenu = null; this.pending = null; },
           { enabled: lv.length > 0, dim: !lv.length, why: lv.length ? null : 'No larvae have hatched yet.' }); }
-      if (d.produces.length || d.spawnsLarva) B(6, 'Set Rally', 'R', setPending('rally'));
-      if (d.canLift && !u.prod.length) B(7, 'Lift Off', 'L', () => G.liftBuilding(u));
+      if (d.produces.length || d.spawnsLarva) C(6, 'rally', setPending('rally'));
+      if (d.canLift && !u.prod.length) C(7, 'lift', () => G.liftBuilding(u));
       if (u.prod.length) B(8, 'Cancel', 'Escape', () => G.cancelProd(u, u.prod.length - 1));
       return btns;
     }
@@ -1251,16 +1378,16 @@ const UI = {
     if (!mobile.length) return btns;
     const all = pred => mobile.every(pred), any = pred => mobile.some(pred);
     if (any(x => x.def.worker) && all(x => x.def.worker)) {
-      B(0, 'Move', 'M', setPending('move')); B(1, 'Stop', 'S', () => mobile.forEach(x => x.stop())); B(2, 'Attack', 'A', setPending('attack'));
-      B(3, 'Gather', 'G', setPending('gather')); B(4, 'Return Cargo', 'C', () => mobile.forEach(x => { if (x.carrying) x.setOrder({ type: 'return', then: x.lastRes }); }));
-      if (all(x => x.def.id === 'scv')) B(5, 'Repair', 'R', setPending('repair'));
-      B(6, 'Build', 'B', () => { this.cardMenu = 'basic'; }); B(7, 'Build Advanced', 'V', () => { this.cardMenu = 'adv'; });
-      if (all(x => x.def.id === 'drone') && p.hasTech('burrow_tech')) B(8, mobile[0].burrowed ? 'Unburrow' : 'Burrow', 'U', () => mobile.forEach(x => Abilities.issue(x, 'burrow')));
+      C(0, 'move', setPending('move')); C(1, 'stop', () => mobile.forEach(x => x.stop())); C(2, 'attack', setPending('attack'));
+      C(3, 'gather', setPending('gather')); C(4, 'return', () => mobile.forEach(x => { if (x.carrying) x.setOrder({ type: 'return', then: x.lastRes }); }));
+      if (all(x => x.def.id === 'scv')) C(5, 'repair', setPending('repair'));
+      C(6, 'build', () => { this.cardMenu = 'basic'; }); C(7, 'buildAdv', () => { this.cardMenu = 'adv'; });
+      if (all(x => x.def.id === 'drone') && p.hasTech('burrow_tech')) B(8, mobile[0].burrowed ? 'Unburrow' : 'Burrow', DATA.abilities.burrow.hk, () => mobile.forEach(x => Abilities.issue(x, 'burrow')), { cmd: 'abil:burrow' });
       return btns;
     }
-    B(0, 'Move', 'M', setPending('move')); B(1, 'Stop', 'S', () => mobile.forEach(x => x.stop()));
-    if (any(x => x.hasWeapon())) B(2, 'Attack', 'A', setPending('attack'));
-    B(3, 'Patrol', 'P', setPending('patrol')); B(4, 'Hold Position', 'H', () => mobile.forEach(x => x.setOrder({ type: 'hold' })));
+    C(0, 'move', setPending('move')); C(1, 'stop', () => mobile.forEach(x => x.stop()));
+    if (any(x => x.hasWeapon())) C(2, 'attack', setPending('attack'));
+    C(3, 'patrol', setPending('patrol')); C(4, 'hold', () => mobile.forEach(x => x.setOrder({ type: 'hold' })));
     let i = 5;
     // abilities common to selection (by first unit's def), only if all share the ability
     const abils = (mobile[0].def.abil || []).filter(id => Abilities.available(mobile[0], id) && all(x => (x.def.abil || []).includes(id) || x.def.id === mobile[0].def.id));
@@ -1281,10 +1408,10 @@ const UI = {
       else if (ab.kind === 'produce') B(i++, label, ab.hk, () => mobile.forEach(x => G.queueUnit(x, ab.unit)), { cost: DATA.units[ab.unit], abil: id });
       else B(i++, label, ab.hk, () => { this.pending = { kind: 'ability', abil: id }; }, { energy: ab.energy, abil: id });
     }
-    if (mobile.some(x => x.cargo.length) && !abils.includes('unload')) B(Math.min(8, i++), 'Unload', 'U', setPending('unload'));
+    if (mobile.some(x => x.cargo.length) && !abils.includes('unload')) B(Math.min(8, i++), 'Unload', DATA.abilities.unload.hk, setPending('unload'), { cmd: 'abil:unload' });
     // A ferry route. Offered on anything that can actually carry something, loaded or not -- the whole
     // point is to set it up BEFORE there is anything to move.
-    if (mobile.some(x => G.cargoCap(x))) B(i++, 'Ferry', 'Y', setPending('ferry'));
+    if (mobile.some(x => G.cargoCap(x))) C(i++, 'ferry', setPending('ferry'));
     // mixed selections still get the merge buttons when at least two templar of a kind are selected
     for (const [id, want] of [['summon_archon', 'high_templar'], ['summon_dark_archon', 'dark_templar']]) if (!abils.includes(id) && i <= 8 && mobile.filter(x => x.def.id === want && !x.disabled).length >= 2) { const ab = DATA.abilities[id]; B(i++, ab.name, ab.hk, () => Abilities.merge(mobile, id), { abil: id }); }
     return btns;
@@ -2035,7 +2162,8 @@ window.addEventListener('DOMContentLoaded', () => {
     if (!tabs) return;
     for (const a of tabs.querySelectorAll('[data-tab]')) a.classList.toggle('on', a.dataset.tab === name);
     for (const b of document.querySelectorAll('#settingsPanel [data-body]')) b.style.display = b.dataset.body === name ? '' : 'none';
-    if (name === 'keys' && UI.drawBindings) UI.drawBindings();
+    if (UI.stopKeyGrab) UI.stopKeyGrab();
+    if (name === 'keys' && UI.drawKeys) UI.drawKeys();
   };
   UI.showSettingsTab = showTab;
   if (tabs) for (const a of tabs.querySelectorAll('[data-tab]')) a.addEventListener('click', ev => { ev.preventDefault(); showTab(a.dataset.tab); });
@@ -2109,19 +2237,100 @@ window.addEventListener('DOMContentLoaded', () => {
         const h = document.createElement('div'); h.className = 'bindHead'; h.textContent = lastGroup;
         host.appendChild(h);
       }
-      host.appendChild(bindRow(id, b[id], UI.drawBindings));
+      const row = bindRow(id, b[id], UI.drawKeys);
+      // A letter here is read before the command card (UI.onKey), so a card's button on that letter stops answering it.
+      if (/^[a-z]$/i.test(b[id].key)) { const L = b[id].key.toUpperCase(); row.className += ' clash'; row.title = L + ' is also a command card letter: while it is bound here, a button on ' + L + ' does not answer it.'; }
+      host.appendChild(row);
     }
-    for (const k of ['keyStd', 'keyGrid']) { const x = $(k); if (x) x.classList.toggle('on', (k === 'keyGrid') === !!UI.gridKeys); }
   };
-  const creset = $('bindReset'); if (creset) creset.addEventListener('click', () => { UI.resetBindings(); UI.setGridKeys(false); UI.drawBindings(); });
+  // ---- the command card's keys, card by card ------------------------------------
+  // StarCraft II's hotkey editor, which this copies (RESEARCH-LOBBY.md section 5): pick a race, pick a unit, a building or
+  // a build menu, and its command card is drawn with the key on every button. Click a key and press a letter. A command on
+  // many cards is one command -- the button's tooltip says on how many (UI.cardUses) -- so it changes on all of them. A
+  // letter used twice on the card, or held by an Interface key that is read first, is red and says why, and so is the
+  // card's name in the list. Grid and Standard keep separate choices. The key is captured the way bindRow captures one:
+  // one keydown, in the capture phase, and the listener removes itself.
+  let keyView = 'ui', grabbing = null;
+  const keyCard = { T: null, Z: null, P: null };
+  const stopGrab = () => { if (grabbing) { window.removeEventListener('keydown', grabbing, true); grabbing = null; } };
+  UI.stopKeyGrab = stopGrab;
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  UI.drawCardKeys = () => {
+    const list = $('cardList'), edit = $('cardEdit'); if (!list || !edit) return;
+    const race = keyView, cards = UI.cardCatalog()[race] || [];
+    if (!cards.some(c => c.key === keyCard[race])) keyCard[race] = cards.length ? cards[0].key : null;
+    const groups = [['unit', 'Units'], ['building', 'Buildings'], ['menu', 'Build menus']];
+    list.innerHTML = groups.map(([kind, title]) => '<div class="ckGroup">' + title + '</div>' + cards.filter(c => c.kind === kind).map(c => {
+      const bad = Object.keys(UI.cardClashes(c)).length;
+      return '<a href="#" data-card="' + esc(c.key) + '" class="' + (c.key === keyCard[race] ? 'on' : '') + (bad ? ' clash' : '') + '"' + (bad ? ' title="A key on this card is used twice, or taken by an Interface key"' : '') + '>' + esc(c.name) + '</a>';
+    }).join('')).join('');
+    for (const a of list.querySelectorAll('[data-card]')) a.onclick = ev => { if (ev && ev.preventDefault) ev.preventDefault(); stopGrab(); keyCard[race] = a.dataset.card; UI.drawCardKeys(); };
+    const card = cards.find(c => c.key === keyCard[race]);
+    if (!card) { edit.innerHTML = ''; return; }
+    const clashes = UI.cardClashes(card), own = UI.cardKeys(), uses = UI.cardUses();
+    const pages = Math.max(1, ...card.buttons.map(b => b.page + 1));
+    let h = '<div class="ckTitle">' + esc(card.name) + '</div>';
+    for (let pg = 0; pg < pages; pg++) {
+      if (pages > 1) h += '<div class="ckPage">Page ' + (pg + 1) + ' of ' + pages + '</div>';
+      h += '<div class="ckGrid">';
+      for (let s = 0; s < UI.CARD_SLOTS; s++) {
+        const b = card.buttons.find(x => x.slot === s && (x.page === pg || x.page === -1));
+        if (!b) { h += '<div class="ckCell ckEmpty"></div>'; continue; }
+        if (!b.cmd) { h += '<div class="ckCell ckFixed" title="' + (b.more ? 'Turns the page' : 'Always Escape') + '"><span class="ckLabel">' + esc(b.label) + '</span><span class="ckKey">' + esc(b.more ? (UI.gridKeys ? UI.GRID_KEYS[s] : 'Tab') : 'Esc') + '</span></div>'; continue; }
+        const k = UI.cardKeyFor(b.cmd, b.slot, b.hk), mine = Object.prototype.hasOwnProperty.call(own, b.cmd), why = clashes[b.cmd], n = uses[b.cmd] || 1;
+        const dflt = UI.gridKeys ? (UI.GRID_KEYS[b.slot] || '') : b.hk;
+        const tip = (why ? why + '. ' : '') + (n > 1 ? b.label + ' is on ' + n + ' cards; a key set here is its key on all of them.' : '');
+        h += '<div class="ckCell' + (mine ? ' mine' : '') + (why ? ' clash' : '') + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '>'
+          + '<span class="ckLabel">' + esc(b.label) + '</span>'
+          + '<button class="ckKey" data-cmd="' + esc(b.cmd) + '">' + (k ? esc(k) : '&mdash;') + '</button>'
+          + (mine ? '<a href="#" class="ckReset" data-reset="' + esc(b.cmd) + '" title="Back to ' + esc(dflt || 'no key') + '">&#8634;</a>' : '')
+          + '</div>';
+      }
+      h += '</div>';
+    }
+    // One sentence per letter in trouble, naming every button on it.
+    const trouble = {};
+    for (const b of card.buttons) if (b.cmd && clashes[b.cmd]) { const k = UI.cardKeyFor(b.cmd, b.slot, b.hk).toUpperCase(); (trouble[k] = trouble[k] || { names: [], why: clashes[b.cmd] }).names.push(b.label); }
+    const lines = Object.keys(trouble).map(k => / \(Interface\)/.test(trouble[k].why) ? trouble[k].why + ': ' + trouble[k].names.join(' and ') + ' will not answer it.' : k + ' is on ' + trouble[k].names.join(' and ') + ': ' + k + ' presses the first of them.');
+    h += '<div class="ckMsg' + (lines.length ? ' clash' : '') + '">' + (lines.length ? esc(lines.join(' ')) : 'Click a key, then press a letter. Delete leaves the button with no key.') + '</div>'
+      + '<button id="cardReset" class="small inline" title="Every key on this card back to the layout\'s own -- shared commands such as Move included, on every card they are on">Reset this card</button>';
+    edit.innerHTML = h;
+    for (const btn of edit.querySelectorAll('[data-cmd]')) btn.onclick = () => {
+      stopGrab();
+      const cmd = btn.dataset.cmd; btn.textContent = 'press'; btn.classList.add('wait');
+      grabbing = ev => {
+        ev.preventDefault(); ev.stopPropagation(); stopGrab();
+        if (ev.key === 'Escape' || ['Control', 'Shift', 'Alt', 'Meta'].includes(ev.key)) { UI.drawCardKeys(); return; }
+        if (ev.key === 'Delete' || ev.key === 'Backspace') { UI.setCardKey(cmd, ''); UI.drawCardKeys(); return; }
+        // Letters only: every other key the game reads is an Interface key or a reserved one, and onKey reads those first.
+        if (ev.ctrlKey || ev.altKey || ev.metaKey || !/^[a-z]$/i.test(ev.key)) { btn.textContent = 'A to Z'; setTimeout(UI.drawCardKeys, 1100); return; }
+        UI.setCardKey(cmd, ev.key); UI.drawCardKeys();
+      };
+      window.addEventListener('keydown', grabbing, true);
+    };
+    for (const a of edit.querySelectorAll('[data-reset]')) a.onclick = ev => { if (ev && ev.preventDefault) ev.preventDefault(); stopGrab(); UI.resetCardKey(a.dataset.reset); UI.drawCardKeys(); };
+    const cr = edit.querySelector('#cardReset'); if (cr) cr.onclick = () => { stopGrab(); for (const b of card.buttons) if (b.cmd) UI.resetCardKey(b.cmd); UI.drawCardKeys(); };
+  };
+  // The Controls tab's views -- Interface, and each race's command cards -- under the layout switch that governs both.
+  UI.drawKeys = () => {
+    stopGrab();
+    const kt = $('keyTabs'); if (kt) for (const a of kt.querySelectorAll('[data-keys]')) a.classList.toggle('on', a.dataset.keys === keyView);
+    const bl = $('bindList'), ck = $('cardKeys');
+    if (bl) bl.style.display = keyView === 'ui' ? '' : 'none';
+    if (ck) ck.style.display = keyView === 'ui' ? 'none' : '';
+    for (const k of ['keyStd', 'keyGrid']) { const x = $(k); if (x) x.classList.toggle('on', (k === 'keyGrid') === !!UI.gridKeys); }
+    if (keyView === 'ui') UI.drawBindings(); else UI.drawCardKeys();
+  };
+  const kt = $('keyTabs'); if (kt) for (const a of kt.querySelectorAll('[data-keys]')) a.addEventListener('click', ev => { ev.preventDefault(); keyView = a.dataset.keys; UI.drawKeys(); });
+  const creset = $('bindReset'); if (creset) creset.addEventListener('click', () => { UI.resetBindings(); UI.resetCardKeys(); UI.setGridKeys(false); UI.drawKeys(); });
   const kstd = $('keyStd'), kgrid = $('keyGrid');
-  if (kstd) kstd.addEventListener('click', () => { UI.setGridKeys(false); UI.drawBindings(); });
-  if (kgrid) kgrid.addEventListener('click', () => { UI.setGridKeys(true); UI.drawBindings(); });
+  if (kstd) kstd.addEventListener('click', () => { UI.setGridKeys(false); UI.drawKeys(); });
+  if (kgrid) kgrid.addEventListener('click', () => { UI.setGridKeys(true); UI.drawKeys(); });
 
   // ---- the three doors -------------------------------------------------------
   // The in-game settings screen changes the same values, so the tabs re-read them every time they are opened.
-  const sb = $('settingsBtn'); if (sb) sb.addEventListener('click', () => { for (const f of refreshSettings) f(); UI.drawBindings(); UI.showPanel('settingsPanel'); });
-  const sbk = $('settingsBack'); if (sbk) sbk.addEventListener('click', () => UI.showPanel('mainPanel'));
+  const sb = $('settingsBtn'); if (sb) sb.addEventListener('click', () => { for (const f of refreshSettings) f(); UI.drawKeys(); UI.showPanel('settingsPanel'); });
+  const sbk = $('settingsBack'); if (sbk) sbk.addEventListener('click', () => { UI.stopKeyGrab(); UI.showPanel('mainPanel'); });
   const spb = $('singleBtn'); if (spb) spb.addEventListener('click', () => UI.showPanel('singlePanel'));
   const spk = $('singleBack'); if (spk) spk.addEventListener('click', () => UI.showPanel('mainPanel'));
   const mpb = $('multiBtn'); if (mpb) mpb.addEventListener('click', () => UI.enterMultiplayer());

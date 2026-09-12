@@ -148,10 +148,28 @@ from the unit tables, and a **Brood War / Grid** dropdown on the Game tab chose 
 ZXCV. An earlier milestone kept the two apart on purpose ("what letter builds a Barracks" against "what key centres the
 camera"); both research sources put them in one place.
 
-**What was built.** The keys are the **Controls tab** itself: every rebindable key in its group, and the command card's
-layout -- **Standard** (each command's own letter) or **Grid** -- chosen there, remembered, with one Reset. The dropdown
-and the separate screen are gone. *(The command card's own keys, one command at a time, are the next commit's; this
-section is updated when they land.)*
+**What was built.** The keys are the **Controls tab** itself, with the two things the research puts there:
+
+- **Standard or Grid** at the top -- StarCraft II's two main profiles: each command's own letter, or the slot's letter
+  from QWER / ASDF / ZXCV. Each keeps its own set of choices, and the choice is remembered.
+- **Interface** lists every global key (camera, selection, speed, the menus), rebound as before.
+- **Terran, Zerg, Protoss** are the editor StarCraft II has: the race's cards on the left (units, buildings, a lifted
+  building's own card, the build menus), and the chosen card drawn as its 4 x 3 grid with the key on every button,
+  page by page where a card has more than one. Click a key and press a letter; Delete leaves a button with no key.
+- **A key belongs to a command**, so Move, Stop, Set Rally or a Marine is one key wherever it appears, and the button's
+  tooltip says on how many cards. Every button the game draws names its command (`cmd`, from `UI.CARD_COMMANDS` and the
+  tables' ids) and `UI.cardKeyFor` resolves it: the player's choice, else the layout's letter.
+- **Clashes are shown, not silently fixed**: a letter on two buttons of one card, or a letter an Interface key holds
+  (read first, so the card's button never hears it), turns both red with a sentence saying which, and marks the card in
+  the list. Each changed key has a way back, each card has **Reset this card**, and **Reset all** resets everything.
+- **The console shows what is set**: a letter that is not in the button's name is drawn in its corner, as Grid's are
+  (fourteen of the shipped letters were never visible at all, the Reactor's X among them), and F1's help names the keys
+  as they are set.
+
+Letters only, by design: every other key the game reads is an Interface binding or reserved (`UI.RESERVED`), and
+`UI.onKey` reads those first, so a card button on one would never answer. Tests: `test/hotkeys.js` builds every one of
+the 138 cards for real and holds the editor's list against it, button by button; `test/menus.js` section 7 drives the
+editor. 26 negative controls in `.claude/review/menus/controls-hotkeys.js`.
 
 ---
 

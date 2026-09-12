@@ -13,6 +13,9 @@
 //  5. IT BEHAVES LIKE ONE: slots, computers, teams, map, speed, seed and rules, START only with an opponent and a start for
 //     everyone, and START makes exactly the game UI.skirmishOptions makes of the same settings. Remembered, except the seed.
 //  6. SETTINGS: the Codex tab opens the codex; the Controls tab lists every key and switches the command card's layout.
+//  7. EVERY COMMAND CARD KEY, IN THE CONTROLS TAB: a race's cards, a card as its grid, a key captured once and only as a
+//     letter, Delete for none, a clash shown on the card and in the list, a shared command's reach, the resets, Grid.
+//     (test/hotkeys.js holds the cards against buildCard and the keyboard against the choices.)
 //
 // Sections 2 to 6 run js/ui.js's real boot against a page built from index.html itself: every element with an id, the
 // tabs and their bodies, and for the lobby's containers whatever markup was last drawn into them.
@@ -70,6 +73,7 @@ function mkDom(text) {
     return t.tag === sel.toLowerCase();
   };
   const lastPart = sel => sel.trim().split(/\s+/).pop();
+  const decode = s => s.replace(/&mdash;/g, '—').replace(/&#(\d+);/g, (m, n) => String.fromCharCode(+n)).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
   function mkEl(tag, attrs, inner) {
     const listeners = {};
     const el = {
@@ -89,7 +93,7 @@ function mkDom(text) {
         if (el._html) {
           if (!el._cache) el._cache = new Map();
           return tagsOf(el._html).filter(t => matches(t, part)).map(t => {
-            if (!el._cache.has(t.index)) { const close = el._html.indexOf('<', t.end); el._cache.set(t.index, mkEl(t.tag, t.attrs, close > t.end ? el._html.slice(t.end, close) : '')); }
+            if (!el._cache.has(t.index)) { const close = el._html.indexOf('<', t.end); el._cache.set(t.index, mkEl(t.tag, t.attrs, close > t.end ? decode(el._html.slice(t.end, close)) : '')); }
             return el._cache.get(t.index);
           });
         }
@@ -103,7 +107,7 @@ function mkDom(text) {
     return el;
   }
   const body = text.slice(text.indexOf('<body>'));
-  for (const t of tagsOf(body)) if (t.attrs.id || 'data-tab' in t.attrs || 'data-body' in t.attrs) { const close = body.indexOf('<', t.end); statics.push(mkEl(t.tag, t.attrs, close > t.end ? body.slice(t.end, close) : '')); }
+  for (const t of tagsOf(body)) if (t.attrs.id || 'data-tab' in t.attrs || 'data-body' in t.attrs || 'data-keys' in t.attrs) { const close = body.indexOf('<', t.end); statics.push(mkEl(t.tag, t.attrs, close > t.end ? body.slice(t.end, close) : '')); }
   document.getElementById = id => statics.find(e => e.id === id) || null;
   document.querySelectorAll = sel => statics.filter(e => matches({ tag: e.tagName.toLowerCase(), attrs: Object.assign({}, e.attrs, { class: e.className }) }, lastPart(sel)));
   document.createElement = tag => mkEl(tag, {});
@@ -119,14 +123,15 @@ function page(o) {
   o = o || {};
   const store = Object.assign({}, o.store || {});
   const document = mkDom(html);
-  const sockets = [], loaded = [];
+  const sockets = [], loaded = [], winListeners = {};
   function WebSocket(url) { if (!/^wss?:\/\/[^\s]+$/.test(url)) throw new SyntaxError('not a socket URL: ' + url); this.url = url; this.readyState = 0; this.sent = []; sockets.push(this); }
   WebSocket.prototype.send = function (s) { this.sent.push(JSON.parse(s)); };
   WebSocket.prototype.close = function () { this.readyState = 3; };
   const c = {
     console: { log() { }, warn() { }, error() { } }, Math, JSON, performance, setTimeout, clearTimeout, setInterval() { return 1; }, clearInterval() { },
     requestAnimationFrame() { }, Image: function () { }, WebSocket, navigator: {},
-    addEventListener(t, fn) { if (t === 'DOMContentLoaded') loaded.push(fn); }, removeEventListener() { },
+    addEventListener(t, fn) { if (t === 'DOMContentLoaded') loaded.push(fn); else (winListeners[t] = winListeners[t] || []).push(fn); },
+    removeEventListener(t, fn) { const l = winListeners[t] || []; const i = l.indexOf(fn); if (i >= 0) l.splice(i, 1); },
     localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } },
     location: { protocol: 'http:', host: 'play.example:8765', origin: 'http://play.example:8765', pathname: '/', search: o.search || '' },
     history: { replaceState(a, b, u) { c.__replaced = u; } },
@@ -141,7 +146,9 @@ function page(o) {
   const $ = id => document.getElementById(id);
   const shown = () => document.querySelectorAll('.panel').filter(p => p.style.display !== 'none').map(p => p.id);
   const R = src => vm.runInContext('(() => {' + src + '})()', c);
-  return { c, document, $, store, sockets, shown, R, open(i) { const s = sockets[i == null ? sockets.length - 1 : i]; s.readyState = 1; s.onopen(); return s; }, drop(i) { const s = sockets[i == null ? sockets.length - 1 : i]; if (s.onerror) s.onerror(); s.onclose(); } };
+  // A key pressed at the window: what the Controls tab's one-shot capture listens for.
+  const key = (k, mods) => { const l = (winListeners.keydown || []).slice(); for (const fn of l) fn(Object.assign({ key: k, ctrlKey: false, altKey: false, metaKey: false, shiftKey: false, preventDefault() { }, stopPropagation() { } }, mods || {})); return l.length; };
+  return { c, document, $, store, sockets, shown, R, key, listening: () => (winListeners.keydown || []).length, open(i) { const s = sockets[i == null ? sockets.length - 1 : i]; s.readyState = 1; s.onopen(); return s; }, drop(i) { const s = sockets[i == null ? sockets.length - 1 : i]; if (s.onerror) s.onerror(); s.onclose(); } };
 }
 const named = { bw_net: J({ name: 'Zac', url: '', race: 'R' }), bw_intro: '1' };
 
@@ -311,6 +318,62 @@ const named = { bw_net: J({ name: 'Zac', url: '', race: 'R' }), bw_intro: '1' };
   ok(p.R('return UI.gridKeys;') === false && p.store.bw_hotkeys === 'bw', 'STANDARD puts each command back on its own letter', p.store.bw_hotkeys);
   const item = p.R('UI.menu = "settings"; const t = UI.menuItems().items.map(i => i[0]).find(s => /card keys/.test(s)); UI.menu = null; return t;');
   ok(item === 'Command card keys: Standard', 'the in-game settings screen calls it what the Controls tab calls it', item);
+}
+
+// ---- 7. EVERY COMMAND CARD KEY, IN THE CONTROLS TAB ----
+{
+  const p = page({ store: named });
+  p.$('settingsBtn').click();
+  p.document.querySelectorAll('[data-tab]').find(a => a.dataset.tab === 'keys').click();
+  const view = v => p.document.querySelectorAll('[data-keys]').find(a => a.dataset.keys === v).click();
+  view('T');
+  const list = p.$('cardList'), edit = p.$('cardEdit');
+  const cards = list.querySelectorAll('[data-card]').map(a => a.dataset.card);
+  ok(p.$('cardKeys').style.display === '' && p.$('bindList').style.display === 'none' && cards[0] === 'unit:scv' && cards.includes('bld:barracks') && cards.includes('menu:T:adv') && /Units[\s\S]*Buildings[\s\S]*Build menus/.test(list.innerHTML),
+    'TERRAN lists every Terran card -- units, buildings, build menus -- in place of the Interface keys', J({ n: cards.length, first: cards[0] }));
+  ok(cards.length === p.R('return UI.cardCatalog().T.length;'), 'one entry per card in the catalogue test/hotkeys.js holds against the real cards', cards.length);
+  list.querySelectorAll('[data-card]').find(a => a.dataset.card === 'bld:barracks').click();
+  const cell = cmd => edit.querySelectorAll('[data-cmd]').find(b => b.dataset.cmd === cmd);
+  ok(/class="ckTitle">Barracks</.test(edit.innerHTML) && cell('unit:marine') && cell('unit:marine').textContent === 'M' && (edit.innerHTML.match(/class="ckCell/g) || []).length === 12, 'a card is drawn as its 4 x 3 grid with the key on every button: Marine on M', edit.innerHTML.slice(0, 160));
+  cell('unit:marine').click();
+  ok(p.listening() === 1 && cell('unit:marine').textContent === 'press', 'clicking a key waits for the next one, with one listener', p.listening());
+  p.key('5');
+  ok(p.R('return UI.cardKeyFor("unit:marine", 0, "M");') === 'M' && p.listening() === 0 && cell('unit:marine').textContent === 'A to Z', 'a key that is not a letter is refused, says so, and the listener is gone', J({ k: p.R('return UI.cardKeyFor("unit:marine", 0, "M");'), listening: p.listening() }));
+  cell('unit:marine').click(); p.key('q');
+  ok(p.R('return UI.cardKeyFor("unit:marine", 0, "M");') === 'Q' && JSON.parse(p.store.bw_cardkeys).standard['unit:marine'] === 'Q' && cell('unit:marine').textContent === 'Q' && /ckCell mine/.test(edit.innerHTML) && /data-reset="unit:marine"/.test(edit.innerHTML) && p.listening() === 0,
+    'pressing Q puts the Marine on Q, remembered, marked as changed with a way back', J({ stored: p.store.bw_cardkeys }));
+  cell('unit:firebat').click(); p.key('d');
+  const marauder = cell('unit:marauder');
+  ok(/ckCell mine clash/.test(edit.innerHTML) && /D is on Firebat and Marauder: D presses the first of them\./.test(edit.innerHTML) && /data-card="bld:barracks" class="on clash"/.test(list.innerHTML) && marauder,
+    'a letter now on two buttons turns both red, says which, and marks the card in the list', (edit.innerHTML.match(/class="ckMsg[^<]*/) || [''])[0]);
+  const move = p.R('UI.resetCardKeys(); return UI.cardUses()["cmd:move"];');
+  list.querySelectorAll('[data-card]').find(a => a.dataset.card === 'unit:marine').click();
+  ok(new RegExp('Move is on ' + move + ' cards; a key set here is its key on all of them').test(edit.innerHTML), 'a shared command says on how many cards its key changes', move);
+  cell('cmd:move').click(); p.key('Delete');
+  ok(p.R('return UI.cardKeyFor("cmd:move", 0, "M");') === '' && cell('cmd:move').textContent === '—', 'Delete leaves the command with no key, drawn as a dash', cell('cmd:move').textContent);
+  edit.querySelectorAll('[data-reset]').find(a => a.dataset.reset === 'cmd:move').click();
+  ok(p.R('return UI.cardKeyFor("cmd:move", 0, "M");') === 'M' && !/data-reset=/.test(edit.innerHTML), 'the arrow puts that one key back', edit.innerHTML.slice(0, 80));
+  cell('cmd:stop').click(); p.key('x'); cell('cmd:hold').click(); p.key('y');
+  edit.querySelector('#cardReset').click();
+  ok(p.R('return [UI.cardKeyFor("cmd:stop", 1, "S"), UI.cardKeyFor("cmd:hold", 4, "H")].join();') === 'S,H', 'RESET THIS CARD puts every key on the card back', p.R('return JSON.stringify(UI.cardKeys());'));
+  cell('cmd:move').click(); p.key('Escape');
+  ok(p.listening() === 0 && cell('cmd:move').textContent === 'M', 'Escape cancels without changing anything');
+  p.$('keyGrid').click();
+  ok(cell('cmd:move').textContent === 'Q' && cell('cmd:stop').textContent === 'W', 'switching to Grid redraws the card with the slots\' letters', cell('cmd:move').textContent);
+  p.$('keyStd').click();
+  p.R('UI.setBinding("idleWorker", "s");');
+  view('T'); list.querySelectorAll('[data-card]').find(a => a.dataset.card === 'unit:marine').click();
+  ok(/class="ckCell clash"/.test(edit.innerHTML) && /S is Select idle worker \(Interface\), which is read first: Stop will not answer it\./.test(edit.innerHTML), 'a letter an Interface key holds is red on the card, and says the card\'s button will not answer it', (edit.innerHTML.match(/class="ckMsg[^<]*/) || [''])[0]);
+  view('ui');
+  const idle = p.$('bindList').kids.find(k => k.kids && k.kids[0] && k.kids[0].textContent === 'Select idle worker');
+  ok(p.$('bindList').style.display === '' && p.$('cardKeys').style.display === 'none' && idle && /clash/.test(idle.className) && /does not answer it/.test(idle.title), '...and INTERFACE marks the binding that takes a letter from the cards', J(idle && { c: idle.className, t: idle.title }));
+  p.R('UI.setCardKey("unit:marine", "Q"); UI.setGridKeys(true);');
+  p.$('bindReset').click();
+  ok(p.R('return UI.gridKeys === false && UI.key("idleWorker") === "," && UI.cardKeyFor("unit:marine", 0, "M") === "M";') === true && p.store.bw_cardkeys === undefined, 'RESET ALL puts back the Interface keys, every card key and the Standard layout');
+  view('T'); cell('cmd:move') || list.querySelectorAll('[data-card]')[0].click();
+  const anyCell = edit.querySelectorAll('[data-cmd]')[0]; anyCell.click();
+  p.$('settingsBack').click();
+  ok(p.listening() === 0, 'leaving Settings while a key is being waited for stops waiting', p.listening());
 }
 
 console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');

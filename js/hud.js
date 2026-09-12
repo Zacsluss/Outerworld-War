@@ -908,7 +908,11 @@ Object.assign(UI, {
       else if (gl) HUD.glyph(ctx, gl, bx + cr.bw / 2, by + Math.round(18 * cr.k), Math.round(14 * cr.k), '#cfd6de');
       else { ctx.save(); ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(bx + cr.bw / 2, by + Math.round(18 * cr.k), 1, bx + cr.bw / 2, by + Math.round(18 * cr.k), 14 * cr.k); g.addColorStop(0, b.energy ? 'rgba(200,120,255,0.9)' : 'rgba(255,200,80,0.9)'); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(bx + cr.bw / 2, by + Math.round(18 * cr.k), 14 * cr.k, 0, 7); ctx.fill(); ctx.restore(); }
       ctx.restore();
-      HUD.hotLabel(ctx, b.label, this.gridKeys ? '' : b.hk, bx, by + cr.bh - Math.round(10 * cr.k), cr.bw, b.dim ? '#7a828c' : '#e6eaf0', Math.max(8, Math.round(10 * cr.k))); if (this.gridKeys && b.hk !== 'Escape') { ctx.font = HUD.font(9); ctx.fillStyle = '#ffe45a'; ctx.fillText(b.hk, bx + 3, by + 10); }
+      // The key is lit inside the name when the name has that letter and the layout is Standard. Otherwise -- Grid, or a
+      // letter the player chose that the name does not contain (Settings, Controls) -- it is written in the corner, so a
+      // key is never one the player cannot see.
+      const inName = !this.gridKeys && b.hk && b.hk.length === 1 && b.label.toUpperCase().includes(b.hk.toUpperCase());
+      HUD.hotLabel(ctx, b.label, inName ? b.hk : '', bx, by + cr.bh - Math.round(10 * cr.k), cr.bw, b.dim ? '#7a828c' : '#e6eaf0', Math.max(8, Math.round(10 * cr.k))); if (!inName && b.hk && b.hk.length === 1) { ctx.font = HUD.font(9); ctx.fillStyle = '#ffe45a'; ctx.fillText(b.hk, bx + 3, by + 10); }
       if (b.hk === 'Escape') { ctx.font = HUD.font(8); ctx.fillStyle = '#ffe45a'; ctx.fillText('ESC', bx + cr.bw - 20, by + 10); }
       // FIXLIST-M15 A2: `|| b.abil` is the whole of it. The tooltip only appeared for a button with a
       // COST or an ENERGY price, so Burrow, Siege Mode, Stim, Blink, Unload and every merge -- which
@@ -1169,7 +1173,13 @@ Object.assign(UI, {
     ctx.restore();
   },
   drawHelp(ctx) {
-    const lines = ['CONTROLS', 'Left click / drag: select    Right click: smart command    Shift: queue / add to selection', 'Ctrl+click or double-click: select all of a type on screen', 'M move   S stop   A attack-move   P patrol   H hold   B build   V advanced build', 'Ctrl+0..9 assign group   0..9 select group   Shift+# add   F2 F4 F6 F7 (+Shift) camera saves   F8 load autosave', 'Esc: cancel / cancel construction or last queued item    Space: jump to last alert', 'Arrow keys or screen edge: scroll    Minimap: click to move, right-click to command', '+ / -: game speed    F9: pause    F10: menu    F1: toggle this help', 'Unit-specific hotkeys are the yellow letters on the command card.'];
+    // The keys as they are set (Settings, Controls), not as they shipped: a Marine's card for the orders, an SCV's for building.
+    const card = (id, slot) => UI.keyName(UI.cardKeyFor('cmd:' + id, slot, UI.CARD_COMMANDS[id][1])) || '(none)', bind = id => UI.keyName(UI.key(id)) || '(unbound)';
+    const lines = ['CONTROLS', 'Left click / drag: select    Right click: smart command    Shift: queue / add to selection', 'Ctrl+click or double-click: select all of a type on screen',
+      card('move', 0) + ' move   ' + card('stop', 1) + ' stop   ' + card('attack', 2) + ' attack-move   ' + card('patrol', 3) + ' patrol   ' + card('hold', 4) + ' hold   ' + card('build', 6) + ' build   ' + card('buildAdv', 7) + ' advanced build',
+      'Ctrl+0..9 assign group   0..9 select group   Shift+# add   F2 F4 F6 F7 (+Shift) camera saves   F8 load autosave', 'Esc: cancel / cancel construction or last queued item    ' + bind('lastAlert') + ': jump to last alert',
+      'Arrow keys or screen edge: scroll    Minimap: click to move, right-click to command', bind('speedUp') + ' / ' + bind('speedDown') + ': game speed    F9: pause    ' + bind('pause') + ': menu    ' + bind('help') + ': toggle this help',
+      'Unit-specific hotkeys are the yellow letters on the command card. Every key is changed in Settings, Controls.'];
     HUD.bevel(ctx, Render.W / 2 - 340, 60, 680, 20 * lines.length + 24, true, 'rgba(10,12,16,0.94)'); lines.forEach((l, i) => HUD.text(ctx, l, Render.W / 2 - 326, 86 + i * 20, i ? '#d0d6de' : '#ffe45a', 13, i === 0));
   },
   drawMenu() {

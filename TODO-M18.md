@@ -6,10 +6,37 @@ at the bottom with their commits. **Two are open** (4 — not reproduced; 11 —
 each has partial, **ungated, unverified** work sitting in the locked worktrees — see "The three worktrees"
 below before you start any of them.
 
-The gate is **83 suites** (`node test/all.js`, ~5 min); at the end of the seventh session it is 2 red, `aistyles` and
+The gate is **85 suites** (`node test/all.js`, ~5 min); at the end of the eighth session it is 2 red, `aistyles` and
 `queens`, both the AI pacing that waits on 7b (see `HANDOFF-M18.md`). It was last all green at `136b1b0`. Every rule in `CLAUDE.md`
 applies to every item here: measure before fixing, a negative control that goes cleanly RED, `tools/patch.js`
 for edits, and the gate green before the commit.
+
+---
+
+## The eighth session's list (the user's third message, 2026-09-12)
+
+*"I feel like you did absolutely no research into what this menu system and lobby system should look like."* With
+screenshots of the old Single Player, Skirmish, Multiplayer, main menu and Settings screens. Five items; all DONE, in
+two commits (`b1639b0` menus, and the command-card keys commit after it). The research is `RESEARCH-LOBBY.md`
+sections 5 and 6 (OpenRA's source and StarCraft II's editor); by hand, `PLAYTEST-M18.md` items 88-92.
+
+- **1. Single Player shows only its doors; START only in the skirmish lobby; that lobby looks exactly like the
+  multiplayer lobby.** DONE -- Single Player: Skirmish Setup, Campaign, Load Saved Game, Watch Replay, Continue
+  Autosave, Map Editor. Skirmish Setup IS the multiplayer lobby's markup (`Net.roomHtml`/`Net.bindRoom` with `local`),
+  drawn from a room `UI.Skirmish` holds and answers like the relay; without READY, latency, spectators, lock, privacy,
+  name, code and invite; QUIT reads BACK; a Seed row. START makes exactly `UI.skirmishOptions` of the same settings.
+  **Deliberately kept, as OpenRA keeps it:** the chat box (it logs the changes). PLAYTEST 89.
+- **2. The name asked for when the game first opens; MULTIPLAYER = CONNECT.** DONE -- a Welcome prompt before the main
+  menu (versioned, so players from before it are asked once); MULTIPLAYER connects and shows the list; the server form
+  only on failure, naming the server, with TRY AGAIN. PLAYTEST 88 and 90.
+- **3. No tagline or control hints on the main menu.** DONE. PLAYTEST 88.
+- **4. The Codex in its own Settings tab.** DONE. PLAYTEST 91.
+- **5. The hotkeys dropdown removed; hotkeys in Controls; every one customizable.** DONE -- the Controls tab is the keys:
+  Standard / Grid, Interface keys, and a StarCraft II-style editor for every command card of every race (138 cards, held
+  against the real cards by `test/hotkeys.js`), one key per command, clashes shown in red. PLAYTEST 91-92.
+
+Tests: `test/menus.js` (79), `test/hotkeys.js` (31); 66 negative controls in `.claude/review/menus/`. Gate 85 suites, the
+same two AI-pacing reds.
 
 ---
 

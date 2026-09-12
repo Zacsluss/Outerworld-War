@@ -197,6 +197,32 @@
   .bindList .row label { flex: 1; width: auto; font-size: 12px; letter-spacing: 0; text-transform: none; color: #cfd6e0; }
   .bindList button.keyBtn { flex: none; width: 118px; height: 26px; line-height: 24px; margin: 0; font-size: 11px; letter-spacing: 1px; }
   .keysNote { margin-top: 8px; font-size: 10px; color: #6e7787; }
+  .bindList .row.clash label { color: #ff8a70; }
+  /* The command card editor (Settings, Controls, a race): the cards on the left, the chosen one as its 4 x 3 grid. */
+  #settingsPanel.panel.wide { width: 720px; }
+  .subTabs { margin: 2px 0 8px; } .subTabs a { padding: 5px 12px; font-size: 10px; }
+  .cardKeys { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 14px; align-items: start; }
+  .cardList { max-height: 400px; overflow: auto; border: 1px solid #2c2416; background: #0b0e13; padding: 2px 0 6px; }
+  .cardList, .bindList, .lbList, .lbChat { scrollbar-color: #4d4128 #0b0e13; }
+  .ckGroup { padding: 8px 10px 3px; font-size: 9px; letter-spacing: 2px; color: #d8bd76; text-transform: uppercase; }
+  .cardList a { display: block; padding: 3px 12px; font-size: 12px; color: #b8c2cf; text-decoration: none; }
+  .cardList a:hover { background: #1b2230; color: #e8d9a6; }
+  .cardList a.on { background: #22304a; color: #fff3cc; box-shadow: inset 3px 0 0 #d8bd76; }
+  .cardList a.clash { color: #ff8a70; }
+  .ckTitle { margin: 0 0 6px; font-size: 13px; font-weight: bold; letter-spacing: 1px; color: #e8d9a6; }
+  .ckPage { margin: 6px 0 3px; font-size: 9px; letter-spacing: 1.5px; color: #8f98a8; text-transform: uppercase; }
+  .ckGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+  .ckCell { position: relative; min-height: 60px; padding: 4px 3px; border: 1px solid #2c2416; background: #0c1016; display: flex; flex-direction: column; align-items: center; justify-content: space-between; box-sizing: border-box; }
+  .ckCell.ckEmpty { background: #090b0f; border-color: #161a22; }
+  .ckLabel { font-size: 10px; line-height: 1.2; color: #b8c2cf; text-align: center; overflow-wrap: anywhere; }
+  .ckCell button.ckKey { display: block; width: 46px; height: 26px; line-height: 24px; margin: 3px 0 0; padding: 0; font-size: 14px; letter-spacing: 0; }
+  .ckCell button.ckKey.wait { width: auto; padding: 0 8px; font-size: 10px; }
+  .ckCell span.ckKey { margin-top: 3px; font-size: 11px; color: #6e7787; }
+  .ckCell.mine button.ckKey { color: #ffe45a; }
+  .ckCell.clash { border-color: #e0664a; box-shadow: inset 0 0 0 1px #7a2a1a; }
+  .ckCell.clash button.ckKey { color: #ff8a70; }
+  .ckReset { position: absolute; top: 1px; right: 4px; font-size: 12px; color: #d8bd76; text-decoration: none; }
+  .ckMsg { margin: 8px 0 6px; font-size: 11px; line-height: 1.5; color: #6e7787; } .ckMsg.clash { color: #ff8a70; }
 </style>
 </head>
 <body>
@@ -298,8 +324,10 @@
     </div>
     <div class="tabBody" data-body="keys" style="display:none">
       <div class="keysTop"><span class="keysLabel">Command card keys</span><span class="seg"><button id="keyStd" class="small" title="Each command on its own letter: M move, A attack, B build">Standard</button><button id="keyGrid" class="small" title="Keys by position on the card: QWER, ASDF, ZXCV">Grid</button></span><span class="grow"></span><button id="bindReset" class="small inline">Reset all</button></div>
+      <div class="tabs subTabs" id="keyTabs"><a href="#" data-keys="ui" class="on">Interface</a><a href="#" data-keys="T">Terran</a><a href="#" data-keys="Z">Zerg</a><a href="#" data-keys="P">Protoss</a></div>
       <div id="bindList" class="bindList"></div>
-      <div class="keysNote">Click a key, then press the new one. Escape cancels; Delete clears it.</div>
+      <div id="cardKeys" class="cardKeys" style="display:none"><div id="cardList" class="cardList"></div><div id="cardEdit" class="cardEdit"></div></div>
+      <div class="keysNote">Click a key, then press the new one. Escape cancels; Delete clears it. A command card key is a letter, and a command on many cards (Move, Set Rally) has one key on all of them.</div>
     </div>
     <div class="tabBody" data-body="codex" style="display:none">
       <div class="sub">Every unit, building, ability and upgrade in the game, with its numbers.</div>

@@ -90,6 +90,7 @@ const TESTS = [
   { name: 'spectate', args: ['spectate.js'], what: 'a spectator watches in lockstep, cannot act, stalls nobody, and can join a running game' },
   { name: 'settings', args: ['settings.js'], what: 'settings tabs: HUD size, scroll speed, edge scroll and volume, applied at once and remembered' },
   { name: 'menus', args: ['menus.js'], what: 'the menus: three doors, a name asked once, MULTIPLAYER connects, the skirmish lobby is the multiplayer lobby, the Codex and Controls tabs' },
+  { name: 'hotkeys', args: ['hotkeys.js'], what: 'every command card key belongs to the player: the editor shows the real cards, one key per command, per layout, remembered, clashes named' },
   { name: 'lobby', args: ['lobby.js'], what: 'ready means ready, latency, system lines, teams, seats per map, rules, the browser and the invite link' },
   { name: 'shots', args: ['shots.js'], what: 'every weapon has its own shot, the races are disjoint, and every kind actually draws' },
   { name: 'wavetarget', args: ['wavetarget.js'], what: 'an attack wave scores a defended main above a bare expansion, and finishes the base it is in' },

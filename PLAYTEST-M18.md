@@ -747,7 +747,40 @@ and that lobby "should look exactly the same as the Multiplayer Lobby".)*
 - **Codex → OPEN THE CODEX** opens the codex; Escape brings back Settings, still on that tab.
 - **The Game tab has no Hotkeys dropdown** any more.
 - **Controls is the keys themselves** (there is no button to a separate screen): **Command card keys: Standard | Grid**
-  at the top, then every rebindable key under Selection, Camera and Interface. Click a key, press the new one; Escape
-  cancels, Delete clears. **Reset all** puts every key and the Standard layout back.
+  at the top, then four views -- **Interface**, where every global key is listed under Selection, Camera and Interface
+  (click a key, press the new one; Escape cancels, Delete clears), and **Terran, Zerg, Protoss**, the command cards
+  (item 92). **Reset all** puts every key, every command card key and the Standard layout back.
 - **Grid** puts the command card on QWER / ASDF / ZXCV (select an SCV in a game: Move is Q). It is remembered, and
   **F10 → Settings** in a game calls it "Command card keys".
+
+---
+
+## 92. Every command card key is yours to change
+
+*(Eighth session, the user's item 5: "All controls in Hotkeys should be customizable". `RESEARCH-LOBBY.md` section 5.)*
+
+**How to reach it.** Main menu → **Settings** → **Controls** → **Terran** (or Zerg, Protoss).
+
+**What to look for.**
+- **On the left, every card of that race**: Units (the worker first), Buildings (a Terran building that can lift has a
+  second "(flying)" card with Land), and Build menus (the worker's Build and Build Advanced).
+- **Click Barracks**: its command card is drawn as the game draws it, four across and three down -- Marine M, Firebat F,
+  Medic C, Ghost G, Marauder D, Reaper E, the research, Reactor X, Set Rally R, Lift Off L. The Starport's card has two
+  pages, shown one under the other.
+- **Click the M under Marine, press Q.** The key turns gold and a small ↺ appears (click it to put M back). Start a
+  skirmish as Terran, build a Barracks, select it: **Q trains a Marine and M does nothing.** The button shows the Q in
+  its corner, since "Marine" has no Q in it.
+- **A command on many cards is one key.** Hover Move on any unit: "Move is on 72 cards". Put Move on J: every unit and
+  worker now moves on J -- and F1's help says "J move".
+- **Clashes turn red and say why.** On the Barracks, put Firebat on D: Firebat and Marauder both go red, the line under
+  the card says "D is on Firebat and Marauder: D presses the first of them", and Barracks turns red in the list.
+  Change an Interface key to a letter (Interface → Select idle worker → S): a Marine's Stop goes red, "S is Select idle
+  worker (Interface), which is read first: Stop will not answer it."
+- **Only letters.** Press 5 or F2 on a key: it says "A to Z" and nothing changes. **Delete** leaves a button with no key
+  (a dash); it can still be clicked.
+- **Grid is its own set.** Switch to Grid: the card shows Q W E R / A S D F / Z X C V by position, and a key you set in
+  Standard is not carried over. Switch back: your Standard keys are still there.
+- **Reset this card** puts that card's keys back (shared commands such as Move included, everywhere); **Reset all**
+  puts back every key, every card key, and the Standard layout.
+- **Remembered**: reload the page; the keys you set are still set.
+- **In a game, F10 → Settings → Command card keys** switches Standard and Grid, as before.
