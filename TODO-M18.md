@@ -2,7 +2,7 @@
 
 Written when the fifth session paused for the night (2026-09-12). `HANDOFF-M17.md` has the state, the traps
 and the kickoff prompt; this file is the open list and nothing else. Four items are closed and struck through
-at the bottom with their commits. **Five are open** (3, 4, 5, 6, 11, plus the gated economy pair 7a/7b), and
+at the bottom with their commits. **Four are open** (3, 4, 6, 11, plus the gated economy pair 7a/7b), and
 each has partial, **ungated, unverified** work sitting in the locked worktrees — see "The three worktrees"
 below before you start any of them.
 
@@ -34,7 +34,8 @@ has not advanced for N frames and naming the building, the tech and the frame it
 confirmed: a lifted building, a morphed one (Lair/Hive, Greater Spire), one that changed owner, a
 cancelled-and-requeued slot. **Do not guess — the probe must name the case.**
 
-### 5. The HUD is far too small and should be doubled
+### 5 (DONE). The HUD is far too small and should be doubled
+*Kept for the record; what was measured and what shipped is in Closed at the foot of this file.*
 `js/hud.js` draws the console band, minimap, selection strip, command card and top bar on the canvas. Measure
 what sets its size today (fixed pixels? viewport fraction? device pixel ratio?) at 1280x720, 1920x1080 and
 2560x1440 before changing anything — the user is likely on a high-resolution display where a fixed-pixel HUD
@@ -164,5 +165,18 @@ then `git branch -d <branch>`.
   locked, so it is stated as a fact), a colour *picker* (a chosen colour must be read in `G.init` or
   `Player`, both stamped — TODO said not to move the stamp for paint, so the lobby SHOWS each seat's colour
   instead), and a map author line (nothing records one).
+- ~~**5. The HUD is far too small.**~~ **Measured first**: the band was `clamp(Render.H * 0.26, 140, 196)`
+  and the 0.26 is dead above a 754 px window, so every viewport from 1366x768 up got the same **196 px** --
+  26% of a 720p screen, 18.1% of 1080p, 13.6% of 1440p, **9.1% of 4K** -- and the minimap (174), the card
+  button (53) and the selection tile all derive from it, so they were pinned too. The CLAMP CEILING was the
+  cause, not the fraction. Now `HUD_SCALE = 2` in `js/ui.js`: the console draws under one transform, in the
+  console units it was already written in, so the whole thing doubles from one constant. `HUD_MAX_FRAC`
+  (0.42) keeps a short window playable and `hudK` falls with it; below ~330 px of height the console is
+  exactly what it always was. Hotspots are converted back to screen pixels by the same factor, icons are
+  rasterised at the size they are drawn at, and the selection strip's shrink floor is 22 SCREEN pixels (it
+  was 22 console units, which cost ten of forty tiles at 1024x768 -- found by measuring in the page).
+  `test/qol.js` 33 checks, eight negative controls in `.claude/review/hud-controls.js`, `PLAYTEST-M18.md`
+  item 66. Not scaled, on purpose: the mouse cursor, and the F10/F1/codex dialogs, which are not the
+  console band.
 - ~~**7. The economy.**~~ Measured and reverted — see the gated section above. Not closed as "done"; closed as
   "answered, and the answer is that it needs the AI re-tuned first".

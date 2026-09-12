@@ -53,8 +53,45 @@ const Sound = {
   nuke() { this.alert('nuke'); }, boom() { this.tone(40, 1.2, 'sawtooth', 0.15, -20); },
 };
 
+// THE HUD'S SIZE IS ONE NUMBER (TODO-M18 item 5, "the HUD is far too small and should be doubled").
+//
+// MEASURED FIRST, in the page, before anything was touched (.claude/review/hud-measure.js):
+//
+//   viewport      1280x720  1366x768  1600x900  1920x1080  2560x1440  3840x2160
+//   console band     187       196       196        196        196        196
+//   of the window   26.0%     25.5%     21.8%      18.1%      13.6%       9.1%
+//   minimap side     165       174       174        174        174        174
+//   card button       51        53        53         53         53         53
+//
+// The 0.26 fraction is DEAD above a 754 px window: every viewport from 1366x768 up got the same 196 px,
+// because the clamp CEILING is what decides it, not the fraction. So the taller the display the smaller
+// the HUD reads -- and the minimap, the command card and the selection tile are all derived from the
+// band, so they are pinned with it. That is the whole of the complaint and the whole of the cause.
+//
+// HUD_SCALE is the one knob. Everything on the console is drawn in CONSOLE UNITS -- the coordinates the
+// HUD has always used, in which the band is consoleBase tall -- and UI.drawConsole runs that entire
+// pass under scale(hudK). Doubling the HUD is therefore this constant and NOT a hundred edited literals:
+// every font, gap, icon, tile and bar inside is already expressed in console units. Hotspots are
+// collected in console units and converted back, which is what keeps every click box on the thing it
+// draws (test/qol.js pins exactly that with forty selected units).
+//
+// HUD_MAX_FRAC is the guard for a short window: the band never takes more than this much of the height,
+// and hudK falls with it, so a 720p window gets a 302 px band at k 1.61 rather than a 374 px one drawn
+// half off the plate. It can never go BELOW the unscaled band either, so hudK is never less than 1 and
+// a window too short even for today's console behaves exactly as it does today.
+//
+// Set HUD_SCALE to 1 and every number in the table above comes back unchanged.
+const HUD_SCALE = 2, HUD_MAX_FRAC = 0.42;
 const UI = {
-  get consoleH() { return Math.round(clamp(Render.H * 0.26, 140, 196)); }, // a fixed height left no map at all in a short window
+  // What the band would be unscaled. A fixed height left no map at all in a short window.
+  get consoleBase() { return Math.round(clamp(Render.H * 0.26, 140, 196)); },
+  get consoleH() { const b = this.consoleBase; return Math.round(Math.max(b, Math.min(b * HUD_SCALE, Render.H * HUD_MAX_FRAC))); },
+  // The factor the band actually achieved, and therefore the scale its draw pass runs under. Never
+  // below 1, because consoleH is never below consoleBase.
+  get hudK() { return this.consoleH / this.consoleBase; },
+  // The screen in CONSOLE UNITS, which is what everything inside the console's draw pass is placed in.
+  get conW() { return Render.W / this.hudK; },
+  get conH() { return Render.H / this.hudK; },
   selection: [], subgroup: 0, idleIdx: 0, groups: {}, hover: null, mouse: { x: 0, y: 0, down: false, wx: 0, wy: 0, inside: false }, drag: null, dragging: false, pending: null, placing: null, menu: null, markers: [], pings: [], keys: {}, lastClick: 0, lastClickUnit: null, msgLog: [], camSaves: {}, showHelp: false, cardButtons: [], lastAlertPos: null, speedIdx: 6, accum: 0, lastT: 0, running: false, fps: 0, frames: 0, fpsT: 0,
   SPEEDS: [0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1, 2, 4, 8], SPEED_NAMES: ['Slowest', 'Slower', 'Slow', 'Normal', 'Fast', 'Faster', 'Fastest', '2x', '4x', '8x'], mode: 'play', viewAll: false, chat: null, loading: null, prodOverlay: false, replayData: null, seeking: false, snaps: [], SNAP_EVERY: 24 * 30,
   // One speed index for both the simulation step and the draw interpolation: in a network game the host's
@@ -1186,8 +1223,8 @@ const UI = {
     const cr = this.cardRect();
     if (button === 2) {
       for (const b of this.currentCard()) {
-        const gap = cr.gap !== undefined ? cr.gap : 4;
-        const bx = cr.x + 4 + (b.slot % this.CARD_COLS) * (cr.bw + gap), by = cr.y + 4 + Math.floor(b.slot / this.CARD_COLS) * (cr.bh + gap);
+        const gap = cr.gap !== undefined ? cr.gap : 4, pad = cr.pad !== undefined ? cr.pad : 4;   // pad: the card's inner margin, which scales with the HUD (TODO-M18 item 5)
+        const bx = cr.x + pad + (b.slot % this.CARD_COLS) * (cr.bw + gap), by = cr.y + pad + Math.floor(b.slot / this.CARD_COLS) * (cr.bh + gap);
         if (x < bx || x >= bx + cr.bw || y < by || y >= by + cr.bh) continue;
         const id = b.abil; const ab = id && DATA.abilities[id];
         if (!ab || !ab.autocast) return;
@@ -1203,7 +1240,7 @@ const UI = {
       return;
     }
     if (button !== 0) return;
-    for (const b of this.currentCard()) { const gap = cr.gap !== undefined ? cr.gap : 4; const bx = cr.x + 4 + (b.slot % this.CARD_COLS) * (cr.bw + gap), by = cr.y + 4 + Math.floor(b.slot / this.CARD_COLS) * (cr.bh + gap); if (x >= bx && x < bx + cr.bw && y >= by && y < by + cr.bh) { this.press(b); return; } }
+    for (const b of this.currentCard()) { const gap = cr.gap !== undefined ? cr.gap : 4, pad = cr.pad !== undefined ? cr.pad : 4; const bx = cr.x + pad + (b.slot % this.CARD_COLS) * (cr.bw + gap), by = cr.y + pad + Math.floor(b.slot / this.CARD_COLS) * (cr.bh + gap); if (x >= bx && x < bx + cr.bw && y >= by && y < by + cr.bh) { this.press(b); return; } }
     // info panel: selection wireframes / queue / cargo
     for (const h of this.hotspots) if (x >= h.x && x < h.x + h.w && y >= h.y && y < h.y + h.h) { h.fn(); Sound.click(); return; }
   },

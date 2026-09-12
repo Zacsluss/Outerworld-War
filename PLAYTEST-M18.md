@@ -92,3 +92,52 @@ screen, so a player is never left wondering:
 **Turning it off.** Start the relay with `BW_COUNTDOWN=0` and START starts the game immediately, exactly
 as it did before. `BW_COUNTDOWN=10` is the maximum. The two socket suites (`test/net.js`,
 `test/net_many.js`) set it to 0 because they test lockstep, not menus.
+
+---
+
+## 66. The HUD is twice the size
+
+*(TODO-M18 item 5.)*
+
+**How to reach it.** Start any game — SINGLE PLAYER → START GAME is enough. The console is the whole
+bottom band.
+
+**What to look for:**
+
+1. **It is simply twice as big.** The minimap, the unit panel, the selection tiles, the command card and
+   its labels, the resource bar and clock at the top — all of it. On a 1920x1080 window the band goes
+   from 196 px to 392; on 2560x1440, the same. Before this, *every* window from 1366x768 upwards got the
+   same 196 px band, which is why it read smaller the better your monitor was: 26% of a 720p screen, 18%
+   of 1080p, 13.6% of 1440p, 9.1% of 4K. That was measured before anything was changed, and the cause was
+   the clamp *ceiling* on the band's height, not the 26% fraction — the fraction never got a chance to
+   apply above a 754 px window.
+2. **The command card is readable.** "Build Advanced" fits on its button instead of being squeezed.
+   Hover a button: the tooltip is bigger too.
+3. **Everything still clicks where it looks.** This is the part worth actually testing, because it is
+   what a scaled HUD usually gets wrong:
+   - Click a command card button — it does what its label says.
+   - Click a corner of the minimap — the camera jumps there, and the white viewport box is where you
+     clicked.
+   - Select forty units (drag a box over your workers plus some marines), then click one of the little
+     portraits in the selection strip — the selection narrows to that one unit. Shift-click one to drop
+     it. All forty portraits are on the plate; none is drawn below the bottom of the screen.
+   - Right-click a card button with an autocastable ability selected — it still arms.
+4. **A short window gets as much of the doubling as fits.** Drag the window down to about 720 px tall:
+   the band takes 42% of the height and no more, and everything inside shrinks to match rather than being
+   drawn off the bottom. Shrink it further, below about 330 px tall, and the console goes back to exactly
+   the size it has always been.
+5. **The icons are sharp, not stretched.** Compare a command card icon with the unit it builds. Icons are
+   redrawn at the size they are shown at rather than blown up from the old small ones.
+
+**Where the knob is.** `HUD_SCALE` at the top of [js/ui.js](js/ui.js) — one number. Set it to `1` and the
+HUD is exactly what it was; `1.5` for something in between; `3` if you want it larger still (the 42%
+ceiling will hold it back on anything but a tall window). `HUD_MAX_FRAC` beside it is that ceiling.
+
+**What did NOT change, deliberately:**
+- **The mouse cursor.** It is a pointer, not console furniture, and a doubled cursor would sit in the
+  wrong place as well as look wrong.
+- **The pause menu (F10), the help overlay (F1) and the codex.** They are dialogs drawn at their own
+  size, not part of the console band the task named. The pause menu was already recorded as un-restyled
+  in `HANDOFF-M17.md`.
+- **The world.** Zoom is still yours (mouse wheel); the HUD taking more of the screen means the viewport
+  is shorter, and the camera clamp follows it automatically.

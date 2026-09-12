@@ -803,21 +803,59 @@ const HUD = {
       case 'unload': ctx.beginPath(); ctx.rect(-s * .5, -s * .2, s, s * .6); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, -s * .1); ctx.lineTo(0, -s * .65); ctx.moveTo(-s * .25, -s * .4); ctx.lineTo(0, -s * .65); ctx.lineTo(s * .25, -s * .4); ctx.stroke(); break;
       default: ctx.beginPath(); ctx.arc(0, 0, s * .4, 0, 7); ctx.stroke();
     } ctx.restore(); },
+  // An icon drawn into a SCALED console (TODO-M18 item 5). Sprites paints at whatever size it is asked
+  // for and caches by size, so asking for the size the icon actually occupies on screen is one extra
+  // render per size -- not per frame -- and the alternative is a 32 px icon stretched to 64 and soft.
+  // The destination is given in console units, so the caller's arithmetic is unchanged.
+  sprite(ctx, ctxId, color, sz, x, y, tint) {
+    const r = Math.max(8, Math.round(sz * UI.hudK));
+    const cv = tint ? Sprites.tinted(ctxId, color, r, tint) : Sprites.icon(ctxId, color, r);
+    ctx.drawImage(cv, x, y, sz, sz);
+  },
   resIcon(ctx, kind, x, y) { ctx.save(); ctx.translate(x, y); if (kind === 'min') { const g = ctx.createLinearGradient(-6, -8, 6, 6); g.addColorStop(0, '#e6fbff'); g.addColorStop(0.5, '#5fd0ff'); g.addColorStop(1, '#1a6a9a'); ctx.fillStyle = g; ctx.strokeStyle = '#0b3a55'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-7, 6); ctx.lineTo(-4, -7); ctx.lineTo(3, -4); ctx.lineTo(7, 6); ctx.closePath(); ctx.fill(); ctx.stroke(); } else if (kind === 'gas') { const g = ctx.createRadialGradient(-2, -2, 1, 0, 0, 8); g.addColorStop(0, '#c8ffb0'); g.addColorStop(1, '#2a7a3a'); ctx.fillStyle = g; ctx.strokeStyle = '#123a1a'; ctx.beginPath(); ctx.ellipse(0, 1, 8, 6, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.fillStyle = 'rgba(200,255,180,0.7)'; ctx.beginPath(); ctx.arc(2, -6, 2.5, 0, 7); ctx.fill(); } else { const r = G.players[G.human].race; ctx.strokeStyle = '#e8ecf0'; ctx.fillStyle = '#e8ecf0'; ctx.lineWidth = 1.5; if (r === 'T') { ctx.beginPath(); ctx.arc(0, -3, 4, 0, 7); ctx.fill(); ctx.beginPath(); ctx.moveTo(-6, 7); ctx.lineTo(-4, 1); ctx.lineTo(4, 1); ctx.lineTo(6, 7); ctx.closePath(); ctx.fill(); } else if (r === 'Z') { ctx.beginPath(); ctx.ellipse(0, 0, 5, 7, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#6a3a7a'; ctx.beginPath(); ctx.ellipse(0, 0, 2.5, 4, 0, 0, 7); ctx.fill(); } else { ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(5, 0); ctx.lineTo(0, 8); ctx.lineTo(-5, 0); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#62d4ff'; ctx.beginPath(); ctx.moveTo(0, -4); ctx.lineTo(2.5, 0); ctx.lineTo(0, 4); ctx.lineTo(-2.5, 0); ctx.closePath(); ctx.fill(); } } ctx.restore(); },
 };
 
 Object.assign(UI, {
-  miniRect() { return { x: 12, y: Render.H - this.consoleH + 10, s: this.consoleH - 22 }; },
+  // THE TWO CONSOLE RECTS, TWICE. The C forms are in CONSOLE UNITS and are what the draw pass uses; the
+  // plain forms are the same rects in SCREEN PIXELS and are what everything outside it uses -- the
+  // minimap hit test (UI.inMinimap, UI.miniToWorld), UI.consoleClick, test/addons.js and test/describe.js.
+  // Deriving one from the other rather than writing both is the point: they cannot disagree.
+  miniRectC() { return { x: 12, y: this.conH - this.consoleBase + 10, s: this.consoleBase - 22 }; },
+  scaleRect(r) { const k = this.hudK, o = {}; for (const key of Object.keys(r)) o[key] = key === 'k' ? r[key] : r[key] * k; return o; },   // 'k' is the card's own shrink factor, not a length
+  miniRect() { return this.scaleRect(this.miniRectC()); },
   // The card shrinks with the console so a short window still shows all nine slots and the click boxes stay on them.
   // 4 wide, 3 tall. The buttons shrink a little so a twelve-slot card is no wider on screen than the
   // nine-slot one was -- the console is the same height and the unit panel beside it keeps its room.
-  cardRect() { const ch = this.consoleH, k = Math.min(1, (ch - 16) / 182); const bw = Math.round(54 * k), bh = Math.round(54 * k), gap = Math.max(2, Math.round(4 * k)); const w = UI.CARD_COLS * (bw + gap) + 8, h = UI.CARD_ROWS * (bh + gap) + 8; return { x: Render.W - w - 12, y: Render.H - ch + 8, w, h, bw, bh, gap, k }; },
+  cardRectC() { const ch = this.consoleBase, k = Math.min(1, (ch - 16) / 182); const bw = Math.round(54 * k), bh = Math.round(54 * k), gap = Math.max(2, Math.round(4 * k)), pad = 4; const w = UI.CARD_COLS * (bw + gap) + pad * 2, h = UI.CARD_ROWS * (bh + gap) + pad * 2; return { x: this.conW - w - 12, y: this.conH - ch + 8, w, h, bw, bh, gap, pad, k }; },
+  cardRect() { return this.scaleRect(this.cardRectC()); },
+  // THE HUD'S SCALE, applied in one place (TODO-M18 item 5). The body below is written in CONSOLE UNITS
+  // -- the coordinates it has always used, in which the band is consoleBase tall -- and this runs it
+  // under scale(hudK). Nothing inside it changed: every font, gap, icon, tile and bar was already in
+  // those units, which is why doubling the HUD is one constant in js/ui.js.
+  //
+  // Two things must NOT go under the transform:
+  //   * THE HOTSPOTS, collected in console units by the body and consumed by UI.consoleClick in screen
+  //     pixels. They come back through the same factor here, which is what keeps every click box on the
+  //     thing it draws -- test/qol.js pins that with forty selected units.
+  //   * HUD.glitchDraw, which reads the canvas back in DEVICE pixels (see HUD.slice, and the comment
+  //     there about getting dpr backwards) and so must be handed screen coordinates under the page's own
+  //     dpr transform and nothing else.
   drawConsole() {
-    const ctx = Render.ctx, W = Render.W, H = Render.H, ch = this.consoleH, y0 = H - ch; const p = G.players[G.human];
+    const ctx = Render.ctx, k = this.hudK, scaled = k !== 1 && ctx.save && ctx.scale;
+    if (scaled) { ctx.save(); ctx.scale(k, k); }
+    this.drawConsoleBody();
+    if (scaled) ctx.restore();
+    if (scaled) for (const h of this.hotspots) { h.x *= k; h.y *= k; h.w *= k; h.h *= k; }   // the SAME flag as the transform: a pass that was not scaled must not have its click boxes scaled
+    HUD.glitchDraw(ctx, 0, Render.H - this.consoleH, Render.W, this.consoleH);
+  },
+  drawConsoleBody() {
+    const ctx = Render.ctx, W = this.conW, H = this.conH, ch = this.consoleBase, y0 = H - ch; const p = G.players[G.human];
     const sk = HUD.skin();
+    // The pointer in console units: UI.mouse is in screen pixels and nothing below it is.
+    const mx = this.mouse.x / this.hudK, my = this.mouse.y / this.hudK;
     HUD.frame(ctx, 0, y0, W, ch);
     // ---- minimap ----
-    const mr = this.miniRect(); HUD.inset(ctx, mr.x - 3, mr.y - 3, mr.s + 6, mr.s + 6);
+    const mr = this.miniRectC(); HUD.inset(ctx, mr.x - 3, mr.y - 3, mr.s + 6, mr.s + 6);
     if (Render.mini) { ctx.imageSmoothingEnabled = false; ctx.drawImage(Render.mini, mr.x, mr.y, mr.s, mr.s); ctx.imageSmoothingEnabled = true; }
     const sc = mr.s / (G.map.w * TILE); const vis = UI.viewAll ? G.allVis() : p.vis;
     ctx.fillStyle = 'rgba(96,40,120,0.6)'; const m = G.map; for (let ty = 0; ty < m.h; ty += 2) for (let tx = 0; tx < m.w; tx += 2) if (m.creep[m.idx(tx, ty)] && vis[ty * m.w + tx]) ctx.fillRect(mr.x + tx * mr.s / m.w, mr.y + ty * mr.s / m.h, 2 * mr.s / m.w + .5, 2 * mr.s / m.h + .5);
@@ -834,7 +872,7 @@ Object.assign(UI, {
     for (const pg of this.pings) { ctx.strokeStyle = `rgba(255,60,60,${pg.t / 90})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(mr.x + pg.x * sc, mr.y + pg.y * sc, 4 + (90 - pg.t) % 30 / 3, 0, 7); ctx.stroke(); }
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(mr.x + Render.camX * sc + .5, mr.y + Render.camY * sc + .5, Render.viewWorldW() * sc, Render.viewWorldH() * sc);   // world units, so the box tracks the zoom
     // ---- unit panel ----
-    this.hotspots = []; const cr = this.cardRect();
+    this.hotspots = []; const cr = this.cardRectC();
     const ix = mr.x + mr.s + 18, iw = cr.x - ix - 14; HUD.inset(ctx, ix, y0 + 8, iw, ch - 16);
     const sel = this.selection;
     // B1: a selected mineral patch or geyser gets the panel a unit would get. It is checked FIRST but
@@ -851,15 +889,15 @@ Object.assign(UI, {
     HUD.inset(ctx, cr.x, cr.y, cr.w, cr.h);
     const btns = this.currentCard(); this.tooltip = null;
     for (const b of btns) {
-      const bx = cr.x + 4 + (b.slot % UI.CARD_COLS) * (cr.bw + cr.gap), by = cr.y + 4 + Math.floor(b.slot / UI.CARD_COLS) * (cr.bh + cr.gap);
-      const hov = this.mouse.x >= bx && this.mouse.x < bx + cr.bw && this.mouse.y >= by && this.mouse.y < by + cr.bh;
+      const bx = cr.x + cr.pad + (b.slot % UI.CARD_COLS) * (cr.bw + cr.gap), by = cr.y + cr.pad + Math.floor(b.slot / UI.CARD_COLS) * (cr.bh + cr.gap);
+      const hov = mx >= bx && mx < bx + cr.bw && my >= by && my < by + cr.bh;
       const active = this.pending && ((this.pending.kind === 'ability' && b.label === (DATA.abilities[this.pending.abil] || {}).name) || (this.pending.kind !== 'ability' && b.label.toLowerCase().startsWith(this.pending.kind)));
       HUD.bevel(ctx, bx, by, cr.bw, cr.bh, !active, active ? '#2f4a2f' : hov ? sk.btnHov : b.dim ? sk.btnDim : sk.btn);
       // icon
       const defId = b.cost && b.cost.id && DATA.all[b.cost.id] ? b.cost.id : null; const gl = HUD.iconFor(b);
       ctx.save(); if (b.dim) ctx.globalAlpha = 0.4;
       const ik = Math.round(32 * cr.k);
-      if (defId) ctx.drawImage(Sprites.icon(defId, G.players[G.human].color, ik), bx + cr.bw / 2 - ik / 2, by + Math.round(3 * cr.k));
+      if (defId) HUD.sprite(ctx, defId, G.players[G.human].color, ik, bx + cr.bw / 2 - ik / 2, by + Math.round(3 * cr.k));
       else if (gl) HUD.glyph(ctx, gl, bx + cr.bw / 2, by + Math.round(18 * cr.k), Math.round(14 * cr.k), '#cfd6de');
       else { ctx.save(); ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(bx + cr.bw / 2, by + Math.round(18 * cr.k), 1, bx + cr.bw / 2, by + Math.round(18 * cr.k), 14 * cr.k); g.addColorStop(0, b.energy ? 'rgba(200,120,255,0.9)' : 'rgba(255,200,80,0.9)'); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(bx + cr.bw / 2, by + Math.round(18 * cr.k), 14 * cr.k, 0, 7); ctx.fill(); ctx.restore(); }
       ctx.restore();
@@ -877,12 +915,13 @@ Object.assign(UI, {
     // and "energy" -- and a Refinery whose description says "so SCVs can harvest gas" would be tinted
     // green as though the sentence were a price. It wraps to a fixed column so a two-sentence def
     // cannot stretch the popup across the screen.
-    if (this.tooltip) { const t = this.tooltip; ctx.font = HUD.font(11); const dl = t.desc ? HUD.wrapLines(ctx, t.desc, UI.TIP_W, 10) : []; ctx.font = HUD.font(11); const cw = Math.max(...t.lines.map(l => ctx.measureText(l).width)); ctx.font = HUD.font(10, false); const dw = dl.length ? Math.max(...dl.map(l => ctx.measureText(l).width)) : 0; const tw = Math.max(cw, dw) + 16, th = t.lines.length * 15 + dl.length * 13 + (dl.length ? 6 : 0) + 8; const tx = Math.min(t.x, Render.W - tw - 4), ty = t.y - th - 6; HUD.bevel(ctx, tx, ty, tw, th, true, 'rgba(10,12,16,0.95)'); t.lines.forEach((l, i) => HUD.text(ctx, l, tx + 8, ty + 15 + i * 15, i ? (l.includes('minerals') ? '#6fe0ff' : l.includes('gas') ? '#7ee07a' : l.includes('energy') ? '#c86aff' : '#c8d0d8') : '#ffe45a', 11, i === 0)); dl.forEach((l, i) => HUD.text(ctx, l, tx + 8, ty + t.lines.length * 15 + 12 + i * 13, '#9aa4b0', 10, false)); }
+    if (this.tooltip) { const t = this.tooltip; ctx.font = HUD.font(11); const dl = t.desc ? HUD.wrapLines(ctx, t.desc, UI.TIP_W, 10) : []; ctx.font = HUD.font(11); const cw = Math.max(...t.lines.map(l => ctx.measureText(l).width)); ctx.font = HUD.font(10, false); const dw = dl.length ? Math.max(...dl.map(l => ctx.measureText(l).width)) : 0; const tw = Math.max(cw, dw) + 16, th = t.lines.length * 15 + dl.length * 13 + (dl.length ? 6 : 0) + 8; const tx = Math.min(t.x, W - tw - 4), ty = t.y - th - 6; HUD.bevel(ctx, tx, ty, tw, th, true, 'rgba(10,12,16,0.95)'); t.lines.forEach((l, i) => HUD.text(ctx, l, tx + 8, ty + 15 + i * 15, i ? (l.includes('minerals') ? '#6fe0ff' : l.includes('gas') ? '#7ee07a' : l.includes('energy') ? '#c86aff' : '#c8d0d8') : '#ffe45a', 11, i === 0)); dl.forEach((l, i) => HUD.text(ctx, l, tx + 8, ty + t.lines.length * 15 + 12 + i * 13, '#9aa4b0', 10, false)); }
     // LAST, and only over the console band. The glitch tears what is already on the glass, so it has
     // to run after everything that draws on it -- and it is confined to the console rather than the
     // whole window because the cursor and the world are not part of the commander's hardware. Tearing
     // the cursor was tried once and it makes the game feel broken rather than the console.
-    HUD.glitchDraw(ctx, 0, y0, W, ch);
+    // It is called by drawConsole, OUTSIDE the HUD's scale, because HUD.slice reads the canvas back in
+    // device pixels and a second transform under it would tear the wrong part of the screen.
   },
   // The selection strip (M12 item 2). Brood War's twelve-unit cap is gone, so this has to stay legible
   // from two units to two hundred, and a fixed grid of full-size tiles does not: the console is at
@@ -920,7 +959,7 @@ Object.assign(UI, {
         if (i >= cols * rows) return; shown++;
         const bx = ix + pad + (i % cols) * tw, by = top + Math.floor(i / cols) * th, hr = g.max ? g.hp / g.max : 1;
         HUD.bevel(ctx, bx, by, tw - 4, th - 4, true, sk.slot);
-        ctx.drawImage(Sprites.tinted(g.def.id, G.players[g.owner].color, 30, tintOf(hr)), bx + 3, by + 3);
+        HUD.sprite(ctx, g.def.id, G.players[g.owner].color, 30, bx + 3, by + 3, tintOf(hr));
         HUD.text(ctx, 'x' + g.n, bx + 36, by + 17, '#e6eaf0', 13);
         HUD.text(ctx, g.def.name.slice(0, 11), bx + 36, by + 29, '#9aa4b0', 9, false);
         ctx.fillStyle = bar(hr); ctx.fillRect(bx + 3, by + th - 9, (tw - 10) * hr, 3);
@@ -936,13 +975,18 @@ Object.assign(UI, {
     let cw = 46, chh = 58, cols, rows;
     const fit = () => { cols = Math.max(1, Math.floor(availW / cw)); rows = Math.max(1, Math.floor((availH - (chh - 6)) / chh) + 1); };
     fit(); if (cols * rows < sel.length && sel.length > this.SEL_FULL) { cw = 32; chh = 40; fit(); }
-    while (cols * rows < sel.length && cw > 22) { cw -= 2; chh -= 2; fit(); }
+    // The floor is 22 SCREEN pixels -- the smallest tile still worth looking at -- expressed in console
+    // units, so it does not move when the HUD is scaled. Written as 22 flat it meant 36 screen pixels on
+    // a doubled console, and forty marines in a 1024-wide window lost ten of themselves to "+10 more"
+    // while there was still room for tiles larger than any the game had ever drawn. (TODO-M18 item 5)
+    const minCw = Math.max(12, Math.round(22 / this.hudK));
+    while (cols * rows < sel.length && cw > minCw) { cw -= 2; chh -= 2; fit(); }
     const tw = cw - 4, th = chh - 6, isz = tw - 6;
     sel.forEach((u, i) => {
       if (i >= cols * rows) return;
       const bx = ix + pad + (i % cols) * cw, by = top + Math.floor(i / cols) * chh, hr = u.hp / u.maxHp;
       HUD.bevel(ctx, bx, by, tw, th, true, sk.slot);
-      ctx.drawImage(Sprites.tinted(u.def.id, G.players[u.owner].color, isz, tintOf(hr)), bx + 3, by + 3);
+      HUD.sprite(ctx, u.def.id, G.players[u.owner].color, isz, bx + 3, by + 3, tintOf(hr));
       if (u.maxSh) { ctx.fillStyle = '#5aa8ff'; ctx.fillRect(bx + 3, by + th - 10, isz * u.sh / u.maxSh, 2); }
       ctx.fillStyle = bar(hr); ctx.fillRect(bx + 3, by + th - 6, isz * hr, 3);
       this.hotspots.push({ x: bx, y: by, w: tw, h: th, fn: () => { if (this.keys.Shift) this.selection = this.selection.filter(v => v !== u); else this.select([u]); } });
@@ -1004,16 +1048,22 @@ Object.assign(UI, {
       if (u.isBuilding && u.def.onGeyser && u.geyser) line(`Vespene remaining ${Math.max(0, Math.round(u.geyser.amount))}`, u.geyser.amount > 0 ? '#7ee07a' : '#c98a6a');
       if (u.isBuilding && !u.done) line(`Constructing ${Math.floor(100 * u.progress / u.def.time)}%` + (u.def.race === 'T' && !(u.builder && u.builder.alive && u.builder.order.target === u) ? '  (no SCV)' : ''), '#ffe45a');
       if (u.isBuilding && u.addon) line(`Add-on: ${u.addon.def.name}${u.addon.done ? '' : ' (building)'}`, '#9aa4b0');
-      if (u.prod.length) { const qx = tx, qy = ly + 2; u.prod.forEach((it, i) => { const name = it.kind === 'unit' ? DATA.units[it.id].name : it.kind === 'upg' ? DATA.upgrades[it.id].name + ' L' + it.level : it.kind === 'tech' ? DATA.techs[it.id].name : DATA.buildings[it.id].name; const bx = qx + i * 50; HUD.bevel(ctx, bx, qy, 46, 40, true, sk.slot); if (it.kind === 'unit' || it.kind === 'morph') ctx.drawImage(Sprites.icon(it.id, p.color, 28), bx + 9, qy + 2); else { ctx.font = HUD.font(8); ctx.fillStyle = '#cfd6de'; ctx.fillText(name.slice(0, 9), bx + 3, qy + 18); } if (i === 0) { ctx.fillStyle = '#000'; ctx.fillRect(bx + 3, qy + 32, 40, 5); ctx.fillStyle = '#3fe83f'; ctx.fillRect(bx + 3, qy + 32, 40 * it.progress / it.total, 5); } this.hotspots.push({ x: bx, y: qy, w: 46, h: 40, fn: () => G.cancelProd(u, i) }); }); if (u.prod[0]) { const it = u.prod[0]; const name = it.kind === 'unit' ? DATA.units[it.id].name : it.kind === 'upg' ? DATA.upgrades[it.id].name + ' ' + it.level : it.kind === 'tech' ? DATA.techs[it.id].name : DATA.buildings[it.id].name; HUD.text(ctx, name, tx + u.prod.length * 50 + 6, qy + 26, '#ffe45a', 11); } ly += 46; }
-      if (u.cargo.length) { u.cargo.forEach((c, i) => { const bx = tx + i * 34, by = ly + 2; HUD.bevel(ctx, bx, by, 30, 30, true, sk.slot); ctx.drawImage(Sprites.icon(c.def.id, p.color, 26), bx + 2, by + 2); this.hotspots.push({ x: bx, y: by, w: 30, h: 30, fn: () => G.unloadCargo(u, c) }); }); ly += 36; }
+      if (u.prod.length) { const qx = tx, qy = ly + 2; u.prod.forEach((it, i) => { const name = it.kind === 'unit' ? DATA.units[it.id].name : it.kind === 'upg' ? DATA.upgrades[it.id].name + ' L' + it.level : it.kind === 'tech' ? DATA.techs[it.id].name : DATA.buildings[it.id].name; const bx = qx + i * 50; HUD.bevel(ctx, bx, qy, 46, 40, true, sk.slot); if (it.kind === 'unit' || it.kind === 'morph') HUD.sprite(ctx, it.id, p.color, 28, bx + 9, qy + 2); else { ctx.font = HUD.font(8); ctx.fillStyle = '#cfd6de'; ctx.fillText(name.slice(0, 9), bx + 3, qy + 18); } if (i === 0) { ctx.fillStyle = '#000'; ctx.fillRect(bx + 3, qy + 32, 40, 5); ctx.fillStyle = '#3fe83f'; ctx.fillRect(bx + 3, qy + 32, 40 * it.progress / it.total, 5); } this.hotspots.push({ x: bx, y: qy, w: 46, h: 40, fn: () => G.cancelProd(u, i) }); }); if (u.prod[0]) { const it = u.prod[0]; const name = it.kind === 'unit' ? DATA.units[it.id].name : it.kind === 'upg' ? DATA.upgrades[it.id].name + ' ' + it.level : it.kind === 'tech' ? DATA.techs[it.id].name : DATA.buildings[it.id].name; HUD.text(ctx, name, tx + u.prod.length * 50 + 6, qy + 26, '#ffe45a', 11); } ly += 46; }
+      if (u.cargo.length) { u.cargo.forEach((c, i) => { const bx = tx + i * 34, by = ly + 2; HUD.bevel(ctx, bx, by, 30, 30, true, sk.slot); HUD.sprite(ctx, c.def.id, p.color, 26, bx + 2, by + 2); this.hotspots.push({ x: bx, y: by, w: 30, h: 30, fn: () => G.unloadCargo(u, c) }); }); ly += 36; }
       if (u.def.upgA && !u.isBuilding) { const parts = []; if (p.upgLevel(u.def.upgA)) parts.push(`Armor +${p.upgLevel(u.def.upgA)}`); const wpn = u.def.gw || u.def.aw; if (wpn && wpn.upgKey && p.upgLevel(wpn.upgKey)) parts.push(`Weapons +${p.upgLevel(wpn.upgKey)}`); if (u.maxSh && p.upgLevel('shields')) parts.push(`Shields +${p.upgLevel('shields')}`); if (parts.length) line(parts.join('  '), '#9fb8d8'); }
     } else line(p.name, p.color);
     ctx.restore();
   },
   drawTop() {
-    const ctx = Render.ctx, p = G.players[G.human];
+    const ctx = Render.ctx, k = this.hudK, scaled = k !== 1 && ctx.save && ctx.scale;
+    if (scaled) { ctx.save(); ctx.scale(k, k); }
+    this.drawTopBody();
+    if (scaled) ctx.restore();
+  },
+  drawTopBody() {
+    const ctx = Render.ctx, W = this.conW, p = G.players[G.human];
     const items = [['min', Math.floor(p.minerals), '#dff6ff'], ['gas', Math.floor(p.gas), '#d6f5d0'], ['sup', `${Math.ceil(p.supUsed)}/${p.supMax}`, p.supUsed > p.supMax ? '#ff6a6a' : '#f0f2f4']];
-    let x = Render.W - 14; ctx.font = HUD.font(14);
+    let x = W - 14; ctx.font = HUD.font(14);
     for (let i = items.length - 1; i >= 0; i--) { const [k, v, col] = items[i]; const tw = ctx.measureText(String(v)).width + 40; HUD.bevel(ctx, x - tw, 6, tw, 24, true, 'rgba(12,15,20,0.85)'); HUD.resIcon(ctx, k, x - tw + 14, 18); HUD.text(ctx, String(v), x - 8, 23, col, 14, true, 'right'); x -= tw + 6; }
     // Caps and letterspacing on the clock/faction plate. This is the one piece of running text on
     // screen at all times, so it is where the typography actually registers.
@@ -1035,11 +1085,19 @@ Object.assign(UI, {
     if (this.showHelp) this.drawHelp(ctx);
   },
   drawMessages() {
-    const ctx = Render.ctx, p = G.players[G.human];
-    let y = Render.H - this.consoleH - 14; for (let i = p.msgs.length - 1; i >= 0; i--) { const m = p.msgs[i]; const age = G.frame - m.t; if (age > 24 * 8) continue; const col = m.kind === 'error' ? '#ff8a8a' : m.kind === 'attack' || m.kind === 'nuke' ? '#ff5050' : '#ffe45a'; ctx.globalAlpha = age > 24 * 6 ? 1 - (age - 144) / 48 : 1; HUD.text(ctx, m.text, 14, y, col, 13); ctx.globalAlpha = 1; y -= 18; }
-    if (this.chat !== null && this.chat !== undefined) { HUD.bevel(ctx, 10, Render.H - this.consoleH - 40, 420, 24, false, 'rgba(8,10,14,0.9)'); HUD.text(ctx, '> ' + this.chat + (G.frame % 24 < 12 ? '_' : ''), 16, Render.H - this.consoleH - 23, '#e6eaf0', 13); }
-    if (this.loading) { const k = (G.frame - this.loading.start) / Math.max(1, this.loading.target - this.loading.start); HUD.bevel(ctx, Render.W / 2 - 160, Render.H / 2 - 30, 320, 60, true, 'rgba(10,12,16,0.95)'); HUD.text(ctx, (this.loading.label || 'Loading... re-simulating') + ' ' + Math.round(k * 100) + '%', Render.W / 2, Render.H / 2 - 6, '#ffe45a', 14, true, 'center'); ctx.fillStyle = '#3fe83f'; ctx.fillRect(Render.W / 2 - 140, Render.H / 2 + 6, 280 * k, 8); }
+    const ctx = Render.ctx, k = this.hudK, scaled = k !== 1 && ctx.save && ctx.scale;
+    if (scaled) { ctx.save(); ctx.scale(k, k); }
+    this.drawMessagesBody();
+    if (scaled) ctx.restore();
+    // OUTSIDE the HUD's scale on purpose: the cursor is drawn at the real pointer, which is in screen
+    // pixels, and a doubled cursor would sit in the wrong place as well as look wrong.
     this.drawCursor(ctx);
+  },
+  drawMessagesBody() {
+    const ctx = Render.ctx, W = this.conW, H = this.conH, p = G.players[G.human];
+    let y = H - this.consoleBase - 14; for (let i = p.msgs.length - 1; i >= 0; i--) { const m = p.msgs[i]; const age = G.frame - m.t; if (age > 24 * 8) continue; const col = m.kind === 'error' ? '#ff8a8a' : m.kind === 'attack' || m.kind === 'nuke' ? '#ff5050' : '#ffe45a'; ctx.globalAlpha = age > 24 * 6 ? 1 - (age - 144) / 48 : 1; HUD.text(ctx, m.text, 14, y, col, 13); ctx.globalAlpha = 1; y -= 18; }
+    if (this.chat !== null && this.chat !== undefined) { HUD.bevel(ctx, 10, H - this.consoleBase - 40, 420, 24, false, 'rgba(8,10,14,0.9)'); HUD.text(ctx, '> ' + this.chat + (G.frame % 24 < 12 ? '_' : ''), 16, H - this.consoleBase - 23, '#e6eaf0', 13); }
+    if (this.loading) { const k = (G.frame - this.loading.start) / Math.max(1, this.loading.target - this.loading.start); HUD.bevel(ctx, W / 2 - 160, H / 2 - 30, 320, 60, true, 'rgba(10,12,16,0.95)'); HUD.text(ctx, (this.loading.label || 'Loading... re-simulating') + ' ' + Math.round(k * 100) + '%', W / 2, H / 2 - 6, '#ffe45a', 14, true, 'center'); ctx.fillStyle = '#3fe83f'; ctx.fillRect(W / 2 - 140, H / 2 + 6, 280 * k, 8); }
   },
   drawCursor(ctx) {
     const m = this.mouse; if (!m.inside && m.x === 0 && m.y === 0) return; const x = m.x, y = m.y; ctx.save();
