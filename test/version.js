@@ -41,7 +41,7 @@ const edits = [
   // not see them. Each is a change a player would feel, and each used to load an old save and drift.
   ['combat.js', s => s.replace(/^  fire\(a, t, w\) \{/m, '  fire(a, t, w) { /* edited */')],          // the whole Combat object
   ['data.js', s => s.replace('const DMG_MULT = {', 'const DMG_MULT = { __edited: 1,')],              // damage type table
-  ['sim.js', s => s.replace('const MINE_TIME = 75,', 'const MINE_TIME = 76,')],                       // a scalar on a multi-name line
+  ['sim.js', s => s.replace('const MINE_TIME = 190,', 'const MINE_TIME = 191,')],                     // a scalar on a multi-name line (re-anchored when TODO-M18 7a moved it from 75)
   ['sim.js', s => s.replace('const distPt = (x1, y1, x2, y2) => DMath.hypot(x1 - x2, y1 - y2);', 'const distPt = (x1, y1, x2, y2) => DMath.hypot(x1 - x2, y1 - y2) + 0;')],   // an arrow helper
   ['game.js', s => s.replace('const SUPPLY_CAP = 500;', 'const SUPPLY_CAP = 501;')],
   ['game.js', s => s.replace(/^function daylightAt\(frame\) \{/m, 'function daylightAt(frame) { /* edited */')],   // a function declaration

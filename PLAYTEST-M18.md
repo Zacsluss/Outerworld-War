@@ -294,3 +294,32 @@ another of your refineries. A refinery is a building, not a line, and there is n
 **Where it lives.** `G.nextPatchInBase` in [js/game.js](js/game.js), and the two places
 [js/sim.js](js/sim.js) calls it — the gather tick and the moment a worker finishes a delivery. "The same
 area" needed no new idea: the map already records which patches belong to which base.
+
+---
+
+## 72. The economy runs at StarCraft II's pace — and the computer is passive until it is rebalanced
+
+*(TODO-M18 7a, approved by the user: "I understand it broke AI but we can rebalance later when I
+confirm." **7b, the rebalance, is gated and has not started.**)*
+
+**What changed.** A worker spends 190 frames inside a mineral patch instead of 75, and 94 inside a geyser
+instead of 37. Gas moved by the same factor, so the ratio of gas to minerals is exactly what it was.
+
+**How to see it by hand.** Start any skirmish and watch the mineral counter with your starting workers.
+
+- **Income is about half.** Measured on a saturated line: **49.8 minerals per worker per minute**, where it
+  was 99.8. That is 1.21 times StarCraft II's rate, against 2.4 times before.
+- **A worker stands in the patch visibly longer** — the mining animation runs for about eight seconds
+  where it ran for three.
+- **Your first Barracks, Gateway or Spawning Pool comes noticeably later**, and so does everything after it.
+
+**What you WILL notice, and it is expected: the computer barely attacks.** Its build orders and the army
+size at which it commits a wave were tuned for the old income. Measured: in ten minutes on the test seeds,
+*no* computer opponent of any style mounts a first wave. Two gate suites are red for exactly this reason
+(`aistyles`, `queens`) and they turn green again when the AI is rebalanced. That work is TODO-M18 **7b**, and
+it needs you to say go — `test/balance.js` and `test/proxy.js` are its instruments and neither may be run
+without that.
+
+**If you want the old pace back**, `const MINE_TIME = 190, GAS_TIME = 94` near the top of
+[js/sim.js](js/sim.js) — set it to 75 and 37. Saves and replays made at one pace will not load at the other;
+the build stamp refuses them, which is its job.

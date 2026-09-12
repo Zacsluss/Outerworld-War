@@ -17,7 +17,14 @@ const EQUIV = { hatchery: ['lair', 'hive'], lair: ['hive'], spire: ['greater_spi
 // pokes (r - 16) px into its neighbour, so 16 is exactly the radius at which that stops being zero.
 // Three defs are over it today: Thor and Ultralisk at 20, Reaver at 18.
 const WIDE_BODY = TILE / 2;
-const MINE_TIME = 75, GAS_TIME = 37, LARVA_TIME = 342, MAX_QUEUE = 5;
+// MINE_TIME and GAS_TIME are the frames a worker spends INSIDE a patch or a geyser; the walk each way is
+// the rest of the cycle and comes from the map. Measured on a saturated line (see .claude/review/mine-rate.js
+// and mine-sweep.js): at 75 a worker banked 100 minerals a minute -- x2.4 StarCraft II and x1.15 Brood War.
+// At 190 it banks 50, which is x1.21 SC2 and x0.57 BW: the user's call, an economy at SC2's pace rather than
+// Brood War's. Gas moved by the same 2.53x so the gas-to-mineral RATIO is untouched; scaling only minerals
+// would have doubled every player's gas per mineral and made the whole tech tree cheap.
+// Every build timing, every AI script step and every balance number in HANDOFF.md is downstream of these two.
+const MINE_TIME = 190, GAS_TIME = 94, LARVA_TIME = 342, MAX_QUEUE = 5;
 // LARVA_NATURAL: how many larvae a hatchery, lair or hive spawns up to ON ITS OWN, one per LARVA_TIME.
 // Spawn Larva stacks past it to DATA.abilities.larva_inject.cap (twelve; REVIEW-M17 task 25), so the two
 // numbers are different things now and every reader names the one it means. Stamped (BUILD.TUNING).

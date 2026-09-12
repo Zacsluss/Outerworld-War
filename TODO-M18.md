@@ -126,7 +126,19 @@ how far it reaches.
 
 ---
 
-### 7a. Re-apply the slower economy: `MINE_TIME 190, GAS_TIME 94` — APPROVED
+### 7a. Re-apply the slower economy: `MINE_TIME 190, GAS_TIME 94` — APPLIED (sixth session)
+**Applied last, as scheduled, and committed with the gate knowingly red.** Measured on this tree, which is not
+the tree the fifth session measured on:
+- **The gate is 2 of 79 red, not 4:** `aistyles` (the "never attacked" sentinel, 43200 vs 43200, for every
+  style) and `queens` (a poorer computer Zerg trains fewer Queens, so one-Queen-per-hall cannot hold).
+  `version` is green because its `const MINE_TIME = 75,` probe was re-anchored to 190, which the section
+  below asked for. `zerg12` is green: the commits between the two measurements took it out of the blast radius.
+- **Mining: 49.8 minerals per worker per minute** on a saturated line, exactly the sweep's prediction (x1.21 SC2).
+- **`test/eightplayer.js` 19/19** (it was 18/19 when the fifth session applied this).
+- Build stamp `1e25bdbaf9ef8855`. PLAYTEST-M18.md item 72.
+
+The fifth session's text, kept for the record:
+
 **The user was shown the evidence below and asked for it anyway** (2026-09-12): "I understand it broke AI but we
 can rebalance later when I confirm." So it goes in, and **7b is what makes the game playable again**. Ship the
 two together, or ship 7a knowing the computer opponents are passive for the first ten minutes.
