@@ -660,3 +660,94 @@ pick the game in the list and press **SPECTATE**.
 - **Every setting except Mute is remembered** the next time the page opens.
 - **F10 → Settings in a game** shows HUD size, Scroll speed, Edge scroll and Volume as buttons that step through values
   (HUD 1.4 → 1.5 → 1.6 → 1.0 …). The main menu's tabs show whatever was set there.
+
+---
+
+## 88. The main menu, and your name
+
+*(Eighth session, the user's items 2 and 3: the name "should be set manually via a prompt when the game first opens",
+and the main menu's tagline and control hints removed. `RESEARCH-LOBBY.md` section 6.)*
+
+**How to reach it.** Open the game. To see the first-launch prompt again in a browser that has already answered it,
+open the browser's developer console on the game's page and run `localStorage.removeItem('bw_intro')`, then reload.
+
+**What to look for.**
+- **Before the main menu, a WELCOME, COMMANDER box asks for your name.** CONTINUE (or Enter) with the box empty does
+  not go on; it says to type a name first. Up to 16 letters.
+- **You are asked once.** Reload: the main menu comes straight up. (Anyone who had connected before this change, whose
+  name was the old default "Player", is asked once too.)
+- **The main menu is the title and three buttons**: Single Player, Multiplayer, Settings. No sentence under the title,
+  no control hints under the buttons.
+- **The name is changed in Settings → Multiplayer → Name.** Emptying that box puts your name back rather than leaving
+  you nameless.
+- **An invite link** (`?join=CODE`) opened by someone with no name yet shows the name box first, then joins the game.
+
+---
+
+## 89. Single Player, and the skirmish lobby
+
+*(Eighth session, the user's item 1: Single Player shows only its buttons, START is only in the Skirmish Setup lobby,
+and that lobby "should look exactly the same as the Multiplayer Lobby".)*
+
+**How to reach it.** Main menu → **Single Player** → **Skirmish Setup**.
+
+**What to look for.**
+- **Single Player has exactly**: Skirmish Setup, Campaign, Load Saved Game, Watch Replay, Continue Autosave (only when
+  an autosave exists), Map Editor, and Back. No Start Game button, no summary text.
+- **Skirmish Setup is the multiplayer lobby's screen**: teams side by side with a slot per player (colour, name, race,
+  team; a computer's slot also has difficulty and play style), **+ add A.I.** on each team, **+ add a team**, **shuffle
+  teams**, the chat box, and on the right GAME SETTINGS with the map preview, Map, Speed, the rules and Alliances.
+  Compare it with Multiplayer → HOST GAME.
+- **What is not there, because nobody else can join**: READY, the latency bars, the spectators box, the team lock,
+  public/private, the game's name, the room code and the invite link. **QUIT is BACK.**
+- **What is there that multiplayer does not have**: **Seed** with ROLL. A new seed is picked every time the lobby opens;
+  type one to replay the same map and the same computer decisions.
+- **It opens as the old one-click game**: you as Terran on Team 1 and one Random, Normal computer on Team 2, Lost Ruins,
+  Fastest.
+- **START GAME** needs a computer opponent (with none it says "Add a computer opponent to a team to start") and a map
+  with a start for everyone (pick Twilight Valley with three players: the header turns red and says to remove a slot).
+- **The game you start is the lobby you set up**: your race and team, each computer's race, difficulty, style and team,
+  the map, the speed, the rules (try Starting bank: Rich -- you start with 1500 minerals) and the seed.
+- **The chat log** says what changed (Added Computer 2., Map: ..., Speed: ...), and you can type in it.
+- **Remembered**: leave with BACK, reload the page, come back -- the map, speed, rules and slots are as you left them
+  (the seed is new).
+- **Maps made in the Map Editor** appear in the Map list here, under "Made in the editor". They never appear in a
+  multiplayer game's list.
+
+---
+
+## 90. Multiplayer is one click
+
+*(Eighth session, the user's item 2: "clicking the multiplayer button is pressing the Connect button".)*
+
+**How to reach it.** Main menu → **Multiplayer**.
+
+**What to look for.**
+- **No Server / Name / Connect screen.** "Connecting to ..." for a moment, then the game list, with "Connected to
+  <server> as <your name>" above it.
+- **BACK, then MULTIPLAYER again**: the list comes straight back (the connection was kept).
+- **Only when the server cannot be reached** does a small form appear: "Could not reach the game server at <address>.",
+  a Server box and **TRY AGAIN**. To see it, set Settings → Multiplayer → Server to `localhost:1` and press Multiplayer.
+  Empty the box and TRY AGAIN to go back to the page's own server. If the server stops while you are connected, the same
+  form says the connection was lost.
+- **Addresses are typed the way people type them**: `192.168.1.5:8765` works, as does `ws://…/ws`.
+- Earlier items in this file that say **MULTIPLAYER, CONNECT**: the CONNECT step no longer exists.
+- **Desktop app**: there is no server to assume, so the form shows at once with HOST A GAME beside TRY AGAIN.
+
+---
+
+## 91. Settings: the Controls and Codex tabs
+
+*(Eighth session, the user's items 4 and 5.)*
+
+**How to reach it.** Main menu → **Settings**.
+
+**What to look for.**
+- **Six tabs**: Game, Display, Audio, Multiplayer, Controls, **Codex**.
+- **Codex → OPEN THE CODEX** opens the codex; Escape brings back Settings, still on that tab.
+- **The Game tab has no Hotkeys dropdown** any more.
+- **Controls is the keys themselves** (there is no button to a separate screen): **Command card keys: Standard | Grid**
+  at the top, then every rebindable key under Selection, Camera and Interface. Click a key, press the new one; Escape
+  cancels, Delete clears. **Reset all** puts every key and the Standard layout back.
+- **Grid** puts the command card on QWER / ASDF / ZXCV (select an SCV in a game: Move is Q). It is remembered, and
+  **F10 → Settings** in a game calls it "Command card keys".

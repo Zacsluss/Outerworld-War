@@ -47,7 +47,7 @@ const Desktop = {
       this.hosting = info; btn.textContent = 'STOP HOSTING';
       this.$('netUrl').value = 'localhost:' + info.port;
       this.share();
-      Net.browse('ws://localhost:' + info.port + '/ws', (this.$('netName').value || '').trim() || 'Player', { host: true });   // browse, then host a listed game the moment the socket opens
+      Net.browse('ws://localhost:' + info.port + '/ws', Net.loadIdentity().name || 'Player', { host: true });   // browse, then host a listed game the moment the socket opens; the name is the one asked for at first launch
     } catch (e) { Net.status('Could not start the relay: ' + (e && e.message || e)); }
     btn.disabled = false;
   },

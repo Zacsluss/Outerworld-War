@@ -121,3 +121,72 @@ Still not built, and why: a **rematch / back to the same lobby** after a game (t
 
 Tests: `test/lobby.js` (relay over real sockets, and the client in a VM with the real skirmish functions), with negative
 controls in `.claude/review/lobby/controls.js`.
+
+---
+
+## 5. Every key, where a player looks for it
+
+*Eighth session, the user's item 5: "Remove the hotkeys settings as currently shown. Hotkeys should be moved into
+controls. All controls in Hotkeys should be customizable."*
+
+**StarCraft II** (Options, Hotkeys; the profiles are commonly known and listed by Liquipedia, whose page refused the
+fetch). A player picks a **profile** -- Standard, Standard for Lefties, Grid, Grid for Lefties, Classic -- and any of them
+can be copied into a custom profile and edited. The editor is organised the way the game is played: pick a race, pick a
+unit or building, and its **command card** is shown with a key on every button. A command shared by many units (Move,
+Stop, Attack) is one command, so changing it on one card changes it on every card. The open-source
+`jcfieldsdev/starcraft2-hotkey-editor`, which reproduces the in-game editor, states the two rules outright: conflicting
+keys "are highlighted in red", and the editor lists "all units with that exact same command" because they "will also be
+affected when this hotkey is edited". Every command can be reset to its default.
+
+**OpenRA** (read from its source, `HotkeysSettingsLogic.cs`). Settings has a Hotkeys panel: hotkeys in groups, a filter
+by context, click one and press the new key. A key already used is not silently taken: the panel names the hotkey that
+has it and offers **OVERRIDE**. Each hotkey has its own reset, and the panel has a reset for all.
+
+**What this game had.** The global keys (camera, selection, speed) could be rebound on a separate Controls screen reached
+by a button inside the Settings tab called Controls. The command card's letters could not be changed at all: they came
+from the unit tables, and a **Brood War / Grid** dropdown on the Game tab chose between those letters and QWER / ASDF /
+ZXCV. An earlier milestone kept the two apart on purpose ("what letter builds a Barracks" against "what key centres the
+camera"); both research sources put them in one place.
+
+**What was built.** The keys are the **Controls tab** itself: every rebindable key in its group, and the command card's
+layout -- **Standard** (each command's own letter) or **Grid** -- chosen there, remembered, with one Reset. The dropdown
+and the separate screen are gone. *(The command card's own keys, one command at a time, are the next commit's; this
+section is updated when they land.)*
+
+---
+
+## 6. The menus around the lobby
+
+*Eighth session. The user, with screenshots of the old screens: "I feel like you did absolutely no research into what
+this menu system and lobby system should look like." Five changes: Single Player shows only its doors and START lives in
+the skirmish lobby; the skirmish lobby "should look exactly the same as the Multiplayer Lobby", except that nobody else
+can join; the name is asked for when the game first opens, and pressing MULTIPLAYER is pressing CONNECT; the tagline
+and the control hints come off the main menu; the Codex gets a Settings tab of its own.*
+
+**OpenRA** is the closest model, and every one of the five is how it already works (read from `MainMenuLogic.cs`,
+`LobbyLogic.cs` and `IntroductionPromptLogic.cs` on its `bleed` branch):
+
+- **The main menu** is doors: Singleplayer, Multiplayer, Settings, Extras, Quit. **Singleplayer** opens a second set of
+  doors -- Missions, Skirmish, Load, Encyclopedia, Back -- and nothing on it starts a game.
+- **Skirmish creates a local server with the chosen map and opens the same lobby panel multiplayer uses.** In that mode
+  the lobby's DISCONNECT button reads **Back**, START does not wait on a ready check, and the server browser tab is not
+  offered. Chat stays.
+- **Multiplayer opens the server browser directly.**
+- **An introduction prompt is shown at startup, before the main menu**: the player's name and colour and the mouse and
+  scroll options. It records the prompt version the player last completed, so a new version is shown once to everyone.
+
+**StarCraft II** makes games against the computer in its custom-game lobby -- the same screen, with computer slots --
+rather than on a form of their own.
+
+**What was built** (`PLAYTEST-M18.md` items 88-91):
+
+| The user's item | Now |
+|---|---|
+| 1. Single Player doors only; START only in the skirmish lobby; the skirmish lobby is the multiplayer lobby | Single Player: Skirmish Setup, Campaign, Load Saved Game, Watch Replay, Continue Autosave, Map Editor. **Skirmish Setup opens the multiplayer lobby's own screen** (`Net.roomHtml` with `local`), drawn from a room the page holds (`UI.Skirmish`) that answers the lobby's messages the way the relay does. Removed from it, because they exist only for other humans: READY, latency, the nudge, spectators, the team lock, privacy, the game's name, the code and the invite link. **QUIT reads BACK**, as in OpenRA. Added: a **Seed** row, the one setting a relay room picks for itself at START. START needs a computer opponent and a start for everyone. The setup is remembered, except the seed, which is new every time the lobby opens, as a relay's is. Maps made in the editor are offered here and never online. |
+| 2. The name at first launch; MULTIPLAYER is CONNECT | A **Welcome** prompt before the main menu asks for the name (versioned like OpenRA's, so a player who connected before it existed is asked once too); an invite link waits for it. **MULTIPLAYER connects and shows the game list.** The server form appears only when the server cannot be reached (or the connection is lost), says which, and has TRY AGAIN. Name and server are changed in Settings, Multiplayer. |
+| 3. No bloat on the main menu | The title and three doors. |
+| 4. The Codex in its own tab | Settings, **Codex**. |
+| 5. Hotkeys in Controls | Section 5. |
+
+Tests: `test/menus.js` runs `js/ui.js`'s real boot against a page built from `index.html` (62 checks), with 40 negative
+controls in `.claude/review/menus/controls-menus.js`.

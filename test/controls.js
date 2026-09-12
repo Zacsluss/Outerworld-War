@@ -179,10 +179,13 @@ ok(unread.length === 0, 'every declared binding is actually consulted by onKey -
   ok(r3.afterQ.key === 'q' && r3.afterQ.redraws === 1 && r3.afterQ.listenerGone, '...and pressing q binds q and redraws', JSON.stringify(r3.afterQ));
 }
 
-// the Controls screen must exist and reference only ids that are in the document
+// The controls are the Controls TAB of Settings now (eighth session, the user's item 5: the hotkeys belong in Controls,
+// and there is no separate Controls screen behind a button). The list and its reset live inside that tab's body.
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-for (const id of ['controlsPanel', 'bindList', 'bindReset', 'controlsBack', 'controlsBtn'])
-  ok(html.includes('id="' + id + '"'), 'index.html has #' + id);
+const keysTab = (html.match(/<div class="tabBody" data-body="keys"[\s\S]*?\n    <\/div>/) || [''])[0];
+for (const id of ['bindList', 'bindReset', 'keyStd', 'keyGrid'])
+  ok(keysTab.includes('id="' + id + '"'), 'the Controls tab has #' + id);
+ok(!/id="controlsPanel"|id="controlsBtn"|id="controlsBack"/.test(html), 'and there is no separate Controls screen any more');
 
 console.log((fail ? 'FAILURES ' : 'ALL PASS  ') + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

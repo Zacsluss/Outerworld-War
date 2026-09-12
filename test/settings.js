@@ -3,7 +3,7 @@
 // too big), scroll speed, edge scrolling, one master volume, and the multiplayer name and server.
 //   node test/settings.js
 //
-//  1. THE WIRING: index.html has the five tabs and every control id js/ui.js reaches for
+//  1. THE WIRING: index.html has the six tabs and every control id js/ui.js reaches for (the eighth session added Codex)
 //  2. HUD SIZE: 1.4 unless the player says otherwise; 1.0 is the original console and 1.6 the largest; kept in range,
 //     remembered, and a malformed stored value is the default rather than a broken HUD
 //  3. SCROLL SPEED and EDGE SCROLL move the camera by exactly what they say, and edge scroll off leaves the arrow keys
@@ -22,8 +22,8 @@ const J = v => JSON.stringify(v);
   const panel = (html.match(/<div class="panel wide" id="settingsPanel"[\s\S]*?<button id="settingsBack"/) || [''])[0];
   const tabs = (panel.match(/data-tab="(\w+)"/g) || []).map(s => s.slice(10, -1));
   const bodies = (panel.match(/data-body="(\w+)"/g) || []).map(s => s.slice(11, -1));
-  ok(J(tabs) === J(['game', 'display', 'audio', 'online', 'keys']) && J(bodies) === J(tabs), 'Settings has five tabs, each with its own body: Game, Display, Audio, Multiplayer, Controls', J({ tabs, bodies }));
-  const ids = ['hotkeys', 'optScroll', 'optScrollVal', 'optEdge', 'optHud', 'optHudVal', 'mute', 'voice', 'music', 'optVolume', 'optVolumeVal', 'optNetName', 'optNetUrl', 'controlsBtn', 'codexBtn', 'settingsBack', 'setTabs'];
+  ok(J(tabs) === J(['game', 'display', 'audio', 'online', 'keys', 'codex']) && J(bodies) === J(tabs), 'Settings has six tabs, each with its own body: Game, Display, Audio, Multiplayer, Controls, Codex', J({ tabs, bodies }));
+  const ids = ['optScroll', 'optScrollVal', 'optEdge', 'optHud', 'optHudVal', 'mute', 'voice', 'music', 'optVolume', 'optVolumeVal', 'optNetName', 'optNetUrl', 'bindList', 'bindReset', 'keyStd', 'keyGrid', 'codexBtn', 'settingsBack', 'setTabs'];
   const ui = fs.readFileSync(path.join(root, 'js', 'ui.js'), 'utf8');
   const missing = ids.filter(id => !new RegExp('id="' + id + '"').test(html)), unread = ids.filter(id => id !== 'settingsBack' && !/Val$/.test(id) && !ui.includes("'" + id + "'"));
   ok(!missing.length && !unread.length, 'every control is on the page and js/ui.js reaches for every one of them', J({ missing, unread }));

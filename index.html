@@ -167,7 +167,6 @@
   .lp.spec .lbName { font-weight: normal; color: #aab4c4; }
   .lbDetBtns { display: flex; gap: 8px; margin-top: auto; } .lbDetBtns button { margin: 0; flex: 1; }
   .lbButtons .lbWait { flex: 1; text-align: right; }
-  #multiPanel.on .netHelp { display: none; }   /* the help is about reaching a server: once connected, it is in the way */
   /* The settings column reads as a form: the label beside its value, not above it. */
   .panel.hub .lbSetRow { margin: 5px 0; }
   .panel.hub .lbSetRow > label { width: 92px; flex: none; margin: 0; }
@@ -180,46 +179,58 @@
     .lbTools { flex-wrap: wrap; }
   }
   .help { margin-top: 16px; font-size: 11px; color: #6e7787; line-height: 1.55; }
-  .foot { margin-top: 22px; text-align: center; font-size: 9px; letter-spacing: 1.5px; color: #5c6473; text-transform: uppercase; white-space: nowrap; }
-  /* Skirmish setup. A section rule instead of a second nested panel: the screen is one form with four
-     parts, and boxing each part made it read as four unrelated dialogs stacked on top of each other. */
-  .sect { margin: 20px 0 6px; padding-bottom: 4px; font-size: 11px; letter-spacing: 3px; color: #b09a5c; border-bottom: 1px solid #3a3122; }
-  .lb2 { width: auto; margin-left: 4px; }
   .grow { flex: 1; min-width: 0; }
-  .oprow select { flex: 1; min-width: 0; }
-  /* The summary line. It is the one thing on the single-player and skirmish screens that says, in words
-     rather than in dropdowns, what pressing START will actually produce -- so it is given the gold rule
-     the title has. pre-line, because UI.skirmishSummary returns three plain-text lines: it is asserted in
-     node, so it cannot return markup, and three sentences run together are not a summary. */
-  .sum { margin-top: 14px; padding: 10px 12px; background: #0c1016; border: 1px solid #23283a; border-left: 3px solid #d8bd76; font-size: 12px; color: #b8c2cf; line-height: 1.6; min-height: 32px; white-space: pre-line; text-align: left; }
+  /* ---- The eighth session's menus (the user's list; RESEARCH-LOBBY.md, section 6). The skirmish lobby is the
+     multiplayer lobby's own plate, .panel.hub, and needs nothing of its own. ---- */
+  #namePanel .sub { margin: 6px 0 4px; }
+  /* Before a connection there is only a status line or the Try Again form, which do not need the game list's width. */
+  #multiPanel.panel.hub:not(.on) { width: 520px; }
+  /* Settings, Controls: the command card's layout on top, then every key in two columns under its group. */
+  .keysTop { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; }
+  .keysLabel { font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: #b8b09a; }
+  .seg { display: inline-flex; }
+  .seg button { display: inline-block; width: auto; height: 28px; line-height: 26px; margin: 0; padding: 0 14px; font-size: 11px; letter-spacing: 1px; }
+  .seg button.on { color: #fff3cc; background: linear-gradient(#72829d 0%, #48566d 47%, #303a49 53%, #232a36 100%); box-shadow: inset 0 0 0 1px #d8bd76, 0 0 10px rgba(255, 210, 110, .35); }
+  .bindList { display: grid; grid-template-columns: 1fr 1fr; column-gap: 22px; max-height: 360px; overflow: auto; padding-right: 4px; }
+  .bindHead { grid-column: 1 / -1; margin: 10px 0 2px; padding-bottom: 3px; font-size: 10px; letter-spacing: 2px; color: #d8bd76; text-transform: uppercase; border-bottom: 1px solid #3a3122; }
+  .bindList .row { margin: 3px 0; gap: 8px; }
+  .bindList .row label { flex: 1; width: auto; font-size: 12px; letter-spacing: 0; text-transform: none; color: #cfd6e0; }
+  .bindList button.keyBtn { flex: none; width: 118px; height: 26px; line-height: 24px; margin: 0; font-size: 11px; letter-spacing: 1px; }
+  .keysNote { margin-top: 8px; font-size: 10px; color: #6e7787; }
 </style>
 </head>
 <body>
 <div id="menu">
-  <!-- The front: the title and the three doors. Nothing else. -->
+  <!-- The front: the title and the three doors, and nothing else. The tagline and the control hints under the buttons
+       are gone (the user, eighth session: bloat; how to play lives in Settings, Controls). -->
   <div class="panel" id="mainPanel">
     <h1>BROOD WAR</h1>
     <div class="rule"></div>
-    <div class="sub">Fan remake. Three races, full tech trees, fog of war, AI opponents. No original assets.</div>
     <button id="singleBtn" class="big">Single Player</button>
     <button id="multiBtn" class="big">Multiplayer</button>
     <button id="settingsBtn" class="big">Settings</button>
-    <div class="foot">Left click selects &middot; right click commands &middot; F1 in-game help</div>
   </div>
 
-  <!-- Single Player: the one-click start with a sentence saying what it will produce, the skirmish form,
-       the campaign, saves, replays and the map editor. The match controls live on #skirmishPanel so there
-       is exactly one place a game is configured; START here is the same click on the same settings. -->
+  <!-- The first time the game opens: the player's name, asked once, the way every online RTS asks for an account name
+       before anything else. Kept with the multiplayer identity (Net.saveIdentity); Settings, Multiplayer changes it. -->
+  <div class="panel" id="namePanel" style="display:none">
+    <h1 class="h2">WELCOME, COMMANDER</h1>
+    <div class="rule"></div>
+    <div class="row"><label>Your name</label><input id="nameInput" class="grow" maxlength="16" placeholder="Up to 16 letters" autocomplete="off"></div>
+    <div class="sub" id="nameNote">Other players see this name. You can change it later in Settings.</div>
+    <button id="nameOk">Continue</button>
+  </div>
+
+  <!-- Single Player: the doors, and no match settings -- those live in the skirmish lobby, which is where START is. -->
   <div class="panel" id="singlePanel" style="display:none">
     <h1 class="h2">SINGLE PLAYER</h1>
     <div class="rule"></div>
-    <div class="sum" id="menuSummary"></div>
-    <button id="start">Start Game</button>
-    <button id="setupBtn" class="small">Skirmish Setup</button>
-    <button id="campaignBtn" class="small">Campaign</button>
-    <div class="row2"><button id="loadBtn" class="small">Load Saved Game</button><button id="replayBtn" class="small">Watch Replay</button></div>
-    <button id="autosaveBtn" class="small" style="display:none">Continue Autosave</button>
-    <button id="editorBtn" class="small">Map Editor</button>
+    <button id="setupBtn">Skirmish Setup</button>
+    <button id="campaignBtn">Campaign</button>
+    <button id="loadBtn">Load Saved Game</button>
+    <button id="replayBtn">Watch Replay</button>
+    <button id="autosaveBtn" style="display:none">Continue Autosave</button>
+    <button id="editorBtn">Map Editor</button>
     <input type="file" id="loadFile" accept=".json" hidden><input type="file" id="replayFile" accept=".json" hidden><input type="file" id="mapFile" accept=".json" hidden>
     <button id="singleBack" class="small back">Back</button>
   </div>
@@ -233,117 +244,68 @@
     <button id="campaignBack" class="small back">Back</button>
   </div>
 
-  <!-- Multiplayer: the relay client. The lobby renders into #lobby once CONNECT succeeds. HOST A GAME
-       and its help line are hidden here and shown by js/desktop.js inside the desktop app only.
-       The seventh session's hub (item 2): #netForm is what a player sees before connecting and #netBar the strip
-       that replaces it after (Net.renderBar), so the browser and the lobby get the whole plate. -->
+  <!-- The skirmish lobby: the multiplayer lobby's own screen with nobody else able to join (the user, eighth session:
+       "should look exactly the same as the Multiplayer Lobby"). UI.Skirmish holds the room and Net.roomHtml draws it. -->
+  <div class="panel hub" id="skirmishPanel" style="display:none">
+    <h1 class="h2">SKIRMISH</h1>
+    <div class="rule"></div>
+    <div id="skLobby"></div>
+  </div>
+
+  <!-- Multiplayer: pressing MULTIPLAYER connects (Net.enter) and shows the game list. There is no form in the way: the
+       name was asked for at first launch, and the server is the page's own unless Settings names another. #netForm
+       appears only when the server cannot be reached -- in the desktop app always, since nothing serves it -- and it
+       is where HOST A GAME lives there. -->
   <div class="panel hub" id="multiPanel" style="display:none">
     <h1 class="h2">MULTIPLAYER</h1>
     <div class="rule"></div>
-    <div id="netForm">
-    <div class="sub">Everyone connects to the same server, then hosts a game or joins one from the list.</div>
-    <div class="row"><label>Server</label><input id="netUrl" class="grow"></div>
-    <div class="row"><label>Name</label><input id="netName" value="Player" class="grow" maxlength="16"></div>
-    <button id="netConnect">Connect</button>
-    <button id="netHost" class="small" style="display:none">Host a Game</button>
-    </div>
     <div id="netBar" class="netBar" style="display:none"></div>
+    <div id="netForm" style="display:none">
+      <div class="sub" id="netFail">The game server could not be reached.</div>
+      <div class="row"><label>Server</label><input id="netUrl" class="grow"></div>
+      <button id="netConnect">Try Again</button>
+      <button id="netHost" class="small" style="display:none">Host a Game</button>
+      <div class="help netHelp">The server is the machine running PLAY.bat, which prints its address.<span id="netDesktopHelp" style="display:none"> In the desktop app, HOST A GAME starts one on this machine; the others type the address it shows.</span></div>
+    </div>
     <div id="netShare" class="sub" style="display:none"></div>
     <div id="netStatus" class="sub"></div>
     <div id="lobby"></div>
-    <div class="help netHelp">The server is the machine running PLAY.bat (it prints its LAN address) or the desktop app's HOST A GAME; over the internet, whatever address reaches it. A game you host is listed for everyone connected to that server. A private room code is for a game that should not be.<span id="netDesktopHelp" style="display:none"><br>In the desktop app: HOST A GAME starts the server on this machine and puts your game in the list; the others type the address it shows into Server, press CONNECT and click your game. Over the internet the host still needs a tunnel or a port forward to that port.</span></div>
     <button id="multiBack" class="small back">Back</button>
   </div>
 
-  <!-- Settings, in tabs (seventh session, item 2: "a truly sophisticated set of menus"). Five kinds of setting on one
-       plate read as one long form. Every control is read and written by js/ui.js's boot code, applied the moment it
-       moves and remembered (UI.loadPrefs) -- except Mute, which by design never outlives the page. -->
+  <!-- Settings, in tabs. Every control is read and written by js/ui.js's boot code, applied the moment it moves and
+       remembered (UI.loadPrefs) -- except Mute, which by design never outlives the page. The controls are the whole of
+       the Controls tab (every key, the command card's included), and the Codex has a tab of its own. -->
   <div class="panel wide" id="settingsPanel" style="display:none">
     <h1 class="h2">SETTINGS</h1>
     <div class="rule"></div>
-    <div class="tabs" id="setTabs"><a href="#" data-tab="game" class="on">Game</a><a href="#" data-tab="display">Display</a><a href="#" data-tab="audio">Audio</a><a href="#" data-tab="online">Multiplayer</a><a href="#" data-tab="keys">Controls</a></div>
+    <div class="tabs" id="setTabs"><a href="#" data-tab="game" class="on">Game</a><a href="#" data-tab="display">Display</a><a href="#" data-tab="audio">Audio</a><a href="#" data-tab="online">Multiplayer</a><a href="#" data-tab="keys">Controls</a><a href="#" data-tab="codex">Codex</a></div>
     <div class="tabBody" data-body="game">
-      <div class="row"><label>Hotkeys</label><select id="hotkeys" class="grow"><option value="bw">Brood War</option><option value="grid">Grid (QWE / ASD / ZXC)</option></select></div>
       <div class="row"><label>Scroll speed</label><input type="range" id="optScroll" min="50" max="200" step="10" value="100" class="grow"><span class="val" id="optScrollVal">100%</span></div>
       <div class="row"><label>Edge scroll</label><label class="chk"><input type="checkbox" id="optEdge" checked> Pan when the mouse reaches the edge of the screen</label></div>
-      <div class="help">In game: A attack-move, M move, S stop, H hold, P patrol, B build, V advanced build. Ctrl+1-9 control groups, Tab cycles the selected kind, comma finds an idle worker, Ctrl+A selects the army, Backspace centres on the selection.<br>
-        Ctrl+M mutes, F1 is help, F3 the codex, F10 the pause menu (its Settings changes the same options), +/- the speed.</div>
     </div>
     <div class="tabBody" data-body="display" style="display:none">
       <div class="row"><label>HUD size</label><input type="range" id="optHud" min="1" max="1.6" step="0.1" value="1.4" class="grow"><span class="val" id="optHudVal">1.4x</span></div>
-      <div class="help">How large the console at the bottom of the screen is drawn. The minimap, the selection and the command card grow with it. 1.4x is the default; 1.0x is the original size. However large it is set, the console never takes more than 42% of a short window.</div>
     </div>
     <div class="tabBody" data-body="audio" style="display:none">
-      <div class="sub">Audio starts muted every time the page loads. Unmuting lasts for this session only.</div>
       <div class="row"><label>Audio</label><label class="chk"><input type="checkbox" id="mute" checked> Mute all</label><label class="chk"><input type="checkbox" id="voice"> Voice</label><label class="chk"><input type="checkbox" id="music"> Music</label></div>
       <div class="row"><label>Volume</label><input type="range" id="optVolume" min="0" max="100" step="5" value="100" class="grow"><span class="val" id="optVolumeVal">100%</span></div>
-      <div class="help">One level for everything: the interface sounds, the unit voices and the music.</div>
+      <div class="sub">Sound starts muted each time the game opens.</div>
     </div>
     <div class="tabBody" data-body="online" style="display:none">
       <div class="row"><label>Name</label><input id="optNetName" maxlength="16" class="grow" placeholder="Player"></div>
       <div class="row"><label>Server</label><input id="optNetUrl" class="grow" placeholder="this page's own server"></div>
-      <div class="help">What MULTIPLAYER fills in before you connect, remembered between visits. An invite link a friend sends you connects under this name.</div>
     </div>
     <div class="tabBody" data-body="keys" style="display:none">
-      <div class="help">Rebind the global keys: the camera, control groups, selection and speed. The letters on the command card follow the Hotkeys layout on the Game tab.</div>
-      <button id="controlsBtn" class="small">Controls</button>
-      <button id="codexBtn" class="small">Codex</button>
+      <div class="keysTop"><span class="keysLabel">Command card keys</span><span class="seg"><button id="keyStd" class="small" title="Each command on its own letter: M move, A attack, B build">Standard</button><button id="keyGrid" class="small" title="Keys by position on the card: QWER, ASDF, ZXCV">Grid</button></span><span class="grow"></span><button id="bindReset" class="small inline">Reset all</button></div>
+      <div id="bindList" class="bindList"></div>
+      <div class="keysNote">Click a key, then press the new one. Escape cancels; Delete clears it.</div>
+    </div>
+    <div class="tabBody" data-body="codex" style="display:none">
+      <div class="sub">Every unit, building, ability and upgrade in the game, with its numbers.</div>
+      <button id="codexBtn">Open the Codex</button>
     </div>
     <button id="settingsBack" class="small back">Back</button>
-  </div>
-  <!-- ==================================================================================
-       Controls (M12 item 10). The screen this milestone existed to add: every global action
-       listed, every one rebindable, and a reset. Command-card letters are NOT here -- those
-       come from the unit defs and are governed by the Brood War / Grid switch on Settings,
-       which answers a different question (what letter builds a Barracks) from this one
-       (what key centres the camera). Mixing the two into one list would make neither
-       legible.
-       =================================================================================== -->
-  <div class="panel" id="controlsPanel" style="display:none">
-    <h1 class="h2">CONTROLS</h1>
-    <div class="rule"></div>
-    <div class="sub">Click a key to rebind it, then press the key you want. Escape cancels; Delete unbinds.</div>
-    <div id="bindList"></div>
-    <div class="row2"><button id="bindReset" class="small">Reset to Defaults</button><button id="controlsBack" class="small back">Back</button></div>
-  </div>
-  <!-- ==================================================================================
-       Skirmish setup (M11 wave two, item 22). The surface for everything the sim already
-       knows how to do and the menu had no way to ask for: the four map sizes, the AI play
-       styles, procedural archetypes, weather, and the map's own life.
-
-       Every control here is READ ONLY ONCE, by UI.readSetup(), into a plain object that
-       UI.skirmishOptions() turns into the G.init options. Nothing on this screen talks to
-       the simulation directly -- see the long comment above UI.skirmishOptions in js/ui.js
-       for why that indirection is the whole point rather than an affectation.
-
-       Its BACK returns to Single Player, the door it is behind, not to the front.
-       ================================================================================== -->
-  <div class="panel wide" id="skirmishPanel" style="display:none">
-    <h1 class="h2">SKIRMISH</h1>
-    <div class="rule"></div>
-    <div class="sub">Everything below ends up in the options object the game starts from, so a seed and these settings are the whole match.</div>
-
-    <div class="sect">PLAYERS</div>
-    <div class="row"><label>Your race</label><select id="race"><option value="T">Terran</option><option value="Z">Zerg</option><option value="P">Protoss</option><option value="R">Random</option></select><label class="lb2">Team</label><select id="team"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
-    <div class="row"><label>Opponents</label><select id="nopp"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option></select><span class="sub" style="margin:0">race, difficulty, play style, team</span></div>
-    <div id="opps"></div>
-
-    <div class="sect">MAP</div>
-    <div class="row"><label>Map</label><select id="layout" class="grow"></select></div>
-    <div class="row"><label>Size</label><select id="mapSize" class="grow"></select><label class="lb2">Seed</label><input id="seed" type="number" value="1" style="width:88px"><button id="seedRoll" class="small inline">Roll</button></div>
-    <div class="row"><label>Weather</label><select id="optHazard" class="grow"></select><select id="optNight" class="grow"></select></div>
-    <div class="row"><label>Terrain</label><select id="optFeatures" class="grow"></select></div>
-
-    <div class="sect">THE MAP'S OWN LIFE</div>
-    <div class="row"><label>Derelicts</label><select id="optDerelicts" class="grow"></select><label class="lb2">Wildlife</label><select id="optWildlife" class="grow"></select></div>
-    <div class="help" id="neutralNote" style="margin-top:2px"></div>
-
-    <div class="sect">RULES</div>
-    <div class="row"><label>Starting bank</label><select id="optStart" class="grow"></select></div>
-
-    <div class="sum" id="setupSummary"></div>
-    <button id="setupStart">Start Game</button>
-    <button id="setupBack" class="small back">Back</button>
   </div>
 </div>
 <canvas id="game"></canvas>

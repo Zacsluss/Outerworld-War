@@ -101,7 +101,7 @@ const UI = {
   // Read once at boot and written the moment one changes. A value missing or malformed in storage is the default, so a
   // bad write can never take the interface down, and loading never turns a missing key into a stored one. Mute is not
   // here on purpose: see Sound.
-  hudScale: HUD_SCALE, scrollSpeed: 1, edgeScroll: true,
+  hudScale: HUD_SCALE, scrollSpeed: 1, edgeScroll: true, gridKeys: false,
   readPref(k) { try { const s = localStorage.getItem(k); return s == null ? undefined : JSON.parse(s); } catch (e) { return undefined; } },
   savePref(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } },
   loadPrefs() {
@@ -110,7 +110,10 @@ const UI = {
     this.scrollSpeed = num('bw_scroll', 0.5, 2, 1);
     this.edgeScroll = this.readPref('bw_edge') !== false;
     Sound.volume = num('bw_volume', 0, 1, 1);
+    // The command card's layout (Settings, Controls): stored as the bare word it always was, 'grid' or 'bw'.
+    try { this.gridKeys = localStorage.getItem('bw_hotkeys') === 'grid'; } catch (e) { this.gridKeys = false; }
   },
+  setGridKeys(on) { this.gridKeys = !!on; try { localStorage.setItem('bw_hotkeys', this.gridKeys ? 'grid' : 'bw'); } catch (e) { } return this.gridKeys; },
   setHudScale(v) { const n = Number(v); this.hudScale = isFinite(n) ? Math.round(Math.max(HUD_SCALE_MIN, Math.min(HUD_SCALE_MAX, n)) * 10) / 10 : HUD_SCALE; this.savePref('bw_hud_scale', this.hudScale); return this.hudScale; },
   setScrollSpeed(v) { const n = Number(v); this.scrollSpeed = isFinite(n) ? Math.max(0.5, Math.min(2, n)) : 1; this.savePref('bw_scroll', this.scrollSpeed); return this.scrollSpeed; },
   setEdgeScroll(v) { this.edgeScroll = v !== false; this.savePref('bw_edge', this.edgeScroll); return this.edgeScroll; },
@@ -1417,7 +1420,7 @@ const UI = {
       [(Sound.muted ? 'Sound: off' : 'Sound: on') + '  (Ctrl+M)', () => Sound.setMuted(!Sound.muted)],
       ['Voice: ' + (typeof Voice !== 'undefined' && Voice.on ? 'on' : 'off'), () => { if (typeof Voice !== 'undefined') Voice.set(!Voice.on); }],
       ['Music: ' + (typeof Music !== 'undefined' && Music.on ? 'on' : 'off'), () => { if (typeof Music !== 'undefined') Music.set(!Music.on); }],
-      ['Hotkeys: ' + (this.gridKeys ? 'Grid' : 'Brood War'), () => { this.gridKeys = !this.gridKeys; try { localStorage.setItem('bw_hotkeys', this.gridKeys ? 'grid' : 'bw'); } catch (e) { } }],
+      ['Command card keys: ' + (this.gridKeys ? 'Grid' : 'Standard'), () => { this.setGridKeys(!this.gridKeys); }],
       // The same settings as the menu's tabs, a step per press, wrapping round (seventh session, item 2).
       ['HUD size: ' + this.hudScale.toFixed(1) + 'x', () => { this.setHudScale(this.hudScale >= HUD_SCALE_MAX - 1e-9 ? HUD_SCALE_MIN : this.hudScale + 0.1); }],
       ['Scroll speed: ' + Math.round(this.scrollSpeed * 100) + '%', () => { const steps = [0.5, 0.75, 1, 1.5, 2]; const i = steps.findIndex(s => s > this.scrollSpeed + 1e-9); this.setScrollSpeed(i < 0 ? steps[0] : steps[i]); }],
@@ -1517,14 +1520,15 @@ const UI = {
   // A milestone of gameplay had shipped that the player could not reach. Four map sizes that are
   // different RULES, four AI play styles, four procedural archetypes, weather of two kinds, the
   // per-map toggles for derelicts and wildlife -- all of it tested, all of it in the tables, and the
-  // menu offered race, opponent count and map. This is the surface for it.
+  // menu offered race, opponent count and map. This is the surface for it. (The eighth session replaced the form with
+  // the skirmish lobby, UI.Skirmish, which hands UI.skirmishOptions the same settings object the form did.)
   //
   // THE SHAPE, AND WHY IT IS THIS SHAPE. The screen is a form; a form is DOM; DOM cannot be tested in
   // node without a browser or a fake one. So the screen is split in two, and the seam is a plain
   // object:
   //
-  //     the DOM  --readSetup()-->  a settings object  --skirmishOptions()-->  G.init options
-  //                                (plain, inert)        (pure, no DOM)
+  //     the lobby  --UI.Skirmish.setup()-->  a settings object  --skirmishOptions()-->  G.init options
+  //                                           (plain, inert)        (pure, no DOM)
   //
   // Everything that can be wrong -- a setting that does not reach the sim, a default that is not
   // today's default, a preset name nothing resolves, a seed that does not round-trip -- is wrong in
@@ -1811,23 +1815,142 @@ const UI = {
   },
 };
 
+// ---------------- the skirmish lobby ----------------
+// THE SKIRMISH SETUP IS THE MULTIPLAYER LOBBY (eighth session, the user's item 1: the Skirmish Setup Lobby "should look
+// exactly the same as the Multiplayer Lobby. The only difference is that no other humans will be able to join"). That is
+// OpenRA's design -- its Skirmish button starts a server of its own and opens the very lobby its multiplayer uses, with
+// BACK for DISCONNECT and no ready check -- and StarCraft II's, whose games against the computer are set up in the
+// custom-game lobby. There is no server to start here: this holds a room in the shape of the relay's lobby message,
+// answers the messages the lobby's controls send the way test/serve.js answers them, and Net.roomHtml draws it.
+//
+// START turns the room into the settings object the old skirmish form was read into (UI.readSetup, gone with the form),
+// so UI.skirmishOptions -- and every check test/skirmish.js makes of it -- is still the one way a skirmish becomes a game.
+UI.Skirmish = {
+  KEY: 'bw_skirmish',   // what was set up last time: the map, the speed, the rules and the slots. Never the seed.
+  ME: 1,                // your slot's id; the computers' are negative, as the relay numbers them
+  L: null, log: [], teamsShown: 2,
+  el() { return typeof document !== 'undefined' && document.getElementById ? document.getElementById('skLobby') : null; },
+  name() { let n = ''; try { n = Net.loadIdentity().name; } catch (e) { n = ''; } return n || 'Player'; },
+  // A new seed every time the lobby opens, the way the relay picks one at every START; the Seed row pins one.
+  roll() { return 1 + Math.floor(Math.random() * 999999); },
+  cap(L) { L = L || this.L; return Net.mapCap(L.layout, L.rules && L.rules.size); },
+  raceOf(r, d) { return /^[TZPR]$/.test(r) ? r : d; },
+  teamOf(t, d) { const n = parseInt(t, 10); return n >= 1 && n <= 8 ? n : d; },
+  diffOf(v) { return Object.prototype.hasOwnProperty.call(Net.DIFF_NAMES, v) ? v : 'normal'; },
+  styleOf(v) { return Net.styles().some(x => x[0] === v) ? v : 'standard'; },
+  // Computer 1, Computer 2... in seat order, which is the order UI.skirmishOptions names them in the game.
+  renumber(L) { let n = 0; for (const p of L.players) if (p.ai) p.name = 'Computer ' + (++n); return L; },
+  // A new room: you and one computer on the settings the skirmish screen always opened with (UI.setupDefaults).
+  fresh() {
+    const d = UI.setupDefaults();
+    return this.renumber({ state: 'lobby', title: 'Skirmish', layout: d.map, speed: 6, seed: this.roll(), cap: 8, listed: false, lockTeams: false, readyCheck: false, specs: [],
+      rules: Object.assign({}, Net.RULE_DEFAULTS),
+      players: [{ id: this.ME, name: this.name(), race: d.race, team: d.team, host: true, ready: true }]
+        .concat(d.opponents.map((o, i) => ({ id: -(i + 1), ai: true, name: '', race: o.race, difficulty: o.difficulty, style: o.style, team: o.team }))) });
+  },
+  save() {
+    const L = this.L; if (!L) return;
+    const keep = { layout: L.layout, speed: L.speed, rules: L.rules, players: L.players.map(p => p.ai ? { ai: true, race: p.race, difficulty: p.difficulty, style: p.style, team: p.team } : { race: p.race, team: p.team }) };
+    try { localStorage.setItem(this.KEY, JSON.stringify(keep)); } catch (e) { }
+  },
+  // Last time's room, read back through the same checks a message from the lobby's controls passes. Whatever does not
+  // survive them -- a map deleted in the editor, a play style that no longer exists -- is the default instead.
+  load() {
+    const L = this.fresh();
+    let s = null; try { s = JSON.parse(localStorage.getItem(this.KEY) || 'null'); } catch (e) { s = null; }
+    if (!s || typeof s !== 'object') return L;
+    if (typeof s.layout === 'string' && Net.maps(true).some(m => m[0] === s.layout)) L.layout = s.layout;
+    if (typeof s.speed === 'number' && isFinite(s.speed)) L.speed = Math.max(0, Math.min(6, s.speed | 0));
+    if (s.rules && typeof s.rules === 'object') for (const k of Object.keys(Net.RULE_DEFAULTS)) { const v = s.rules[k]; if (typeof v === 'string' && Net.ruleOptions(k).some(x => x[0] === v)) L.rules[k] = v; }
+    const ps = Array.isArray(s.players) ? s.players.filter(p => p && typeof p === 'object') : [];
+    const me = ps.find(p => !p.ai); if (me) { L.players[0].race = this.raceOf(me.race, L.players[0].race); L.players[0].team = this.teamOf(me.team, L.players[0].team); }
+    const ais = ps.filter(p => p.ai).slice(0, 7);
+    if (ais.length) L.players = [L.players[0]].concat(ais.map((a, i) => ({ id: -(i + 1), ai: true, name: '', race: this.raceOf(a.race, 'R'), difficulty: this.diffOf(a.difficulty), style: this.styleOf(a.style), team: this.teamOf(a.team, i + 2) })));
+    L.cap = this.cap(L);
+    return this.renumber(L);
+  },
+  // The lobby's messages, answered as test/serve.js answers them for a host -- less everything about other humans.
+  apply(m) {
+    const L = this.L; if (!L || !m) return;
+    const me = L.players.find(p => p.id === this.ME);
+    const line = (ev, extra) => { const text = Net.sysText(Object.assign({ ev }, extra || {}), true); if (text) this.log.push({ sys: true, text }); };
+    switch (m.t) {
+      case 'set': {
+        const t = m.id != null ? L.players.find(p => p.id === m.id) : me;
+        if (t) {
+          if (m.race) t.race = this.raceOf(m.race, t.race);
+          if (m.team) t.team = this.teamOf(m.team, t.team);
+          if (t.ai && m.difficulty) t.difficulty = this.diffOf(m.difficulty);
+          if (t.ai && m.style) t.style = this.styleOf(m.style);
+        }
+        if (typeof m.layout === 'string' && m.layout !== L.layout && Net.maps(true).some(x => x[0] === m.layout)) { L.layout = m.layout; line('map', { layout: L.layout }); }
+        if (m.speed != null) { const sp = Math.max(0, Math.min(6, m.speed | 0)); if (sp !== L.speed) { L.speed = sp; line('speed', { speed: sp }); } }
+        if (m.seed != null) { const n = parseInt(m.seed, 10); if (isFinite(n) && n >= 1) L.seed = Math.min(999999, n); }
+        if (m.rules && typeof m.rules === 'object') for (const k of Object.keys(Net.RULE_DEFAULTS)) {
+          if (!(k in m.rules)) continue;
+          const v = m.rules[k]; if (v !== L.rules[k] && Net.ruleOptions(k).some(x => x[0] === v)) { L.rules[k] = v; line('rule', { key: k, value: v }); }
+        }
+        break;
+      }
+      case 'roll': L.seed = this.roll(); break;
+      case 'addai':
+        if (L.players.length >= this.cap()) return this.render();
+        L.players.push({ id: -(1 + Math.max(0, ...L.players.filter(p => p.ai).map(p => -p.id))), ai: true, name: '', race: this.raceOf(m.race, 'R'), difficulty: this.diffOf(m.difficulty), style: this.styleOf(m.style), team: this.teamOf(m.team, 2) });
+        this.renumber(L); line('addai', { name: L.players[L.players.length - 1].name });
+        break;
+      case 'kick': { const out = L.players.find(p => p.ai && p.id === m.id); if (!out) return; L.players = L.players.filter(p => p !== out); line('kick', { name: out.name }); this.renumber(L); break; }
+      // The relay's shuffle: every slot dealt at random onto as many teams as are in use (at least two); seats stay put.
+      case 'shuffle': {
+        const n = Math.max(2, new Set(L.players.map(p => p.team || 1)).size), deck = L.players.slice();
+        for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const x = deck[i]; deck[i] = deck[j]; deck[j] = x; }
+        deck.forEach((p, i) => { p.team = (i % n) + 1; }); line('shuffle', { teams: n });
+        break;
+      }
+      case 'chat': { const text = String(m.text || '').trim().slice(0, 200); if (!text) return; this.log.push({ from: me ? me.name : 'Player', id: this.ME, text }); break; }
+      case 'start': return this.start();
+      case 'leave': return this.close();
+      default: return;
+    }
+    if (this.log.length > 80) this.log.splice(0, this.log.length - 80);
+    L.cap = this.cap();
+    this.save(); this.render();
+  },
+  // The room as the settings object UI.skirmishOptions reads. You are seat one; the computers follow in seat order.
+  setup(L) {
+    L = L || this.L; const me = L.players.find(p => p.id === this.ME) || L.players[0], r = Object.assign({}, Net.RULE_DEFAULTS, L.rules);
+    return { race: me.race, team: me.team, seed: L.seed, map: L.layout, size: r.size, bank: r.bank, hazard: r.hazard, night: r.night, features: r.features,
+      derelicts: r.derelicts, wildlife: r.wildlife, opponents: L.players.filter(p => p.ai).map(p => ({ race: p.race, difficulty: p.difficulty, style: p.style, team: p.team })) };
+  },
+  // START needs someone to play and a map with a start for everyone -- nothing else, because there is nobody to wait for.
+  canStart(L) { L = L || this.L; return !!L && L.players.some(p => p.ai) && L.players.length <= this.cap(L); },
+  options(L) { L = L || this.L; const o = UI.skirmishOptions(this.setup(L)); const me = L.players.find(p => p.id === this.ME); if (me && o.players[0]) o.players[0].name = me.name; return o; },
+  start() {
+    if (!this.canStart()) { this.render(); return false; }
+    const opts = this.options();
+    UI.speedIdx = this.L.speed == null ? 6 : this.L.speed;
+    const el = this.el(); if (el) el.innerHTML = '';   // its ids are the multiplayer lobby's; nothing of it may linger behind a game
+    UI.start(opts);
+    return true;
+  },
+  open() {
+    if (!this.L) { this.L = this.load(); this.log = []; this.teamsShown = 2; }
+    const me = this.L.players.find(p => p.id === this.ME); if (me) me.name = this.name();
+    this.L.seed = this.roll(); this.L.cap = this.cap();
+    if (UI.showPanel) UI.showPanel('skirmishPanel');
+    this.render();
+  },
+  close() { const el = this.el(); if (el) el.innerHTML = ''; if (UI.showPanel) UI.showPanel('singlePanel'); },
+  render() {
+    const el = this.el(); if (!el || !this.L || typeof Net === 'undefined') return;
+    Net.paint(el, Net.roomHtml(this.L, { local: true, me: this.ME, chatLog: this.log, teamsShown: this.teamsShown }));
+    Net.bindRoom(el, this.L, { local: true, me: this.ME, send: m => this.apply(m), redraw: () => this.render(), holder: this });
+  },
+};
+
 // ---------------- boot ----------------
 window.addEventListener('DOMContentLoaded', () => {
   UI.init();
   const $ = id => document.getElementById(id);
-  const cap = s => String(s).charAt(0).toUpperCase() + String(s).slice(1);
-  const el = (tag, props) => Object.assign(document.createElement(tag), props);
-  // Every select on the skirmish screen is filled from the sim's own tables rather than written out in
-  // index.html. That is the same decision the map dropdown already made and for the same reason: the
-  // four size modes and the hazard map appeared in the menu the day they were added, with nobody
-  // remembering to add an <option>, and a fifth AI style will do the same.
-  const fill = (id, items, value) => {
-    const sel = $(id); if (!sel) return null;
-    sel.innerHTML = '';
-    for (const [v, t] of items) sel.appendChild(el('option', { value: v, textContent: t }));
-    if (value != null) sel.value = value;
-    return sel;
-  };
 
   // ---- panels -------------------------------------------------------------
   // Id-based, not `previousElementSibling`. The settings panel found the main panel by walking one
@@ -1838,16 +1961,83 @@ window.addEventListener('DOMContentLoaded', () => {
     const menu = $('menu'); if (!menu || !menu.querySelectorAll) return;
     for (const p of menu.querySelectorAll('.panel')) p.style.display = p.id === id ? '' : 'none';
   };
-  // The front is three doors -- SINGLE PLAYER, MULTIPLAYER, SETTINGS -- the way a nineties RTS opened, and
-  // everything else stands behind one of them as a .panel of its own with a BACK to the door it came
-  // through. The skirmish form's BACK goes to Single Player, not to the front (see setupBack below).
-  // SETTINGS (seventh session, item 2): tabs, and every control applied the moment it moves and remembered.
+  // THE MENUS (eighth session, the user's list, and the pattern OpenRA and StarCraft II share -- RESEARCH-LOBBY.md,
+  // section 6). The front is the title and three doors. SINGLE PLAYER is doors only: Skirmish Setup, Campaign, Load
+  // Saved Game, Watch Replay, Continue Autosave and Map Editor, and START lives in the skirmish lobby and nowhere else.
+  // MULTIPLAYER connects and shows the game list. SETTINGS holds everything a player sets, including every key.
+
+  // ---- your name, asked once ----------------------------------------------
+  // OpenRA's introduction prompt: the first thing a new player sees is a box for their name, before the main menu. It is
+  // shown when the prompt's version is newer than the one this browser last completed (so a player who connected before
+  // there was a prompt -- as "Player", the old box's default -- is asked once too), or when no name is stored at all.
+  const INTRO_VERSION = 1;
+  UI.needsName = () => { let v = 0; try { v = parseInt(localStorage.getItem('bw_intro'), 10) || 0; } catch (e) { v = 0; } return v < INTRO_VERSION || !Net.loadIdentity().name; };
+  let afterName = null;
+  UI.askName = then => {
+    afterName = then || null;
+    const input = $('nameInput'), note = $('nameNote'), idn = Net.loadIdentity();
+    if (input) input.value = idn.name && idn.name !== 'Player' ? idn.name : '';
+    if (note) note.textContent = 'Other players see this name. You can change it later in Settings.';
+    UI.showPanel('namePanel');
+    if (input && input.focus) { try { input.focus(); } catch (e) { } }
+  };
+  // The name is kept with the rest of who you are (Net.saveIdentity: name, the server you typed, your race), so the other
+  // two are read back first rather than overwritten with this page's defaults.
+  UI.saveName = name => {
+    const nm = String(name == null ? '' : name).trim().slice(0, 16); if (!nm) return false;
+    const idn = Net.loadIdentity(); Net.name = nm; Net.urlTyped = idn.url; Net.race = idn.race; Net.saveIdentity();
+    try { localStorage.setItem('bw_intro', String(INTRO_VERSION)); } catch (e) { }
+    return true;
+  };
+  const nameOk = () => {
+    const input = $('nameInput'), note = $('nameNote');
+    if (!UI.saveName(input ? input.value : '')) { if (note) note.textContent = 'Type a name first: it is how other players will know you.'; return; }
+    const then = afterName; afterName = null;
+    UI.showPanel('mainPanel');
+    if (then) then();
+  };
+  const nok = $('nameOk'); if (nok) nok.addEventListener('click', nameOk);
+  const nin = $('nameInput'); if (nin) nin.addEventListener('keydown', ev => { if (ev.key === 'Enter') nameOk(); });
+
+  // ---- multiplayer: pressing the button is pressing CONNECT -----------------
+  // The name is the one asked for above and the server is the page's own, unless Settings (or an invite link) names
+  // another. Already connected as the same player to the same server: the list is simply shown again. #netForm appears
+  // only when the server could not be reached (Net.renderBar), and TRY AGAIN there takes a typed address.
+  UI.enterMultiplayer = opts => {
+    opts = opts || {};
+    UI.showPanel('multiPanel');
+    const idn = Net.loadIdentity(), name = idn.name || 'Player';
+    // A server given here (TRY AGAIN's box, an invite link) is used even when it is empty: empty is the page's own.
+    const typed = opts.server != null ? String(opts.server).trim() : idn.url;
+    const url = typed ? Net.normUrl(typed) : Net.defaultUrl();
+    if (Net.lobby || Net.active) { Net.render(); return; }
+    // Compared with the address actually connected, not with what was typed: Settings writes the typed one the moment it changes.
+    if ((Net.connected || Net.connecting) && Net.name === name && Net.url === url && !opts.join) { Net.render(); return; }
+    Net.race = idn.race; Net.urlTyped = typed || '';
+    if ($('netUrl')) $('netUrl').value = typed || '';
+    if (!url) { Net.disconnect(); Net.failed = false; Net.status(''); Net.render(); return; }   // the desktop app, with no server named: the form asks
+    Net.status('Connecting to ' + url.replace(/^wss?:\/\//, '').replace(/\/ws$/, '') + '...');
+    Net.browse(url, name, opts.join ? { join: opts.join } : undefined);
+    Net.renderBar();   // the form a failed attempt left on screen goes the moment the new attempt begins
+  };
+  const nc = $('netConnect');
+  if (nc) {
+    $('netUrl').placeholder = Net.defaultUrl().replace(/^wss?:\/\//, '').replace(/\/ws$/, '') || 'the host\'s address, e.g. 192.168.1.5:8765';
+    const retry = () => { Net.disconnect(); UI.enterMultiplayer({ server: $('netUrl').value }); };
+    nc.addEventListener('click', retry);
+    $('netUrl').addEventListener('keydown', ev => { if (ev.key === 'Enter') retry(); });
+  }
+
+  // ---- settings -------------------------------------------------------------
+  // Tabs, and every control applied the moment it moves and remembered (UI.loadPrefs).
   const tabs = $('setTabs');
   const showTab = name => {
     if (!tabs) return;
     for (const a of tabs.querySelectorAll('[data-tab]')) a.classList.toggle('on', a.dataset.tab === name);
     for (const b of document.querySelectorAll('#settingsPanel [data-body]')) b.style.display = b.dataset.body === name ? '' : 'none';
+    if (name === 'keys' && UI.drawBindings) UI.drawBindings();
   };
+  UI.showSettingsTab = showTab;
   if (tabs) for (const a of tabs.querySelectorAll('[data-tab]')) a.addEventListener('click', ev => { ev.preventDefault(); showTab(a.dataset.tab); });
   const bindRange = (id, get, set, fmt) => {
     const r = $(id), v = $(id + 'Val'); if (!r) return () => { };
@@ -1863,24 +2053,19 @@ window.addEventListener('DOMContentLoaded', () => {
   const edge = $('optEdge'); if (edge) { edge.checked = UI.edgeScroll; edge.addEventListener('change', () => UI.setEdgeScroll(edge.checked)); refreshSettings.push(() => { edge.checked = UI.edgeScroll; }); }
   const idName = $('optNetName'), idUrl = $('optNetUrl');
   if (idName && idUrl) {
-    const fill = () => { const idn = Net.loadIdentity(); idName.value = idn.name; idUrl.value = idn.url; };
-    // The multiplayer screen's own boxes follow, so what Settings says is what CONNECT will use.
-    const saveId = () => { const nm = idName.value.trim(); if (nm) Net.name = nm; Net.urlTyped = idUrl.value.trim(); Net.saveIdentity(); if (nm && $('netName')) $('netName').value = nm; if ($('netUrl')) $('netUrl').value = idUrl.value.trim(); };
+    const fillId = () => { const idn = Net.loadIdentity(); idName.value = idn.name; idUrl.value = idn.url; };
+    // A name cannot be emptied here: an empty box puts the stored name back rather than playing as nobody.
+    const saveId = () => { const nm = idName.value.trim(); const idn = Net.loadIdentity(); Net.name = nm || idn.name || 'Player'; Net.urlTyped = idUrl.value.trim(); Net.race = idn.race; Net.saveIdentity(); if (!nm) idName.value = Net.name; };
     idName.addEventListener('change', saveId); idUrl.addEventListener('change', saveId);
-    fill(); refreshSettings.push(fill);
+    fillId(); refreshSettings.push(fillId);
   }
-  // The in-game settings screen changes the same values, so the tabs re-read them every time they are opened.
-  const sb = $('settingsBtn'); if (sb) sb.addEventListener('click', () => { for (const f of refreshSettings) f(); UI.showPanel('settingsPanel'); });
-  const sbk = $('settingsBack'); if (sbk) sbk.addEventListener('click', () => UI.showPanel('mainPanel'));
-  const spb = $('singleBtn'); if (spb) spb.addEventListener('click', () => UI.showPanel('singlePanel'));
-  const spk = $('singleBack'); if (spk) spk.addEventListener('click', () => UI.showPanel('mainPanel'));
-  const mpb = $('multiBtn'); if (mpb) mpb.addEventListener('click', () => UI.showPanel('multiPanel'));
-  // BACK from inside a lobby leaves the lobby: it used to leave the player's slot sitting in a room they could no longer
-  // see, holding up everyone's START (seventh session, item 2). The connection stays, so MULTIPLAYER returns to the list.
-  const mpk = $('multiBack'); if (mpk) mpk.addEventListener('click', () => { if (Net.lobby && !Net.active) Net.leaveRoom(); UI.showPanel('mainPanel'); });
-  const cpb = $('campaignBtn'); if (cpb) cpb.addEventListener('click', () => UI.showPanel('campaignPanel'));
-  const cpk = $('campaignBack'); if (cpk) cpk.addEventListener('click', () => UI.showPanel('singlePanel'));
-  // ---- Controls screen (M12 item 10) -------------------------------------------------------------
+  const qc = $('mute'); if (qc) { qc.checked = Sound.muted; qc.addEventListener('change', () => Sound.setMuted(qc.checked)); refreshSettings.push(() => { qc.checked = Sound.muted; }); }
+  const vc = $('voice'), mc = $('music'); if (vc) { vc.checked = Voice.on; vc.addEventListener('change', () => Voice.set(vc.checked)); } if (mc) { mc.checked = Music.on; mc.addEventListener('change', () => Music.set(mc.checked)); }
+  // The Codex has a tab of its own. It opens with no game running -- it reads DATA, not G -- and draws over the canvas,
+  // so the canvas has to be visible for it; closing it puts this screen back as it was.
+  const cbx = $('codexBtn'); if (cbx) cbx.addEventListener('click', () => UI.openCodexFromMenu());
+
+  // ---- Controls: every key ---------------------------------------------------
   // Built from UI.bindings() rather than from markup, so adding an action to BIND_DEFAULTS puts it on
   // this screen with no HTML change and no chance of the two lists disagreeing.
   //
@@ -1890,8 +2075,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // the whole keyboard and the only way out would be a reload.
   const bindRow = (id, b, redraw) => {
     const row = document.createElement('div'); row.className = 'row';
-    const lab = document.createElement('label'); lab.textContent = b.label; lab.style.flex = '1';
-    const btn = document.createElement('button'); btn.className = 'small'; btn.style.width = '150px';
+    const lab = document.createElement('label'); lab.textContent = b.label;
+    const btn = document.createElement('button'); btn.className = 'small keyBtn';
     const pretty = k => !k ? '(unbound)' : k === ' ' ? 'Space' : k.startsWith('ctrl+') ? 'Ctrl+' + k.slice(5).toUpperCase() : k.length === 1 ? k.toUpperCase() : k;
     btn.textContent = pretty(b.key);
     btn.addEventListener('click', () => {
@@ -1921,182 +2106,39 @@ window.addEventListener('DOMContentLoaded', () => {
     for (const id of Object.keys(b)) {
       if (b[id].group !== lastGroup) {
         lastGroup = b[id].group;
-        const h = document.createElement('div'); h.className = 'sub'; h.style.marginTop = '10px'; h.textContent = lastGroup;
+        const h = document.createElement('div'); h.className = 'bindHead'; h.textContent = lastGroup;
         host.appendChild(h);
       }
       host.appendChild(bindRow(id, b[id], UI.drawBindings));
     }
+    for (const k of ['keyStd', 'keyGrid']) { const x = $(k); if (x) x.classList.toggle('on', (k === 'keyGrid') === !!UI.gridKeys); }
   };
-  const cbtn = $('controlsBtn'); if (cbtn) cbtn.addEventListener('click', () => { UI.drawBindings(); UI.showPanel('controlsPanel'); });
-  const cback = $('controlsBack'); if (cback) cback.addEventListener('click', () => UI.showPanel('settingsPanel'));
-  const creset = $('bindReset'); if (creset) creset.addEventListener('click', () => { UI.resetBindings(); UI.drawBindings(); });
+  const creset = $('bindReset'); if (creset) creset.addEventListener('click', () => { UI.resetBindings(); UI.setGridKeys(false); UI.drawBindings(); });
+  const kstd = $('keyStd'), kgrid = $('keyGrid');
+  if (kstd) kstd.addEventListener('click', () => { UI.setGridKeys(false); UI.drawBindings(); });
+  if (kgrid) kgrid.addEventListener('click', () => { UI.setGridKeys(true); UI.drawBindings(); });
 
+  // ---- the three doors -------------------------------------------------------
+  // The in-game settings screen changes the same values, so the tabs re-read them every time they are opened.
+  const sb = $('settingsBtn'); if (sb) sb.addEventListener('click', () => { for (const f of refreshSettings) f(); UI.drawBindings(); UI.showPanel('settingsPanel'); });
+  const sbk = $('settingsBack'); if (sbk) sbk.addEventListener('click', () => UI.showPanel('mainPanel'));
+  const spb = $('singleBtn'); if (spb) spb.addEventListener('click', () => UI.showPanel('singlePanel'));
+  const spk = $('singleBack'); if (spk) spk.addEventListener('click', () => UI.showPanel('mainPanel'));
+  const mpb = $('multiBtn'); if (mpb) mpb.addEventListener('click', () => UI.enterMultiplayer());
+  // BACK from inside a lobby leaves the lobby: it used to leave the player's slot sitting in a room they could no longer
+  // see, holding up everyone's START (seventh session, item 2). The connection stays, so MULTIPLAYER returns to the list.
+  const mpk = $('multiBack'); if (mpk) mpk.addEventListener('click', () => { if (Net.lobby && !Net.active) Net.leaveRoom(); UI.showPanel('mainPanel'); });
+  const cpb = $('campaignBtn'); if (cpb) cpb.addEventListener('click', () => UI.showPanel('campaignPanel'));
+  const cpk = $('campaignBack'); if (cpk) cpk.addEventListener('click', () => UI.showPanel('singlePanel'));
+  const setupBtn = $('setupBtn'); if (setupBtn) setupBtn.addEventListener('click', () => UI.Skirmish.open());
 
-  // ---- the skirmish form --------------------------------------------------
-  const oppRows = $('opps');
-  const readOpponents = () => [...document.querySelectorAll('#opps .oprow')].map((r, i) => ({
-    race: (r.querySelector('.orace') || {}).value || 'R',
-    difficulty: (r.querySelector('.odiff') || {}).value || 'normal',
-    style: (r.querySelector('.ostyle') || {}).value || 'standard',
-    team: parseInt((r.querySelector('.oteam') || {}).value, 10) || (i + 2),
-  }));
-  // Rebuilt rather than added to, because the row count comes from a select. It reads the existing
-  // rows first: setting three opponents up and then changing the count to 2 used to reset all of them
-  // to Random/Normal, which with four controls a row instead of three is now genuinely annoying.
-  const rebuildOpps = () => {
-    if (!oppRows) return;
-    const n = parseInt(($('nopp') || { value: '1' }).value, 10) || 1, prev = readOpponents(), styles = UI.setupStyles();
-    const sel = (cls, items, chosen, title) => `<select class="${cls}"${title ? ' title="' + title + '"' : ''}>`
-      + items.map(([v, t, tip]) => `<option value="${v}"${tip ? ' title="' + tip + '"' : ''}${String(v) === String(chosen) ? ' selected' : ''}>${t}</option>`).join('') + '</select>';
-    let h = '';
-    for (let i = 0; i < n; i++) {
-      const p = prev[i] || { race: 'R', difficulty: 'normal', style: 'standard', team: i + 2 };
-      h += `<div class="row oprow"><label>Opponent ${i + 1}</label>`
-        + sel('orace', [['R', 'Random'], ['T', 'Terran'], ['Z', 'Zerg'], ['P', 'Protoss']], p.race, 'Race')
-        + sel('odiff', UI.SETUP_DIFFS, p.difficulty, 'Difficulty')
-        + sel('ostyle', styles, p.style, 'Play style -- how it opens, what it builds and when it attacks')
-        + sel('oteam', [1, 2, 3, 4].map(t => [t, 'Team ' + t]), p.team, 'Team')
-        + '</div>';
-    }
-    oppRows.innerHTML = h;
-  };
-
-  const sizeKeys = (typeof MapModes !== 'undefined' && MapModes.keys) ? MapModes.keys.slice() : [];
-  const buildLayoutList = () => {
-    const sel = $('layout'); if (!sel || typeof MAP_LAYOUTS === 'undefined') return;
-    const keep = sel.value; sel.innerHTML = '';
-    const group = label => { const g = el('optgroup', { label }); sel.appendChild(g); return g; };
-    const add = (g, value, textContent) => g.appendChild(el('option', { value, textContent }));
-    const fixed = group('Fixed maps'), custom = [];
-    for (const [id, L] of Object.entries(MAP_LAYOUTS)) {
-      // '__preview' is the editor's scratch entry and 'sk:' entries are compositions registered by
-      // UI.start; neither is a map anybody chose, and both would otherwise appear in this list.
-      if (!L || id === '__preview' || id.slice(0, 3) === 'sk:' || sizeKeys.includes(id)) continue;
-      if (L.custom) { custom.push([id, L]); continue; }
-      add(fixed, id, (L.name || id) + (L.players ? ' (' + L.players + ' players)' : '') + (L.archetype ? ' -- fixed sample' : ''));
-    }
-    if (sizeKeys.length) {
-      const g = group('Map sizes -- four different sets of rules');
-      for (const k of sizeKeys) { const L = MAP_LAYOUTS[k]; if (L) add(g, k, (L.name || k) + '  ' + L.w + 'x' + L.h + ', ' + L.players + ' players, ' + (L.bases || []).length + ' bases each'); }
-    }
-    if (typeof Archetypes !== 'undefined') {
-      const g = group('Procedural -- a new map from the seed');
-      for (const k of Archetypes.keys) add(g, 'gen:' + k, Archetypes.names[k] || cap(k));
-    }
-    if (custom.length) { const g = group('Made in the editor'); for (const [id, L] of custom) add(g, id, (L.name || id.slice(7)) + ' (custom)'); }
-    if (keep) sel.value = keep;
-    if (!sel.value) sel.value = 'temple';
-  };
-
-  const val = (id, dflt) => { const e = $(id); return e && e.value !== '' && e.value != null ? e.value : dflt; };
-  // The seam. Everything above this line is DOM; everything below it is a plain object that
-  // UI.skirmishOptions turns into a game, and that test/skirmish.js can build by hand.
-  const readSetup = () => {
-    const opps = readOpponents();
-    return {
-      race: val('race', 'T'), team: parseInt(val('team', '1'), 10) || 1, seed: parseInt(val('seed', '1'), 10) || 1,
-      map: val('layout', 'temple'), size: val('mapSize', 'auto'), bank: val('optStart', 'standard'),
-      hazard: val('optHazard', 'map'), night: val('optNight', 'map'), features: val('optFeatures', 'map'),
-      derelicts: val('optDerelicts', 'map'), wildlife: val('optWildlife', 'map'),
-      opponents: opps.length ? opps : undefined,     // undefined, not [], so the defaults fill it in
-    };
-  };
-  UI.readSetup = readSetup;
-
-  const refreshSetup = () => {
-    // Size only means something for a procedural map: every other entry in the list already IS a size,
-    // either because it is one of the four modes or because the layout says how big it is.
-    const lay = $('layout'), ms = $('mapSize');
-    const gen = lay ? String(lay.value || '').slice(0, 4) === 'gen:' : false;
-    if (ms) { ms.disabled = !gen; if (!gen) ms.value = 'auto'; }
-    let s = readSetup();
-    // G.init hands out start locations with `starts[i % starts.length]`, so more players than the map
-    // has starts is two armies in one main rather than an error. Cap instead.
-    const no = $('nopp'), maxOpp = UI.setupMaxOpponents(s);
-    if (no) {
-      for (const o of no.options) o.disabled = parseInt(o.value, 10) > maxOpp;
-      if ((parseInt(no.value, 10) || 1) > maxOpp) { no.value = String(maxOpp); rebuildOpps(); s = readSetup(); }
-    }
-    const text = UI.skirmishSummary(s);
-    const a = $('setupSummary'); if (a) a.textContent = text;
-    const b = $('menuSummary'); if (b) b.textContent = text;
-  };
-  UI.refreshSetup = refreshSetup;
-
-  fill('mapSize', [['auto', 'As the map defines']].concat(sizeKeys.map(k => [k, (MAP_SIZES[k].name || k) + '  ' + MAP_SIZES[k].w + 'x' + MAP_SIZES[k].h])), 'auto');
-  const hazKeys = typeof HAZARDS !== 'undefined' ? Object.keys(HAZARDS) : [];
-  fill('optHazard', [['map', 'Weather: as the map defines'], ['none', 'Weather: clear']].concat(hazKeys.map(k => [k, 'Weather: ' + cap(k)])), 'map');
-  fill('optNight', [['map', 'Light: as the map defines'], ['on', 'Light: day and night'], ['off', 'Light: permanent day']], 'map');
-  fill('optFeatures', [['map', 'Destructibles: as the map defines'], ['none', 'Destructibles: none']], 'map');
-  // Both lists come from DATA, and both are empty in a build where the neutral tables have not landed.
-  // An empty list leaves only 'as the map defines' and 'none', which are the same thing on every map
-  // that ships today -- so the screen degrades to telling the truth rather than to throwing.
-  const derPresets = UI.setupPresets('derelict'), wildPresets = UI.setupPresets('wildlife');
-  fill('optDerelicts', [['map', 'As the map defines'], ['none', 'None']].concat(derPresets.map(k => [k, cap(k)])), 'map');
-  fill('optWildlife', [['map', 'As the map defines'], ['none', 'None']].concat(wildPresets.map(k => [k, cap(k)])), 'map');
-  fill('optStart', UI.SETUP_BANKS.map(b => [b[0], b[1]]), 'standard');
-  const nn = $('neutralNote');
-  if (nn) nn.textContent = (derPresets.length || wildPresets.length)
-    ? 'Capturable derelicts and buried wildlife are properties of the map, like the weather, so they travel in the layout the seed names. Placement is still landing on the simulation side; the choice is carried either way.'
-    : 'This build carries no derelict or wildlife presets, so there are none to place.';
-
-  buildLayoutList();
-  rebuildOpps();
-
-  const panel = $('skirmishPanel');
-  if (panel) {
-    const onChange = e => { if (e.target && e.target.id === 'nopp') rebuildOpps(); refreshSetup(); };
-    panel.addEventListener('change', onChange); panel.addEventListener('input', onChange);
-  }
-  const sr = $('seedRoll'); if (sr) sr.addEventListener('click', () => { const e = $('seed'); if (e) { e.value = String(1 + Math.floor(Math.random() * 999999)); refreshSetup(); } });
-  const setupBtn = $('setupBtn'); if (setupBtn) setupBtn.addEventListener('click', () => { refreshSetup(); UI.showPanel('skirmishPanel'); });
-  const setupBack = $('setupBack'); if (setupBack) setupBack.addEventListener('click', () => UI.showPanel('singlePanel'));
-  // One start, two buttons. The Single Player screen's START and the setup screen's START are the same
-  // click on the same settings -- if they could ever disagree, the summary on that screen would be a lie.
-  const startSkirmish = () => UI.start(UI.skirmishOptions(readSetup()));
-  const startBtn = $('start'); if (startBtn) startBtn.addEventListener('click', startSkirmish);
-  const setupStart = $('setupStart'); if (setupStart) setupStart.addEventListener('click', startSkirmish);
-
-  // ---- everything else behind the three doors, unchanged --------------------
+  // ---- everything else behind the doors, unchanged --------------------------
   const ms = $('mission'); if (ms) { for (const m of Missions.list) { const o = document.createElement('option'); o.value = m.id; o.textContent = `${RACE_INFO[m.race].name}: ${m.title}`; ms.appendChild(o); } $('missionBtn').addEventListener('click', () => { const m = Missions.get(ms.value); if (!m) return; UI.start({ players: [{ race: m.race, human: true, name: 'Player', team: 1 }, { race: m.enemy.race, human: false, difficulty: m.enemy.difficulty, name: 'Enemy', team: 2 }], seed: m.seed, layout: m.layout, mission: m.id }); }); }
-  const hk = $('hotkeys'); if (hk) { try { hk.value = localStorage.getItem('bw_hotkeys') || 'bw'; } catch (e) { } UI.gridKeys = hk.value === 'grid'; hk.addEventListener('change', () => { UI.gridKeys = hk.value === 'grid'; try { localStorage.setItem('bw_hotkeys', hk.value); } catch (e) { } }); }
-  // The codex opens with no game running -- it reads DATA, not G -- so it belongs on the main menu
-  // as well as on F3 in game. It draws over the canvas, so the canvas has to be visible for it.
-  const cbx = $('codexBtn'); if (cbx) cbx.addEventListener('click', () => UI.openCodexFromMenu());
-  const qc = $('mute'); if (qc) { qc.checked = Sound.muted; qc.addEventListener('change', () => Sound.setMuted(qc.checked)); }
-  const vc = $('voice'), mc = $('music'); if (vc) { vc.checked = Voice.on; vc.addEventListener('change', () => Voice.set(vc.checked)); } if (mc) { mc.checked = Music.on; mc.addEventListener('change', () => Music.set(mc.checked)); }
-  // CONNECT opens the lobby browser (Net.browse): the list of games hosted on that server, HOST GAME, and
-  // JOIN BY CODE for a private room. The old rule that https needed a code is gone with the shared room:
-  // over a tunnel you see the listed games, and a game that should not be seen is joined by its code.
-  const nc = $('netConnect');
-  if (nc) {
-    $('netUrl').placeholder = Net.defaultUrl();
-    // WHO YOU ARE, REMEMBERED (seventh session, item 2: getting in is fast). The name, the server you typed and your
-    // race come back next time; an empty server box stays empty, so the page's own relay stays the default.
-    const idn = Net.loadIdentity();
-    if (idn.name) $('netName').value = idn.name;
-    if (idn.url) $('netUrl').value = idn.url;
-    Net.race = idn.race || 'R';
-    const connect = opts => { Net.status('Connecting...'); const typed = $('netUrl').value.trim(); Net.urlTyped = typed; Net.browse(typed || Net.defaultUrl(), $('netName').value.trim() || 'Player', opts); };
-    nc.addEventListener('click', () => connect());
-    const nn = $('netName'); if (nn) nn.addEventListener('keydown', ev => { if (ev.key === 'Enter') connect(); });
-    // AN INVITE LINK (item 2): ?join=CODE opens the multiplayer screen, connects, and joins that game. The query comes
-    // off the address afterwards, so a reload does not walk back into a lobby that has moved on.
-    const inv = Net.parseInvite(location.search);
-    if (inv) {
-      UI.showPanel('multiPanel');
-      if (inv.server) $('netUrl').value = inv.server;
-      connect({ join: inv.code });
-      try { history.replaceState(null, '', location.pathname); } catch (e) { }
-    }
-  }
-  // Custom maps made in the editor appear in the same dropdown as the built-ins. Editor.register() is
-  // what puts them into MAP_LAYOUTS, so it has to run before the list is rebuilt from it; the whole
-  // select is rebuilt rather than patched because the list is grouped now and a saved map has to land
-  // in its own group rather than after whatever happened to be last.
+  // Custom maps made in the editor appear in the skirmish lobby's map list with the built-ins. Editor.register() is what
+  // puts them into MAP_LAYOUTS, so it runs before the lobby is drawn from it.
   UI.refreshMapList = () => {
     try { if (typeof Editor !== 'undefined') Editor.register(); } catch (e) { }
-    buildLayoutList(); refreshSetup();
+    const sp = $('skirmishPanel'); if (sp && sp.style.display !== 'none' && UI.Skirmish.L) UI.Skirmish.render();
   };
   UI.refreshMapList();
   const eb = $('editorBtn'); if (eb) eb.addEventListener('click', () => Editor.open());
@@ -2104,4 +2146,14 @@ window.addEventListener('DOMContentLoaded', () => {
   const ab = $('autosaveBtn'); if (ab) { ab.style.display = Replay.hasAutosave() ? 'block' : 'none'; ab.addEventListener('click', () => Replay.loadAutosave()); }
   $('loadBtn').addEventListener('click', () => $('loadFile').click()); $('loadFile').addEventListener('change', e => { if (e.target.files[0]) Replay.fromFile(e.target.files[0], 'load'); e.target.value = ''; });
   $('replayBtn').addEventListener('click', () => $('replayFile').click()); $('replayFile').addEventListener('change', e => { if (e.target.files[0]) Replay.fromFile(e.target.files[0], 'watch'); e.target.value = ''; });
+
+  // ---- what the page opens on ------------------------------------------------
+  // AN INVITE LINK (seventh session): ?join=CODE connects and joins that game. The query comes off the address at once,
+  // so a reload does not walk back into a lobby that has moved on. A player with no name yet is asked for one first.
+  Net.race = Net.loadIdentity().race;
+  const inv = Net.parseInvite(location.search);
+  if (inv) { try { history.replaceState(null, '', location.pathname); } catch (e) { } }
+  const go = inv ? () => UI.enterMultiplayer({ join: inv.code, server: inv.server }) : null;
+  if (UI.needsName()) UI.askName(go);
+  else if (go) go();
 });

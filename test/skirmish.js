@@ -293,18 +293,20 @@ console.log('\n--- 10. the wiring and the markup agree -------------------------
   ok(missing.length === 0, 'every control js/ui.js reaches for exists in index.html', missing.join(', '));
   // The other direction, for the controls this screen is FOR. An id that exists but that nothing reads
   // is a control the player can move that does nothing, which is the same bug wearing the other coat.
-  const owned = ['race', 'team', 'nopp', 'opps', 'layout', 'mapSize', 'seed', 'seedRoll', 'optHazard',
-    'optNight', 'optFeatures', 'optDerelicts', 'optWildlife', 'optStart', 'setupSummary', 'setupStart',
-    'setupBack', 'setupBtn', 'menuSummary', 'neutralNote', 'mainPanel', 'skirmishPanel', 'settingsPanel'];
+  // The eighth session replaced the form with the skirmish lobby (UI.Skirmish), so what this screen owns in
+  // index.html is its door and the container the lobby is drawn into; the lobby's own controls are the
+  // multiplayer lobby's markup, and test/menus.js drives them.
+  const owned = ['setupBtn', 'skLobby', 'skirmishPanel', 'singlePanel', 'mainPanel', 'settingsPanel'];
   const notInHtml = owned.filter(id => !new RegExp('id="' + id + '"').test(html));
   ok(notInHtml.length === 0, 'every skirmish control exists in index.html', notInHtml.join(', '));
-  const notRead = owned.filter(id => !ids.has(id) && id !== 'mainPanel' && id !== 'skirmishPanel' && id !== 'settingsPanel');
+  const notRead = owned.filter(id => !ids.has(id) && id !== 'mainPanel' && id !== 'settingsPanel' && id !== 'singlePanel');
   ok(notRead.length === 0, 'and every one of them is read by the wiring', notRead.join(', '));
-  // The opponent rows are written by a template in js/ui.js and read back by class, so both sides are
-  // in the same file and a rename on one side is invisible to the scrape above.
-  const classes = ['oprow', 'orace', 'odiff', 'ostyle', 'oteam'];
-  const unpaired = classes.filter(c => (code.match(new RegExp('\\b' + c + '\\b', 'g')) || []).length < 2);
-  ok(unpaired.length === 0, 'every class the opponent rows are read by is also written by them', unpaired.join(', '));
+  // The form's controls are gone for good: a second place a skirmish is configured is the thing the user asked to remove.
+  const stale = ['nopp', 'opps', 'mapSize', 'seedRoll', 'optStart', 'setupSummary', 'setupStart', 'setupBack', 'menuSummary'].filter(id => new RegExp('id="' + id + '"').test(html));
+  ok(stale.length === 0, 'the old skirmish form is gone from index.html', stale.join(', '));
+  // The lobby is the multiplayer lobby's own markup, drawn from the room UI.Skirmish holds and bound to its answers.
+  ok(/Net\.roomHtml\(this\.L, \{ local: true/.test(code) && /Net\.bindRoom\(el, this\.L, \{ local: true/.test(code),
+    'the skirmish lobby is drawn and bound by the multiplayer lobby\'s own Net.roomHtml and Net.bindRoom');
   // Panels swap by id now. The old code found the main panel with previousElementSibling, which was
   // true with two panels and wrong with three; if that ever comes back, SETTINGS hides the wrong page.
   ok(!/previousElementSibling/.test(code), 'the panel swap does not depend on document order');

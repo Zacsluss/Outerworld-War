@@ -22,8 +22,18 @@ const Net = {
   url: '', urlTyped: '', online: 0, pings: {}, rungAt: 0, pick: null,   // the server we are on, what the player typed for it, how many are connected, each member's measured latency, when the host last nudged us, the game picked in the browser
   filt: { q: '', full: true, playing: true, sort: 'players' },           // the browser's search, its two filters and its order
   spectating: false,                                                    // in the room as a spectator: no seat, no batches, the whole map in view
+  connecting: false, failed: false,                                     // a socket opened and not yet answered; why the last one ended ('unreachable' or 'lost'), for #netForm
   HASH_EVERY: 48, myHashes: {}, theirHashes: {}, desynced: false, desyncFrame: -1, catchingUp: false, catchTarget: 0, name: 'Player', lastError: '',
   defaultUrl() { return (location.protocol === 'https:' ? 'wss://' : 'ws://') + (location.host || 'localhost:8765') + '/ws'; },
+  // An address as people type it, made into the relay's URL: "192.168.1.5:8765", "ws://192.168.1.5:8765/ws", a tunnel's
+  // "https://x.trycloudflare.com". js/desktop.js has always accepted these; the page's own Try Again does now too.
+  normUrl(s) {
+    s = String(s == null ? '' : s).trim(); if (!s) return '';
+    s = s.replace(/^http(s?):\/\//i, 'ws$1://');
+    if (!/^wss?:\/\//i.test(s)) s = 'ws://' + s;
+    s = s.replace(/\/+$/, ''); if (!/\/ws$/i.test(s)) s += '/ws';
+    return s;
+  },
   // ---------------- the way in ----------------
   // One socket, three ways in. `connect` joins a room by code the moment the socket opens -- the room
   // called LAN when the code is empty -- which is the path test/net.js, test/net_many.js and a private
@@ -35,12 +45,15 @@ const Net = {
   // `room` is KEPT ON `this` so a caller that passes no room lands in the one it had: what keeps a rejoin
   // in its room is the code still held here.
   open(url, name, onopen) {
-    this.disconnect(); this.name = name || 'Player'; this.lobbies = null; this.chatLog = []; this.teamsShown = 2; this.url = url || this.defaultUrl(); this.pings = {}; this.pick = null; this.online = 0; this.rungAt = 0; const ws = new WebSocket(this.url); this.ws = ws;
-    ws.onopen = () => { this.connected = true; onopen(); };
+    this.disconnect(); this.name = name || 'Player'; this.lobbies = null; this.chatLog = []; this.teamsShown = 2; this.url = url || this.defaultUrl(); this.pings = {}; this.pick = null; this.online = 0; this.rungAt = 0; this.connecting = true; this.failed = false;
+    // A typed address that is not a URL at all makes the constructor throw; it is a server that could not be reached.
+    let ws; try { ws = new WebSocket(this.url); } catch (e) { this.connecting = false; this.failed = 'unreachable'; this.render(); return; }
+    this.ws = ws;
+    ws.onopen = () => { if (this.ws !== ws) return; this.connected = true; this.connecting = false; this.failed = false; onopen(); };
     ws.onmessage = ev => { try { this.handle(JSON.parse(ev.data)); } catch (e) { console.error(e); } };
     // Guarded on `this.ws === ws`: disconnect() closes the old socket when a new one opens, and the old
     // one's close arrived after the new session had begun and wiped its lobby.
-    ws.onclose = () => { if (this.ws !== ws) return; this.connected = false; if (this.active) { this.status('Connection lost.'); if (typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg('Connection to the relay lost. Reconnect from the menu with the same name to rejoin.', 'error'); } this.lobby = null; this.lobbies = null; this.browsing = false; this.render(); };
+    ws.onclose = () => { if (this.ws !== ws) return; if (this.connected) this.failed = 'lost'; else { this.failed = 'unreachable'; this.status(''); } this.connected = false; this.connecting = false; if (this.active) { this.status('Connection lost.'); if (typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg('Connection to the relay lost. Reconnect from the menu with the same name to rejoin.', 'error'); } this.lobby = null; this.lobbies = null; this.browsing = false; this.render(); };
     ws.onerror = () => { this.status('Could not connect to ' + (url || this.defaultUrl())); };
   },
   connect(url, name, race, room) { this.room = (room == null ? this.room : room) || ''; this.browsing = false; this.open(url, name, () => { this.send({ t: 'join', name: this.name, race, room: this.room }); this.status('Connected. Waiting in lobby...'); }); },
@@ -50,7 +63,7 @@ const Net = {
   host(title) { this.send({ t: 'join', name: this.name, race: this.race, create: true, title: String(title || '').trim() || this.name + "'s game" }); this.status('Hosting...'); },
   join(code, existing, spectate) { code = String(code || '').trim(); if (!code) { this.status('Type a room code first.'); return; } this.room = code; this.send({ t: 'join', name: this.name, race: this.race, room: code, existing: !!existing, spectate: !!spectate }); this.status((spectate ? 'Joining ' + code.toUpperCase() + ' to watch...' : 'Joining ' + code.toUpperCase() + '...')); },
   leaveRoom() { this.send({ t: 'leave' }); this.lobby = null; this.room = ''; this.browsing = true; this.chatLog = []; this.teamsShown = 2; this.count = 0; this.countMsg = ''; this.status('Connected.'); this.render(); },
-  disconnect() { if (this.ws) { try { this.ws.close(); } catch (e) { } } this.ws = null; this.connected = false; this.active = false; this.lobby = null; this.catchingUp = false; },
+  disconnect() { if (this.ws) { try { this.ws.close(); } catch (e) { } } this.ws = null; this.connected = false; this.connecting = false; this.active = false; this.lobby = null; this.catchingUp = false; },
   send(m) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(m)); },
   status(t) { const el = document.getElementById('netStatus'); if (el) el.textContent = t; },
   playerName(i) { const p = this.players[i]; return p ? p.name : 'Player ' + (i + 1); },
@@ -128,20 +141,26 @@ const Net = {
   // in Player's constructor, both STAMPED files, and TODO-M18 says not to move the build stamp for paint.
   slotColor(i) { try { return (typeof PLAYER_COLORS !== 'undefined' && PLAYER_COLORS[i]) || '#8f98a8'; } catch (ex) { return '#8f98a8'; } },
   // The maps a host may pick, as [id, name, players, group]. Never a custom map -- it exists only on the machine that
-  // drew it, and a client without it falls back to Lost Ruins: a desync on the first frame. The fixed maps; the map
+  // drew it, and a client without it falls back to Lost Ruins: a desync on the first frame -- except in the skirmish
+  // lobby (`custom`), where the machine that drew it is the only one playing. The fixed maps; the map
   // SIZES the skirmish screen offers (their own layouts, MapModes); and the PROCEDURAL archetypes as 'gen:<key>', which
   // every client grows from the same key and the seed the relay picks at START (UI.skirmishBaseId), exactly as a
   // skirmish does.
-  maps() {
+  maps(custom) {
     if (typeof MAP_LAYOUTS === 'undefined') return [['temple', 'Lost Ruins', 4, 'Maps'], ['bloodbath', 'Blood Pit', 4, 'Maps'], ['valley', 'Twilight Valley', 2, 'Maps']];
     const sizes = (typeof MapModes !== 'undefined' && MapModes.keys) ? MapModes.keys : [];
     const out = [];
-    for (const [id, L] of Object.entries(MAP_LAYOUTS)) { if (!L || L.custom || id === '__preview' || id.slice(0, 3) === 'sk:' || sizes.includes(id)) continue; out.push([id, L.name || id, L.players || 0, 'Maps']); }
+    const mine = [];
+    for (const [id, L] of Object.entries(MAP_LAYOUTS)) {
+      if (!L || id === '__preview' || id.slice(0, 3) === 'sk:' || sizes.includes(id)) continue;
+      if (L.custom) { if (custom) mine.push([id, (L.name || id) + ' (custom)', L.players || 0, 'Made in the editor']); continue; }
+      out.push([id, L.name || id, L.players || 0, 'Maps']);
+    }
     for (const k of sizes) { const L = MAP_LAYOUTS[k]; if (L) out.push([k, (L.name || k) + ' ' + L.w + 'x' + L.h, L.players || 0, 'Map sizes']); }
     try { if (typeof Archetypes !== 'undefined' && Archetypes.keys) for (const k of Archetypes.keys) out.push(['gen:' + k, (Archetypes.names && Archetypes.names[k]) || k, 0, 'Procedural: a new map from the seed']); } catch (ex) { }
-    return out;
+    return out.concat(mine);
   },
-  mapName(id) { const m = this.maps().find(x => x[0] === id); return m ? m[1] : String(id || ''); },
+  mapName(id) { const m = this.maps(true).find(x => x[0] === id); return m ? m[1] : String(id || ''); },
   // How many players a map has starts for: the layout's own number, or for a procedural map what the skirmish screen
   // resolves its archetype and size to (the seed places the bases, not how many there are). Eight when nothing says.
   mapCap(id, size) {
@@ -315,14 +334,15 @@ const Net = {
     this.renderBar();
   },
   // ---- the chat's system lines ----
-  // The relay says what happened; this says it in words. Every string in it is escaped where it is drawn.
-  sysText(m) {
+  // The relay says what happened; this says it in words. Every string in it is escaped where it is drawn. `local`: the
+  // skirmish lobby, where the host is the only one there and "the host added" reads as somebody else.
+  sysText(m, local) {
     const n = s => String(s == null ? '' : s);
     switch (m && m.ev) {
       case 'join': return n(m.name) + ' joined.';
       case 'leave': return n(m.name) + ' left.';
       case 'host': return n(m.name) + ' is the host now.';
-      case 'kick': return 'The host removed ' + n(m.name) + '.';
+      case 'kick': return (local ? 'Removed ' : 'The host removed ') + n(m.name) + '.';
       case 'ready': return n(m.name) + ' is ready.';
       case 'notready': return n(m.name) + ' is not ready.';
       case 'map': return 'Map: ' + this.mapName(m.layout) + '.';
@@ -330,9 +350,9 @@ const Net = {
       case 'privacy': return m.listed ? 'The game is public: it is in the game list.' : 'The game is private: only its code reaches it.';
       case 'lock': return m.on ? 'Teams are locked: only the host moves players.' : 'Teams are unlocked.';
       case 'rule': return (this.RULE_NAMES[m.key] || n(m.key)) + ': ' + this.ruleLabel(m.key, m.value) + '.';
-      case 'addai': return 'The host added ' + n(m.name) + '.';
+      case 'addai': return (local ? 'Added ' : 'The host added ') + n(m.name) + '.';
       case 'ai': return 'The host changed ' + n(m.name) + '.';
-      case 'shuffle': return 'The host shuffled the teams.';
+      case 'shuffle': return local ? 'Shuffled the teams.' : 'The host shuffled the teams.';
       case 'unready': return 'The game changed, so everyone has to ready up again.';
       case 'waiting': return 'Waiting for ' + (Array.isArray(m.names) ? m.names.map(n).join(', ') : '') + ' to ready up.';
       case 'spectate': return n(m.name) + ' is watching.';
@@ -342,38 +362,38 @@ const Net = {
   },
   logLine(entry) { this.chatLog.push(entry); if (this.chatLog.length > 80) this.chatLog.shift(); },
   hostLabel() { return String(this.url || '').replace(/^wss?:\/\//, '').replace(/\/ws$/, ''); },
-  // The strip that replaces the SERVER / NAME / CONNECT form once connected: where, as whom, and the way back out.
+  // The strip over the game list once connected: where, as whom, how many are here, and your own latency.
+  //
+  // PRESSING MULTIPLAYER IS PRESSING CONNECT (eighth session, the user's item 2: the Server / Name / Connect screen was
+  // "extremely confusing"). The name was asked for when the game first opened and the server is the page's own unless
+  // Settings names another, so there is nothing to fill in: UI.enterMultiplayer connects and the list appears. #netForm
+  // is shown only when there is no connection AND none is being attempted -- the server could not be reached, the
+  // connection dropped, or (the desktop app) there is no server to assume -- and it says which.
   renderBar() {
     if (typeof document === 'undefined') return;
     const form = document.getElementById('netForm'), bar = document.getElementById('netBar'); if (!form || !bar) return;
-    const on = !!this.connected;
-    if (form.style) form.style.display = on ? 'none' : '';
+    const on = !!this.connected, trying = !on && !!this.connecting;
+    if (form.style) form.style.display = on || trying ? 'none' : '';
     if (bar.style) bar.style.display = on ? '' : 'none';
     const panel = document.getElementById('multiPanel'); if (panel && panel.classList) panel.classList.toggle('on', on);
+    const fail = document.getElementById('netFail');
+    if (fail && !on && !trying) fail.textContent = this.failed === 'lost' ? 'The connection to the game server was lost.'
+      : this.failed ? 'Could not reach the game server' + (this.hostLabel() ? ' at ' + this.hostLabel() : '') + '.'
+      : 'Type the address of the computer running the game server.';
     if (!on) return;
     const mine = this.pings && this.pings[this.id] != null ? this.pings[this.id] : null;
     bar.innerHTML = '<span class="nbDot"></span><span class="nbText">Connected to <b>' + this.esc(this.hostLabel()) + '</b> as <b>' + this.esc(this.name) + '</b>'
-      + (this.online ? ' &middot; ' + (this.online | 0) + ' online' : '') + (mine != null ? ' &middot; <span class="' + this.pingClass(mine) + '">' + this.pingInner(mine) + '</span>' : '') + '</span>'
-      + '<a href="#" id="nbChange" title="Disconnect, to change server or name">change</a>';
-    const ch = document.getElementById('nbChange'); if (ch) ch.onclick = ev => { if (ev && ev.preventDefault) ev.preventDefault(); this.disconnect(); this.lobbies = null; this.render(); this.status('Disconnected.'); };
+      + (this.online ? ' &middot; ' + (this.online | 0) + ' online' : '') + (mine != null ? ' &middot; <span class="' + this.pingClass(mine) + '">' + this.pingInner(mine) + '</span>' : '') + '</span>';
   },
   render() {
     const el = document.getElementById('lobby'); if (!el) return;
     this.renderBar();
-    const q = sel => (el.querySelectorAll ? Array.from(el.querySelectorAll(sel)) : []);
-    const $ = id => document.getElementById(id);
-    const on = (id, ev, fn) => { const x = $(id); if (x) x[ev] = fn; };
-    // What the player is typing survives a redraw: the relay redraws the lobby on every change anyone makes.
-    const keep = {};
-    for (const id of ['lbChat', 'lbSearch', 'lbCode', 'lbTitle', 'lbRename']) {
-      const x = $(id); if (!x || typeof x.value !== 'string') continue;
-      keep[id] = { v: x.value, f: typeof document.activeElement !== 'undefined' && document.activeElement === x, s: x.selectionStart, e: x.selectionEnd };
-    }
-    const restore = () => { for (const id of Object.keys(keep)) { const x = $(id), k = keep[id]; if (!x) continue; if (id !== 'lbRename' || k.f) x.value = k.v; if (k.f && x.focus) { try { x.focus(); if (x.setSelectionRange) x.setSelectionRange(k.s, k.e); } catch (ex) { } } } };
     const L = this.lobby;
     if (!L) {   // no room: the browser while connected, nothing otherwise
       if (!(this.browsing && this.connected)) { el.innerHTML = ''; return; }
-      el.innerHTML = this.browserHtml(); restore();
+      this.paint(el, this.browserHtml());
+      const $ = this.finder(el), q = sel => (el.querySelectorAll ? Array.from(el.querySelectorAll(sel)) : []);
+      const on = (id, ev, fn) => { const x = $(id); if (x) x[ev] = fn; };
       on('lbHost', 'onclick', () => this.host($('lbTitle') ? $('lbTitle').value : ''));
       on('lbJoinCode', 'onclick', () => this.join($('lbCode') ? $('lbCode').value : ''));
       on('lbCode', 'onkeydown', ev => { if (ev.key === 'Enter') this.join($('lbCode').value); });
@@ -387,40 +407,73 @@ const Net = {
       for (const r of q('[data-pick]')) { r.onclick = () => { this.pick = r.dataset.pick; this.render(); }; r.ondblclick = () => this.join(r.dataset.join, true); }
       return;
     }
-    el.innerHTML = this.roomHtml(); restore();
-    const meP = L.players.find(p => p.id === this.id), code = L.room && L.room !== 'LAN' ? L.room : '';
+    this.paint(el, this.roomHtml());
+    this.bindRoom(el, L, { me: this.id, send: m => this.send(m), redraw: () => this.render(), holder: this });
+  },
+  // ONE LOBBY, TWO ROOMS. The skirmish lobby (UI.Skirmish) is this markup drawn from a room held in the page, and the
+  // multiplayer lobby is the same markup drawn from the relay's (the user, eighth session: the skirmish setup "should
+  // look exactly the same as the Multiplayer Lobby. The only difference is that no other humans will be able to join").
+  // Both can be in the page at once, so every lookup is made INSIDE the room's own container -- document.getElementById
+  // would hand the skirmish lobby's START to the multiplayer room. The headless harnesses' stub elements have no
+  // querySelector, and only there does a lookup fall back to the document.
+  finder(el) { return el && typeof el.querySelector === 'function' ? id => el.querySelector('#' + id) : id => (typeof document !== 'undefined' ? document.getElementById(id) : null); },
+  // Draw, keeping what the player is typing: the relay redraws the lobby on every change anyone makes. A box whose value
+  // comes from the room (the game's name, the seed) is only kept while it has the focus, so a change made elsewhere shows.
+  paint(el, html) {
+    const $ = this.finder(el), keep = {};
+    for (const id of ['lbChat', 'lbSearch', 'lbCode', 'lbTitle', 'lbRename', 'lbSeed']) {
+      const x = $(id); if (!x || typeof x.value !== 'string') continue;
+      keep[id] = { v: x.value, f: typeof document !== 'undefined' && typeof document.activeElement !== 'undefined' && document.activeElement === x, s: x.selectionStart, e: x.selectionEnd };
+    }
+    el.innerHTML = html;
+    for (const id of Object.keys(keep)) {
+      const x = $(id), k = keep[id]; if (!x) continue;
+      if ((id !== 'lbRename' && id !== 'lbSeed') || k.f) x.value = k.v;
+      if (k.f && x.focus) { try { x.focus(); if (x.setSelectionRange) x.setSelectionRange(k.s, k.e); } catch (ex) { } }
+    }
+  },
+  // The room's controls. `ctx.send` is where a change goes: the relay for a multiplayer room, UI.Skirmish.apply for the
+  // skirmish lobby, which answers the same messages the same way. `ctx.holder` keeps the empty teams shown.
+  bindRoom(el, L, ctx) {
+    const q = sel => (el.querySelectorAll ? Array.from(el.querySelectorAll(sel)) : []);
+    const $ = this.finder(el), on = (id, ev, fn) => { const x = $(id); if (x) x[ev] = fn; };
+    const me = ctx.me, send = ctx.send, local = !!ctx.local, holder = ctx.holder || this;
+    const meP = L.players.find(p => p.id === me), code = !local && L.room && L.room !== 'LAN' ? L.room : '';
     // One handler for every per-slot control. `id` names the slot: with no id the relay reads the sender's
     // own, which is what a client that predates editable AI slots sent.
     for (const s of q('[data-slot]')) s.onchange = () => {
       const id = parseInt(s.dataset.slot, 10), field = s.dataset.field, msg = { t: 'set', id };
       msg[field] = field === 'team' ? parseInt(s.value, 10) : s.value;
-      if (field === 'race' && id === this.id) { this.race = s.value; this.saveIdentity(); }   // so a rejoin or a re-host keeps the race just chosen
-      this.send(msg);
+      if (!local && field === 'race' && id === me) { this.race = s.value; this.saveIdentity(); }   // so a rejoin or a re-host keeps the race just chosen
+      send(msg);
     };
-    for (const s of q('[data-rule]')) s.onchange = () => { const rules = {}; rules[s.dataset.rule] = s.value; const msg = { t: 'set', rules }; if (s.dataset.rule === 'size') msg.cap = this.mapCap(L.layout, s.value); this.send(msg); };
-    on('lbLayout', 'onchange', () => { const v = $('lbLayout').value; this.send({ t: 'set', layout: v, cap: this.mapCap(v, L.rules && L.rules.size) }); });
-    on('lbSpeed', 'onchange', () => this.send({ t: 'set', speed: +$('lbSpeed').value }));
-    on('lbPrivacy', 'onclick', () => this.send({ t: 'set', listed: !L.listed }));
-    on('lbLock', 'onchange', () => this.send({ t: 'set', lockTeams: !!$('lbLock').checked }));
-    on('lbShuffle', 'onclick', ev => { if (ev && ev.preventDefault) ev.preventDefault(); this.send({ t: 'shuffle' }); });
-    on('lbRename', 'onchange', () => { const v = String($('lbRename').value || '').trim(); if (v) this.send({ t: 'set', title: v }); });
-    on('lbReady', 'onclick', () => { this.rungAt = 0; this.send({ t: 'set', ready: !(meP && meP.ready) }); });
-    on('lbToSpec', 'onclick', ev => { if (ev && ev.preventDefault) ev.preventDefault(); this.send({ t: 'set', spectate: true }); });
-    on('lbToPlay', 'onclick', () => this.send({ t: 'set', spectate: false, race: this.race }));
-    on('lbStart', 'onclick', () => this.send({ t: 'start' }));
-    on('lbCancel', 'onclick', () => this.send({ t: 'cancel' }));
-    on('lbLeave', 'onclick', () => this.leaveRoom());
+    for (const s of q('[data-rule]')) s.onchange = () => { const rules = {}; rules[s.dataset.rule] = s.value; const msg = { t: 'set', rules }; if (s.dataset.rule === 'size') msg.cap = this.mapCap(L.layout, s.value); send(msg); };
+    on('lbLayout', 'onchange', () => { const v = $('lbLayout').value; send({ t: 'set', layout: v, cap: this.mapCap(v, L.rules && L.rules.size) }); });
+    on('lbSpeed', 'onchange', () => send({ t: 'set', speed: +$('lbSpeed').value }));
+    on('lbSeed', 'onchange', () => send({ t: 'set', seed: $('lbSeed').value }));
+    on('lbRoll', 'onclick', () => send({ t: 'roll' }));
+    on('lbPrivacy', 'onclick', () => send({ t: 'set', listed: !L.listed }));
+    on('lbLock', 'onchange', () => send({ t: 'set', lockTeams: !!$('lbLock').checked }));
+    on('lbShuffle', 'onclick', ev => { if (ev && ev.preventDefault) ev.preventDefault(); send({ t: 'shuffle' }); });
+    on('lbRename', 'onchange', () => { const v = String($('lbRename').value || '').trim(); if (v) send({ t: 'set', title: v }); });
+    on('lbReady', 'onclick', () => { this.rungAt = 0; send({ t: 'set', ready: !(meP && meP.ready) }); });
+    on('lbToSpec', 'onclick', ev => { if (ev && ev.preventDefault) ev.preventDefault(); send({ t: 'set', spectate: true }); });
+    on('lbToPlay', 'onclick', () => send({ t: 'set', spectate: false, race: this.race }));
+    on('lbStart', 'onclick', () => send({ t: 'start' }));
+    on('lbCancel', 'onclick', () => send({ t: 'cancel' }));
+    on('lbLeave', 'onclick', () => { if (local) send({ t: 'leave' }); else this.leaveRoom(); });
     const copy = (text, said) => { try { navigator.clipboard.writeText(text); this.status(said); } catch (ex) { this.status(text); } };
     on('lbCopy', 'onclick', () => copy(code, 'Code ' + code + ' copied.'));
     on('lbInvite', 'onclick', () => { const link = this.inviteLink(code); if (link) copy(link, 'Invite link copied: whoever opens it lands in this lobby.'); });
-    on('lbAddTeam', 'onclick', ev => { if (ev && ev.preventDefault) ev.preventDefault(); this.teamsShown = Math.min(8, Math.max(this.teamsShown, ...L.players.map(p => p.team || 1)) + 1); this.render(); });
-    on('lbChat', 'onkeydown', ev => { if (ev.key === 'Enter') { const x = $('lbChat'); const t = String(x.value || '').trim(); if (t) this.chat(t); x.value = ''; } });
-    for (const a of q('[data-team]')) a.onclick = ev => { ev.preventDefault(); this.send({ t: 'set', team: parseInt(a.dataset.team, 10) }); };
+    on('lbAddTeam', 'onclick', ev => { if (ev && ev.preventDefault) ev.preventDefault(); holder.teamsShown = Math.min(8, Math.max(holder.teamsShown || 2, ...L.players.map(p => p.team || 1)) + 1); ctx.redraw(); });
+    // The box is emptied BEFORE the line is sent: the skirmish lobby redraws at once, and would keep the text it still had.
+    on('lbChat', 'onkeydown', ev => { if (ev.key === 'Enter') { const x = $('lbChat'); const t = String(x.value || '').trim(); x.value = ''; if (t) { if (local) send({ t: 'chat', text: t }); else this.chat(t); } } });
+    for (const a of q('[data-team]')) a.onclick = ev => { ev.preventDefault(); send({ t: 'set', team: parseInt(a.dataset.team, 10) }); };
     // A new AI copies the race, difficulty and style of the last one added, so filling a lobby with three
     // hard rushers is three clicks and not nine. The first is Random/normal/standard, as it always was.
-    for (const a of q('[data-addai]')) a.onclick = ev => { ev.preventDefault(); const last = L.players.filter(p => p.ai).pop() || {}; this.send({ t: 'addai', race: last.race || 'R', difficulty: last.difficulty || 'normal', style: last.style || 'standard', team: parseInt(a.dataset.addai, 10) }); };
-    for (const a of q('[data-kick]')) a.onclick = ev => { ev.preventDefault(); this.send({ t: 'kick', id: parseInt(a.dataset.kick, 10) }); };
-    for (const a of q('[data-ring]')) a.onclick = ev => { ev.preventDefault(); this.send({ t: 'ring', id: parseInt(a.dataset.ring, 10) }); };
+    for (const a of q('[data-addai]')) a.onclick = ev => { ev.preventDefault(); const last = L.players.filter(p => p.ai).pop() || {}; send({ t: 'addai', race: last.race || 'R', difficulty: last.difficulty || 'normal', style: last.style || 'standard', team: parseInt(a.dataset.addai, 10) }); };
+    for (const a of q('[data-kick]')) a.onclick = ev => { ev.preventDefault(); send({ t: 'kick', id: parseInt(a.dataset.kick, 10) }); };
+    for (const a of q('[data-ring]')) a.onclick = ev => { ev.preventDefault(); send({ t: 'ring', id: parseInt(a.dataset.ring, 10) }); };
     const log = $('lbChatLog'); if (log && typeof log.scrollTop === 'number') log.scrollTop = 1e9;
   },
   // The list: a row per hosted game, clicked to see it and double-clicked to join. Everything in it came from other
@@ -464,17 +517,24 @@ const Net = {
       + '<div class="lbBar"><input id="lbTitle" maxlength="40" placeholder="Game name" value="' + e(this.name) + '&#39;s game"><button id="lbHost" class="small inline">HOST GAME</button></div>'
       + '<div class="lbBar"><input id="lbCode" maxlength="8" placeholder="Private room code"><button id="lbJoinCode" class="small inline">JOIN BY CODE</button></div>';
   },
-  roomHtml() {
-    const e = s => this.esc(s), L = this.lobby;
-    const meP = L.players.find(p => p.id === this.id), host = !!(meP && meP.host);
-    const open = L.state === 'lobby';           // a lobby that may still be changed
-    const counting = L.state === 'starting';    // the relay's countdown is running; the room is frozen
-    const RN = this.RACE_NAMES, checks = L.readyCheck !== false;
-    const maxTeam = Math.min(8, Math.max(this.teamsShown, ...L.players.map(p => p.team || 1)));
+  // The room, from a lobby message. `o.local` draws the SKIRMISH lobby from UI.Skirmish's room, the same screen with what
+  // exists only because other humans can join taken out: READY and the ready line, latency, the nudge, spectators, the
+  // team lock, privacy, the game's name, the code and the invite link. What it gains is the one setting a room on the
+  // relay cannot take from its host, the seed (the relay picks one at START). QUIT is BACK, as in OpenRA's skirmish
+  // lobby, which is also this design: its Skirmish button opens the multiplayer lobby on a server of its own.
+  roomHtml(L, o) {
+    o = o || {}; L = L || this.lobby;
+    const e = s => this.esc(s), local = !!o.local, myId = local ? o.me : this.id;
+    const chatLog = o.chatLog || this.chatLog, shown = o.teamsShown || this.teamsShown;
+    const meP = L.players.find(p => p.id === myId), host = !!(meP && meP.host);
+    const open = L.state === 'lobby';                       // a lobby that may still be changed
+    const counting = !local && L.state === 'starting';      // the relay's countdown is running; the room is frozen
+    const RN = this.RACE_NAMES, checks = !local && L.readyCheck !== false;
+    const maxTeam = Math.min(8, Math.max(shown, ...L.players.map(p => p.team || 1)));
     const seat = new Map(L.players.map((p, i) => [p.id, i]));   // the slot's index IS the player index the game starts it at, and therefore its colour
-    const seats = Math.max(1, Math.min(8, (L.cap | 0) || 8));   // the map's start positions, as the relay holds them
+    const seats = Math.max(1, Math.min(8, (L.cap | 0) || 8));   // the map's start positions, as the relay (or the skirmish room) holds them
     const opt = (v, n, on2) => '<option value="' + e(v) + '"' + (on2 ? ' selected' : '') + '>' + e(n) + '</option>';
-    const sel = (attrs, opts, val) => '<select class="lbSel" ' + attrs + '>' + opts.map(o => opt(o[0], o[1], String(o[0]) === String(val))).join('') + '</select>';
+    const sel = (attrs, opts, val) => '<select class="lbSel" ' + attrs + '>' + opts.map(x => opt(x[0], x[1], String(x[0]) === String(val))).join('') + '</select>';
     // A per-slot control names its slot and its field; one delegated handler sends the set.
     const slotSel = (p, field, opts, val) => sel('data-slot="' + (p.id | 0) + '" data-field="' + field + '"', opts, val);
     const raceOpts = ['R', 'T', 'Z', 'P'].map(r => [r, RN[r]]);
@@ -486,7 +546,7 @@ const Net = {
     // difficulty, play style and team TO THE HOST -- an AI has no socket of its own, so the host is the only one who
     // can ever speak for it. The host also sees a bell on every human who has not readied.
     const row = p => {
-      const mine = p.id === this.id, editable = open && (mine || (host && p.ai)), teamEditable = editable && (!L.lockTeams || host);
+      const mine = p.id === myId, editable = open && (mine || (host && p.ai)), teamEditable = editable && (!L.lockTeams || host);
       const fixed = s => '<span class="lbFixed">' + e(s) + '</span>';
       const ms = this.pingOf(p);
       return '<div class="lp' + (p.gone ? ' gone' : '') + (mine ? ' me' : '') + '">'
@@ -494,7 +554,7 @@ const Net = {
         + '<span class="lbReady" title="' + (p.ready || p.ai ? 'ready' : 'not ready') + '">' + (p.ready || p.ai ? '&#10003;' : '&middot;') + '</span>'
         + (p.host ? '<span class="lbStar" title="host">&#9733;</span>' : '')
         + '<span class="lbName">' + e(p.name) + (p.ai ? '<i class="lbTag">A.I.</i>' : '') + (p.gone ? '<i class="lbTag">dropped</i>' : '') + '</span>'
-        + (p.ai ? '' : '<span class="' + this.pingClass(ms) + '" data-ping="' + (p.id | 0) + '" title="' + this.pingTitle(ms) + '">' + this.pingInner(ms) + '</span>')
+        + (p.ai || local ? '' : '<span class="' + this.pingClass(ms) + '" data-ping="' + (p.id | 0) + '" title="' + this.pingTitle(ms) + '">' + this.pingInner(ms) + '</span>')
         + (host && open && checks && !p.ai && !p.ready && !p.host && !mine ? '<a href="#" class="lbNudge" data-ring="' + (p.id | 0) + '" title="Remind this player the room is waiting for them to ready up">&#128276;</a>' : '')
         + '<span class="lbSlotOpts">'
         + (editable ? slotSel(p, 'race', raceOpts, p.race) : fixed(RN[p.race] || p.race))
@@ -502,7 +562,7 @@ const Net = {
           : fixed(this.DIFF_NAMES[p.difficulty] || p.difficulty || 'Normal') + fixed(this.STYLE_NAMES[p.style] || p.style || 'Standard')) : '')
         + (teamEditable ? slotSel(p, 'team', teamOpts, String(p.team || 1)) : '')
         + '</span>'
-        + (host && open && p.id !== this.id ? '<a href="#" class="lbKick" data-kick="' + (p.id | 0) + '" title="Remove this slot">&#10005;</a>' : '')
+        + (host && open && p.id !== myId ? '<a href="#" class="lbKick" data-kick="' + (p.id | 0) + '" title="Remove this slot">&#10005;</a>' : '')
         + '</div>';
     };
     const team = t => '<div class="lbTeam"><div class="lbTeamHead"><b>Team ' + t + '</b><span class="lbTeamBtns">'
@@ -511,22 +571,23 @@ const Net = {
       + (L.players.filter(p => (p.team || 1) === t).map(row).join('') || '<div class="lbNone">empty</div>') + '</div>';
     const teams = []; for (let t = 1; t <= maxTeam; t++) teams.push(team(t));
     const specs = Array.isArray(L.specs) ? L.specs : [];
-    const specBox = '<div class="lbSpecs"><div class="lbTeamHead"><b>Spectators</b><span class="lbTeamBtns">'
+    const specBox = local ? '' : '<div class="lbSpecs"><div class="lbTeamHead"><b>Spectators</b><span class="lbTeamBtns">'
       + (open && meP && !meP.host ? '<a href="#" id="lbToSpec" title="Give up your seat and watch the game instead">watch instead</a>' : '') + '</span></div>'
-      + (specs.map(s => '<div class="lp spec' + (s.id === this.id ? ' me' : '') + '"><span class="lbName">' + e(s.name) + '</span>'
+      + (specs.map(s => '<div class="lp spec' + (s.id === myId ? ' me' : '') + '"><span class="lbName">' + e(s.name) + '</span>'
         + '<span class="' + this.pingClass(this.pingOf(s)) + '" data-ping="' + (s.id | 0) + '" title="' + this.pingTitle(this.pingOf(s)) + '">' + this.pingInner(this.pingOf(s)) + '</span>'
-        + (host && open && s.id !== this.id ? '<a href="#" class="lbKick" data-kick="' + (s.id | 0) + '" title="Remove this spectator">&#10005;</a>' : '') + '</div>').join('') || '<div class="lbNone">nobody watching</div>')
+        + (host && open && s.id !== myId ? '<a href="#" class="lbKick" data-kick="' + (s.id | 0) + '" title="Remove this spectator">&#10005;</a>' : '') + '</div>').join('') || '<div class="lbNone">nobody watching</div>')
       + '</div>';
-    const code = L.room && L.room !== 'LAN' ? L.room : '';
+    const code = !local && L.room && L.room !== 'LAN' ? L.room : '';
     const speed = NET_SPEED_NAMES[L.speed == null ? 6 : L.speed];
     const over = L.players.length > seats;
     const rules = Object.assign({}, this.RULE_DEFAULTS, L.rules || {});
+    const ais = L.players.filter(p => p.ai).length;
     // Readiness, in words: who the start is waiting on. The host is not listed -- the host's START is the host's ready.
-    const humans = L.players.filter(p => !p.ai && !p.gone), waiting = humans.filter(p => !p.host && !p.ready);
+    const humans = L.players.filter(p => !p.ai && !p.gone), waiting = checks ? humans.filter(p => !p.host && !p.ready) : [];
     const readyLine = !checks ? '' : humans.length <= 1 ? 'Just you so far. Add an A.I. or share the code.'
       : waiting.length ? 'Waiting for ' + waiting.map(p => e(p.name)).join(', ') + ' to ready up.' : 'Everyone is ready.';
-    // THE SETTINGS COLUMN, and what is deliberately NOT in it. The user's screenshots show Category,
-    // Mode, Game Duration, Game Speed, Locked Alliances and Game Privacy; two of those six are real here.
+    // THE SETTINGS COLUMN, and what is deliberately NOT in it. The StarCraft II lobby shows Category, Mode, Game
+    // Duration, Game Speed, Locked Alliances and Game Privacy; two of those six are real here.
     //   * Game Speed and Game Privacy are honoured -- the relay carries both.
     //   * Locked Alliances is shown as a FACT, not a switch: teams are fixed at G.init and there is no
     //     diplomacy in the simulation, so a switch would have nothing to turn off. (LOCK TEAMS is a different
@@ -537,29 +598,30 @@ const Net = {
     // The skirmish rules below them are real: every client composes them into the layout and the purses (gameOptions).
     const setRow = (label, body) => '<div class="lbSetRow"><label>' + label + '</label>' + body + '</div>';
     const edit = host && open;
-    const mapOpts = this.maps();
+    const mapOpts = this.maps(local);
     const groups = []; for (const m of mapOpts) if (!groups.includes(m[3])) groups.push(m[3]);
     const mapSel = '<select id="lbLayout" class="lbSel grow">' + groups.map(g => '<optgroup label="' + e(g) + '">' + mapOpts.filter(m => m[3] === g).map(m => opt(m[0], m[1] + (m[2] ? '  (' + m[2] + ' players)' : ''), m[0] === L.layout)).join('') + '</optgroup>').join('') + '</select>';
     const ruleRow = k => setRow(e(this.RULE_NAMES[k]), edit ? sel('data-rule="' + k + '"', this.ruleOptions(k), rules[k]) : '<span>' + e(this.ruleLabel(k, rules[k])) + '</span>');
     const invite = code ? this.inviteLink(code) : '';
-    let settings = '<div class="lbSettings"><div class="lbSetHead">GAME SETTINGS</div>'
+    const settings = '<div class="lbSettings"><div class="lbSetHead">GAME SETTINGS</div>'
       + this.mapPreview(L.layout, L.players.length, 236)
       + '<div class="lbPrevName">' + e(this.mapName(L.layout)) + '</div>'
       + setRow('Map', edit ? mapSel : '<span>' + e(this.mapName(L.layout)) + '</span>')
       + (String(L.layout || '').slice(0, 4) === 'gen:' ? ruleRow('size') : '')
       + setRow('Speed', edit ? '<select id="lbSpeed" class="lbSel grow">' + NET_SPEED_NAMES.map((n, i) => opt(String(i), n, i === (L.speed == null ? 6 : L.speed))).join('') + '</select>' : '<span>' + e(speed) + '</span>')
+      + (local ? setRow('Seed', '<input id="lbSeed" type="number" min="1" max="999999" class="lbSel grow" value="' + (L.seed | 0) + '" title="The same seed and settings make the same map and the same game"><button id="lbRoll" class="small inline" title="A new seed">ROLL</button>') : '')
       + this.RULE_ORDER.map(ruleRow).join('')
-      + setRow('Teams', edit ? '<label class="chk lbChk" title="Only the host moves players between teams"><input type="checkbox" id="lbLock"' + (L.lockTeams ? ' checked' : '') + '> Locked</label>' : '<span>' + (L.lockTeams ? 'Locked by the host' : 'Players choose') + '</span>')
-      + setRow('Privacy', '<span>' + (L.listed ? 'Public &mdash; in the game list' : 'Private &mdash; code only') + '</span>')
+      + (local ? '' : setRow('Teams', edit ? '<label class="chk lbChk" title="Only the host moves players between teams"><input type="checkbox" id="lbLock"' + (L.lockTeams ? ' checked' : '') + '> Locked</label>' : '<span>' + (L.lockTeams ? 'Locked by the host' : 'Players choose') + '</span>'))
+      + (local ? '' : setRow('Privacy', '<span>' + (L.listed ? 'Public &mdash; in the game list' : 'Private &mdash; code only') + '</span>'))
       + setRow('Alliances', '<span>Locked</span>')
-      + (edit ? setRow('Name', '<input id="lbRename" maxlength="40" class="lbSel grow" value="' + e(L.title || '') + '">') : '')
+      + (edit && !local ? setRow('Name', '<input id="lbRename" maxlength="40" class="lbSel grow" value="' + e(L.title || '') + '">') : '')
       + (code ? setRow('Code', '<b class="lbCodeVal">' + e(code) + '</b><button id="lbCopy" class="small inline">COPY</button>' + (invite ? '<button id="lbInvite" class="small inline" title="' + e(invite) + '">INVITE LINK</button>' : '')) : '')
-      + '<div class="lbSetNote">Share the code or the invite link to bring a player in. Colours and start positions come from the seat, in the order shown. Locked alliances is a fact, not a switch: teams are fixed when the game starts. Handicap, Category, Mode and Game Duration are the StarCraft II rows this simulation does not honour, so they are not here.</div>'
+      + '<div class="lbSetNote">' + (local ? '' : 'Share the code or the invite link to bring a player in. ') + 'Colours and start positions follow the seats, in the order shown.</div>'
       + '</div>';
-    let h = '<div class="lbHead"><span class="lbHeadTitle">' + e(L.title || (code ? 'Room ' + code : 'LAN game')) + '</span>'
-      + '<span class="lbHeadInfo">' + e(this.mapName(L.layout)) + ' &middot; <span' + (over ? ' class="lbOver"' : '') + '>' + L.players.length + '/' + seats + ' players</span>' + (Array.isArray(L.specs) && L.specs.length ? ' &middot; ' + L.specs.length + ' watching' : '') + ' &middot; ' + e(speed)
+    let h = '<div class="lbHead"><span class="lbHeadTitle">' + e(L.title || (local ? 'Skirmish' : code ? 'Room ' + code : 'LAN game')) + '</span>'
+      + '<span class="lbHeadInfo">' + e(this.mapName(L.layout)) + ' &middot; <span' + (over ? ' class="lbOver"' : '') + '>' + L.players.length + '/' + seats + ' players</span>' + (specs.length ? ' &middot; ' + specs.length + ' watching' : '') + ' &middot; ' + e(speed)
       + (code ? ' &middot; code <b>' + e(code) + '</b>' : '') + '</span></div>';
-    const lines = this.chatLog.map(c => c.sys
+    const lines = chatLog.map(c => c.sys
       ? '<div class="lbSys">' + e(c.text) + '</div>'
       : '<div><b style="color:' + (seat.has(c.id) ? this.slotColor(seat.get(c.id)) : '#aab4c4') + '">' + e(c.from) + (c.spec ? ' (watching)' : '') + ':</b> ' + e(c.text) + '</div>').join('');
     h += '<div class="lbBody"><div class="lbSlots"><div class="lbTeams">' + teams.join('') + '</div>' + specBox
@@ -573,17 +635,22 @@ const Net = {
     if (open && over) h += '<div class="sub lbCancelled">' + e(this.mapName(L.layout)) + ' has ' + seats + ' start positions and there are ' + L.players.length + ' players. ' + (host ? 'Remove a slot or pick a bigger map to start.' : 'The host has to remove a slot or pick a bigger map.') + '</div>';
     if (counting) h += '<div class="lbCd"><span class="lbCdT">The game starts in</span><span class="lbCdN">' + (this.count | 0) + '</span></div>';
     else if (!open) h += '<div class="sub">Game in progress. Dropped players can rejoin by connecting with their name.</div>';
-    else if (this.countMsg) h += '<div class="sub lbCancelled">' + e(this.countMsg) + '</div>';
-    const rung = this.rungAt && Date.now() - this.rungAt < 8000;
-    // THE BUTTON BAR: READY first, because it is the one thing every player has to press.
+    else if (!local && this.countMsg) h += '<div class="sub lbCancelled">' + e(this.countMsg) + '</div>';
+    const rung = !local && this.rungAt && Date.now() - this.rungAt < 8000;
+    // THE BUTTON BAR: READY first, because it is the one thing every player has to press. The skirmish lobby has
+    // nobody to wait for, so its START only waits for an opponent to play and a map with room for everyone.
+    const startWhy = over ? ' class="lbWaiting" title="Too many players for this map"'
+      : local && !ais ? ' class="lbWaiting" title="Add a computer opponent first"'
+      : checks && waiting.length ? ' class="lbWaiting" title="' + waiting.map(p => e(p.name)).join(', ') + ' not ready yet"' : '';
     h += '<div class="lbButtons">'
-      + (open && meP ? '<button id="lbReady" class="' + (meP.ready ? 'on' : '') + (rung ? ' lbRing' : '') + '">' + (meP.ready ? 'READY &#10003;' : 'READY') + '</button>' : '')
-      + (open && this.spectating ? '<button id="lbToPlay"' + (L.players.length < seats ? '' : ' disabled title="Every seat on this map is taken"') + '>PLAY</button>' : '')
-      + (host && open ? '<button id="lbStart"' + (over ? ' class="lbWaiting" title="Too many players for this map"' : checks && waiting.length ? ' class="lbWaiting" title="' + waiting.map(p => e(p.name)).join(', ') + ' not ready yet"' : '') + '>START GAME</button>' : '')
+      + (!local && open && meP ? '<button id="lbReady" class="' + (meP.ready ? 'on' : '') + (rung ? ' lbRing' : '') + '">' + (meP.ready ? 'READY &#10003;' : 'READY') + '</button>' : '')
+      + (!local && open && this.spectating ? '<button id="lbToPlay"' + (L.players.length < seats ? '' : ' disabled title="Every seat on this map is taken"') + '>PLAY</button>' : '')
+      + (host && open ? '<button id="lbStart"' + startWhy + '>START GAME</button>' : '')
       + (host && counting ? '<button id="lbCancel">CANCEL</button>' : '')
-      + (host && open ? '<button id="lbPrivacy" class="small">' + (L.listed ? 'MAKE PRIVATE' : 'MAKE PUBLIC') + '</button>' : '')
-      + '<button id="lbLeave" class="small">QUIT</button>'
-      + (open ? '<span class="sub lbWait">' + (host ? readyLine : this.spectating ? 'You are watching: no seat, and the whole map in view. PLAY takes a free seat.' : (meP && meP.ready ? 'Ready. Waiting for the host to start.' : 'Press READY when the game on screen is the one you want to play.')) + '</span>' : '')
+      + (!local && host && open ? '<button id="lbPrivacy" class="small">' + (L.listed ? 'MAKE PRIVATE' : 'MAKE PUBLIC') + '</button>' : '')
+      + '<button id="lbLeave" class="small">' + (local ? 'BACK' : 'QUIT') + '</button>'
+      + (open ? '<span class="sub lbWait">' + (local ? (ais ? '' : 'Add a computer opponent to a team to start.')
+        : host ? readyLine : this.spectating ? 'You are watching: no seat, and the whole map in view. PLAY takes a free seat.' : (meP && meP.ready ? 'Ready. Waiting for the host to start.' : 'Press READY when the game on screen is the one you want to play.')) + '</span>' : '')
       + '</div>';
     return h;
   },
