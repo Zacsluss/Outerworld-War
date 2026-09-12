@@ -537,3 +537,76 @@ Gateway rally point and let units gather there.
 
 **If a unit's art changes** (a re-bake of the sprites), run `node tools/bodies.js --table` and paste the new table into
 `js/data.js`; `test/overlap.js` fails until you do.
+
+---
+
+## 82. The multiplayer browser: search, filters, a detail pane, QUICK JOIN
+
+*(Seventh session, item 2. The research behind every piece of 82–85 is `RESEARCH-LOBBY.md`.)*
+
+**How to reach it.** Run `PLAY.bat` (or `node test/serve.js`), open the page, **Multiplayer**, type a name, **Connect**.
+To see a busy list, open the page in two or three more browser tabs and host a game in each.
+
+**What to look for.**
+- **The connect form becomes a strip** once connected: server, your name, how many are connected, your own latency,
+  and **change** to disconnect.
+- **The list has columns** — game, host, map, speed, players (hover for humans vs computers) and status (**open**,
+  **full**, **starting**, **in game**).
+- **Search** filters by the game's name, the host, the map's name or the code. **Full** and **In progress** hide
+  those games. **Sort** by most players, newest or name. Games you can still join always come first.
+- **Click a game** to see it on the right: the map with its start positions, who is in it, the speed and any
+  rules that are not standard. **JOIN** there, or **double-click** the row.
+- **QUICK JOIN** puts you in the open game with the most players, or hosts one if there is none.
+- Your **name, server and race are remembered** the next time the page opens.
+- A game that ended between the list and your click says **"That game has ended or no longer exists."** instead of
+  dropping you into an empty room under its name.
+
+---
+
+## 83. Ready means ready
+
+**How to reach it.** Two browser tabs: host a game in one, join it from the other.
+
+**What to look for.**
+- **START refuses until every other human has pressed READY**, and tells the host who: "Waiting for Ben to ready up."
+  The whole room sees the same line in chat. The host's own START is the host's ready.
+- Before pressing, the host can see it: START is dimmed with "Ben not ready yet" on hover, and the line beside the
+  buttons says who the game is waiting on.
+- **Changing the game withdraws everyone's ready**: the map, the speed, a rule, adding/changing/removing a computer, or
+  shuffling the teams. Chat says what changed and "The game changed, so everyone has to ready up again."
+  Renaming the game does not count.
+- **Changing your own race or team withdraws only your own ready.**
+- **The nudge**: the host sees a bell 🔔 beside every player who has not readied. Clicking it makes that player's
+  READY button pulse gold, with "Ada is waiting for you to press READY."
+
+---
+
+## 84. Latency, teams, and a line for everything
+
+**What to look for.**
+- **Every human shows three bars and a number of milliseconds** — the relay measures each round trip itself every
+  two seconds. Green is fine; a number in **red** means that connection is slower than the command delay (125 ms
+  by default), so every player will wait on it. Hover for the explanation. Computers show nothing.
+- **Chat carries the room's history**: joins, leaves, kicks, a new host, the map, the speed, each rule, privacy,
+  locked teams, shuffles — in grey italics — and player lines with the name in that player's colour.
+- **Lock teams** (host, settings column): players can no longer change team; the host still can, for anyone.
+- **Shuffle teams** (host, under the teams): every slot dealt at random onto the teams in use, as evenly as they
+  go. Seats — and so colours and start positions — do not move.
+- **If the host leaves**, chat says who the host is now.
+
+---
+
+## 85. Rules, the map's seats, the invite link
+
+**What to look for.**
+- **The skirmish rules are in the online lobby**: starting bank, weather, light (day and night), destructibles,
+  derelicts and wildlife, plus the map sizes and the procedural maps (with Size) in the map list. The host sets
+  them; guests read them. They are the skirmish screen's own settings, built the same way, so an online game on
+  "Rich" really starts everyone with 1500 / 700. The browser's detail pane lists the non-standard ones.
+- **A room holds only as many players as the map has starts.** Lost Ruins is four: once four are in, "+ add A.I."
+  disappears, a fifth player is told the game is full, and the list shows 4 seats. Switch to a two-start map with
+  four already in and the header turns red ("4/2 players") with an explanation, and START refuses. *(Before, a fifth
+  player on Lost Ruins was built inside player one's base.)*
+- **INVITE LINK** (beside the code): copies a link. Opening it goes straight to Multiplayer, connects with your
+  remembered name, and joins that lobby. Only offered when the page came from a server (not from a file).
+- **BACK** from inside a lobby now leaves the lobby, so you no longer hold up everyone's START from the main menu.

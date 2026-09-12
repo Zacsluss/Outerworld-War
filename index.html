@@ -114,6 +114,61 @@
   .lbWait { margin: 0; }
   .lbChat { height: 90px; overflow: auto; background: #0b0e13; border: 1px solid #23283a; padding: 6px 8px; font-size: 12px; margin-top: 10px; } .lbChat b { color: #e8d9a6; }
   #lbChat { width: 100%; box-sizing: border-box; margin-top: 6px; }
+  /* ---- The seventh session's hub (item 2): the width a browser and a lobby need, and the pieces they gained. ---- */
+  .panel.hub { width: min(1140px, calc(100vw - 110px)); padding: 24px 30px 22px; }
+  #netForm { max-width: 520px; margin: 0 auto; }
+  .netBar { display: flex; align-items: center; gap: 10px; padding: 7px 12px; margin: 0 0 6px; background: #0c1016; border: 1px solid #2c2416; font-size: 12px; color: #9aa4b4; }
+  .netBar b { color: #e8d9a6; } .netBar .nbText { flex: 1; }
+  .netBar a { color: #d8bd76; text-decoration: none; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; } .netBar a:hover { color: #fff3cc; }
+  .nbDot { width: 8px; height: 8px; border-radius: 50%; background: #6fcf6f; box-shadow: 0 0 6px #6fcf6f; flex: none; }
+  #multiPanel #netStatus { margin-bottom: 6px; }
+  /* The browser: search and filters, the list with a header row, the picked game beside it. */
+  .lbTools { display: flex; gap: 10px; align-items: center; margin: 4px 0 8px; } #lbSearch { flex: 1; min-width: 140px; }
+  .lbTools .chk { width: auto; margin: 0; font-size: 11px; color: #b8c2cf; white-space: nowrap; }
+  .lbTools .lbSel { height: 30px; font-size: 11px; }
+  .lbBrowse { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 12px; align-items: stretch; margin-bottom: 4px; }
+  .lbListWrap { display: flex; flex-direction: column; min-width: 0; border: 1px solid #3a3122; background: #0b0e13; }
+  .lbListHead { display: flex; gap: 10px; padding: 6px 10px; background: #161b23; border-bottom: 1px solid #2c2416; }
+  .lbListHead span { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: #8f98a8; font-weight: normal; }
+  .lbListWrap .lbList { border: none; margin: 0; max-height: none; height: 300px; }
+  .lbRow.sel { background: #22304a; box-shadow: inset 3px 0 0 #d8bd76; }
+  .lbSpeedCol { width: 62px; color: #9aa4b4; }
+  .lbListFoot { padding: 5px 10px; font-size: 10px; color: #5c6473; border-top: 1px solid #1e242e; }
+  .lbDetail { border: 1px solid #2c2416; background: #0c1016; padding: 10px; font-size: 11px; color: #b8c2cf; display: flex; flex-direction: column; gap: 5px; }
+  .lbDetEmpty { color: #6e7787; justify-content: center; text-align: center; line-height: 1.6; }
+  .lbDetTitle { color: #e8d9a6; font-weight: bold; font-size: 13px; margin: 6px 0 2px; }
+  .lbDetRow { display: flex; gap: 8px; line-height: 1.45; } .lbDetRow label { width: 56px; flex: none; font-size: 9px; letter-spacing: 1.5px; color: #8f98a8; padding-top: 2px; }
+  .lbDetail button { margin-top: auto; }
+  /* The room: wider settings column, a longer chat with the relay's lines in it, latency bars, the nudge. */
+  .panel.hub .lbBody { grid-template-columns: minmax(0, 1fr) 268px; gap: 14px; }
+  .lbTeamTools { display: flex; gap: 18px; }
+  .panel.hub .lbChat { height: 150px; }
+  .lbSys { color: #7f8a9c; font-style: italic; }
+  .lbPing { display: inline-flex; align-items: flex-end; gap: 1px; font-size: 10px; color: #8f98a8; }
+  .lbPing i { display: inline-block; width: 3px; background: #2b323d; } .lbPing i:nth-child(1) { height: 4px; } .lbPing i:nth-child(2) { height: 7px; } .lbPing i:nth-child(3) { height: 10px; }
+  .lbPing b { font-weight: normal; margin-left: 4px; color: #8f98a8; }
+  .lbPing.q3 i { background: #6fcf6f; } .lbPing.q2 i:nth-child(-n+2) { background: #d8c25a; } .lbPing.q1 i:nth-child(1) { background: #e0664a; }
+  .lbPing.slow b { color: #e0664a; }
+  .lbNudge { text-decoration: none; font-size: 12px; }
+  .lbSetRow label.lbChk { width: auto; font-size: 11px; letter-spacing: 0; text-transform: none; color: #b8c2cf; margin: 0; }
+  #lbReady.on { color: #bff0b0; }
+  #lbReady.lbRing { animation: lbRing .55s ease-in-out infinite alternate; }
+  @keyframes lbRing { from { box-shadow: 0 0 0 1px #b1964f, 0 0 6px rgba(255, 210, 110, .3); } to { box-shadow: 0 0 0 2px #ffd66e, 0 0 24px rgba(255, 210, 110, .9); } }
+  #lbStart.lbWaiting { color: #8a8470; }
+  .lbOver { color: #e0664a; font-weight: bold; }
+  .lbButtons .lbWait { flex: 1; text-align: right; }
+  #multiPanel.on .netHelp { display: none; }   /* the help is about reaching a server: once connected, it is in the way */
+  /* The settings column reads as a form: the label beside its value, not above it. */
+  .panel.hub .lbSetRow { margin: 5px 0; }
+  .panel.hub .lbSetRow > label { width: 92px; flex: none; margin: 0; }
+  .panel.hub .lbSetRow > select { flex: 1; min-width: 0; }
+  .panel.hub .lbSettings { align-self: start; }
+  /* A narrow window stacks the two columns rather than squeezing the list to three letters a column. */
+  @media (max-width: 1000px) {
+    .lbBrowse, .panel.hub .lbBody { grid-template-columns: minmax(0, 1fr); }
+    .lbListHead .lbHostName, .lbRow .lbHostName, .lbSpeedCol { display: none; }
+    .lbTools { flex-wrap: wrap; }
+  }
   .help { margin-top: 16px; font-size: 11px; color: #6e7787; line-height: 1.55; }
   .foot { margin-top: 22px; text-align: center; font-size: 9px; letter-spacing: 1.5px; color: #5c6473; text-transform: uppercase; white-space: nowrap; }
   /* Skirmish setup. A section rule instead of a second nested panel: the screen is one form with four
@@ -169,19 +224,24 @@
   </div>
 
   <!-- Multiplayer: the relay client. The lobby renders into #lobby once CONNECT succeeds. HOST A GAME
-       and its help line are hidden here and shown by js/desktop.js inside the desktop app only. -->
-  <div class="panel wide" id="multiPanel" style="display:none">
+       and its help line are hidden here and shown by js/desktop.js inside the desktop app only.
+       The seventh session's hub (item 2): #netForm is what a player sees before connecting and #netBar the strip
+       that replaces it after (Net.renderBar), so the browser and the lobby get the whole plate. -->
+  <div class="panel hub" id="multiPanel" style="display:none">
     <h1 class="h2">MULTIPLAYER</h1>
     <div class="rule"></div>
+    <div id="netForm">
     <div class="sub">Everyone connects to the same server, then hosts a game or joins one from the list.</div>
     <div class="row"><label>Server</label><input id="netUrl" class="grow"></div>
-    <div class="row"><label>Name</label><input id="netName" value="Player" class="grow"></div>
+    <div class="row"><label>Name</label><input id="netName" value="Player" class="grow" maxlength="16"></div>
     <button id="netConnect">Connect</button>
     <button id="netHost" class="small" style="display:none">Host a Game</button>
+    </div>
+    <div id="netBar" class="netBar" style="display:none"></div>
     <div id="netShare" class="sub" style="display:none"></div>
     <div id="netStatus" class="sub"></div>
     <div id="lobby"></div>
-    <div class="help">The server is the machine running PLAY.bat (it prints its LAN address) or the desktop app's HOST A GAME; over the internet, whatever address reaches it. A game you host is listed for everyone connected to that server. A private room code is for a game that should not be.<span id="netDesktopHelp" style="display:none"><br>In the desktop app: HOST A GAME starts the server on this machine and puts your game in the list; the others type the address it shows into Server, press CONNECT and click your game. Over the internet the host still needs a tunnel or a port forward to that port.</span></div>
+    <div class="help netHelp">The server is the machine running PLAY.bat (it prints its LAN address) or the desktop app's HOST A GAME; over the internet, whatever address reaches it. A game you host is listed for everyone connected to that server. A private room code is for a game that should not be.<span id="netDesktopHelp" style="display:none"><br>In the desktop app: HOST A GAME starts the server on this machine and puts your game in the list; the others type the address it shows into Server, press CONNECT and click your game. Over the internet the host still needs a tunnel or a port forward to that port.</span></div>
     <button id="multiBack" class="small back">Back</button>
   </div>
 

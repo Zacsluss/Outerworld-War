@@ -180,7 +180,7 @@ check(o.halls[0] >= 1 && o.halls[1] >= 1 && (o.halls[0] > 1 || o.halls[1] > 1), 
 // ---------- LAN game on the custom map ----------
 if (typeof WebSocket === 'undefined') { console.log('SKIP LAN check (needs Node 22+)'); }
 else {
-  const server = spawn(process.execPath, [path.join(__dirname, 'serve.js'), String(PORT)], { stdio: ['ignore', 'ignore', 'ignore'] });
+  const server = spawn(process.execPath, [path.join(__dirname, 'serve.js'), String(PORT)], { stdio: ['ignore', 'ignore', 'ignore'], env: Object.assign({}, process.env, { BW_READY: '0' }) });
   process.on('exit', () => { try { server.kill(); } catch (e) { } });
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const until = async (cond, ms, what) => { const t0 = Date.now(); while (!cond()) { if (Date.now() - t0 > ms) throw new Error('timeout: ' + what); await sleep(20); } };

@@ -1810,7 +1810,9 @@ window.addEventListener('DOMContentLoaded', () => {
   const spb = $('singleBtn'); if (spb) spb.addEventListener('click', () => UI.showPanel('singlePanel'));
   const spk = $('singleBack'); if (spk) spk.addEventListener('click', () => UI.showPanel('mainPanel'));
   const mpb = $('multiBtn'); if (mpb) mpb.addEventListener('click', () => UI.showPanel('multiPanel'));
-  const mpk = $('multiBack'); if (mpk) mpk.addEventListener('click', () => UI.showPanel('mainPanel'));
+  // BACK from inside a lobby leaves the lobby: it used to leave the player's slot sitting in a room they could no longer
+  // see, holding up everyone's START (seventh session, item 2). The connection stays, so MULTIPLAYER returns to the list.
+  const mpk = $('multiBack'); if (mpk) mpk.addEventListener('click', () => { if (Net.lobby && !Net.active) Net.leaveRoom(); UI.showPanel('mainPanel'); });
   const cpb = $('campaignBtn'); if (cpb) cpb.addEventListener('click', () => UI.showPanel('campaignPanel'));
   const cpk = $('campaignBack'); if (cpk) cpk.addEventListener('click', () => UI.showPanel('singlePanel'));
   // ---- Controls screen (M12 item 10) -------------------------------------------------------------
@@ -2001,7 +2003,28 @@ window.addEventListener('DOMContentLoaded', () => {
   // CONNECT opens the lobby browser (Net.browse): the list of games hosted on that server, HOST GAME, and
   // JOIN BY CODE for a private room. The old rule that https needed a code is gone with the shared room:
   // over a tunnel you see the listed games, and a game that should not be seen is joined by its code.
-  const nc = $('netConnect'); if (nc) { $('netUrl').placeholder = Net.defaultUrl(); nc.addEventListener('click', () => { Net.status('Connecting...'); Net.browse($('netUrl').value.trim() || Net.defaultUrl(), $('netName').value.trim() || 'Player'); }); }
+  const nc = $('netConnect');
+  if (nc) {
+    $('netUrl').placeholder = Net.defaultUrl();
+    // WHO YOU ARE, REMEMBERED (seventh session, item 2: getting in is fast). The name, the server you typed and your
+    // race come back next time; an empty server box stays empty, so the page's own relay stays the default.
+    const idn = Net.loadIdentity();
+    if (idn.name) $('netName').value = idn.name;
+    if (idn.url) $('netUrl').value = idn.url;
+    Net.race = idn.race || 'R';
+    const connect = opts => { Net.status('Connecting...'); const typed = $('netUrl').value.trim(); Net.urlTyped = typed; Net.browse(typed || Net.defaultUrl(), $('netName').value.trim() || 'Player', opts); };
+    nc.addEventListener('click', () => connect());
+    const nn = $('netName'); if (nn) nn.addEventListener('keydown', ev => { if (ev.key === 'Enter') connect(); });
+    // AN INVITE LINK (item 2): ?join=CODE opens the multiplayer screen, connects, and joins that game. The query comes
+    // off the address afterwards, so a reload does not walk back into a lobby that has moved on.
+    const inv = Net.parseInvite(location.search);
+    if (inv) {
+      UI.showPanel('multiPanel');
+      if (inv.server) $('netUrl').value = inv.server;
+      connect({ join: inv.code });
+      try { history.replaceState(null, '', location.pathname); } catch (e) { }
+    }
+  }
   // Custom maps made in the editor appear in the same dropdown as the built-ins. Editor.register() is
   // what puts them into MAP_LAYOUTS, so it has to run before the list is rebuilt from it; the whole
   // select is rebuilt rather than patched because the list is grouped now and a saved map has to land

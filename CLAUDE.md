@@ -47,8 +47,8 @@ exist only in a chat transcript.
 
 ## Non-negotiable
 
-- **`node test/all.js` is the gate before any commit.** 80 suites, ~4 minutes. Green means green. A red
-  `rooms` with `EADDRINUSE` is another gate or a stray server on the relay ports (8793-8798), not a fault:
+- **`node test/all.js` is the gate before any commit.** 81 suites, ~4 minutes. Green means green. A red
+  `rooms` with `EADDRINUSE` is another gate or a stray server on the relay ports (8793-8800, and 8810-8812 for `lobby`), not a fault:
   re-run `node test/rooms.js` alone, then the gate.
 - **Determinism.** Never `Math.random()` in simulation code — use `G.rand()`. Anything a replay or a
   rejoining client must reproduce goes through `G.init` options or the command log.

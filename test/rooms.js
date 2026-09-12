@@ -32,7 +32,9 @@ const servers = [];
 // countdown for a thing they do not test. Section 14 passes its own and times it for real. A caller's env
 // still wins, and so does one set in the environment.
 function serve(port, delay, env) {
-  const s = spawn(process.execPath, [path.join(__dirname, 'serve.js'), String(port), String(delay)], { stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({ BW_COUNTDOWN: '0' }, process.env, env || {}) });
+  // BW_READY=0 likewise: START used to launch whoever had readied, and every section below that is not about readiness
+  // starts games with players who never clicked READY. test/lobby.js is where the ready check is tested.
+  const s = spawn(process.execPath, [path.join(__dirname, 'serve.js'), String(port), String(delay)], { stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({ BW_COUNTDOWN: '0', BW_READY: '0' }, process.env, env || {}) });
   s.stdout.on('data', () => { }); s.stderr.on('data', d => console.log('  [relay err] ' + String(d).trim()));
   servers.push(s); return s;
 }
@@ -406,7 +408,8 @@ function client(port, tag) {
   const eli = HA.lobby && HA.lobby.players.find(p => p.name === 'Eli');
   ok(eli && eli.team === 1, 'a third human joins the least-populated team (Team 1, on a tie the lowest), not a team of their own (was Team 3)', JSON.stringify(HA.lobby && HA.lobby.players.map(p => p.name + '/' + p.team)));
   HE.send({ t: 'leave' }); await sleep(200); HE.close();
-  HB.send({ t: 'set', ready: true }); HA.send({ t: 'addai', race: 'R', difficulty: 'normal', team: 2 }); HA.send({ t: 'set', title: 'Renamed' }); await sleep(250);
+  // The AI before the ready: adding an opponent withdraws every player's ready (seventh session, item 2; test/lobby.js).
+  HA.send({ t: 'addai', race: 'R', difficulty: 'normal', team: 2 }); await sleep(150); HB.send({ t: 'set', ready: true }); HA.send({ t: 'set', title: 'Renamed' }); await sleep(250);
   const ai = HA.lobby.players.find(p => p.ai), bea = HA.lobby.players.find(p => p.name === 'Bea');
   ok(bea && bea.ready === true && ai && ai.team === 2 && ai.ready === true && HA.lobby.title === 'Renamed' && (lastList(HD).rooms[0] || {}).title === 'Renamed' && (lastList(HD).rooms[0] || {}).players === 3, 'ready is per player (an AI is always ready), an AI lands on the team it was added to, and a renamed game is re-pushed', JSON.stringify({ players: HA.lobby.players, list: lastList(HD).rooms }));
   HB.send({ t: 'leave' }); await sleep(250);

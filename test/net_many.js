@@ -29,7 +29,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function until(cond, ms, what) { const t0 = Date.now(); while (!cond()) { if (Date.now() - t0 > ms) throw new Error('timeout waiting for ' + what); await sleep(20); } }
 
 function startRelay(port, tag) {
-  const s = spawn(process.execPath, [path.join(__dirname, 'serve.js'), String(port)], { stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({}, process.env, { BW_CHEATS: '1', BW_COUNTDOWN: '0' }) });   // god mode through the command stream keeps the humans alive; cheats are off in a network game otherwise. BW_COUNTDOWN=0 for the same reason test/net.js sets it: the start countdown is test/rooms.js section 13's
+  const s = spawn(process.execPath, [path.join(__dirname, 'serve.js'), String(port)], { stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({}, process.env, { BW_CHEATS: '1', BW_COUNTDOWN: '0', BW_READY: '0' }) });   // god mode through the command stream keeps the humans alive; cheats are off in a network game otherwise. BW_COUNTDOWN=0 for the same reason test/net.js sets it: the start countdown is test/rooms.js section 13's
   s.stdout.on('data', d => { const t = String(d).trim(); if (t) console.log('  [' + tag + '] ' + t.split('\n').join('\n  [' + tag + '] ')); });
   s.stderr.on('data', d => console.log('  [' + tag + ' err] ' + String(d).trim()));
   process.on('exit', () => { try { s.kill(); } catch (e) { } });
@@ -49,7 +49,9 @@ function makeClient(name, race, port, room) {
   ctx.window = ctx; vm.createContext(ctx);
   for (const f of ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'snapshot', 'net'])
     vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
-  vm.runInContext(`this.__Net = Net; this.__G = G;
+  // Eight seats whatever the map: this suite plays five players on four-start maps on purpose (see its header), which the
+  // lobby would otherwise refuse since the seventh session (test/lobby.js section 7).
+  vm.runInContext(`this.__Net = Net; this.__G = G; Net.mapCap = () => 8;
     this.UI = { mode: 'play', net: true, loading: null, menu: null, selection: [], ping() {}, onUnitDied() {}, started: false,
       start(opts) { G.init(opts); G.recording = true; G.log = []; G.pendingCmds = null; G.mission = null; this.started = true; this.opts = opts; } };
     this.step = max => { let n = 0; while (n < max && Net.active && !G.over && Net.ready(G.frame)) { Net.beforeTick(); G.tick(); n++; } return n; };
