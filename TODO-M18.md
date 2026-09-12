@@ -220,9 +220,9 @@ re-anchor that line, or the suite goes red reporting a stale anchor.
 
 ## The three worktrees -- GONE
 
-Removed in the seventh session, with their branches: every item they held was redone from scratch on the main line,
-measured, controlled and gated (items 1, 3, 5, 6, 10-13 are in Closed). `git worktree list` shows only the main
-checkout. Nothing of theirs remains to resume.
+Removed in the seventh session, with their branches. Their items were finished on the main line instead -- 1, 3, 5, 6,
+10, 12 and 13 are in Closed, 11 is committed -- except item 4, the research stall, which is still not reproduced
+(above). `git worktree list` shows only the main checkout. Nothing of theirs remains to resume.
 
 ---
 
