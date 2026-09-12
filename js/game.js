@@ -621,7 +621,7 @@ const G = {
     // be recomputed for some unrelated reason.
     if (u.def.psi) this.map.recomputePsi(u.owner, this.units);
     for (const c of u.cargo) { c.inside = null; if (!u.def.bunker) this.kill(c, killer, true); }
-    if (u.launched) for (const ic of u.launched) if (ic.alive) this.kill(ic, null, true);
+    if (u.launched) for (const ic of u.launched.slice())   /* a copy: each Interceptor's own kill splices it out of the array being walked, which skipped every other one (REVIEW-M17 task 20) */ if (ic.alive) this.kill(ic, null, true);
     if (u.parent && u.parent.launched) { const i = u.parent.launched.indexOf(u); if (i >= 0) u.parent.launched.splice(i, 1); }
     if (u.inside && u.inside.cargo) { const i = u.inside.cargo.indexOf(u); if (i >= 0) u.inside.cargo.splice(i, 1); }
     if (u.order.type === 'gather' && u.order.target && u.order.target.miner === u) u.order.target.miner = null;

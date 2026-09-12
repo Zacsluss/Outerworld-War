@@ -469,3 +469,27 @@ prints with the browser pane in front (a hidden tab throttles the timers and eve
 `carnage` scene's `noDecals` A/B and the `editorMini` block are the two that moved. The five other costs the
 review suspected (the fog rebuild, particle gradients, building glows, the HUD minimap, sprite keys) measured
 under 0.2 ms a frame and were left alone. Saves and replays are unaffected (the stamp did not move).
+
+## 55. Every ability a player can now trust, and Interceptors that come home and die with their Carrier (task 20)
+
+Fourteen spells and abilities had never been run by any check: **Restoration**, **Optical Flare** (Medic),
+**Lockdown** (Ghost), **Defensive Matrix** and **EMP** (Science Vessel), **Yamato Gun** (Battlecruiser),
+**Parasite** and **Ensnare** (Queen), **Nydus Exit** (Nydus Canal), **Feedback** and **Maelstrom** (Dark
+Archon), **Disruption Web** (Corsair), **Build Scarab** (Reaver) and **Build Interceptor** (Carrier) --
+together with infesting a Command Center, a Scarab's walk to its target, Interceptors docking, a transport
+dying with cargo aboard, and a worker whose patch runs dry. `node test/abilities20.js` is the way to see all
+of it at once (two seconds, one line per effect). By hand, `show me the money` and `modify the phase
+variance`, then each in turn: **Medic F** on an enemy Overlord (it stops detecting your Ghost); **Ghost L**
+on an enemy tank (it stops dead for forty seconds; on a Zergling you are told it only works on machines and
+keep the energy); **Vessel D** on a Marine, then let something shoot it (the first 250 damage does
+nothing); **Vessel E** on a Templar (energy and shields gone); **Battlecruiser Y** (a two-second charge,
+then 260); **Queen R** on an enemy unit and follow it into the fog (you see where it goes and what stands
+beside it); **Queen E** (everything under it walks at half speed); Nydus Canal **N** on your creep (a second
+canal; units sent into the first come out of the second); **Dark Archon F** on a caster (its energy becomes
+damage), **E** on infantry (frozen; a Vulture in the same cloud walks on); **Corsair D** over a Marine line
+(they cannot fire; the Wraith above them can); right-click **B** on a Reaver or **I** on a Carrier and watch
+it stock itself. **Two things the suite found and this commit fixes:** let a Carrier with four Interceptors
+finish a fight -- **all four re-dock** and the count reads 4/4 (before: one of the four could circle it for
+ever at 3/4); and kill a Carrier with its Interceptors out -- **all of them die with it on the same frame**
+(before: every other one lived one frame longer, and a save taken that frame carried two live Interceptors
+of a dead ship). Saves and replays from before this commit are refused (the stamp moved).

@@ -520,7 +520,7 @@ const Abilities = {
     if (dd <= u.wRange(w) * TILE) { if (u.cooldown <= 0) { u.fireAt(t); const a = DMath.atan2(t.y - u.y, t.x - u.x) + (G.rand() - .5) * 0.8; o.pass = { x: t.x + DMath.cos(a) * 130, y: t.y + DMath.sin(a) * 130 }; } else u.moveTo(t.x + DMath.cos(u.facing + 1.2) * 60, t.y + DMath.sin(u.facing + 1.2) * 60); }
     else u.moveTo(t.x, t.y, t);
   },
-  dockTick(u) { const p = u.parent; if (!p || !p.alive) { G.kill(u, null, true); return; } if (dist(u, p) <= p.r) { p.interceptors = Math.min(p.interceptors + 1, 8); G.kill(u, null, true); return; } u.moveTo(p.x, p.y, p); },
+  dockTick(u) { const p = u.parent; if (!p || !p.alive) { G.kill(u, null, true); return; } if (dist(u, p) <= p.r + u.r) {   /* the body's own radius too: moveTo stops p.r + u.r - 4 px out, and an Interceptor that braked between the two radii circled for ever (REVIEW-M17 task 20) */ p.interceptors = Math.min(p.interceptors + 1, 8); G.kill(u, null, true); return; } u.moveTo(p.x, p.y, p); },
   inField(x, y, kind) { for (const f of G.fields) if (f.kind === kind && distPt(x, y, f.x, f.y) <= f.r * TILE) return f; return null; },
   // ---------------- spell effects ----------------
   cast(u, id, t, x, y) {

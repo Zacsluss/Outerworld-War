@@ -304,7 +304,10 @@ listed here. Ordered by what I would do first.
     `wavetarget.js` stub
     `console.error` to a no-op; `G.tickErrors` now counts throws inside `G.tick` and `AI.tick`, so each
     should end with `ok(G.tickErrors === 0)`. Cost S per suite.
-20. **Coverage the gate does not have** (reviewer's identifier sweep): 18 of 80 abilities are never
+20. **Coverage the gate does not have** **DONE** (entry 29): `test/abilities20.js` drives all seventeen
+    never-named ids and the five never-driven mechanics, and found two Carrier faults, both fixed with it. The
+    README's burning buildings: the user chose to delete the sentence (done, task 15's commit). As listed:
+    (reviewer's identifier sweep): 18 of 80 abilities are never
     named in any gate suite — `restoration`, `optical_flare`, `lockdown`, `cloak_ghost`,
     `defensive_matrix`, `emp`, `yamato`, `parasite`, `ensnare`, `nydus_exit`, `feedback`, `maelstrom`,
     `disruption_web`, `build_scarab`, `build_interceptor` among them (the Overlord became a Feedback/EMP
@@ -1117,8 +1120,33 @@ The questions as they were put, kept for the record:
     corpses draw with no filter set and one blit each, the stained copies are cached and reused, a falling
     corpse keeps the live filter, `reset()` clears the cache; the editor minimap is one blit and under eight
     fills on a 128x128 map, unchanged it reuses the bitmap, a painted tile rebuilds it in place. **Negative
-    controls** (restored byte-identical): the settled test forced false (every corpse filtered live again) -> three clean reds (40 filter sets, nothing cached); the bitmap's key check disabled (rebuilt every frame) -> one clean red (builds 2 and 3 where 1 and 2 were expected). Neither file is stamped: no stamp move. **Gate:** 75 of
-    75, 217 s.
+    controls** (restored byte-identical): the settled test forced false (every corpse filtered live again) -> three clean reds (40 filter sets, nothing cached); the bitmap's key check disabled (rebuilt every frame) -> one clean red (builds 2 and 3 where 1 and 2 were expected). Neither file is stamped: no stamp move. **Gate:** 74 of 75 twice, `rooms` red both
+    times on a relay port another gate held (`EADDRINUSE` 8798 then 8795: two agents were running gates in
+    their worktrees at the time) and 61 of 61 alone each time; the first clean 76 of 76 on these files came
+    with task 20's commit, 238 s. A trap for the handoff: gates share the relay ports.
+29. **The abilities the gate never drove, and the two Carrier faults they found (task 20).** *(commit: task
+    20; fourth session, prepared by a worktree agent)* **Measured first** (`.claude/review/agent-20/sweep.js`,
+    quoted strings across the 75 TESTS files): **17 of 80 ability ids never named** -- the reviewer's 18 less
+    `cloak_ghost`, which `review17.js` section 4 took -- three of them the `menu` kinds and fourteen real casts:
+    Restoration, Optical Flare, Lockdown, Defensive Matrix, EMP, Yamato, Parasite, Ensnare, Nydus Exit,
+    Feedback, Maelstrom, Disruption Web, Build Scarab, Build Interceptor; and Infest, Scarab pathing,
+    Interceptor docking and loss, a transport killed with cargo and a mined-out patch never driven. **Test:**
+    `test/abilities20.js` (73 checks, in the gate, ~1.2 s): every one of them through the entry point the
+    interface uses (`Abilities.issue`, `G.queueUnit` for the ammo builders, `G.setAutocast` for the armed
+    ones) and asserted by its effect in the simulation -- statuses set and cleared, hit points gone, a unit
+    that cannot move or be shot, a building that changed hands, minerals and energy debited -- plus the sweep
+    itself with its count as the guard. **Found, and fixed here** (`.claude/review/agent-20/dock-probe.js`):
+    an Interceptor that braked to a stop between `Unit.moveTo`'s arrive radius for a unit target (r + R - 4 =
+    23 px) and `dockTick`'s dock radius (R = 22 px) **never docked** -- 22.95 px for eleven frames, then 25-45
+    px for 600, one of four every run, the Carrier's count stuck at 3/4; `dockTick` docks within `p.r + u.r`.
+    And `G.kill` walked `launched` with `for...of` while each Interceptor's own kill spliced it out, so **every
+    other launched Interceptor survived the frame its Carrier died** (dead, alive, dead, alive; a snapshot
+    taken that frame carried two live Interceptors of a dead Carrier); it walks a copy. Also pinned as the
+    code does it: a transport's cargo dies silently -- no tally, no kill credit. **Negative controls** (all
+    restored byte-identical): the agent ran 25 one at a time -- 23 clean reds, one per behaviour, and the two
+    fixes each turned its red green; re-run here with the fixes in: each fix reverted -> its check red
+    (the dock radius back to `p.r` -> one clean red (one of four never docks); the walk without the copy -> one clean red (two of four alive on the frame)). **Canaries** (the stamp moves: `abilities.js`, `game.js`): aistyles seed 1 clean (132), seed 11 clean (132), seed 5 its one known economy line (57 vs 61). **Eight-player
+    banks:** 377/804/147/222/302/392/221/303, byte-identical -- no Carrier or Reaver ever existed in that game. **Gate:** 76 of 76, 238 s. The stamp moved: `b5b590f19b33fa33`.
 
 # 4. Considered and deliberately not done
 
