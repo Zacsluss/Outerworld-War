@@ -444,3 +444,28 @@ Refinery.
 - **Press Backspace (centre on selection)** with only that worker selected: the camera goes to the Refinery.
 - **Load a Marine into a Bunker** with the Marine selected: it leaves the selection, as in both StarCraft
   games — it is cargo then, shown in the Bunker's own panel. Only gas buildings keep a worker selected.
+
+---
+
+## 79. Queued buildings show a faint ghost, and you can't place on top of one
+
+*(Seventh session, item 9 — "a faint transparency of the building should be shown where it's placed. That way
+you don't accidentally try to place over the same area twice. This is in Starcraft 2.")*
+
+**How to reach it.** Select one SCV (or Probe, or Drone), press **B**, pick a Supply Depot, then hold **Shift**
+and click three different spots.
+
+**What to look for.**
+- **A faint ghost of the building appears at every spot** — the one the worker is walking to and each one
+  queued after it — with a thin dashed outline. Each ghost disappears as that building actually goes down.
+  Before this, nothing showed until each one was placed, so the only way to know where the third depot was
+  going was to remember.
+- **Now try to place a building on top of one of the ghosts** — with the same worker holding Shift, or with a
+  different worker. The placement preview turns **red** and says **"A building is already planned there."**,
+  and clicking does nothing. That is the accident you described, made impossible.
+- **Deselect the worker.** The ghosts stay. Whether a spot is already spoken for doesn't depend on which worker
+  you happen to have selected.
+- **Place WITHOUT Shift, with the same worker, on one of its own ghosts.** That is allowed: an order without
+  Shift replaces everything the worker had queued, so its old spots are about to stop existing.
+- You only ever see **your own** plans. An opponent's worker walking out to build shows nothing — that would
+  be a scouting leak.

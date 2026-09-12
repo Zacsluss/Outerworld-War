@@ -52,7 +52,7 @@ function mkCtx(cv, rec) {
   for (const k of ['save', 'restore', 'setTransform', 'resetTransform', 'transform', 'translate', 'rotate', 'scale',
     'beginPath', 'closePath', 'moveTo', 'lineTo', 'arc', 'arcTo', 'ellipse', 'rect', 'roundRect', 'quadraticCurveTo', 'bezierCurveTo',
     'clip', 'fill', 'stroke', 'fillRect', 'strokeRect', 'clearRect', 'drawImage', 'fillText', 'strokeText', 'putImageData']) {
-    c[k] = function (...a) { if (rec.on) rec.ops.push({ op: k, a, lw: c.lineWidth, ss: String(c.strokeStyle), fs: typeof c.fillStyle === 'string' ? c.fillStyle : 'grad' }); };
+    c[k] = function (...a) { if (rec.on) rec.ops.push({ op: k, a, lw: c.lineWidth, ss: String(c.strokeStyle), fs: typeof c.fillStyle === 'string' ? c.fillStyle : 'grad', ga: c.globalAlpha }); };
   }
   return c;
 }
@@ -325,6 +325,62 @@ frame();   // warm: terrain chunks and sprite canvases bake on the first frame
   R(ctx, 'for (const d of FX._stash) FX.decals.push(d); FX._stash = null; return 1;');
   ok('the CORPSE is still there and still blitting -- stopping the bar must not stop the death animation',
     dead.decals >= 1 && withIt > without, JSON.stringify({ corpseDecals: dead.decals, blitsWithCorpse: withIt, blitsWithout: without }));
+}
+
+// ============================================================================
+// 7. planned buildings draw a faint ghost, and nothing may be placed on top of one (seventh session, item 9)
+// ============================================================================
+// "When you use one builder unit to build several buildings in a row in queued commands, a faint transparency
+// of the building should be shown where it's placed. That way you don't accidentally try to place over the
+// same area twice." A ghost is a building sprite blitted at the planned tile at low alpha; the refusal is
+// UI.confirmPlacement turning the click down with UI.PLANNED_MSG.
+{
+  START(`
+    const p = G.players[0]; p.minerals = 5000; p.vis.fill(2);
+    const def = DATA.buildings.supply_depot;   // hall is START's own
+    const free = (x0, y0, not) => G.map.findFreeTile(x0, y0, 16, (x, y) => !G.map.canPlace(def, x, y, p, G.units, null) && !not.some(s => Math.abs(s[0] - x) < def.w + 1 && Math.abs(s[1] - y) < def.h + 1));
+    const A = free(hall.tx + 6, hall.ty + 5, []), B = free(A[0] + 3, A[1], [A]), C = free(B[0] + 3, B[1], [A, B]);
+    const scv = G.spawnUnit('scv', 0, hall.x + 40, hall.y + 90);
+    scv.setOrder({ type: 'build', def, tx: A[0], ty: A[1] });
+    scv.setOrder({ type: 'build', def, tx: B[0], ty: B[1] }, true);
+    scv.setOrder({ type: 'build', def, tx: C[0], ty: C[1] }, true);
+    const other = G.spawnUnit('scv', 0, hall.x - 40, hall.y + 90);
+    // an ENEMY drone on its way to build: its plan must not draw
+    const E = free(hall.tx + 14, hall.ty + 12, [A, B, C]);
+    const drone = G.spawnUnit('drone', 1, (E[0] - 2) * TILE, (E[1] - 2) * TILE);   // beside its own site, and off the depots' (it stood on site A once, and canPlace said so)
+    // G.applying: an order to a unit that is not the local player's goes through the command-log wrapper otherwise, and never lands
+    G.applying = true; try { drone.setOrder({ type: 'build', def: DATA.buildings.spawning_pool, tx: E[0], ty: E[1] }); } finally { G.applying = false; }
+    G._plan = { A, B, C, E, scv, other, def, drone };
+  `);
+  const plan = R(ctx, 'const q = G._plan; const sp = Sprites.building({ def: q.def, owner: 0 }), pool = Sprites.building({ def: DATA.buildings.spawning_pool, owner: 1 }); return { A: q.A, B: q.B, C: q.C, E: q.E, M: sp.M, T: sp.T, PM: pool.M, PT: pool.T, TILE };');
+  frame();
+  const ghosts = rec.ops.filter(o => o.op === 'drawImage' && o.ga > 0.2 && o.ga < 0.35);
+  const at = s => ghosts.some(o => near(o.a[1], s[0] * plan.TILE - plan.M) && near(o.a[2], s[1] * plan.TILE - plan.T));
+  ok('A GHOST DRAWS AT EVERY PLANNED SITE: the one the SCV is walking to and both shift-queued after it (nothing drew until each went down)',
+    at(plan.A) && at(plan.B) && at(plan.C), JSON.stringify({ ghosts: ghosts.length, A: at(plan.A), B: at(plan.B), C: at(plan.C) }));
+  const droneOrder = R(ctx, 'return G._plan.drone.order.type;');   // THIS drone -- the Zerg player's starting drones are mining, and a find() on owner 1 returned one of those
+  const enemyGhost = ghosts.some(o => near(o.a[1], plan.E[0] * plan.TILE - plan.PM) && near(o.a[2], plan.E[1] * plan.TILE - plan.PT));
+  ok('...and not for another player\'s plans, which would be a scouting leak', droneOrder === 'build' && !enemyGhost, JSON.stringify({ droneOrder, enemyGhost, ghosts: ghosts.length }));   // the enemy really has a plan (setup), and it draws nothing
+  // placing a depot with ANOTHER worker on top of a planned site is refused, with the words the preview shows
+  const refused = R(ctx, `
+    const q = G._plan, p = G.players[0]; p.msgs.length = 0;
+    UI.placing = { def: q.def, tx: q.B[0], ty: q.B[1], builder: q.other }; UI.confirmPlacement(true);
+    const said = p.msgs.map(m => m.text).join(' | ');
+    const queued = q.other.order.type === 'build' || q.other.queue.some(o => o.type === 'build');
+    UI.placing = null;
+    return { said, queued, msg: UI.PLANNED_MSG };`);
+  ok('PLACING ON TOP OF A PLANNED SITE IS REFUSED and says why -- the accident the user described cannot happen',
+    !refused.queued && refused.said.includes(refused.msg), JSON.stringify(refused));
+  // ...and the preview is red there, not green, so the click is never a surprise
+  const preview = (() => { R(ctx, 'const q = G._plan; UI.placing = { def: q.def, tx: q.C[0], ty: q.C[1], builder: q.other }; return 1;'); frame(); R(ctx, 'UI.placing = null; return 1;');
+    return { red: rec.ops.filter(o => o.op === 'fillRect' && /255,60,60/.test(o.fs)).length, green: rec.ops.filter(o => o.op === 'fillRect' && /60,255,60/.test(o.fs)).length }; })();
+  ok('...and the placement preview over a planned site is RED, never green', preview.red > 0 && preview.green === 0, JSON.stringify(preview));
+  // the SAME worker re-placing WITHOUT shift replaces its whole queue, so its own old sites must not block it
+  const replace = R(ctx, `
+    const q = G._plan; UI.placing = { def: q.def, tx: q.A[0], ty: q.A[1], builder: q.scv }; UI.confirmPlacement(false);
+    return { order: q.scv.order.type, tx: q.scv.order.tx, ty: q.scv.order.ty, queue: q.scv.queue.length, A: q.A };`);
+  ok('...but the SAME worker placing WITHOUT shift may reuse its own old site: that order replaces its whole queue',
+    replace.order === 'build' && replace.tx === replace.A[0] && replace.ty === replace.A[1] && replace.queue === 0, JSON.stringify(replace));
 }
 
 console.log('\n' + (fail ? 'FAIL  ' : 'ALL PASS  ') + pass + ' passed, ' + fail + ' failed');

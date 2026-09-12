@@ -370,6 +370,8 @@ const Render = {
     this.drawHazard(ctx);
     // Night, in the same slot and for the same reason: it is weather, not interface.
     this.drawNight(ctx, list);
+    // Planned buildings first, so a queued route's line and diamond sit on top of the ghost they lead to.
+    this.drawPlannedBuilds(ctx);
     // Under the selection rings and over everything the world draws, because a queued route is
     // interface -- the same slot, and for the same reason, as the rings and the rally lines below it.
     this.drawOrderQueue(ctx);
@@ -1704,9 +1706,32 @@ const Render = {
     }
     if (u.maxEnergy && u.owner === G.human) bar(u.energy / u.maxEnergy, '#c86aff');
   },
+  // A FAINT GHOST OF EVERY BUILDING YOUR WORKERS ARE ON THEIR WAY TO PLACE (seventh session, item 9, "this is in
+  // Starcraft 2"). Five depots shift-queued on one SCV used to show nothing until each one went down, so the only way
+  // to know where the third was going was to remember -- and the easy mistake was to queue a sixth on top of it.
+  // Every planned site of every worker of yours, selected or not, because the question "is something already
+  // going there?" does not depend on which worker you happen to have selected. Only YOUR plans: another player's
+  // would be a scouting leak. Drawn at a third of the placement preview's strength and with a thin outline, so a
+  // ghost never reads as the building you are placing now. UI.plannedOverlap refuses a placement on top of one.
+  drawPlannedBuilds(ctx) {
+    if (typeof UI === 'undefined' || !UI.plannedBuilds) return;
+    const plans = UI.plannedBuilds(null); if (!plans.length) return;
+    const z = this.zoom;
+    ctx.save();
+    for (const s of plans) {
+      const sp = Sprites.building({ def: s.def, owner: G.human });
+      ctx.globalAlpha = 0.28; ctx.drawImage(sp.cv, s.tx * TILE - sp.M, s.ty * TILE - sp.T);
+      ctx.globalAlpha = 0.55; ctx.strokeStyle = 'rgba(120,230,140,0.9)'; ctx.lineWidth = 1 / z; ctx.setLineDash([5 / z, 4 / z]);
+      ctx.strokeRect(s.tx * TILE + 0.5, s.ty * TILE + 0.5, s.def.w * TILE - 1, s.def.h * TILE - 1);
+    }
+    ctx.setLineDash([]); ctx.restore();
+  },
   drawPlacement(ctx) {
     const pl = UI.placing, def = pl.def, m = G.map; const tx = pl.tx, ty = pl.ty;
-    const err = m.canPlace(def, tx, ty, G.players[G.human], G.units, pl.builder);
+    // Red over a planned site as well as over anything canPlace refuses, with the same words confirmPlacement will
+    // say -- so the preview never shows green for a placement the click is going to turn down.
+    const err = m.canPlace(def, tx, ty, G.players[G.human], G.units, pl.builder)
+      || (!pl.land && UI.plannedOverlap && UI.plannedOverlap(def, tx, ty, pl.builder, !!(UI.keys && UI.keys.Shift)) ? UI.PLANNED_MSG : null);
     const fake = { def, owner: G.human }; const s = Sprites.building(fake); ctx.save(); ctx.globalAlpha = 0.55; ctx.drawImage(s.cv, tx * TILE - s.M, ty * TILE - s.T); ctx.restore();
     for (let y = 0; y < def.h; y++) for (let x = 0; x < def.w; x++) { ctx.fillStyle = !err ? 'rgba(60,255,60,0.28)' : 'rgba(255,60,60,0.35)'; ctx.fillRect((tx + x) * TILE + 1, (ty + y) * TILE + 1, TILE - 2, TILE - 2); }
     if (def.psi) { ctx.strokeStyle = 'rgba(80,140,255,0.5)'; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.ellipse((tx + 1) * TILE, (ty + 1) * TILE, def.psi * TILE, def.psi * 0.7 * TILE, 0, 0, 7); ctx.stroke(); ctx.setLineDash([]); }

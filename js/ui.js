@@ -989,9 +989,35 @@ const UI = {
     }
     this.marker(wx, wy, p.kind === 'attack' ? '255,60,60' : '80,255,80'); Sound.ack(sel[0]);
   },
+  // PLANNED BUILDINGS (seventh session, item 9). Every building one of your workers has been told to put down and
+  // has not put down yet: its CURRENT order if that is a build -- it is on its way -- and every build in its
+  // shift-queue. One reader, used by the ghosts Render.drawPlannedBuilds draws and by the placement check below, so
+  // what you see planned and what you are stopped from placing over cannot disagree. `except` leaves one worker's
+  // plans out: a placement WITHOUT shift replaces that worker's whole queue (Unit.setOrder), so its old sites are
+  // about to stop existing and must not block the new one.
+  plannedBuilds(except) {
+    const out = [];
+    for (const u of G.units) {
+      if (!u.alive || u.owner !== G.human || !u.def.worker || u === except) continue;
+      if (u.order && u.order.type === 'build' && u.order.def) out.push({ u, def: u.order.def, tx: u.order.tx, ty: u.order.ty });
+      if (u.queue) for (const o of u.queue) if (o && o.type === 'build' && o.def) out.push({ u, def: o.def, tx: o.tx, ty: o.ty });
+    }
+    return out;
+  },
+  // The planned site a footprint would overlap, or null. This is the half that stops the accident the user described:
+  // the ghost shows you where the last one went, and this refuses to put a second one on top of it.
+  plannedOverlap(def, tx, ty, builder, shift) {
+    for (const s of this.plannedBuilds(shift ? null : builder)) {
+      if (tx < s.tx + s.def.w && s.tx < tx + def.w && ty < s.ty + s.def.h && s.ty < ty + def.h) return s;
+    }
+    return null;
+  },
+  PLANNED_MSG: 'A building is already planned there.',
   confirmPlacement(shift) {
     const pl = this.placing; const p = G.players[G.human]; const err = G.map.canPlace(pl.def, pl.tx, pl.ty, p, G.units, pl.builder);
     if (err) { p.msg(err, 'error'); return; }
+    // Not for a Terran building LANDING: that is the building itself moving, and its own old site is no plan.
+    if (!pl.land && this.plannedOverlap(pl.def, pl.tx, pl.ty, pl.builder, shift)) { p.msg(this.PLANNED_MSG, 'error'); return; }
     if (pl.land) { pl.builder.setOrder({ type: 'land', tx: pl.tx, ty: pl.ty }, shift); Sound.ack(pl.builder); this.placing = null; this.cardMenu = null; return; }
     if (!p.canAfford(pl.def.min, pl.def.gas)) return;
     pl.builder.setOrder({ type: 'build', def: pl.def, tx: pl.tx, ty: pl.ty }, shift); Sound.ack(pl.builder);
