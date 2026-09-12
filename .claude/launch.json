@@ -9,6 +9,16 @@
         "8899"
       ],
       "port": 8899
+    },
+    {
+      "name": "online",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "test/serve.js",
+        "8765",
+        "6"
+      ],
+      "port": 8765
     }
   ]
 }
