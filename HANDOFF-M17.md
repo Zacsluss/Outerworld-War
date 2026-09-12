@@ -290,62 +290,82 @@ first** — committing this file moves it.
 
 ```
 Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
-Branch: m10-overnight. HEAD: <run git log -1 --format=%h>. Working tree clean. (master is 170+
-commits behind and unmerged; nothing lives there.) origin = https://github.com/Zacsluss/Outerworld-War,
-whose main IS this branch (m10-overnight tracks origin/main; git push publishes).
+Branch: m10-overnight. HEAD: <run git log -1 --format=%h>. Working tree clean.
+origin = https://github.com/Zacsluss/Outerworld-War, whose main IS this branch (git push publishes).
+(master is 170+ commits behind and unmerged; nothing lives there.)
 
-Read CLAUDE.md, then HANDOFF-M17.md (this file: the state, the known reds, the traps of four
-sessions), then REVIEW-M17.md sections 2, 3 and 4 (every open task in section 1 is DONE and points at
-its entry; section 4 is what was deliberately not done), then PLAYTEST-M17.md.
+READ IN THIS ORDER, then start:
+  1. CLAUDE.md              -- the working agreement. Every line was earned; none is optional.
+  2. TODO-M18.md            -- THE OPEN LIST. The user's ten confirmed tasks, what is done, what each
+                               fix must not break, and the traps. This is your brief.
+  3. HANDOFF-M17.md         -- state, the known reds, and the traps of five sessions.
+  4. PLAYTEST-M17.md        -- what the game does now, in a player's language (items 59-63 are recent).
 
-THE STATE: the review is finished. 79 suites green; the stamp is af56c841f794af2f. Three known reds, none
-blocking: test/soak.js's Swarm Host line; test/aistyles.js seed 5's one economy line (57 vs 61);
-nothing else. test/eightplayer.js is 19/19 by hand and its bank line is the identity check for any
-refactor.
+THE STATE: 79 suites green (node test/all.js, ~4 min). Stamp af56c841f794af2f. Known reds, neither
+blocking and neither yours to fix: test/soak.js's Swarm Host line, and test/aistyles.js seed 5's one
+economy line (57 vs 61). test/eightplayer.js is 19/19 by hand and its bank line is the identity check
+for any refactor.
 
-THE MENU (fifth session): the front is three doors -- SINGLE PLAYER, MULTIPLAYER, SETTINGS -- with
-everything else behind them (PLAYTEST-M17 item 59). Presentation only; the in-game F10 menu on the
-canvas was not restyled. The five leftover agent worktrees are gone.
+THE WORK: ten tasks, all confirmed by the user on 2026-09-12. TODO-M18.md has each in full.
+  1  Mineral rate to MINE_TIME 190 / GAS_TIME 94 (7a) -- APPROVED, patch already written
+  2  Rebalance the AI for that economy (7b)           -- GATED, needs the user to say go
+  3  AI race/difficulty/style per slot in the lobby
+  4  Finish the lobby, SC2-style and self-contained
+  5  A 5-4-3-2-1 countdown before a network game unlocks
+  6  Double the HUD size
+  7  Creep tumour: walk into range instead of refusing
+  8  Research that gets stuck -- NOT YET REPRODUCED, probe first
+  9  Workers stop when their patch runs out, SC2-style
+ 10  The dragoon wobble after a move completes
 
-THE LOBBY BROWSER (fifth session): CONNECT lists the games hosted on the server, HOST GAME makes one,
-a click joins one, the lobby shows teams, ready marks and chat; a code-joined room stays unlisted.
-Relay messages list/leave/create/ready and a per-team addai; test/rooms.js section 12 (74 checks);
-PLAYTEST-M17 item 60. The desktop app's HOST A GAME now starts its relay and hosts a listed game;
-desktop/window-check.js was not re-driven (needs a Tauri build).
+DO THEM IN THIS ORDER, AND HERE IS WHY. Tasks 3-10 keep the gate green. Task 1 deliberately turns FOUR
+gate suites red (version, aistyles, zerg12, queens) and task 2 is what makes them green again -- and
+task 2 is gated behind the user's explicit go. So: do 3, 4, 5 (one piece of work: the lobby), then 6,
+then 7-10, committing each with the gate green. Apply task 1 LAST, immediately before asking the user
+to start task 2, so the repository is never left red for long and nothing else is blocked behind it.
+If the user wants to PLAY the slower economy sooner, apply .claude/review/spec-mining.js locally and
+do not commit it.
 
-THE CLOCK (fifth session): the simulation runs on a Worker timer (UI.makeTicker), so a hidden or
-covered host window no longer starves its peer; held keys are forgotten on blur and the arrows are
-polled only with focus (UI.armFocusGuards). test/ticker.js, 17 checks; PLAYTEST-M17 item 61.
+START WITH: task 4, the lobby (tasks 3 and 5 fold into it). Read PLAYTEST-M17 item 60 for what the
+lobby does today, then js/net.js (Net.render draws both the game list and the lobby), test/serve.js
+(the relay: join/list/leave/set/addai/kick/start), and index.html's #multiPanel. The user supplied SC2
+lobby screenshots; TODO-M18.md task "10 + 13" lists exactly what they show and which rows must NOT be
+added because the simulation does not honour them.
 
-THERE IS A LIST, AND IT IS THE USER'S THIRTEEN ITEMS (the table above). Four are closed (2, 8, 9, and 7
-by a measured revert); nine are open and eight of those have partial, ungated work sitting in three
-locked worktrees. Read the table and the item-7 section before starting: re-dispatching the three
-agents fresh is the safer default, and the economy must not be touched without taking the AI's build
-orders and attack threshold with it.
+HOW THIS PROJECT WORKS, and none of it is negotiable:
+  - node test/all.js is the gate before EVERY commit. Green means green. A red `rooms` with EADDRINUSE
+    is a port collision with another gate on this machine (8793-8798), not a fault: re-run
+    node test/rooms.js alone, then the gate.
+  - MEASURE BEFORE FIXING. Every fix here that started from a measurement was right the first time;
+    every one that started from a hypothesis had to be reverted. Build the probe first. A probe that
+    disagrees with a known-good instrument is a broken probe, not a finding.
+  - EVERY new behaviour gets a negative control: a check that goes cleanly RED (not a crash) with the
+    feature removed. tools/control.js applies one and restores the file from memory.
+  - tools/patch.js <spec.js> for every edit anchored on text -- it is line-ending-safe and REFUSES on a
+    zero or double anchor match. Write spec files and probes with the Write tool: bash mangles
+    backslashes in this environment.
+  - Determinism: never Math.random() in simulation code (G.rand()), never a native transcendental in a
+    stamped file (DMath). Anything a replay or a rejoining client must reproduce goes through G.init
+    options or the command log -- test/cmdlog.js is what catches that mistake.
+  - The comments are load-bearing. They record why the obvious thing was NOT done. Do not delete
+    reasoning; if a comment is wrong, fix the comment.
+  - Read the constant, never the literal.
 
-Beyond that list, what remains is gated or a product decision and needs explicit instruction:
-  - THE BALANCE RUN (test/balance.js, test/proxy.js) and the order of the eight claims in AI.budget().
-    Every number in HANDOFF.md is stale. The list of what it must price grew again this session: the
-    Hive's Lair techs (task 5), Ravens and Disruptors that move (7), morph/add-on claims released (8),
-    rebuilt tech buildings (30), the nuke at the cap (6), Interceptors that dock and die (20), the
-    Reaver cap read from the def (22). Do not start it without being told; double-check when told.
-  - THE DESKTOP BUILD's Mac side (written, unbuilt: needs a Mac), code signing, a real icon and
-    identifier, and internet play from the app (untested: no tunnel here). desktop/NOTES in
-    .claude/review/agent-28/NOTES.md section 6 has the exact commands.
-  - The harness's remaining tiers (16 canvas-tier suites, 8 ui-tier singletons) if anyone wants them
-    on test/_harness.js; the codemod refuses anything whose stub it does not match exactly.
+AFTER ANY AI OR SIMULATION CHANGE, by hand, and record the numbers:
+  node test/aistyles.js --seed=1   (the gate's; clean)  --seed=5  (one known red)  --seed=11  (clean)
+  node test/eightplayer.js         19/19; its bank line is the identity check
+Expect the samples to RE-DEAL. A different deal is not a failure; a new KIND of failure is.
 
-If the user brings a new fault: MEASURE BEFORE FIXING (every fix this session that started from a
-measurement was right the first time; the one hypothesis -- that the corpse filter was the cost --
-was checked by an interleaved A/B before it was kept), a negative control that goes cleanly RED with
-the feature removed, tools/control.js for controls, tools/patch.js for edits anchored on text, probes
-and specs written to files under .claude/review/ with the Write tool (bash mangles backslashes), and
-the gate (node test/all.js, 79 suites) green before the commit -- re-run test/rooms.js alone if it is
-the one red (the relay ports collide with any other gate on the machine). After any AI or simulation
-change: aistyles seeds 1, 5, 11 and eightplayer by hand, and expect the samples to re-deal.
+GATED, and not yours to start without being told: task 2 above, test/balance.js and test/proxy.js, and
+the order of the eight claims in AI.budget(). Every balance number in HANDOFF.md is stale.
 
-CLOSE every piece of work the way CLAUDE.md says: a kickoff prompt for the next chat, a numbered
-list of what changed for a player, and how to playtest each item by hand, written into the repo.
+ALSO ON DISK: three locked git worktrees hold partial, UNGATED, un-written-up agent work for tasks
+3-10, stopped mid-task. Nothing of theirs is on the main line. Treat everything in them as unverified;
+re-doing the work fresh is the safer default. Remove them with git worktree remove --force <path>
+then git branch -d <branch>.
+
+CLOSE every piece of work the way CLAUDE.md says: a kickoff prompt for the next chat, a numbered list
+of what changed FOR A PLAYER, and how to playtest each item by hand, written into the repo.
 ```
 
 ---
