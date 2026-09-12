@@ -645,8 +645,22 @@ class Unit {
     const want = DMath.atan2(gy - this.y, gx - this.x); let ang = want; let step = Math.min(spd, dd);
     if (!this.lifted) {
       const turn = TURN[this.def.id] || (this.fly ? 0.3 : 0.7); let diff = want - this.facing; diff = DMath.atan2(DMath.sin(diff), DMath.cos(diff));
-      if (Math.abs(diff) <= turn || dd < 20) this.facing = want; else this.facing += Math.sign(diff) * turn;
-      this.facing = DMath.atan2(DMath.sin(this.facing), DMath.cos(this.facing)); ang = this.facing;
+      // THE LAST TWENTY PIXELS ARE NOT A BEARING (TODO-M18 item 11, "dragoons wobble very fast after they
+      // move"). This used to SNAP the facing onto `want` inside 20 px of the destination, and at that range
+      // the bearing is whichever way a neighbour has just shoved you. Measured: eight dragoons ordered to
+      // one point turned 37, 58 and 79 degrees in a single frame against a turn rate of 14.32; a lone one
+      // never did. Hold the facing and strafe the last few pixels instead.
+      //
+      // `ang = want` is load-bearing: the direction of travel is normally taken FROM the facing, so holding
+      // the facing without it sends the unit off the way it happens to point (a dragoon told to move six
+      // pixels walked out past twenty and turned 143 degrees to come back -- test/movement.js caught it).
+      // The hard-turn slowdown below is deliberately left on everywhere: exempting these 20 px was tried
+      // and it made crowd moves slower and stopped the AI expanding in test/eightplayer.js.
+      if (dd < 20) { ang = want; }
+      else {
+        if (Math.abs(diff) <= turn) this.facing = want; else this.facing += Math.sign(diff) * turn;
+        this.facing = DMath.atan2(DMath.sin(this.facing), DMath.cos(this.facing)); ang = this.facing;
+      }
       if (!this.fly) { if (Math.abs(diff) > 1.2) step *= TURN[this.def.id] ? 0.15 : 0.45; }
       else { const acc = ACCEL[this.def.id] || 0.4; this.spdCur = Math.min(spd, (this.spdCur || 0) + acc); const brake = (this.spdCur * this.spdCur) / (2 * acc); if (dd < brake) this.spdCur = Math.max(Math.min(spd, 1.5), this.spdCur - acc); step = Math.min(this.spdCur, dd); }
     } else this.facing = ang;

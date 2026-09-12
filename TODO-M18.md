@@ -83,7 +83,7 @@ line / base cluster and go idle if that is exhausted. Decide what "the same area
 terms (resources are placed in clusters around base locations) and record why. Check it still resumes when a
 new hall finishes nearby, and that `AI.economy` can still move workers to a new base deliberately.
 
-### 11. Dragoons wobble very fast after they move — MEASURED, FIX WRITTEN, WAITING ON ONE DECISION
+### 11. Dragoons wobble very fast after they move — FIX COMMITTED (the user said commit, seventh session)
 **The cause is found and the fix works. It is not on the main line because it turns the gate red**, and the
 line it turns red is the one this project has had flapping between seeds for its whole history. That is the
 user's call. `node tools/patch.js tools/wobble-fix.js` applies it, and the file carries all of this.

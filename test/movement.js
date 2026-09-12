@@ -116,5 +116,42 @@ ok('a burrowed unit stays burrowed on hold', ctx.burrowedFirst === true && ctx.h
 ok('a move order surfaces a burrowed unit', ctx.moveSurfaces === true);
 ok('a burrowed unit told to board a transport surfaces and boards', ctx.reBurrowed === true && ctx.loadWorks === true, 'reBurrowed=' + ctx.reBurrowed + ' loaded=' + ctx.loadWorks);
 
+// ---- the last twenty pixels are not a bearing (TODO-M18 item 11) ----
+// Eight dragoons ordered to one point used to turn 37, 58 and 79 degrees in a SINGLE FRAME against a
+// declared turn rate of 14.32, because inside 20 px the facing was snapped onto the bearing. No frame may
+// turn further than the unit's own TURN entry, and a unit ordered somewhere it is already standing must
+// not spin at all.
+run(`(() => {
+  const p = G.players[0];
+  const norm = a => Math.atan2(Math.sin(a), Math.cos(a));
+  const watch = (ids, frames) => {
+    const last = ids.map(u => u.facing); let worst = 0, reversals = 0; const prevD = ids.map(() => 0);
+    for (let f = 0; f < frames; f++) {
+      this.tick(1);
+      ids.forEach((u, i) => { const d = norm(u.facing - last[i]); worst = Math.max(worst, Math.abs(d));
+        if (d * prevD[i] < -1e-9 && Math.abs(d) > 1e-6) reversals++; if (Math.abs(d) > 1e-6) prevD[i] = d; last[i] = u.facing; });
+    }
+    return { worstDeg: worst * 180 / Math.PI, reversals };
+  };
+  const gs = []; for (let i = 0; i < 8; i++) gs.push(this.spawn('dragoon', 0, p.startX + 200 + (i % 4) * 26, p.startY + 200 + Math.floor(i / 4) * 26));
+  this.tick(60);
+  for (const u of gs) this.order(u, { type: 'move', x: p.startX + 560, y: p.startY + 200 });
+  const crowd = watch(gs, 600);
+  this.crowdWorstDeg = crowd.worstDeg; this.turnRate = TURN.dragoon * 180 / Math.PI;
+  for (const u of gs) G.kill(u, null, true);
+  const solo = this.spawn('dragoon', 0, p.startX + 300, p.startY + 320);
+  this.tick(60);
+  const f0 = solo.facing;
+  this.order(solo, { type: 'move', x: solo.x + 6, y: solo.y + 4 });
+  const still = watch([solo], 120);
+  this.soloWorstDeg = still.worstDeg; this.soloReversals = still.reversals;
+  this.soloTurnedDeg = Math.abs(norm(solo.facing - f0)) * 180 / Math.PI;
+  G.kill(solo, null, true);
+})();`);
+ok('a crowd of dragoons never turns further in one frame than its own declared turn rate (it used to snap 37, 58 and 79 degrees, because inside 20 px it faced whichever way it had just been shoved)',
+  ctx.crowdWorstDeg <= ctx.turnRate + 1e-6, 'worst ' + ctx.crowdWorstDeg.toFixed(3) + ' deg against TURN.dragoon ' + ctx.turnRate.toFixed(3));
+ok('...and one ordered six pixels away does not spin at all: there is no bearing left to steer on',
+  ctx.soloWorstDeg === 0 && ctx.soloReversals === 0 && ctx.soloTurnedDeg === 0, JSON.stringify({ worst: ctx.soloWorstDeg, reversals: ctx.soloReversals, turned: ctx.soloTurnedDeg }));
+
 ok('no JS errors', errors.length === 0, errors[0] || '');
 summary({ nl: true });
