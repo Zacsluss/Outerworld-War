@@ -784,3 +784,21 @@ and that lobby "should look exactly the same as the Multiplayer Lobby".)*
   puts back every key, every card key, and the Standard layout.
 - **Remembered**: reload the page; the keys you set are still set.
 - **In a game, F10 → Settings → Command card keys** switches Standard and Grid, as before.
+
+---
+
+## 93. Units in different places gather where you right-click
+
+*(Eighth session, the user's bug report: units "not on the same area" right-clicked to one point kept their spread
+around it, so an army could not be gathered.)*
+
+**How to reach it.** Start a skirmish. Send one SCV to the far side of your base and leave three by the minerals.
+Select all four (click one, Shift+click the others), right-click one spot on open ground.
+
+**What to look for.**
+- **All four walk to that spot and stop together round it**, touching or nearly. They used to keep their spread
+  (about 190 px either side of the spot) forever.
+- **A group that is already together keeps its shape** when you right-click somewhere outside it: select a tight
+  clump of marines and right-click far away -- the clump arrives as the clump it was, not a single file.
+- **Right-click inside a group's own area** and it pulls in tighter round that spot (StarCraft II's "magic box").
+- **Right-drag a line** still spreads the selection along the line, unchanged.

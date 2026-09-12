@@ -1027,23 +1027,40 @@ const UI = {
   // the thing Supreme Commander and Beyond All Reason both get right and StarCraft II does not.
   //
   // Each unit keeps its offset from the group's centre, so the shape that left is the shape that
-  // arrives. Offsets are capped: a selection strung across the whole map should converge, not preserve
-  // a formation nobody meant. And the goal has to be somewhere the unit can stand, or the far edge of a
-  // formation ends up aimed into a cliff and grinds -- that is what SHAPE_CAP and the passable check do.
-  SHAPE_CAP: 7 * 32,
+  // arrives. And the goal has to be somewhere the unit can stand, or the far edge of a formation ends up
+  // aimed into a cliff and grinds -- that is what the passable check does.
+  //
+  // BUT ONLY FOR A GROUP THAT IS TOGETHER (eighth session, the user's report: units "not on the same area"
+  // right-clicked to one point "never go to the same point ... it's impossible to get units to group
+  // together"). This used to cap each offset at SHAPE_CAP and keep it, and a cap cannot tell a formation
+  // from a scatter: four SCVs spread across a base kept that spread around the point for good -- measured,
+  // 194 px from their centre before the click and 194 px twenty seconds after. The rule is StarCraft II's
+  // magic box now. A group keeps its shape only when it is already one clump (every unit within SHAPE_GAP
+  // of another, body to body), no unit is farther than SHAPE_CAP from the middle, and the click lands
+  // outside the box the group stands in. Otherwise every unit is sent to the point itself, and bodies
+  // (G.separate) settle them round it: units in different places gather, and a click inside a group
+  // tightens it, which is how a player masses an army. null means "send them all to the point".
+  SHAPE_CAP: 7 * 32, SHAPE_GAP: 32,
   shapeOffsets(sel, wx, wy) {
     if (sel.length < 2) return null;
-    let cx = 0, cy = 0; for (const u of sel) { cx += u.x; cy += u.y; }
+    const body = u => u.def.body || u.r || 0;
+    let cx = 0, cy = 0, x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const u of sel) { cx += u.x; cy += u.y; const b = body(u); x0 = Math.min(x0, u.x - b); y0 = Math.min(y0, u.y - b); x1 = Math.max(x1, u.x + b); y1 = Math.max(y1, u.y + b); }
     cx /= sel.length; cy /= sel.length;
+    if (wx >= x0 && wx <= x1 && wy >= y0 && wy <= y1) return null;                      // a click inside the group gathers it
+    if (sel.some(u => Math.hypot(u.x - cx, u.y - cy) > this.SHAPE_CAP)) return null;      // wider than any formation anyone meant
+    if (!this.oneClump(sel, body)) return null;                                          // units in different places gather at the point
     const out = new Map();
-    for (const u of sel) {
-      let ox = u.x - cx, oy = u.y - cy;
-      const d = Math.hypot(ox, oy);
-      if (d > this.SHAPE_CAP) { const k = this.SHAPE_CAP / d; ox *= k; oy *= k; }
-      const gx = wx + ox, gy = wy + oy;
-      out.set(u, G.passable(gx, gy, u) ? [gx, gy] : [wx, wy]);
-    }
+    for (const u of sel) { const gx = wx + u.x - cx, gy = wy + u.y - cy; out.set(u, G.passable(gx, gy, u) ? [gx, gy] : [wx, wy]); }
     return out;
+  },
+  // One clump: every unit reachable from the first by steps between units whose bodies are at most SHAPE_GAP
+  // apart. A flood rather than a radius, so a column that snakes through a choke is one clump and two squads a
+  // screen apart are two.
+  oneClump(sel, body) {
+    const seen = new Set([sel[0]]), todo = [sel[0]];
+    while (todo.length) { const a = todo.pop(); for (const b of sel) if (!seen.has(b) && Math.hypot(a.x - b.x, a.y - b.y) <= body(a) + body(b) + this.SHAPE_GAP) { seen.add(b); todo.push(b); } }
+    return seen.size === sel.length;
   },
   smartCommand(t, wx, wy, shift) {
     const sel = this.ownSel(); if (!sel.length) return;

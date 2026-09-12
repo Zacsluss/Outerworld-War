@@ -1,7 +1,8 @@
 // Drag-line formation (M11 wave three, idea 9), as Beyond All Reason has it: hold right, drag a line,
 // and the selection spreads evenly along it. The command moved from mouse-DOWN to mouse-UP to make that
 // possible, so the first thing worth asserting is that a plain right-click -- a drag of zero length --
-// still behaves exactly as it did.
+// still behaves exactly as it did. A plain right-click keeps a group's shape only when the group is together
+// and the click is outside it; anything else gathers at the point (StarCraft II's rule, after the user's report).
 //   node test/formation.js
 const vm = require('vm'), { makeCtx, ok, summary } = require('./_harness');
 const ctx = makeCtx({ tier: 'ui', files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'render', 'ui'], ext: false });
@@ -54,6 +55,32 @@ const r = vm.runInContext(`(() => {
   UI.selection = [sq[0]]; UI.smartCommand(null, tx, ty, false);
   out.singleExact = Math.round(sq[0].order.x) === Math.round(tx) && Math.round(sq[0].order.y) === Math.round(ty);
   out.cap = UI.SHAPE_CAP;
+
+  // --- ...but a selection that is NOT together gathers at the point (eighth session, the user's report) ---
+  const clear = () => { for (const u of G.units.slice()) if (u.owner === 0 && !u.isBuilding) G.kill(u, null, true); G.units = G.units.filter(u => u.alive); };
+  const send = (id, offs, tgt) => {
+    clear();
+    const us = offs.map(([dx, dy]) => G.spawnUnit(id, 0, X + dx, Y + dy));
+    UI.selection = us.slice(); G.updateVision();
+    const [gx, gy] = tgt(X, Y); UI.smartCommand(null, gx, gy, false);
+    return { us, gx, gy, atPoint: us.every(u => u.order.type === 'move' && Math.round(u.order.x) === Math.round(gx) && Math.round(u.order.y) === Math.round(gy)) };
+  };
+  // the screenshot: three SCVs bunched together and one well away from them, sent far to the right
+  const shot = send('scv', [[0, 150], [35, 160], [40, 215], [215, 0]], (x, y) => [x + 620, y + 40]);
+  out.scatterAtPoint = shot.atPoint;
+  for (let f = 0; f < 24 * 20; f++) G.tick();
+  out.scatterBody = shot.us[0].def.body || shot.us[0].r;
+  out.scatterFarthest = Math.round(Math.max(...shot.us.map(u => Math.hypot(u.x - shot.gx, u.y - shot.gy))));
+  // two squads on opposite sides of a base
+  const two = []; for (let i = 0; i < 4; i++) two.push([(i % 2) * 20, ((i / 2) | 0) * 20]); for (let i = 0; i < 4; i++) two.push([300 + (i % 2) * 20, 60 + ((i / 2) | 0) * 20]);
+  out.squadsAtPoint = send('marine', two, (x, y) => [x + 150, y + 520]).atPoint;
+  // a group that IS together, clicked inside the box it stands in: it tightens, as in StarCraft II
+  const tight = []; for (let i = 0; i < 9; i++) tight.push([(i % 3) * 40, ((i / 3) | 0) * 40]);
+  out.insideAtPoint = send('marine', tight, (x, y) => [x + 40, y + 40]).atPoint;
+  out.outsideKeepsShape = !send('marine', tight, (x, y) => [x + 600, y + 300]).atPoint;
+  // one clump, but a column longer than SHAPE_CAP either side of its middle: no formation anyone meant
+  const column = []; for (let i = 0; i < 14; i++) column.push([i * 40, 0]);
+  out.columnAtPoint = send('marine', column, (x, y) => [x + 260, y + 500]).atPoint;
   return out;
 })()`, ctx);
 ok(r.allMoving, 'every selected unit gets a move order');
@@ -69,4 +96,10 @@ ok(r.shapeDistinctGoals > 1, 'the goals are not all the same point -- the group 
 ok(Math.abs(r.goalSpread - r.startSpread) < 40, 'the arriving shape resembles the departing one', 'start ' + r.startSpread + ' goal ' + r.goalSpread);
 ok(r.singleExact, 'a single unit still goes exactly where it was told');
 ok(r.cap > 0 && r.cap <= 16 * 32, 'the offset cap is bounded, so a map-wide selection converges', String(r.cap));
+ok(r.scatterAtPoint, 'units that are not together are all sent to the point itself (four SCVs, one far from the others)');
+ok(r.scatterFarthest <= 4 * r.scatterBody, '...and twenty seconds later they stand gathered round it, not in their old spread (was 194 px out)', r.scatterFarthest + ' px, body ' + r.scatterBody);
+ok(r.squadsAtPoint, 'two squads on opposite sides of a base gather at the point');
+ok(r.insideAtPoint, 'a click inside the box a group stands in gathers it tighter');
+ok(r.outsideKeepsShape, '...while the same group clicked outside that box keeps its shape');
+ok(r.columnAtPoint, 'a column longer than SHAPE_CAP either side of its middle gathers rather than keeping a formation nobody meant');
 summary();

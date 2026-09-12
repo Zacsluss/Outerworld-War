@@ -49,6 +49,10 @@ its hotkey editor, through the open-source editor that reproduces it).
    red and says why. Reset a key, a card, or everything. The command card shows a chosen letter in the button's corner,
    and F1's help lists the keys as they are set.
 
+8. **Units in different places gather where you right-click** (the user's bug report). A group keeps its shape only
+   when it is already together and you click outside it; units spread out, or a click inside a group, all go to the
+   point. PLAYTEST 93.
+
 **Deliberately different from the letter of the request, and why:** the skirmish lobby keeps the chat box (OpenRA's
 skirmish lobby keeps it too; here it logs every change) and gains a Seed row (the one setting a relay room picks by
 itself). Command card keys are letters only: every other key is a global binding or reserved, and those are read first.

@@ -35,6 +35,12 @@ sections 5 and 6 (OpenRA's source and StarCraft II's editor); by hand, `PLAYTEST
   Standard / Grid, Interface keys, and a StarCraft II-style editor for every command card of every race (138 cards, held
   against the real cards by `test/hotkeys.js`), one key per command, clashes shown in red. PLAYTEST 91-92.
 
+- **Bug (the user's report after the menus): units in different places right-clicked to one point never gathered.**
+  FIXED -- a right-click keeps a group's shape only when the group is one clump and the click is outside it
+  (StarCraft II's magic box); otherwise every unit goes to the point. Measured: four spread SCVs ended 194 px from
+  their centre before, 31 px after. `test/formation.js` (19, six new), 5 negative controls in
+  `.claude/review/formation/`. PLAYTEST 93.
+
 Tests: `test/menus.js` (79), `test/hotkeys.js` (31); 66 negative controls in `.claude/review/menus/`. Gate 85 suites, the
 same two AI-pacing reds.
 
