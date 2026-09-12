@@ -224,7 +224,7 @@ Brought after the first internet game against a friend. Status of each, in the u
 | 4 | some tech gets stuck during research | **open** -- worktree, partial |
 | 5 | the HUD is far too small, should be doubled | **open** -- worktree, nearly done |
 | 6 | workers should not cross the map when their patch runs out | **open** -- worktree, partial |
-| 7 | minerals gathered 2-3x faster than SC2 | **MEASURED, CHANGE REVERTED** -- see below |
+| 7 | minerals gathered 2-3x faster than SC2 | **APPROVED, to re-apply** -- 7a, then 7b |
 | 8 | queued moves should draw faint green lines | **DONE**, commit `7be866a`, PLAYTEST item 63 |
 | 9 | a dead unit's health bar lingers | **DONE: it does not.** Measured, no fault; pinned. Item 63 |
 | 10 | the lobby should be finished and self-contained | **open** -- worktree, partial |

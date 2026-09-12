@@ -95,9 +95,32 @@ each client times for itself is a desync waiting to happen.
 
 ---
 
-## Gated / needs an explicit decision
+### 7a. Re-apply the slower economy: `MINE_TIME 190, GAS_TIME 94` — APPROVED
+**The user was shown the evidence below and asked for it anyway** (2026-09-12): "I understand it broke AI but we
+can rebalance later when I confirm." So it goes in, and **7b is what makes the game playable again**. Ship the
+two together, or ship 7a knowing the computer opponents are passive for the first ten minutes.
 
-### 7. The economy — MEASURED, CHANGED, REVERTED. Read before touching.
+`.claude/review/spec-mining.js` is the patch, written and already verified to apply. Expect, all measured:
+- `test/aistyles.js` red on seeds 1, 5 and 11, every style reporting the "never attacked" sentinel (43200).
+- The gate 4 of 79 red: `version`, `aistyles`, `zerg12`, `queens`.
+- `test/eightplayer.js` 18/19, peak supply `21/51/57/33/56/31/19/50` against a floor of 20.
+- **`test/version.js` edits `const MINE_TIME = 75,` as one of its stamp probes — re-anchor that line**, or it
+  goes red reporting a stale anchor, which is a different failure from the economy one.
+- The build stamp moves, so saves and replays from before are refused.
+
+### 7b. Rebalance the AI for the slower economy — GATED, needs an explicit instruction
+This is what 7a breaks, and it is the balance work this project has kept gated throughout. The AI's build orders
+and its attack threshold are tuned for 100 minerals per worker per minute; at 50 it never fields a first wave
+inside ten minutes. The knobs: `AI.budget()`'s claim order, the threshold that decides when a wave commits, and
+the build-order step timings in `js/ai.js`. `test/balance.js` and `test/proxy.js` are the runs for it and
+**both are gated** — do not start them without being told, and double-check when told.
+
+Finish `.claude/review/attack-clock.js` first. It measures the frame of the first wave using `ai.waves`, the
+counter `aistyles` itself reads, and it is the instrument that says whether a rebalance worked. (A first version
+counted army units near the enemy start and reported "never" for Zerg even at today's settings: a probe that
+disagrees with a known-good instrument is a broken probe, not a finding.)
+
+### The measurement behind 7a and 7b
 **Measured** (`.claude/review/mine-rate.js`): **100 minerals per worker per minute**; a 114-frame cycle for 8
 minerals, 75 frames inside the patch and 39 walking. That is **x2.4 StarCraft II** but only **x1.15 Brood War**.
 The game was already close to the one it remakes; the gap the user felt is SC2's deliberately slower economy.
@@ -116,13 +139,10 @@ sentinel for **every** style — no computer opponent mounted a first wave insid
 the gate went 4 of 79 red (`version`, `aistyles`, `zerg12`, `queens`). `test/eightplayer.js` 18/19, peak supply
 `21/51/57/33/56/31/19/50` against a floor of 20.
 
-**Reverted**, per `CLAUDE.md`: a change that turns the canaries red is reverted even when it does what was
-asked. **The constant is not the problem.** The AI's build orders and its attack threshold are tuned for the
-current income, so halving income makes the computer stop playing. Re-tuning them is the gated balance work.
-**Do not retry this without taking the AI with it.**
-
-`.claude/review/attack-clock.js` measures the frame of the first wave at each candidate using `ai.waves`, the
-counter `aistyles` itself reads. It was stopped mid-run and is the instrument to finish first.
+It was reverted on the night per `CLAUDE.md` (a change that turns the canaries red is reverted even when it does
+what was asked), and then the user was shown this evidence and asked for it anyway — that is 7a above.
+**The constant is not the problem.** The AI's build orders and its attack threshold are tuned for the current
+income, so halving income makes the computer stop playing. That is 7b.
 
 `test/version.js` edits `const MINE_TIME = 75,` as one of its stamp probes — any real change here must
 re-anchor that line, or the suite goes red reporting a stale anchor.
