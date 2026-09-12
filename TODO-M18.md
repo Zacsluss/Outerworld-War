@@ -2,7 +2,7 @@
 
 Written when the fifth session paused for the night (2026-09-12). `HANDOFF-M17.md` has the state, the traps
 and the kickoff prompt; this file is the open list and nothing else. Four items are closed and struck through
-at the bottom with their commits. **Two are open** (4 — not reproduced, and 11, plus the gated economy pair 7a/7b), and
+at the bottom with their commits. **Two are open** (4 — not reproduced; 11 — fixed and waiting on the user's decision about the gate, plus the gated economy pair 7a/7b), and
 each has partial, **ungated, unverified** work sitting in the locked worktrees — see "The three worktrees"
 below before you start any of them.
 
@@ -83,7 +83,39 @@ line / base cluster and go idle if that is exhausted. Decide what "the same area
 terms (resources are placed in clusters around base locations) and record why. Check it still resumes when a
 new hall finishes nearby, and that `AI.economy` can still move workers to a new base deliberately.
 
-### 11. Dragoons wobble very fast after they move
+### 11. Dragoons wobble very fast after they move — MEASURED, FIX WRITTEN, WAITING ON ONE DECISION
+**The cause is found and the fix works. It is not on the main line because it turns the gate red**, and the
+line it turns red is the one this project has had flapping between seeds for its whole history. That is the
+user's call. `node tools/patch.js tools/wobble-fix.js` applies it, and the file carries all of this.
+
+**Measured** (`tools/wobble-probe.js`, `tools/wobble-render.js`, a minute each):
+- **One dragoon alone turns back and forth zero times.** The steering is innocent in isolation.
+- **Eight ordered to one point** snapped **37, 58 and 79 degrees in a single frame** against a declared turn
+  rate of 14.32, up to **7.9 times a second**. Inside 20 px of the destination `Unit.moveTo` snapped the
+  facing onto the bearing, and at that range the bearing is whichever way the neighbour you are arriving
+  beside has just shoved you. The sim's `facing` is where it shows; nothing on the render side adds to it.
+- **Marines never show it** (about one reversal a second): 40 degrees a frame covers the shove.
+
+**The fix** holds the facing inside 20 px and strafes toward the goal (`ang = want` is load-bearing: without
+it a dragoon told to move six pixels walked off and turned 143 degrees to come back).
+
+| variant | worst turn in a frame | 8 dragoons to one point | aistyles 1 (THE GATE'S) | aistyles 5 | aistyles 11 | eightplayer |
+|---|---|---|---|---|---|---|
+| today | 79.6 deg | 529 frames | clean | economy red | clean | 19/19 |
+| **the fix** | **14.32 deg** | **379 frames** | **economy red, 58 vs 60** | clean | economy red, 58 vs 61 | 19/19 |
+| fix + exempting the slowdown too | 14.32 deg | 510 frames | clean | a different red | two reds of a NEW shape | **18/19: the AI never expanded** |
+
+**The decision.** The fix re-deals "expander mines with more workers than turtle at five minutes" — HANDOFF-M17's
+known red, 57/59/58 against 60 or 61 through every re-deal — onto seed 1, which is the seed the gate runs.
+Either accept that (the line is a sample, it is the same line, and every other measure improves) and
+commit with the gate's aistyles red on that line; or keep the wobble. **The third row was tried and rejected:**
+it kept the gate green by luck and broke something real.
+
+**Even with the fix**, eight dragoons still reverse at their own turn rate while they jostle (up to ~7 a
+second), because all eight steer at the same point. That wants per-unit steering memory or formation slots.
+
+The original brief, kept for the record:
+
 Look at `Unit.moveTo` (`js/sim.js`): `TURN.dragoon = 0.25` rad/frame, the arrive radius, and
 `if (Math.abs(diff) > 1.2) step *= TURN[this.def.id] ? 0.15 : 0.45`. Oscillating between two facings, between
 "arrived" and "not arrived", or being pushed by collision and re-facing every frame all present as a fast
