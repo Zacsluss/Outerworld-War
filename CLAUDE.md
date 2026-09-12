@@ -1,8 +1,8 @@
 # Working agreement — Brood War remake
 
 Loaded automatically every session. Kept short on purpose; the detail lives in `HANDOFF-M18.md` (**current
-state, the two decisions waiting on the user, known reds, traps, the kickoff prompt**), `TODO-M18.md` (the open
-list with every measurement), `PLAYTEST-M18.md` (items 64 onward, by hand), `HANDOFF-M17.md` and
+state, the decisions waiting on the user, known reds, traps, the kickoff prompt**), `TODO-M18.md` (the open
+list with every measurement), `PLAYTEST-M18.md` (items 64 onward, by hand), `RESEARCH-LOBBY.md` (the lobby research), `HANDOFF-M17.md` and
 `PLAYTEST-M17.md` (everything before), `REVIEW-M17.md` (the full codebase review) and `DESIGN-M13.md`.
 
 ---

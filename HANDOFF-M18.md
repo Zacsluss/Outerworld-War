@@ -1,40 +1,167 @@
-# HANDOFF — M18 (the sixth session: the ten confirmed tasks)
+# HANDOFF — M18 (the seventh session: the user's second list)
 
-Written at the end of the sixth session (2026-09-12). Branch `m10-overnight`. **Seven commits since `0dba2b2`,
-none of them pushed** — `origin/main` is this branch and `git push` publishes, and the last commit is knowingly
-red (below), so publishing is the user's call. Trust `git log -1` for HEAD, not a hash written here.
+Written at the end of the seventh session (2026-09-12). Branch `m10-overnight`, which is `origin/main`. **Everything is
+committed and pushed; there are no open pull requests, no other branches and no extra worktrees.** Trust `git log -1`
+for HEAD, not a hash written here.
 
-> **READ `TODO-M18.md` FOR THE OPEN LIST.** Every task below has its entry there, struck through under Closed or
-> kept open with the measurement. `PLAYTEST-M18.md` items 64–72 are how to see this session's work by hand.
-> `HANDOFF-M17.md`'s traps are all still true; the new ones are at the bottom of this file.
+> **READ `TODO-M18.md` FOR THE OPEN LIST** (its first section is this session's list, item by item, with commits).
+> `PLAYTEST-M18.md` items 73–87 are how to see this session's work by hand. `RESEARCH-LOBBY.md` is the lobby research.
+> `HANDOFF-M17.md`'s traps are all still true; this session's are below, then the sixth session's.
 
 ---
 
 ## The state
 
-- **The gate is 2 of 79 red, on purpose.** `aistyles` and `queens`, both because the economy is now half as
-  fast (task 1, approved) and the computer's build orders are tuned for the old income. Task 2 — the rebalance —
-  turns them green, and it is **gated**. Every commit before the last one was gated green.
-- **Build stamp `1e25bdbaf9ef8855`.** It moved four times this session (tumour approach, egg-in-transport,
-  worker lines, economy). Saves and replays from before are refused, which is the stamp doing its job.
-- **By hand, on the final tree:** `test/eightplayer.js` 19/19; mining 49.8 minerals per worker per minute.
-  `aistyles` seeds 1/5/11 are all red under the slower economy by design — do not read them as a regression
-  until 7b has run.
-- **Before the economy commit**, on `136b1b0`: gate 79/79; `aistyles` seed 1 clean, seed 5 the known economy
-  red (59 vs 61), seed 11 clean; `eightplayer` 19/19. That commit is the last all-green point.
+- **The gate is 83 suites and 2 are red, the same two the user already accepted as waiting on the rebalance:**
+  `aistyles` and `queens`. Both are the computer's pacing under the slower economy. `queens` joined `zerg12`'s old place
+  this session: keeping unit bodies apart shifted the Zerg AI's build (it fields its first army sooner and mines more,
+  1–24% over four seeds, but starts the Queen's Nest later, so its Queens arrive about a minute after the ten-minute mark
+  the test checks). `zerg12` went green in the same change.
+- **Build stamp `71053b300e9bf18a`** (moved once this session, by unit bodies). Saves and replays from before are refused.
+- **By hand, on the final tree:** `aistyles` seeds 1/5/11 — the same seven economy lines as before the session's sim
+  change, with the long-standing flaky "harasser fields more fast units than turtle" line re-dealt between seeds;
+  `eightplayer` 18/19 (the economy-floor line; it was 17/19 before bodies); `net_many` 51/51.
+- **Desktop:** `desktop/dist` refreshed. The relay sidecar (`bw-relay`) is rebuilt from `test/serve.js` by `npm run dev`
+  and `npm run build` on their own (`beforeDevCommand`), so the desktop HOST button gets the new lobby on the next build.
 
-### Two decisions are waiting on the user
+### The decisions still waiting on the user
 
-1. **Task 2 — rebalance the AI for the slower economy.** Gated. Needs an explicit go, and a double-check when
-   it comes. `test/balance.js` and `test/proxy.js` are its instruments and neither may be started without it.
-2. **The dragoon wobble fix** (`tools/wobble-fix.js`). Measured and working — the worst single-frame turn in a
-   crowd goes from 79.6° to 14.32° and a crowd move from 529 frames to 379 — but on `136b1b0` it re-dealt the
-   project's long-standing flaky line ("expander mines with more workers than turtle", 58 vs 60) onto
-   `aistyles` seed 1, **which is the seed the gate runs**. Accepting that is reasonable; granting an exception
-   to the gate is not a session's to make. Note it was measured before the economy change and must be
-   re-measured after 7b.
+1. **The AI rebalance (TODO-M18 7b) is still gated** — the user said "no rebalance yet, still more bugs to fix". It now has
+   two more things to absorb, both consequences of units no longer overlapping: fewer melee units can hit one target at
+   once (sixteen zerglings on a marine: about five, where sixteen could before), and the Zerg AI's later Queens.
+   `test/balance.js` and `test/proxy.js` stay untouched until an explicit go, double-checked.
 
 ---
+
+## What changed this session, in a player's language
+
+1. **The dragoon wobble is fixed** — committed on the user's word.
+2. **The HUD is 1.4 times its original size** (the doubled one was too big), and now a **HUD size slider** in Settings
+   goes from 1.0x to 1.6x and is remembered.
+3. **The minimap is black until you explore it**, not a dim map with everything visible.
+4. **The mouse cursor has no lag** — it is the real cursor dressed in the game's art, not a drawing a frame behind.
+5. **Minerals were measured, not changed**: 48 a worker a minute, against StarCraft II's 54–61. The earlier change had
+   landed; the fast rate seen was most likely an old page or an old desktop build.
+6. **A builder stays where it finished**, instead of walking back to the minerals (Terran and Protoss both checked).
+7. **A worker inside a Refinery stays selected** and shows "Harvesting gas" in the HUD.
+8. **Queued buildings show a faint ghost** where they will go, and nothing can be placed on top of one.
+9. **Supply Depots lower into the ground and rise again** (R), with StarCraft II's rules.
+10. **Units no longer stand inside each other.** Each unit keeps the room its model really takes up: a dozen marines
+    told to one spot used to hide 53% of their drawn area under each other and now hide 3%. Mining, repair, archon
+    merges, following and melee all still work, each checked. **What it costs, deliberately:** fewer melee units fit
+    round one target, one-tile chokes take about twice as long, and the Zerg AI gets its Queens a minute later.
+11. **The multiplayer screen is a full hub**: a searchable, filterable, sortable game list with a detail pane (map, players,
+    rules), QUICK JOIN, and an **invite link** that connects and joins by itself. Your name, server and race are
+    remembered.
+12. **Ready means ready**: START waits until every other player has readied and says who it is waiting on; changing
+    the map, speed, rules, computers or teams withdraws everyone's ready; the host can **nudge** a player with a bell.
+13. **Every player's connection is shown** (bars and milliseconds, red when slower than the command delay), and **chat
+    says everything that changed** — joins, leaves, kicks, a new host, the map, each rule.
+14. **Teams can be locked and shuffled**, and **a game can no longer hold more players than its map has starts** — a
+    fifth player on a four-start map used to be built inside player one's base.
+15. **The skirmish rules work online**: starting bank, weather, day and night, destructibles, derelicts, wildlife, the map
+    sizes and procedural maps.
+16. **Spectators**: watch a lobby or a game already running, with the whole map in view, without taking a seat; the
+    players never wait on a spectator.
+17. **Settings are in tabs** (Game, Display, Audio, Multiplayer, Controls) with scroll speed, edge scrolling, one master
+    volume, and your multiplayer name and server; all remembered except mute. F10 → Settings steps the same values in a
+    game.
+
+**Not done, and said so:** the AI rebalance (gated); a **rematch / back-to-the-same-lobby** after a game (the relay would
+have to hand a finished room back to its lobby while a player may still be watching its end — a design of its own);
+**ratings and skill-balanced teams** (nothing records a result to rate); **choosing a start position** (a seat is its
+start, and a choice would have to be read in the stamped `G.init`); the **research stall** (TODO-M18 item 4, still not
+reproduced).
+
+---
+
+## Traps found this session
+
+1. **Bash heredocs mangle backslashes too**, not only `node -e`: a quoted heredoc turned `'\\n'` inside a template
+   literal into a real newline. Write specs and probes with the Write tool, as CLAUDE.md says.
+2. **`sed -i` in Git Bash rewrites a CRLF file as LF.** Git normalises it away, but `tools/patch.js` then sees a different
+   ending. Edit with node scripts that keep the file's own ending.
+3. **More players than starts is silently accepted by `G.init`**: player i takes `map.starts[i % starts.length]`. The lobby
+   now refuses such a room (`capOf` in the relay, `Net.mapCap` in the host's client), but the engine does not — and
+   `test/net_many.js` plays five on four-start maps on purpose, so its clients declare eight seats.
+4. **Any "close enough to touch" check between two units must be read against bodies**, not footprints. Orders about an
+   ally (repair, follow, merge, cast) are covered by the ally-order-target rule in `G.separate`; a NEW reach check that is
+   not the unit's `order.target`/`partner` will be held out by bodies. `test/overlap.js` section 3 is the pattern.
+5. **The relay does not re-broadcast the lobby state when a countdown ends in a start**: a client's last `lobby` message
+   still says `starting` during the game. Test on the `start` message, not on `lobby.state`.
+6. **`test/rooms.js` sections 12 and 15 pin lobby markup** (`class="lbTeam"`, `data-join`, `id="lbStart"`, `3/8`,
+   `in game`…). Keep those names when restyling the lobby.
+7. **Suites that start relay games without readying need `BW_READY=0`**, the way they already set `BW_COUNTDOWN=0`.
+8. **`UI.menuItems()` for the end screen reads `G.log`**, which `UI.start` sets and a bare `G.init` does not.
+9. **The browser pane's screenshot crops to a zoomed corner when the emulated viewport is larger than the pane.** Verify
+   state with `javascript_tool` and do not trust a cropped picture for layout.
+
+## Diagnostics added this session
+
+`.claude/review/overlap/` — `probe.js` (hidden model area, collisions, surround, mining, gap throughput, perf),
+`controls.js`, `gap-trace.js`, `queens-sweep.js`, `zerg-econ.js`, `zerg-builds.js`. `tools/bodies.js` measures every
+model's body from the bake pipeline (`--table` prints the table for `js/data.js`). `.claude/review/lobby/` — the specs, and
+`controls.js` (21), `controls-spectate.js` (12), `controls-settings.js` (13).
+
+---
+
+## Kickoff prompt for a fresh chat
+
+Paste everything inside the fence into an empty chat. **Replace the HEAD hash with `git log -1 --format=%h` first** —
+committing this file moves it.
+
+```
+Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
+Branch: m10-overnight. HEAD: <run git log -1 --format=%h>. Working tree clean.
+origin = https://github.com/Zacsluss/Outerworld-War, whose main IS this branch (git push publishes).
+Everything is pushed; there are no open PRs, no other branches, no extra worktrees. Keep it that way.
+
+READ IN THIS ORDER, then start:
+  1. CLAUDE.md          -- the working agreement. Every line was earned; none is optional.
+  2. HANDOFF-M18.md     -- state, what changed for a player, the traps (this session's first).
+  3. TODO-M18.md        -- the open list; its first section is the seventh session's list with commits.
+  4. PLAYTEST-M18.md    -- items 73-87, this session's work, by hand.
+  5. RESEARCH-LOBBY.md  -- what makes an RTS lobby great, and what this one now has.
+
+THE STATE: the gate (node test/all.js, 83 suites, ~5 min) is 2 RED, both known and accepted by the user as waiting
+on the AI rebalance: aistyles and queens (the computer's pacing under the slower economy). Build stamp
+71053b300e9bf18a. By hand: aistyles seeds 1/5/11 same seven economy lines; eightplayer 18/19; net_many 51/51.
+
+THE SINGLE NEXT ACTION: ask the user for their playtest of PLAYTEST-M18 items 73-87 and their next list. The user's
+last word on the rebalance was "no rebalance yet - still more bugs to fix". Do NOT start TODO-M18 7b, test/balance.js
+or test/proxy.js without an explicit go, and double-check when it comes. When it does, it must also absorb two
+consequences of units keeping their bodies apart: fewer melee attackers fit round one target, and the Zerg AI's
+Queens arrive about a minute later.
+
+IF ASKED FOR MORE LOBBY: the documented next step is a rematch -- the finished room handed back to its lobby with the
+same players. Read RESEARCH-LOBBY.md section 4 for why it was left, and design the "a player is still watching the end"
+case before writing code.
+
+HOW THIS PROJECT WORKS, none of it negotiable:
+  - node test/all.js is the gate before EVERY commit. Relay ports: 8793-8800 rooms, 8810-8813 lobby, 8840 spectate.
+    A red rooms/lobby with EADDRINUSE is a stray server: re-run that suite alone, then the gate. Touch nothing in
+    js/ or test/ while the gate runs.
+  - MEASURE BEFORE FIXING. Build the probe first; make it assert its own setup.
+  - EVERY new behaviour gets a negative control that goes cleanly RED.
+  - tools/patch.js <spec.js> for every text-anchored edit. Write specs and probes with the Write tool: bash mangles
+    backslashes AND backticks here, heredocs included. Never sed -i a CRLF file.
+  - Determinism: never Math.random() in sim code (G.rand()), never a native transcendental in a stamped file (DMath).
+    Anything a replay must reproduce goes through the command log (test/cmdlog.js).
+  - The comments are load-bearing. Do not delete reasoning.
+
+AFTER ANY AI OR SIMULATION CHANGE, by hand, recording ALL the numbers:
+  node test/aistyles.js --seed=1 / --seed=5 / --seed=11
+  node test/eightplayer.js
+  node test/net_many.js     (after any relay or net change)
+Expect the samples to RE-DEAL. A different deal is not a failure; a new KIND of failure is.
+
+CLOSE every piece of work the way CLAUDE.md says: a kickoff prompt, a numbered list of what changed FOR A PLAYER, and
+how to playtest each item by hand, written into the repo. Commit and push; leave nothing unmerged.
+```
+
+---
+
+# The sixth session, kept for the record
 
 ## What changed, in a player's language
 
@@ -125,62 +252,3 @@ node test/qol.js                                          39 checks: the HUD sca
 `hud-measure.js`, `tumour-reach.js`, `worker-walk.js`, `lobby-controls.js`, `hud-controls.js`,
 `tumour-controls.js`, `wobble-control.js`, `mine-rate.js`.
 
----
-
-## Kickoff prompt for a fresh chat
-
-Paste everything inside the fence into an empty chat. **Replace the HEAD hash with `git log -1 --format=%h`
-first** — committing this file moves it.
-
-```
-Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
-Branch: m10-overnight. HEAD: <run git log -1 --format=%h>. Working tree clean.
-origin = https://github.com/Zacsluss/Outerworld-War, whose main IS this branch (git push publishes).
-The last 8 commits are NOT pushed, and the gate is knowingly red in them -- see below.
-
-READ IN THIS ORDER, then start:
-  1. CLAUDE.md       -- the working agreement. Every line was earned; none is optional.
-  2. HANDOFF-M18.md  -- state, the two decisions waiting, what changed, and eight new traps.
-  3. TODO-M18.md     -- the open list with every measurement.
-  4. PLAYTEST-M18.md -- items 64-72, what this session did, by hand.
-
-THE STATE: the gate (node test/all.js, ~4 min) is 2 of 79 RED ON PURPOSE -- aistyles and queens -- because
-the economy was slowed to StarCraft II's pace (MINE_TIME 190 / GAS_TIME 94, approved by the user) and the
-computer's build orders are tuned for twice that income. Build stamp 1e25bdbaf9ef8855. The last all-green
-commit is 136b1b0 (gate 79/79, eightplayer 19/19).
-
-THE SINGLE NEXT ACTION: ask the user whether to start TODO-M18 7b, the AI rebalance for the slower economy.
-It is GATED. Do not start it, test/balance.js or test/proxy.js without an explicit go -- and double-check
-when the go comes. When it does: finish .claude/review/attack-clock.js first (it measures the frame of the
-first wave with ai.waves, the counter aistyles reads), measure, then tune AI.budget()'s claim order, the
-wave threshold and the build-order step timings in js/ai.js until aistyles and queens are green.
-
-ALSO WAITING ON THE USER: tools/wobble-fix.js, the dragoon wobble fix. Measured and working, not committed,
-because on 136b1b0 it moved the long-standing flaky aistyles line onto seed 1, the gate's seed. It was
-measured BEFORE the economy change, so re-measure it after 7b before asking again.
-
-KNOWN REDS: aistyles + queens (the economy, above). test/soak.js's Swarm Host line (unchanged). The
-research-stall report (TODO-M18 item 4) is NOT reproduced; the probes are tools/stall-*.js.
-
-HOW THIS PROJECT WORKS, none of it negotiable:
-  - node test/all.js is the gate before EVERY commit. A red rooms with EADDRINUSE is a port collision
-    (8793-8798): re-run node test/rooms.js alone, then the gate. Touch nothing in js/ or test/ while it runs.
-  - MEASURE BEFORE FIXING. Build the probe first; make it assert its own setup.
-  - EVERY new behaviour gets a negative control that goes cleanly RED. tools/control.js applies one.
-  - tools/patch.js <spec.js> for every text-anchored edit. Write specs and probes with the Write tool:
-    bash mangles backslashes AND backticks here.
-  - Determinism: never Math.random() in sim code (G.rand()), never a native transcendental in a stamped
-    file (DMath). Anything a replay must reproduce goes through the command log (test/cmdlog.js).
-  - The comments are load-bearing. Do not delete reasoning.
-
-AFTER ANY AI OR SIMULATION CHANGE, by hand, recording the numbers -- ALL of them, not just the red one:
-  node test/aistyles.js --seed=1 / --seed=5 / --seed=11
-  node test/eightplayer.js   its bank line is the identity check
-Expect the samples to RE-DEAL. A different deal is not a failure; a new KIND of failure is.
-
-ALSO ON DISK: four locked worktrees at e9fe40e hold superseded agent work for this session's tasks. Ask the
-user before removing them (git worktree remove --force <path>, then git branch -D <branch>).
-
-CLOSE every piece of work the way CLAUDE.md says: a kickoff prompt, a numbered list of what changed FOR A
-PLAYER, and how to playtest each item by hand, written into the repo.
-```

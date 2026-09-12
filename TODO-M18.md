@@ -6,7 +6,8 @@ at the bottom with their commits. **Two are open** (4 — not reproduced; 11 —
 each has partial, **ungated, unverified** work sitting in the locked worktrees — see "The three worktrees"
 below before you start any of them.
 
-The gate is **79 suites** (`node test/all.js`, ~4 min) and it is green at `7be866a`. Every rule in `CLAUDE.md`
+The gate is **83 suites** (`node test/all.js`, ~5 min); at the end of the seventh session it is 2 red, `aistyles` and
+`queens`, both the AI pacing that waits on 7b (see `HANDOFF-M18.md`). It was last all green at `136b1b0`. Every rule in `CLAUDE.md`
 applies to every item here: measure before fixing, a negative control that goes cleanly RED, `tools/patch.js`
 for edits, and the gate green before the commit.
 
@@ -24,8 +25,11 @@ ten items. Status, most recent first:
   (16 zerglings on a marine -> about 5), one-tile chokes take about twice as long, and the Zerg AI's Queens come
   about a minute later, which turns `test/queens.js` red -- AI pacing, same family as `aistyles`, waits for 7b.
   PLAYTEST item 81.
-- **2. Lobby research and a sophisticated set of menus and online lobby.** IN PROGRESS -- the research lands in
-  `RESEARCH-LOBBY.md` with the lobby work itself.
+- **2. Lobby research and a sophisticated set of menus and online lobby.** DONE -- `RESEARCH-LOBBY.md` (four lobbies, eight
+  shared properties, the gap), then `9b1f17e` (ready means ready, latency, system lines, lock/shuffle/nudge, the map's
+  seat cap, the skirmish rules online, the browser hub, invite links) and `6940a19` (spectators; Settings in tabs with
+  HUD size, scroll speed, edge scroll, volume). `test/lobby.js`, `test/spectate.js`, `test/settings.js`; 46 negative
+  controls. PLAYTEST 82-87. **Left, with reasons in the research:** a rematch lobby, ratings, start-position choice.
 - **8. Supply Depot lower / raise.** DONE, `ecc9f8b`, PLAYTEST 80.
 - **9. Queued buildings show a ghost.** DONE, `45107c9`, PLAYTEST 79.
 - **5. Builders walk back to the minerals after building; 6. a worker in a Refinery drops out of the selection.**
