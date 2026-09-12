@@ -171,6 +171,65 @@ const r = vm.runInContext(`(() => {
   const ws2 = G.units.filter(u => u.alive && u.owner === 0 && u.def.worker);
   out.rallyWins = { made: ws2.length > w1, newestOrder: ws2.length ? ws2[ws2.length - 1].order.type : 'none' };
 
+  // ---- 4b. A MINERAL LINE THAT RUNS OUT STOPS THE WORKERS ON IT (TODO-M18 item 6) ----
+  // MEASURED first (.claude/review/worker-walk.js, Lost Ruins, twelve workers): with the main drained,
+  // ALL TWELVE walked to the natural 31 tiles away and covered about 280 tiles each in ninety seconds,
+  // carrying minerals back past a hall they had no reason to stand at, and not one of them went idle so
+  // nothing on screen said the base was finished. StarCraft II stops them instead, and so does this now.
+  start(); G.human = 0;
+  {
+    const p = P(), m = G.map;
+    const hall = G.units.find(u => u.alive && u.owner === 0 && u.def.depot);
+    const baseIdx = res => m.bases.findIndex(b => b.minerals.includes(res));
+    const home = m.bases.findIndex(b => b.minerals.length && Math.hypot(b.cx - hall.x, b.cy - hall.y) < 6 * TILE);
+    const ws = () => G.units.filter(u => u.alive && u.owner === 0 && u.def.worker);
+    for (const w of ws()) { const n = G.findNearestResource(w, 'mineral'); if (n) w.applyOrder({ type: 'gather', target: n, phase: 'goto' }); }
+    for (let f = 0; f < 240; f++) G.tick();
+    const mining = ws().filter(w => w.order.type === 'gather' || w.order.type === 'return').length;
+    // ONE patch of the line runs out: the worker on it must move to another patch of the SAME line.
+    const mine0 = m.bases[home].minerals;
+    // Pick a worker and drain ITS patch, rather than draining patch 0 and hoping somebody was on it:
+    // findNearestResource spreads the workers, so patch 0 is often nobody's.
+    const onIt = ws().find(w => (w.order.target && mine0.includes(w.order.target)) || (w.order.then && mine0.includes(w.order.then)));
+    const itsPatch = onIt ? (mine0.includes(onIt.order.target) ? onIt.order.target : onIt.order.then) : null;
+    if (itsPatch) itsPatch.amount = 0;
+    for (let f = 0; f < 400; f++) G.tick();
+    const movedWithin = onIt ? { order: onIt.order.type, base: baseIdx(onIt.order.target || onIt.order.then), sameLine: mine0.includes(onIt.order.target || onIt.order.then), drained: !!itsPatch } : null;
+    // ...now the WHOLE line runs out.
+    for (const r of mine0) r.amount = 0;
+    const pos = new Map(ws().map(w => [w.id, { x: w.x, y: w.y, walked: 0 }]));
+    for (let f = 0; f < 24 * 90; f++) { G.tick(); for (const w of ws()) { const t = pos.get(w.id); if (!t) continue; t.walked += Math.hypot(w.x - t.x, w.y - t.y); t.x = w.x; t.y = w.y; } }
+    const after = ws().map(w => ({ order: w.order.type, base: w.order.target ? baseIdx(w.order.target) : (w.order.then ? baseIdx(w.order.then) : -1), walked: Math.round((pos.get(w.id) || { walked: 0 }).walked / TILE) }));
+    // ...and an explicit order to another base's patch is still obeyed, which is the whole of "unless you
+    // command them". Without this the check above would pass just as well with gathering deleted.
+    const far = m.bases[home === 0 ? 1 : 0].minerals.find(r => r.amount > 0);
+    const one = ws()[0];
+    if (far && one) one.applyOrder({ type: 'gather', target: far, phase: 'goto' });
+    for (let f = 0; f < 24 * 60; f++) G.tick();
+    out.dryLine = {
+      minedBefore: mining, workers: after.length,
+      movedWithinLine: movedWithin,
+      idleAfter: after.filter(a => a.order === 'idle').length,
+      wentElsewhere: after.filter(a => a.base >= 0 && a.base !== home).length,
+      maxWalk: Math.max(0, ...after.map(a => a.walked)),
+      orderedAway: one ? { order: one.order.type, base: one.order.target ? baseIdx(one.order.target) : (one.order.then ? baseIdx(one.order.then) : -1) } : null,
+      homeBase: home,
+    };
+  }
+  // ...and the COMPUTER still re-tasks its own idle workers, which is the deliberate move to a new base
+  // this rule must not take away (AI.economy picks up anything idle and not carrying).
+  start(); G.human = 0;
+  {
+    const p = G.players[1]; p.ai = p.ai || new AI(p, 'normal');
+    const m = G.map;
+    const hall = G.units.find(u => u.alive && u.owner === 1 && u.def.depot);
+    const home = m.bases.findIndex(b => b.minerals.length && Math.hypot(b.cx - hall.x, b.cy - hall.y) < 6 * TILE);
+    for (const r of m.bases[home].minerals) r.amount = 0;
+    for (let f = 0; f < 24 * 60; f++) G.tick();
+    const aiw = G.units.filter(u => u.alive && u.owner === 1 && u.def.worker);
+    out.aiRetasks = { workers: aiw.length, mining: aiw.filter(w => w.order.type === 'gather' || w.order.type === 'return').length };
+  }
+
   // ---- 5. smart casting: the RIGHT caster, not the first one ----
   // The naive reading of this feature is "one press, one cast", and that was already true: the ability
   // branch in execPending returns after the first unit for point and unit abilities alike. What was NOT
@@ -255,6 +314,17 @@ ok(r.spread.reduce((a, b) => a + b, 0) === 6, 'six presses queue six units', JSO
 ok(Math.max(...r.spread) - Math.min(...r.spread) <= 1, '...spread across the three, not stacked on one', JSON.stringify(r.spread));
 
 ok(r.autoMine.after === r.autoMine.before + 1 && r.autoMine.working === r.autoMine.after, 'a new worker goes to the minerals on its own', JSON.stringify(r.autoMine));
+ok(r.dryLine.minedBefore > 0, 'the workers are mining before the line is drained (scene check)', JSON.stringify(r.dryLine.minedBefore));
+ok(r.dryLine.movedWithinLine && r.dryLine.movedWithinLine.base === r.dryLine.homeBase,
+  'ONE patch running out moves the worker to another patch of the SAME line -- which is the thing the rule must not break', JSON.stringify(r.dryLine.movedWithinLine));
+ok(r.dryLine.idleAfter === r.dryLine.workers && r.dryLine.wentElsewhere === 0,
+  'THE WHOLE LINE RUNNING OUT STOPS THEM: every worker goes idle and none sets off for another base (measured before the change: twelve of twelve walked to the natural)', JSON.stringify(r.dryLine));
+ok(r.dryLine.maxWalk <= 3,
+  '...and they do not wander while they wait -- at most 3 tiles in ninety seconds, against about 280 each before', JSON.stringify(r.dryLine.maxWalk));
+ok(r.dryLine.orderedAway && r.dryLine.orderedAway.base !== r.dryLine.homeBase && r.dryLine.orderedAway.order !== 'idle',
+  '...but an explicit order to another base IS obeyed, which is the whole of "they stop unless you command them"', JSON.stringify(r.dryLine.orderedAway));
+ok(r.aiRetasks.workers > 0 && r.aiRetasks.mining === r.aiRetasks.workers,
+  'and the COMPUTER still moves its own idle workers to a new base -- AI.economy re-tasks them, and taking that away would have stalled every AI whose main ran dry', JSON.stringify(r.aiRetasks));
 ok(r.rallyWins.made && r.rallyWins.newestOrder !== 'gather', 'but an explicit rally still wins -- an instruction beats a convenience', JSON.stringify(r.rallyWins));
 
 // Asserted on ORDERS ISSUED, not on energy spent. Energy is the wrong probe: without smart casting all

@@ -517,6 +517,29 @@ const G = {
     for (const r of this.map.resources) { if (r.type !== 'mineral' || r.amount <= 0) continue; const d = distPt(u.x, u.y, r.cx, r.cy) + (r.miner && r.miner.alive ? 200 : 0); if (d < bd) { bd = d; best = r; } }
     return best;
   },
+  // WHICH MINERAL LINE A PATCH BELONGS TO (TODO-M18 item 6). The map already answers this -- every base
+  // carries the list of patches that were placed around it (GameMap.generate) -- so "the same area" needs
+  // no new idea and no new field: it is the base whose `minerals` holds this patch. Scanned rather than
+  // cached onto the resource because it is asked only when a patch runs out, which is a handful of times
+  // in a game, and a cached index would have to survive the snapshot and the editor's own resource lists.
+  baseOfResource(res) { if (!res) return null; for (const b of this.map.bases) if (b.minerals.includes(res)) return b; return null; },
+  // The nearest live patch in the SAME mineral line, or null when that line is finished.
+  //
+  // MEASURED before it was written (.claude/review/worker-walk.js, Lost Ruins): with the main drained,
+  // ALL TWELVE workers walked to the natural 31 tiles away and each covered about 280 tiles in ninety
+  // seconds, shuttling their minerals back past a hall they no longer had a reason to stand at. None of
+  // them went idle, so nothing on screen said the base was finished. That is the behaviour the user
+  // asked to have replaced with StarCraft II's: the line runs out, the workers stop, and moving them is
+  // an instruction rather than a guess.
+  //
+  // The same-patch preference (+200 for a patch that already has a miner) is kept from
+  // findNearestResource so a line with a free patch still fills evenly.
+  nextPatchInBase(u, res) {
+    const b = this.baseOfResource(res); if (!b) return null;
+    let best = null, bd = 1e9;
+    for (const r of b.minerals) { if (r.type !== 'mineral' || r.amount <= 0) continue; const d = distPt(u.x, u.y, r.cx, r.cy) + (r.miner && r.miner.alive ? 200 : 0); if (d < bd) { bd = d; best = r; } }
+    return best;
+  },
   nearestDepot(u) { let best = null, bd = 1e9; for (const b of this.units) { if (b.alive && b.done && !b.lifted && b.owner === u.owner && b.def.depot) { const d = dist(u, b); if (d < bd) { bd = d; best = b; } } } return best; },
   // How many workers are actually mining this patch right now. Counted by looking rather than by
   // keeping a tally: a tally has to be decremented on every exit path -- death, new order, patch mined

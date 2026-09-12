@@ -256,3 +256,41 @@ transport dies that nothing else in this game has an answer for.
 
 **Where it was measured.** `.claude/review/stall-probe.js`, seed 7, 25 minutes, six hard AIs: two baneling
 cocoons frozen at progress 0 inside an Overlord for 240+ frames each. Pinned in `test/abilities20.js`.
+
+---
+
+## 70. Workers stop when their mineral line runs out
+
+*(TODO-M18 item 6 — "when drones finish the minerals in an area, they go to the next entire mineral area;
+in SC2, once the area is out, they stop unless you command them to go to another area's patch.")*
+
+**How to reach it.** You need a mined-out base, which takes a while honestly. Two ways:
+
+- **The quick way.** Start any skirmish, open the browser console and run
+  `for (const r of G.map.bases[0].minerals) r.amount = 0;`
+  That empties your main's whole mineral line in one go.
+- **The slow way.** Play until your main runs dry. On Lost Ruins that is about 11,900 minerals.
+
+**What to look for:**
+
+1. **They stop.** Every worker on that line finishes what it is carrying, delivers it, and goes **idle**
+   at the base. Before this, all twelve of them set off for the natural 31 tiles away on their own and
+   each walked about **280 tiles in ninety seconds**, shuttling minerals back past a hall they had no
+   reason to stand at. That was measured, and it is the behaviour that was replaced.
+2. **Nothing on screen used to say the base was finished.** Now it does, because idle workers are
+   something the game already tells you about — press **,** (comma) to jump to an idle worker.
+3. **One patch running out does NOT stop them.** Empty a single patch instead
+   (`G.map.bases[0].minerals[0].amount = 0`) and the worker on it moves to another patch **on the same
+   line**, exactly as before. Only the whole line running out stops anyone.
+4. **An order still moves them.** Select the idle workers and right-click a patch at another base: they
+   go, and they keep mining there. That is the whole of "unless you command them".
+5. **The computer is unaffected.** A computer player whose main runs dry still picks its own workers up
+   and moves them — it re-tasks anything idle on its own schedule, which is a deliberate decision rather
+   than a worker wandering off. Watch a long skirmish and the AI still expands and keeps mining.
+
+**Gas is deliberately unchanged.** A refinery that is destroyed or exhausted still sends its workers to
+another of your refineries. A refinery is a building, not a line, and there is no "same area" to stay in.
+
+**Where it lives.** `G.nextPatchInBase` in [js/game.js](js/game.js), and the two places
+[js/sim.js](js/sim.js) calls it — the gather tick and the moment a worker finishes a delivery. "The same
+area" needed no new idea: the map already records which patches belong to which base.

@@ -2,7 +2,7 @@
 
 Written when the fifth session paused for the night (2026-09-12). `HANDOFF-M17.md` has the state, the traps
 and the kickoff prompt; this file is the open list and nothing else. Four items are closed and struck through
-at the bottom with their commits. **Three are open** (4 — not reproduced, 6 and 11, plus the gated economy pair 7a/7b), and
+at the bottom with their commits. **Two are open** (4 — not reproduced, and 11, plus the gated economy pair 7a/7b), and
 each has partial, **ungated, unverified** work sitting in the locked worktrees — see "The three worktrees"
 below before you start any of them.
 
@@ -72,7 +72,8 @@ One named constant, not a hundred edited literals. It must not push the console 
 all on the console band and none below the screen. Do not weaken that. Suites to keep green: `qol`, `cardsay`,
 `diegetic`, `daynight`, `review17ui`, `controls`.
 
-### 6. Workers should not cross the map when their patch runs out
+### 6 (DONE). Workers should not cross the map when their patch runs out
+*Kept for the record; what shipped is in Closed at the foot of this file.*
 "When drones finish the minerals in an area, they go to the next entire mineral area — in SC2, once the area is
 out, they stop unless you command them to go to another area's patch. Copy this."
 
@@ -217,5 +218,14 @@ then `git branch -d <branch>`.
   `tickProduction`; the AI then picked the same loaded Zergling every think. Refused now, as Brood War and
   StarCraft II both do, and the AI's seven morph sites skip loaded units. `test/abilities20.js`,
   `PLAYTEST-M18.md` item 69.
+- ~~**6. Workers stop when their mineral line runs out.**~~ **Measured first** (.claude/review/worker-walk.js,
+  Lost Ruins): with the main drained, twelve of twelve workers set off for the natural 31 tiles away and
+  each covered about 280 tiles in ninety seconds, carrying minerals back past a hall they had no reason to
+  stand at, and not one went idle. Now the gather tick asks `G.nextPatchInBase` instead of scanning every
+  resource on the map: another patch on the SAME line, or idle. "The same area" needed no new idea -- the
+  map already records which patches belong to which base. One patch running out still moves the worker
+  within its line; an explicit order to another base is still obeyed; `AI.economy` still re-tasks the
+  computer's idle workers, so no AI stalls. Gas is deliberately unchanged. `test/qol.js` 39 checks, two
+  negative controls, `PLAYTEST-M18.md` item 70.
 - ~~**7. The economy.**~~ Measured and reverted — see the gated section above. Not closed as "done"; closed as
   "answered, and the answer is that it needs the AI re-tuned first".

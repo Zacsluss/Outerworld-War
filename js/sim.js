@@ -679,7 +679,22 @@ class Unit {
   // ---------------- gathering ----------------
   tickGather() {
     const o = this.order, res = o.target;
-    if (!res || (res.type === 'mineral' && res.amount <= 0) || (res.type === 'gas' && !res.alive)) { const n = G.findNearestResource(this, res && res.type === 'gas' ? 'gas' : 'mineral'); if (!n) { this.nextOrder(); return; } o.target = n; o.phase = 'goto'; return; }
+    // A PATCH THAT RAN OUT SENDS THE WORKER TO ANOTHER PATCH ON THE SAME LINE, AND NOWHERE ELSE (TODO-M18
+    // item 6). This used to be findNearestResource -- a scan of every resource on the map -- so a worker
+    // whose main ran dry set off for the natural on its own and shuttled its minerals back past the hall
+    // it had left. Measured: twelve of twelve workers, about 280 tiles each in ninety seconds.
+    //
+    // When the line is finished there is nothing to fall back to and the worker goes idle, which is the
+    // point: an idle worker is visible (the idle-worker key finds it) and moving it is an instruction.
+    // The computer is unaffected -- AI.economy picks its own idle workers up and re-tasks them, which is
+    // the deliberate move to a new base that this must not take away.
+    //
+    // GAS keeps the old behaviour on purpose: a refinery that is destroyed or mined out is a building,
+    // not a line, and walking to another of your own refineries is the only sensible answer.
+    if (!res || (res.type === 'mineral' && res.amount <= 0) || (res.type === 'gas' && !res.alive)) {
+      const n = (res && res.type === 'mineral') ? G.nextPatchInBase(this, res) : G.findNearestResource(this, res && res.type === 'gas' ? 'gas' : 'mineral');
+      if (!n) { this.nextOrder(); return; } o.target = n; o.phase = 'goto'; return;
+    }
     if (this.carrying) { this.applyOrder({ type: 'return', then: res }); return; }
     this.lastRes = res;
     if (res.type === 'mineral') {
@@ -742,7 +757,10 @@ class Unit {
       this.carrying = null;
       if (this.queue.length) { this.nextOrder(); return; } // shift-queued orders run after the current trip
       if (o.then && ((o.then.type === 'mineral' && o.then.amount > 0) || (o.then.type === 'gas' && o.then.alive))) this.applyOrder({ type: 'gather', target: o.then, phase: 'goto' });
-      else { const n = G.findNearestResource(this, 'mineral'); if (n) this.applyOrder({ type: 'gather', target: n, phase: 'goto' }); else this.nextOrder(); }
+      // The other half of the same rule: the worker has just delivered and the patch it remembered has
+      // run out. Same line or idle. With no remembered patch at all -- a worker told to return by hand --
+      // the whole-map search is still the right answer, because there is no line to stay on.
+      else { const n = (o.then && o.then.type === 'mineral') ? G.nextPatchInBase(this, o.then) : G.findNearestResource(this, 'mineral'); if (n) this.applyOrder({ type: 'gather', target: n, phase: 'goto' }); else this.nextOrder(); }
     }
   }
   // ---------------- building ----------------
