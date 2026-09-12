@@ -282,6 +282,12 @@ MAP_LAYOUTS.nightfall = MapModes.layout('large', { name: 'Nightfall', tileset: '
 const FEATURE_ID0 = 100000;   // feature ids sit above every resource id, in the same id space as them
 const FEAT_BLOCKED = -4;      // blocked[]: -1 free, -2 mineral, -3 geyser, -4 a map feature is standing here
 const WRECK_BLOCKED = -5;     // ...and -5 a wreck. See the CRATERS block for why it is not a feature.
+// ...and -6 a LOWERED Supply Depot (seventh session, item 8). The one value in blocked[] that is walkable but not
+// buildable: GameMap.walkable -- which movement, G.passable and the Pathfinder all go through -- lets a ground
+// unit onto it, and canPlace still reads "not -1" and refuses to build there. Written into the grid rather than
+// kept beside it because blocked[] is exactly what Snapshot already saves, so a save, a replay seek and a
+// rejoin all carry a lowered depot without a new field to remember.
+const LOWERED_BLOCKED = -6;
 // How much fully churned ground costs a ground unit, and how much one worker trip strips the ground
 // around a patch. MINE_STRIP saturates a tile at 255 after about 128 trips out of the ~187 a 1500
 // patch holds, so a patch that has been worked hard is bare rock well before it runs dry -- you can
@@ -1435,7 +1441,10 @@ class GameMap {
   }
 
   // ---------------- queries ----------------
-  walkable(tx, ty) { if (!this.inb(tx, ty)) return false; const i = this.idx(tx, ty); return this.walk[i] === 1 && this.blocked[i] === -1; }
+  walkable(tx, ty) { if (!this.inb(tx, ty)) return false; const i = this.idx(tx, ty); const b = this.blocked[i]; return this.walk[i] === 1 && (b === -1 || b === LOWERED_BLOCKED); }
+  // Lower or raise a depot's footprint: its own id <-> LOWERED_BLOCKED, and only on tiles that are its own, so a
+  // footprint a map feature or a wreck has since claimed a tile of is never overwritten.
+  setLowered(tx, ty, w, h, id, lowered) { this.rect(tx, ty, w, h, (x, y) => { const i = this.idx(x, y); if (lowered && this.blocked[i] === id) this.blocked[i] = LOWERED_BLOCKED; else if (!lowered && this.blocked[i] === LOWERED_BLOCKED) this.blocked[i] = id; }); }
   heightAtPx(px, py) { return this.H(Math.floor(px / TILE), Math.floor(py / TILE)); }
 
   // ============================================================================

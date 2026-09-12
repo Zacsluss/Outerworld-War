@@ -82,7 +82,7 @@ const NEVER = ['build_basic', 'build_adv', 'morph_menu', 'restoration', 'optical
   const texts = files.filter(f => f !== 'abilities20.js').map(f => fs.readFileSync(path.join(__dirname, f), 'utf8'));
   const quoted = id => new RegExp("['\"`]" + id + "['\"`]");
   const never = ids.filter(id => !texts.some(t => quoted(id).test(t)));
-  ok('DATA.abilities holds eighty ids and test/all.js names at least seventy-five suites (scene check for the sweep)', ids.length === 80 && files.length >= 75, ids.length + ' ids, ' + files.length + ' suites');
+  ok('DATA.abilities holds eighty-one ids and test/all.js names at least seventy-five suites (scene check for the sweep; the eighty-first is the Supply Depot\'s Lower / Raise, seventh session)', ids.length === 81 && files.length >= 75, ids.length + ' ids, ' + files.length + ' suites');
   ok('the other gate suites never name exactly these seventeen as a quoted string (was 18 before review17.js took cloak_ghost)', never.length === NEVER.length && never.every(id => NEVER.includes(id)), 'measured ' + never.length + ': ' + never.join(', '));
   const self = fs.readFileSync(__filename, 'utf8');
   ok('...and this file names every one of them', NEVER.every(id => quoted(id).test(self)), NEVER.filter(id => !quoted(id).test(self)).join(', '));

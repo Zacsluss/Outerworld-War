@@ -125,7 +125,8 @@ run(`(() => {
       cardPage: UI.cardPage,
       cardMenu: UI.cardMenu, msgs: p.msgs.length,
       min: Math.round(p.minerals), gas: Math.round(p.gas), res: [...p.researching].sort().join(','),
-      units: own.map(u => u.def.id + '/' + u.prod.length + '/' + u.order.type + (u.lifted ? '/lift' : '') + (u.burrowed ? '/burr' : '') + (u.addon ? '/+' + u.addon.def.id : '')).sort().join(' '),
+      // '/low': a Supply Depot's Lower / Raise changes nothing else a button can change, so without it the press reads as dead
+      units: own.map(u => u.def.id + '/' + u.prod.length + '/' + u.order.type + (u.lifted ? '/lift' : '') + (u.burrowed ? '/burr' : '') + (u.lowered ? '/low' : '') + (u.addon ? '/+' + u.addon.def.id : '')).sort().join(' '),
     });
   };
 
@@ -140,6 +141,7 @@ run(`(() => {
     for (const u of G.units) {
       if (!u.alive || u.owner !== 0) continue;
       u.prod.length = 0; u.lifted = false; u.burrowed = false; u.hasNuke = this.snapNuke.has(u.id);
+      if (u.lowered) { G.map.setLowered(u.tx, u.ty, u.def.w, u.def.h, u.id, false); u.lowered = false; }   // the grid as well as the flag, or the next press starts on lowered ground
       u.addon = this.snapAddons.has(u.id) ? this.snapAddons.get(u.id) : null;
       if (u.addon && !u.addon.alive) u.addon = null;
       if (!u.isBuilding) u.applyOrder({ type: 'idle' });

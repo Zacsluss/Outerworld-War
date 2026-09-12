@@ -1431,7 +1431,9 @@ const Render = {
     ctx.save(); ctx.globalAlpha = u._alpha;
     // ground shadow
     ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.ellipse(x0 + W / 2 + 4, y0 + H / 2 + 8, W / 2 + 4, H / 2 + 2, 0, 0, 7); ctx.fill();
-    if (u.done) { ctx.drawImage(s.cv, x0 - s.M, y0 - s.T); if (u.def.race === 'P' && u.unpowered) { ctx.fillStyle = 'rgba(40,20,20,0.45)'; ctx.fillRect(x0, y0, W, H); } const an = BUILDING_ANIM[u.def.id]; if (an && u._alpha > 0.5) an(ctx, u, x0, y0, W, H, G.frame); }
+    // A LOWERED DEPOT is drawn sunk: squashed toward its own base and darkened, so it reads as ground you can cross.
+    if (u.done && u.lowered) { ctx.save(); ctx.translate(0, y0 + H); ctx.scale(1, 0.45); ctx.translate(0, -(y0 + H)); ctx.drawImage(s.cv, x0 - s.M, y0 - s.T); ctx.restore(); ctx.fillStyle = 'rgba(10,12,16,0.35)'; ctx.fillRect(x0, y0 + H * 0.5, W, H * 0.5); }
+    else if (u.done) { ctx.drawImage(s.cv, x0 - s.M, y0 - s.T); if (u.def.race === 'P' && u.unpowered) { ctx.fillStyle = 'rgba(40,20,20,0.45)'; ctx.fillRect(x0, y0, W, H); } const an = BUILDING_ANIM[u.def.id]; if (an && u._alpha > 0.5) an(ctx, u, x0, y0, W, H, G.frame); }
     else this.drawConstruction(ctx, u, s, x0, y0, W, H);
     ctx.restore();
     if (u.done) this.drawDamage(ctx, u, x0, y0, W, H);

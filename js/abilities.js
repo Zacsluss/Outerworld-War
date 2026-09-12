@@ -65,9 +65,10 @@ const Abilities = {
     // whole mechanic is supposed to cost attention rather than minerals.
     if (id === 'spawn_tumour' && (u.tumoured || !u.done)) return false;
     if (id === 'uproot' && (!u.done || u.prod.length || u.lifted)) return false;
+    if (id === 'lower_depot' && !u.done) return false;   // a depot under construction is a construction site, not a door
     return true;
   },
-  label(u, id) { const ab = DATA.abilities[id]; if (id === 'siege_mode') return u.sieged ? 'Tank Mode' : 'Siege Mode'; if (id === 'burrow') return u.burrowed ? 'Unburrow' : 'Burrow'; if (id === 'viking_mode') return u.def.id === 'viking' ? 'Assault Mode' : 'Fighter Mode'; if (id === 'cloak_ghost' || id === 'cloak_wraith') return u.cloaked ? 'Decloak' : ab.name; return ab.name; },
+  label(u, id) { const ab = DATA.abilities[id]; if (id === 'siege_mode') return u.sieged ? 'Tank Mode' : 'Siege Mode'; if (id === 'burrow') return u.burrowed ? 'Unburrow' : 'Burrow'; if (id === 'viking_mode') return u.def.id === 'viking' ? 'Assault Mode' : 'Fighter Mode'; if (id === 'cloak_ghost' || id === 'cloak_wraith') return u.cloaked ? 'Decloak' : ab.name; if (id === 'lower_depot') return u.lowered ? 'Raise' : 'Lower'; return ab.name; },
   // FIXLIST-M15 C2. How far a caster can be from a point and still cast, in pixels -- the declared
   // tile range plus both bodies, which is what orderTick has always computed inline. It is a method
   // now because TWO paths need it and they were about to drift: orderTick for a mobile caster, and
@@ -169,6 +170,7 @@ const Abilities = {
         return true;
       }
       case 'uproot': return this.uproot(u);
+      case 'lower_depot': return this.lowerDepot(u);
       case 'volatile_burst': return this.volatileBurst(u);
       case 'spawn_locusts': return this.spawnLocusts(u);
       // M12 wave four. GUARDIAN SHIELD REUSES `fx.matrix`, the Science Vessel's Defensive Matrix, and
@@ -231,6 +233,26 @@ const Abilities = {
   //
   // It can never ROOT off creep: G.landBuilding calls GameMap.canPlace, and both crawler defs carry
   // `needsCreep`. It may walk anywhere it likes; it may only stand up on ground the swarm holds.
+  // SUPPLY DEPOT LOWER / RAISE (seventh session, item 8, "this is in Starcraft 2"). Liquipedia's rules, every one:
+  //   lowered, ground units of EITHER side can walk over it; raised, it blocks again
+  //   raising pushes FRIENDLY units standing on it off to the nearest edge
+  //   an ENEMY unit standing on it stops it rising
+  //   nothing else changes -- it still gives supply, keeps its hit points, and can still be shot
+  // The footprint goes to LOWERED_BLOCKED (js/map.js): walkable, still not buildable, and carried by every save.
+  // Through Abilities.issue like every instant ability, so it is a command in the log and replays and net games
+  // agree about it. Raising re-blocks BEFORE the friendly units are pushed, so G.nudgeOut cannot pick a tile on the
+  // depot it is pushing them off.
+  lowerDepot(u) {
+    if (u.def.id !== 'supply_depot' || !u.done || u.lifted) return false;
+    const m = G.map, d = u.def;
+    if (!u.lowered) { m.setLowered(u.tx, u.ty, d.w, d.h, u.id, true); u.lowered = true; return true; }
+    const x0 = u.tx * TILE, y0 = u.ty * TILE, x1 = x0 + d.w * TILE, y1 = y0 + d.h * TILE;
+    const on = G.units.filter(o => o.alive && !o.isBuilding && !o.fly && !o.inside && o.x + o.r > x0 && o.x - o.r < x1 && o.y + o.r > y0 && o.y - o.r < y1);
+    if (on.some(o => !G.allied(o.owner, u.owner))) { u.player.msg('The Supply Depot cannot rise while an enemy is standing on it.', 'error'); return false; }
+    m.setLowered(u.tx, u.ty, d.w, d.h, u.id, false); u.lowered = false;
+    for (const o of on) { G.nudgeOut(o, u); o.path = null; }
+    return true;
+  },
   uproot(u) {
     if (!u.def.crawler || !u.done || u.prod.length) return false;
     if (u.lifted) { G.landBuilding(u, Math.round(u.x / TILE - u.def.w / 2), Math.round(u.y / TILE - u.def.h / 2)); return true; }

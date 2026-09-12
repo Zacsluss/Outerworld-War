@@ -24,7 +24,7 @@ const ok = makeOk({ extra: 'nonempty' });
 const errors = [];
 // ui.js and hud.js are loaded because two checks are about the COMMAND CARD, which is where a Terran
 // roster this size overflows first. They are not loaded by the sim-only harnesses.
-const ctx = makeCtx({ tier: 'ui', files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'render', 'ui', 'hud'], ext: false, errors, collect: 'stackline' });
+const ctx = makeCtx({ tier: 'ui', files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'snapshot', 'render', 'ui', 'hud'], ext: false, errors, collect: 'stackline' });
 const run = src => vm.runInContext(src, ctx);
 const json = src => JSON.parse(vm.runInContext('JSON.stringify(' + src + ')', ctx));
 
@@ -540,6 +540,75 @@ ok(json('EQUIV.command_center').includes('orbital_command') && json('EQUIV.comma
 { // AI_RESEARCH.T is unchanged on purpose: M12's Terran roster adds no new research, and reordering an
   // existing one is a balance move that belongs with a measurement (M8 tried it for Zerg: nothing).
   ok(T.RES.every(id => json('({t:DATA.techs,u:DATA.upgrades})').t[id] || json('({t:DATA.techs,u:DATA.upgrades})').u[id]), 'AI_RESEARCH.T still names only real techs and upgrades'); }
+// ============================================================================
+// SUPPLY DEPOT LOWER / RAISE (seventh session, item 8, "this is in Starcraft 2")
+// ============================================================================
+// Liquipedia's rules: lowered, ground units of either side walk over it; raised, it blocks; raising pushes
+// friendly units off to the nearest edge; an enemy on top stops it rising; nothing else about it changes.
+// Every press here goes through Abilities.issue, which is the command-log path (G.exec), as the card's button does.
+{
+  const D = json(`(() => {
+    G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'Z', human: false, name: 'B' }], seed: 4, layout: 'temple' });
+    for (const pl of G.players) pl.ai = null; G.human = 0;
+    const p = G.players[0], m = G.map; p.minerals = 5000; p.vis.fill(2);
+    const hall = G.units.find(u => u.owner === 0 && u.def.depot), def = DATA.buildings.supply_depot;
+    const t = m.findFreeTile(hall.tx + 8, hall.ty + 6, 12, (x, y) => !m.canPlace(def, x, y, p, G.units, null) && !m.canPlace(def, x - 3, y, p, G.units, null) && !m.canPlace(def, x + 3, y, p, G.units, null));
+    const dep = G.placeBuilding(def, t[0], t[1], 0); G.completeBuilding(dep); G.recomputeSupply && G.recomputeSupply(p);
+    for (let f = 0; f < 4; f++) G.tick();
+    const cells = () => { const a = []; for (let y = dep.ty; y < dep.ty + def.h; y++) for (let x = dep.tx; x < dep.tx + def.w; x++) a.push(m.walkable(x, y)); return a; };
+    const out = {};
+    const supMax0 = p.supMax;
+    out.card0 = UI.buildCard ? (UI.selection = [dep], UI.buildCard().filter(b => b.abil === 'lower_depot').map(b => b.label + ':' + b.hk)) : null;
+    out.raisedWalk = cells();
+    // across the depot: raised, a marine told to walk through the middle of it must go round
+    const crossY = (dep.ty + def.h / 2) * TILE, west = (dep.tx - 2) * TILE, east = (dep.tx + def.w + 2) * TILE;
+    const walkAcross = () => { const mar = G.spawnUnit('marine', 0, west, crossY); mar.applyOrder({ type: 'move', x: east, y: crossY }); let onTop = 0;
+      for (let f = 0; f < 240; f++) { G.tick(); if (mar.x > dep.tx * TILE && mar.x < (dep.tx + def.w) * TILE && mar.y > dep.ty * TILE && mar.y < (dep.ty + def.h) * TILE) onTop++; }
+      const arrived = Math.hypot(mar.x - east, mar.y - crossY) < 24; G.kill(mar, null, true); return { onTop, arrived }; };
+    out.raisedCross = walkAcross();
+    // LOWER it, the way the button does
+    out.lowered = Abilities.issue(dep, 'lower_depot');
+    out.loweredFlag = !!dep.lowered; out.loweredWalk = cells();
+    out.label = Abilities.label(dep, 'lower_depot');
+    out.loweredCross = walkAcross();
+    out.buildOnIt = m.canPlace(def, dep.tx, dep.ty, p, G.units, null);
+    out.supplyKept = p.supMax === supMax0;
+    out.stillATarget = dep.alive && dep.hp > 0;
+    // RAISE with a FRIENDLY marine standing on it: it rises and the marine is pushed off
+    const cx = (dep.tx + def.w / 2) * TILE, cy = (dep.ty + def.h / 2) * TILE;
+    const friend = G.spawnUnit('marine', 0, cx, cy);
+    out.raiseWithFriend = Abilities.issue(dep, 'lower_depot');
+    out.friendPushedOff = !(friend.x > dep.tx * TILE - friend.r && friend.x < (dep.tx + def.w) * TILE + friend.r && friend.y > dep.ty * TILE - friend.r && friend.y < (dep.ty + def.h) * TILE + friend.r);
+    out.raisedAgain = !dep.lowered && cells().every(w => !w);
+    G.kill(friend, null, true);
+    // lower again and put an ENEMY zergling on it: it must refuse to rise, and say so
+    Abilities.issue(dep, 'lower_depot');
+    const foe = G.spawnUnit('zergling', 1, cx, cy); p.msgs.length = 0;
+    out.raiseWithEnemy = Abilities.issue(dep, 'lower_depot');
+    out.stayedDown = !!dep.lowered;
+    out.said = p.msgs.map(x => x.text).join(' | ');
+    G.kill(foe, null, true);
+    // a SNAPSHOT keeps it down, grid and flag
+    const snap = Snapshot.take(); Abilities.issue(dep, 'lower_depot'); Snapshot.restore(snap);
+    const dep2 = G.byId.get(dep.id);
+    out.snapLowered = !!dep2.lowered && (() => { for (let y = dep2.ty; y < dep2.ty + def.h; y++) for (let x = dep2.tx; x < dep2.tx + def.w; x++) if (!G.map.walkable(x, y)) return false; return true; })();
+    // killed while LOWERED: its ground is free and buildable afterwards
+    G.kill(dep2, null, true);
+    out.freedAfterDeath = G.map.canPlace(def, dep2.tx, dep2.ty, p, G.units, null);
+    return out;
+  })()`);
+  ok(D.card0 && D.card0.length === 1 && D.card0[0] === 'Lower:R', 'a finished Supply Depot has a Lower button on R, StarCraft II\'s key', JSON.stringify(D.card0));
+  ok(D.raisedWalk.every(w => !w) && D.raisedCross.onTop === 0, 'RAISED, the depot blocks: its tiles are not walkable and a Marine walking through the middle of it goes round', JSON.stringify({ walk: D.raisedWalk, cross: D.raisedCross }));
+  ok(D.lowered === true && D.loweredFlag && D.loweredWalk.every(w => w) && D.label === 'Raise', 'LOWERED through the button\'s own command path, every tile of it is walkable and the button now reads Raise', JSON.stringify({ lowered: D.lowered, walk: D.loweredWalk, label: D.label }));
+  ok(D.loweredCross.onTop > 0 && D.loweredCross.arrived, '...and a Marine walks straight across it (it went round before)', JSON.stringify(D.loweredCross));
+  ok(D.buildOnIt === 'Location is blocked', '...but nothing can be BUILT on a lowered depot', JSON.stringify(D.buildOnIt));
+  ok(D.supplyKept && D.stillATarget, '...and nothing else about it changes: the supply stays, and it is still there to be shot', JSON.stringify({ supply: D.supplyKept, alive: D.stillATarget }));
+  ok(D.raiseWithFriend === true && D.friendPushedOff && D.raisedAgain, 'RAISING with your own Marine on top rises and pushes the Marine off to the edge, and the tiles block again', JSON.stringify({ raised: D.raiseWithFriend, pushed: D.friendPushedOff, blocked: D.raisedAgain }));
+  ok(D.raiseWithEnemy === false && D.stayedDown && /enemy/i.test(D.said), 'an ENEMY standing on it stops it rising, and you are told why', JSON.stringify({ raised: D.raiseWithEnemy, down: D.stayedDown, said: D.said }));
+  ok(D.snapLowered, 'a snapshot restored keeps it lowered, flag and ground both (the grid is what the snapshot already saves)', JSON.stringify(D.snapLowered));
+  ok(D.freedAfterDeath === null, 'a depot killed while LOWERED leaves its ground free to build on (it would have kept the lowered marker for ever)', JSON.stringify(D.freedAfterDeath));
+}
+
 ok(errors.length === 0, 'no JS errors were logged along the way', errors[0] || '');
 
 summary({ nl: true });

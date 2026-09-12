@@ -787,7 +787,7 @@ const DATA = (() => {
   B('command_center', { name: 'Command Center', race: 'T', hp: 1500, w: 4, h: 3, min: 400, time: 1800, hk: 'C', tier: 'basic', produces: ['scv'], sup: 10, depot: true, canLift: true, addons: ['comsat_station', 'nuclear_silo'], morphOptions: ['orbital_command', 'planetary_fortress'], sight: 10 });
   B('comsat_station', { name: 'Comsat Station', race: 'T', hp: 500, w: 2, h: 2, min: 50, gas: 50, time: 600, hk: 'C', tier: 'addon', parent: 'command_center', req: ['academy'], energy: 200, abil: ['scanner_sweep'] });
   B('nuclear_silo', { name: 'Nuclear Silo', race: 'T', hp: 600, w: 2, h: 2, min: 100, gas: 100, time: 1200, hk: 'N', tier: 'addon', parent: 'command_center', req: ['covert_ops'], produces: ['nuke'] });
-  B('supply_depot', { name: 'Supply Depot', race: 'T', hp: 500, w: 3, h: 2, min: 100, time: 600, hk: 'S', tier: 'basic', sup: 8 });
+  B('supply_depot', { name: 'Supply Depot', race: 'T', hp: 500, w: 3, h: 2, min: 100, time: 600, hk: 'S', tier: 'basic', sup: 8, abil: ['lower_depot'] });
   B('refinery', { name: 'Refinery', race: 'T', hp: 750, w: 4, h: 2, min: 100, time: 600, hk: 'R', tier: 'basic', onGeyser: true });
   B('barracks', { name: 'Barracks', race: 'T', hp: 1000, w: 4, h: 3, min: 150, time: 1200, hk: 'B', tier: 'basic', req: ['command_center'], produces: ['marine', 'firebat', 'medic', 'ghost', 'marauder', 'reaper'], canLift: true, tech: ['suppress_inf'], addons: ['reactor'] });
   B('engineering_bay', { name: 'Engineering Bay', race: 'T', hp: 850, w: 4, h: 3, min: 125, time: 900, hk: 'E', tier: 'basic', req: ['command_center'], upg: ['infW', 'infA'], canLift: true });
@@ -1406,6 +1406,10 @@ const DATA = (() => {
   // it would like to stand up. The rooting half of the pair is the Land button the card already grows
   // for anything `lifted`, and it goes through G.landBuilding, which is where the creep check lives.
   A('uproot', 'Uproot', 'U', 'instant');
+  // StarCraft II's Supply Depot Lower / Raise (seventh session, item 8). One ability that toggles, like Siege Mode and
+  // Burrow, so it is one button whose label says what pressing it will do (Abilities.label). R, StarCraft II's key
+  // for both. What it does is in Abilities.lowerDepot.
+  A('lower_depot', 'Lower', 'R', 'instant');
   A('volatile_burst', 'Volatile Burst', 'B', 'instant', { dmg: 40, r: 1.6, bldMult: 2 });
   A('corrosive_bile', 'Corrosive Bile', 'C', 'point', { energy: 25, range: 8, delay: 40, r: 1.5, dmg: 70 });
   A('spawn_locusts', 'Spawn Locusts', 'L', 'instant', { energy: 40 });
@@ -1807,6 +1811,7 @@ const DATA = (() => {
     plant_tumour: 'Costs 25 energy. Grow a Creep Tumour on creep you are standing over. It spreads creep around itself and can seed one more tumour of its own.',
     spawn_tumour: 'Seed one more Creep Tumour anywhere within nine tiles that is already creep. Each tumour may do this exactly once, ever.',
     uproot: 'Pull a Spine or Spore Crawler out of the ground so it can walk. It cannot attack until it roots again.',
+    lower_depot: 'Sink the depot so ground units can walk over it; raise it to block again. Supply is unaffected. Rising pushes your units aside, and an enemy standing on it stops it rising.',
     volatile_burst: 'Detonate the Baneling, destroying it and dealing splash damage to ground units around it.',
     corrosive_bile: 'Launch a shell that lands after a short delay and hits everything at that spot, including destructible terrain. Anything with legs can walk out of it.',
     spawn_locusts: 'Release Locusts that fly out, land, attack ground targets for a while, then die. The Swarm Host keeps working from cover.',

@@ -224,7 +224,7 @@ const JA = x => JSON.parse(vm.runInContext('JSON.stringify(' + x + ')', ctx));
     'the tooltip appears for an ability button with NO cost and NO energy -- Burrow, Stim, Blink and every merge showed nothing at all');
   ok(/DATA\.abilities\[b\.abil\]/.test(src), '...and it reads the description off the ability, not off a cost the button does not have');
   const ui = fs.readFileSync(path.join(root, 'js', 'ui.js'), 'utf8');
-  const btns = ui.match(/B\(i\+\+, (?:label|ab\.name)[^\n]*?\);/g) || [];
+  const btns = ui.match(/B\(i\+\+, (?:label|ab\.name|Abilities\.label\(u, id\))[^\n]*?\);/g) || [];   // Abilities.label: the building card's instant abilities (a Supply Depot's Lower / Raise)
   ok(btns.length >= 8, 'the scrape finds the ability buttons (negative control for the anchor: eight today)', btns.length + ' found');
   const noId = btns.filter(b => !/abil: id/.test(b));
   ok(noId.length === 0, 'and every ability button carries its id, or the tooltip could not find it', String(noId.length) + ' without');

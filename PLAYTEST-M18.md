@@ -469,3 +469,28 @@ and click three different spots.
   Shift replaces everything the worker had queued, so its old spots are about to stop existing.
 - You only ever see **your own** plans. An opponent's worker walking out to build shows nothing — that would
   be a scouting leak.
+
+---
+
+## 80. Supply Depots lower into the ground, as in StarCraft II
+
+*(Seventh session, item 8.)*
+
+**How to reach it.** Skirmish as Terran, build a Supply Depot, select it. The command card has **Lower (R)**.
+
+**What to look for.**
+- **Press R.** The depot sinks — drawn squashed and darker — and the button becomes **Raise (R)**. Your units
+  can now walk straight across it; order a Marine through it and watch it cross instead of going round.
+- **Enemies can cross it too**, exactly as in StarCraft II. That is the trade you make by lowering a wall.
+- **You can't build on a lowered depot.** Try to place anything on it: "Location is blocked".
+- **It still gives its 8 supply**, keeps its hit points, and can still be attacked while lowered.
+- **Raise it with one of your own units standing on it.** It rises and the unit is pushed off to the edge.
+- **Raise it with an enemy standing on it.** It refuses, and says "The Supply Depot cannot rise while an enemy
+  is standing on it."
+- **Build a wall of depots at your ramp, lower one to let your army out, raise it behind them.** That is the
+  point of the ability.
+- A depot still under construction has no button — it is a construction site, not a door.
+- Saving and loading a game, a replay, or a network rejoin all keep a lowered depot lowered.
+
+The rules are Liquipedia's for StarCraft II's Lower/Raise, all of them. The computer does not lower its own
+depots.

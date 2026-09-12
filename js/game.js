@@ -662,7 +662,9 @@ const G = {
   },
   kill(u, killer, silent) {
     if (!u.alive) return; u.alive = false; const p = this.players[u.owner];
-    if (u.isBuilding) { if (!u.lifted) this.map.unblock(u.tx, u.ty, u.def.w, u.def.h, u.id); if (u.def.creep) this.map.recomputeCreep(this.units); if (u.geyser) u.geyser.building = null; for (const l of u.larvae) this.kill(l, null, true); if (u.def.bunker) { while (u.cargo.length) this.unloadOne(u); } if (u.addon) { u.addon.parent = null; } if (u.parent) u.parent.addon = null; if (u.builder && u.builder.order.target === u) u.builder.nextOrder(); for (const it of u.prod) if (it.kind === 'upg' || it.kind === 'tech') p.researching.delete(it.id); }
+    // A depot killed while LOWERED holds LOWERED_BLOCKED, not its id, and unblock clears only its id -- so it is raised on
+    // the grid first, or its ground would stay unbuildable for the rest of the game.
+    if (u.isBuilding) { if (!u.lifted) { if (u.lowered) this.map.setLowered(u.tx, u.ty, u.def.w, u.def.h, u.id, false); this.map.unblock(u.tx, u.ty, u.def.w, u.def.h, u.id); } if (u.def.creep) this.map.recomputeCreep(this.units); if (u.geyser) u.geyser.building = null; for (const l of u.larvae) this.kill(l, null, true); if (u.def.bunker) { while (u.cargo.length) this.unloadOne(u); } if (u.addon) { u.addon.parent = null; } if (u.parent) u.parent.addon = null; if (u.builder && u.builder.order.target === u) u.builder.nextOrder(); for (const it of u.prod) if (it.kind === 'upg' || it.kind === 'tech') p.researching.delete(it.id); }
     // Outside the isBuilding branch above, because a Warp Prism is a psi source that is not a building.
     // It used to sit inside it, so a dead prism left its field painted on the map until it happened to
     // be recomputed for some unrelated reason.
