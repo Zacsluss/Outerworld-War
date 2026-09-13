@@ -279,7 +279,15 @@ const Net = {
     const e = s => this.esc(s), assign = n => (typeof GameMap !== 'undefined' && GameMap.assignStarts ? GameMap.assignStarts(list, n) : list.map((_, i) => i % n));
     const holder = (at, j) => { const i = at.indexOf(j); return i < 0 ? null : { i, p: list[i] || {} }; };
     const chose = w => !!(w && Number.isInteger(w.p.start));
-    const tip = (j, w, where) => 'Start ' + (j + 1) + (where ? ', ' + where : '') + ': ' + (w ? (w.p.name ? e(w.p.name) : 'seat ' + (w.i + 1)) + (chose(w) ? '' : ' (Auto)') : 'free') + (o.pick ? (!w ? ' -- click to take it' : chose(w) ? ' -- click to give it back' : '') : '');
+    // THE HINT SAYS WHAT A CLICK THERE DOES (bindRoom's rule; `o.me` is the viewer's id, `o.host` whether they host). A start
+    // nobody CHOSE is taken -- by the viewer, or for a host by the first of them and the computers still on Auto, named when
+    // it is a computer; a chosen start goes back to Auto only when it is the viewer's own or, for the host, a computer's; a
+    // start another player chose sends nothing, so it offers nothing. (Tenth session, found walking PLAYTEST 94 in two browser
+    // tabs: the host was offered "click to give it back" on a start the guest had chosen.)
+    const next = o.host ? list.find(p => (p.id === o.me || p.ai) && !Number.isInteger(p.start)) : null;
+    const mine = w => (o.me != null && w.p.id === o.me) || !!(o.host && w.p.ai);
+    const take = next && next.id !== o.me ? ' -- click to give it to ' + e(next.name || 'a computer') : ' -- click to take it';
+    const tip = (j, w, where) => 'Start ' + (j + 1) + (where ? ', ' + where : '') + ': ' + (w ? (w.p.name ? e(w.p.name) : 'seat ' + (w.i + 1)) + (chose(w) ? '' : ' (Auto)') : 'free') + (o.pick ? (!chose(w) ? take : mine(w) ? ' -- click to give it back' : '') : '');
     const M = this.mapStarts(id);
     if (!M) {
       const gen = String(id || '').slice(0, 4) === 'gen:', G = gen ? this.genStarts(id, o.size) : null;
@@ -769,7 +777,7 @@ const Net = {
     const ruleRow = k => setRow(e(this.RULE_NAMES[k]), edit ? sel('data-rule="' + k + '"', this.ruleOptions(k), rules[k]) : '<span>' + e(this.ruleLabel(k, rules[k])) + '</span>');
     const invite = code ? this.inviteLink(code) : '';
     const settings = '<div class="lbSettings"><div class="lbSetHead">GAME SETTINGS</div>'
-      + this.mapPreview(L.layout, L.players, 236, { pick: open && !!meP, size: rules.size })
+      + this.mapPreview(L.layout, L.players, 236, { pick: open && !!meP, size: rules.size, me: myId, host })
       + '<div class="lbPrevName">' + e(this.mapName(L.layout)) + '</div>'
       + setRow('Map', edit ? mapSel : '<span>' + e(this.mapName(L.layout)) + '</span>')
       + (String(L.layout || '').slice(0, 4) === 'gen:' ? ruleRow('size') : '')
@@ -782,7 +790,7 @@ const Net = {
       + setRow('Alliances', '<span>Locked</span>')
       + (edit && !local ? setRow('Name', '<input id="lbRename" maxlength="40" class="lbSel grow" value="' + e(L.title || '') + '">') : '')
       + (code ? setRow('Code', '<b class="lbCodeVal">' + e(code) + '</b><button id="lbCopy" class="small inline">COPY</button>' + (invite ? '<button id="lbInvite" class="small inline" title="' + e(invite) + '">INVITE LINK</button>' : '')) : '')
-      + '<div class="lbSetNote">' + (local ? '' : 'Share the code or the invite link to bring a player in. ') + 'Colours follow the seats, in the order shown. Click a start on the map to take it' + (host ? ' (then each computer on Auto)' : '') + ', and click it again to give it back. A seat on Auto starts on its own start, or the first free one.</div>'
+      + '<div class="lbSetNote">' + (local ? '' : 'Share the code or the invite link to bring a player in. ') + 'Click your colour square to choose a colour' + (host ? ' (a computer\'s too)' : '') + '. Click a start on the map to take it' + (host ? ' (then each computer on Auto)' : '') + ', and click it again to give it back. A seat on Auto starts on its own start, or the first free one.</div>'   // not "Colours follow the seats": item 2 made them a choice
       + '</div>';
     let h = '<div class="lbHead"><span class="lbHeadTitle">' + e(L.title || (local ? 'Skirmish' : code ? 'Room ' + code : 'LAN game')) + '</span>'
       + '<span class="lbHeadInfo">' + e(this.mapName(L.layout)) + ' &middot; <span' + (over ? ' class="lbOver"' : '') + '>' + L.players.length + '/' + seats + ' players</span>' + (specs.length ? ' &middot; ' + specs.length + ' watching' : '') + ' &middot; ' + e(speed)

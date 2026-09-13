@@ -1159,3 +1159,46 @@ Enter to see its base):
 **Deliberately different:** Brood War pulls every worker near the one hit, however many; here it is up to three for each
 attacker (two, three and four were measured: all killed a lone worker with no loss; three is the middle), so the rest keep
 mining.
+
+---
+
+## 108. What your playtest did not reach, run without you -- and three wrong words it found
+
+*(Tenth session, item 7: "anything i missed in testing, run auto tests without me to test". The recording showed PLAYTEST 92 in
+a game, 94 online, 95, 96, 97, 98, 99 and 100 not exercised.)*
+
+**What was run, and what it said:**
+- **92 in a game** (`.claude/review/tenth/walk-92.js`, a real game in a VM, keys pressed): M trains a Marine; with the Marine
+  put on Q, Q trains and M does nothing; Escape -> Settings -> Command card keys switches to Grid, where Q (the slot) trains;
+  a Grid choice (K) stays in Grid and the Standard one (Q) comes back with Standard; Reset all puts M back. **Found: the
+  menu's Resume and Back said "(Esc)" whatever key the menu was on** -- fixed, below.
+- **94 online, 95 online, 103, 104, 105 and 106, in two real browser tabs on the relay**: a code nobody has is refused and a
+  real one joins; the guest takes start 3 and the host sees it, with "Ben takes start 3." in the log; the guest's colour
+  picker (Brown) reaches the host; a computer shows its gear, REMOVE and, to the guest, "host sets"; START makes exactly the
+  lobby's game (each player on the start and in the colour the lobby showed); REMATCH from the guest's end screen puts the
+  guest in the lobby ready, the host shown "end screen" and the guest host for now, and the host's BACK TO LOBBY makes them
+  host again; in a duel the host's Quit to menu ends the guest's game 22 frames later, the guest's side the winner, "Ada has
+  left the game." said once. **Found: the host's map offered "click to give it back" on the start the GUEST had chosen,
+  where a click does nothing; and the note under GAME SETTINGS still said "Colours follow the seats"** -- fixed, below.
+- **96, the desktop app**: `desktop/page-check.js` 22 of 22, and the relay built again as the desktop app's single
+  executable from today's relay, answering a room join (`desktop/relay/check.js` 7 of 7). **Not checkable from here: the
+  GitHub build page.** The repository now answers "Not Found" to anyone not signed in, so its Actions runs cannot be read
+  without your account -- look at Actions -> Desktop builds yourself. Nothing in the desktop app changed this session.
+- **97, a password**: `test/safety.js` in the gate (25 checks: asked for, refused when wrong, remembered, forgotten when
+  the server's changes).
+- **98, ratings**: `test/ratings.js` in the gate (37), and a new walk for the new way to leave: **a player who QUITS a rated
+  duel at 100 seconds loses it** -- rated for the one who stayed whether their game reports the end or they just go back to
+  the lobby (`.claude/review/tenth/walk-98-quit.js`, 5 of 5).
+- **99, research that stops**: its by-hand steps walked headlessly -- the Forge's "no power" explanation 21 game seconds
+  after its Pylon dies, said once; a frozen Academy reported after 10 seconds, on screen, in the console and in `bw_stall`.
+- **100, computers attack**: `aistyles` 132 of 132 on seeds 1, 5 and 11, every style's first wave and army unchanged by this
+  session.
+
+**The three words, fixed -- how to see them** (no build stamp change):
+1. **The menu names its key.** In a game press Escape: the menu's first line is **Resume (Escape)**. In Settings -> Controls ->
+   Interface put "Game menu" on F10; in a game F10 opens it and it says **Resume (F10)**, and Settings' last line **Back (F10)**.
+2. **A start's hint says what a click does.** Host a game in one tab, join in another and take start 3 there. In the host's
+   tab hover start 3: **"Start 3: Ben"**, and clicking it does nothing. Hover your own chosen start: "click to give it back".
+   With your start chosen and a computer on Auto, hover a free start: **"click to give it to Computer 0"** -- which is what
+   the click does. A start an Auto seat stands on says "click to take it".
+3. **The note under GAME SETTINGS** says "Click your colour square to choose a colour" (the host's adds "a computer's too").

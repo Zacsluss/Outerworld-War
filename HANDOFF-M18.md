@@ -1,4 +1,179 @@
-# HANDOFF — M18 (the ninth session: the whole work queue, A to G)
+# HANDOFF — M18 (the tenth session: the user's playtest of 94-100, every finding fixed)
+
+Written at the end of the tenth session (2026-09-13). Branch `m10-overnight`, which is `origin/main`. **Everything is
+committed and pushed; there are no open pull requests, no other branches and no extra worktrees.** Trust `git log -1` for
+HEAD, not a hash written here.
+
+> **READ `TODO-M18.md` FIRST.** Its first section, THE TENTH SESSION'S QUEUE, holds the user's findings in their words, what
+> was measured before each change, and what was done in three batches. `PLAYTEST-M18.md` items 101-108 are this session's
+> work by hand.
+
+---
+
+## The state
+
+- **The gate is 97 suites and ALL GREEN** (new: `forceattack` 12, `escmenu` 14, `joincode` 8, `aislots` 12, `colours` 18,
+  `leaver` 15, `harass` 12; `starts` grew to 62). About two minutes wall on this machine. New relay ports: 8900 `joincode`,
+  8904 `aislots`, 8908 `colours`, 8912-8913 `leaver` (CLAUDE.md lists every port).
+- **Build stamp `56406f9d777368ac`**, moved twice: items 1-3 and 5-6 (`js/sim.js`, `js/game.js`) made it `096229469e3da005`,
+  items 4 and 8 (`js/commands.js`, `js/ai.js`) made it this. Item 7's fixes touched no stamped file.
+- **By hand after the last AI and relay change:** `net_many` 51/51; `aistyles` 132/0 on seeds 1, 5 and 11 with every style row
+  identical to the first batch's; `queens` 25/0; `eightplayer` 19/19; `desktop/page-check.js` 22/22; the relay rebuilt as the
+  desktop executable from today's `test/serve.js`, `desktop/relay/check.js` 7/7.
+- **46 negative controls this session, every one cleanly red** (`.claude/review/tenth/controls-*.js`, run with
+  `.claude/review/aipace/arms.js`).
+- **The repository answers 404 to anyone not signed in** (the page and `api.github.com`, checked 2026-09-13). It was public;
+  it looks private now, or renamed -- the user has not said. `git push` still works through the stored credential. The
+  public API can no longer read the Desktop builds' Actions runs; nothing in `desktop/` changed, so no run was due. If it is
+  private: GitHub's free Actions minutes for private repositories are limited and macOS runners count several times over, so
+  a change under `desktop/` spends them.
+- **The user's playtest was recorded** (`.claude/review/playtest/2026-09-13_09-39-07/`, `report-2.txt`). Their six findings
+  and the item they locked in mid-session (8) are fixed; what the recording shows they did not reach was run without them
+  (item 7, PLAYTEST 108).
+- **The `broodwar` preview server** (8899) may still be running from the two-tab walk. Harmless, and on no gate port.
+
+## What changed this session, in a player's language
+
+1. **ATTACK on your own unit or building attacks it** (workers too), and the victim stands and takes it; a right-click on your
+   own side still never attacks. On the way: melee units now reach small buildings from every side -- they gave up a tile
+   short in 107 approaches of 384. (PLAYTEST 101)
+2. **Escape opens the game menu** -- after first cancelling a placement, a target, a build menu or the chat line. It never
+   cancels a queued unit or a building going up (their Cancel buttons have no key now). F10 is free; the menu key is a
+   binding, and the HUD, the help and the menu's own lines name whatever it is. (102, 108)
+3. **Join by code only joins a game that exists**: "No game here has the code FEWRG." and no empty lobby. (103)
+4. **A computer slot is always ready and always the host's**: a gear instead of a ready tick, REMOVE in words, "host sets"
+   for a guest; the host may change or remove it during the countdown, which calls the count off. (104)
+5. **Choose your colour in the lobby**, online and in the skirmish lobby: nobody shares one, Auto gives yours back, the host
+   picks a computer's; the game and its replay are painted with it. (105)
+6. **A player who leaves is out**: Quit to menu in a running online game is a surrender and a duel ends within a second; a
+   player whose connection drops has 60 seconds to rejoin by name, then is out; a team game goes on; the replay ends the
+   same way; a seat that quit cannot be taken back. (106)
+7. **A computer's workers fight an enemy worker that attacks its base**: up to three for each attacker, then back to mining;
+   a runner is chased only to the edge of the base; a scout that only looks, and soldiers, pull none. (107)
+8. **What the playtest did not reach was run without the user** -- all as written -- and it found three wrong words, fixed:
+   the menu's Resume and Back said "(Esc)" whatever the key; the lobby map offered "click to give it back" on a start another
+   player chose; the lobby note said colours follow the seats. And a quit out of a rated duel is rated for the one who stayed.
+   (108)
+
+**Deliberately different from what was asked, or from the games researched:**
+- Escape never cancels a queued unit or building (StarCraft II's does), so reaching for the menu cannot lose one.
+- A quit is out at once and a drop after 60 seconds, by itself -- no vote to drop a player as in StarCraft II. A leaver's
+  units stay on the map, stopped, as in Brood War.
+- A computer pulls up to three workers per attacking worker, where Brood War's AI pulls every worker near the one hit -- so the
+  rest keep mining (two, three and four were measured; all killed a lone attacker with no loss).
+- An Auto colour is the seat's own or the first free one, the rule the starts use, rather than a random one.
+
+**Not done, and why:**
+- **The three items the user is holding:** the AI rebalance (TODO-M18 7b -- the Zerg computer is still passive for ten
+  minutes), the terrain art path, and the research stall (never reproduced; the game reports one if it happens). The user
+  said they will take these on after the playtest items.
+- **The desktop app was not downloaded and installed** -- that needs the user's GitHub account for the artifacts and their
+  machine to run an unsigned installer.
+- **Their playtest of 101-108 has not happened.**
+
+## Traps found this session
+
+1. **A trailing `//` comment inserted into a one-line, many-statement line swallows the rest of it** (a SyntaxError in
+   `js/hud.js`). Put a new comment on its own line, or at the very end.
+2. **`Math.hypot` slipped into `js/sim.js`**; `dmath` caught it. Stamped files use `DMath`.
+3. **`node -e "require('./test/all.js')"` RUNS THE GATE.** Read a suite list with the Read tool.
+4. **Escaping inside spec files:** a single-quoted string in the TARGET file that holds `\'` is written `\\'` inside a
+   double-quoted spec string; a `\\'` typed where `\'` was meant broke `test/harass.js` once.
+5. **A replay applies commands INSIDE `G.tick`; live play applies them before it.** A command that calls `G.checkVictory` itself
+   ends the replay one frame later than the live game -- leave the victory to the tick's own check (`leave` does).
+6. **A guard written twice keeps its negative control green**: the rejoin search refused a quit seat both by a `quit` flag and
+   by `L.out`, so removing either passed. The flag went (it also outlived the game).
+7. **`Snapshot.restore` makes new unit objects**: a test holding a unit across a restore orders a dead copy about. Find units by
+   id after a restore.
+8. **The lobby re-renders on every message and keeps typed field values**: a script holding an input element from before types
+   into a detached copy (it looked like "join by code fails after a wrong code" -- it does not).
+9. **`.claude/review/aipace/arms.js` gives relay suites their own ports only if they are in its PORTED set**; `starts`,
+   `rematch`, `safety` and `ratings` were added. `run-after.js`'s default tag `after` overwrites the last run's logs -- pass one.
+10. **In the Browser pane, every tab shares one localStorage** -- one name, one browser key, so ratings see "two players share
+    one browser". Set `Net.name` in each tab before hosting or joining. A hidden pane still moves the lockstep, but the end
+    screen (drawn from `requestAnimationFrame`) does not open: read `G.over`.
+11. **The public GitHub API returns 404 for this repository now** (trap 1 of the ninth session still holds for any research
+    agent: no email address or personal detail in a request).
+
+## Diagnostics added this session
+
+`.claude/review/tenth/` (gitignored): `replay-targets.js` (what the user's recorded attack orders hit), `probe-pylon*.js`,
+`melee-probe.js` and `arms-melee.js` (the 384 approaches), `harass-probe.js`, `arms-harass.js` (pulls of 2, 3, 4),
+`harass-group-probe.js` (1, 3 and 5 attackers), `walk-92.js`, `walk-98-quit.js`, the controls (`controls-1-5.js`,
+`controls-2-3-6.js`, `controls-4-8.js`, `controls-4b.js`, `controls-4-8b.js`, `controls-words.js`) with their logs, every patch
+spec, and the gate logs (`gate-1.log` to `gate-5.log`). `.claude/review/aipace/tenth1-*.log` and `after-*.log` are the AI
+tables before and after items 4 and 8.
+
+---
+
+## Kickoff prompt for a fresh chat
+
+Open the new chat with the repository folder as its working directory, so `CLAUDE.md` loads by itself. Paste everything
+inside the fence. **Replace the HEAD placeholder with `git log -1 --format=%h` first** -- committing this file moves it.
+
+```
+Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
+Branch: m10-overnight, which IS origin/main (https://github.com/Zacsluss/Outerworld-War). HEAD: <run git log -1 --format=%h>.
+Working tree clean, nothing unpushed, no open PRs, no other branches, no extra worktrees. Keep it that way.
+The repository answered 404 to anonymous requests on 2026-09-13 (it was public; it looks private now). Treat every push as
+publishing anyway: no secrets, nothing bought, no personal data.
+Machine: Windows 11; PowerShell 5.1 and Git Bash; Node 24. There is no gh CLI and no Blender.
+
+READ IN THIS ORDER, then start:
+  1. CLAUDE.md          -- the working agreement. Every rule in it is non-negotiable.
+  2. TODO-M18.md        -- its first section, THE TENTH SESSION'S QUEUE: the user's playtest findings in their words, what
+                           was measured and what was done; the open items after it (7b, the terrain art, the research stall).
+  3. HANDOFF-M18.md     -- the state and the traps, newest session first.
+  4. PLAYTEST-M18.md items 101-108 -- this session's work by hand; RESEARCH-LOBBY.md as an item needs it.
+
+THE STATE: node test/all.js is 97 suites, about two minutes, ALL GREEN. Build stamp 56406f9d777368ac. Every finding of the
+user's playtest of 2026-09-13 is fixed (PLAYTEST 101-107: force-attack your own side, Escape opens the menu, join by code,
+computer slots, colours, a leaver is out, workers answer a harassing worker), and what they did not reach was run without
+them (108, which found and fixed three wrong words).
+
+THE SINGLE NEXT ACTION: start the playtest recorder (the `playtest` entry in .claude/launch.json, or
+node tools/playtest-listen.js; it serves the last commit at http://127.0.0.1:8870) and ask the user to playtest
+PLAYTEST-M18 items 101-108 -- two browsers or tabs for the online ones. When they say done, read it with
+node tools/playtest-report.js and fix what they found, in their words, as the tenth session did. After that the user takes
+on the three items they are holding, in the order they choose: the AI rebalance (TODO-M18 7b -- the Zerg computer first),
+the terrain art path, the research stall. Start none of those three without their word.
+
+FOR EVERY ITEM:
+  - Research how established games do it first and tell the user what you found, with sources. Tell every research
+    subagent never to put an email address or any personal detail in a request, URL or header.
+  - MEASURE BEFORE FIXING: build the probe first and make it assert its own setup.
+  - Every new behaviour gets a negative control that goes cleanly RED. .claude/review/aipace/arms.js runs controls on copies
+    of the tree, suites side by side (relay suites need to be in its PORTED set). A check no control turns red is weak.
+  - node test/all.js before every commit; touch nothing in js/ or test/ while it runs. A red relay suite with EADDRINUSE is a
+    stray server on a relay port (CLAUDE.md lists them): re-run that suite alone, then the gate.
+  - After any relay or net change run node test/net_many.js; after any AI or simulation change run
+    node test/aistyles.js --seed=1 / --seed=5 / --seed=11, node test/queens.js and node test/eightplayer.js
+    (node .claude/review/aipace/run-after.js <tag> runs all five), and record ALL the numbers.
+  - Lobby and online changes: walk them in two Browser pane tabs on the `broodwar` server (port 8899) as well --
+    set Net.name in each tab; they share one localStorage.
+  - Write a PLAYTEST-M18.md entry saying how to try it by hand; update TODO-M18.md and HANDOFF-M18.md; commit and push.
+
+HARD RULES:
+  - Never Math.random() in simulation code (G.rand()), and no native Math.sin/cos/atan2/hypot in stamped files (DMath).
+    Anything a replay or a rejoin must reproduce goes through the G.init options or the command log.
+  - A change to a stamped file (js/data, map, sim, game, combat, abilities, commands, ai, missions, build) moves the build
+    stamp: old saves and replays are refused. Say so in the PLAYTEST entry.
+  - The relay (test/serve.js) must stay dependency-free: the desktop app's relay is built from it as one executable.
+  - Detect line endings per file. Edit with tools/patch.js and write every spec and probe with the Write tool. Never sed -i.
+  - Never start test/balance.js or test/proxy.js without an explicit, double-checked instruction.
+  - Never type, store or handle the user's passwords, certificates or API keys: the user adds secrets themselves. Art or
+    assets someone bought stay out of this repository.
+  - The comments in js/ are load-bearing: they record why the obvious thing was not done. Do not delete reasoning.
+  - Nothing that costs money (no paid services, no paid signing).
+
+CLOSE THE SESSION the CLAUDE.md way: a numbered list of what changed FOR A PLAYER (including anything deliberately different
+from what was asked, and anything unfinished), how to playtest each item by hand (written into PLAYTEST-M18.md), a new
+kickoff prompt at the top of HANDOFF-M18.md, and everything committed and pushed.
+```
+
+---
+
+# The ninth session (the whole work queue, A to G), kept for the record
 
 Written at the end of the ninth session (2026-09-12/13), after queue items A to G. Branch `m10-overnight`, which is `origin/main`.
 **Everything is committed and pushed; there are no open pull requests, no other branches and no extra worktrees.**
@@ -173,7 +348,7 @@ report at 10), the patch specs and the gate logs. `.claude/review/aipace/` (item
 
 ---
 
-## Kickoff prompt for a fresh chat
+## The ninth session's kickoff prompt (SUPERSEDED by the one at the top of this file)
 
 Paste everything inside the fence into an empty chat. **Replace the HEAD placeholder with `git log -1 --format=%h`
 first** -- committing this file moves it.

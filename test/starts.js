@@ -153,6 +153,27 @@ console.log('--- 5. the map preview ---');
   ok(custom.s && J(custom.s.starts) === J([[12, 11.5], [82, 81.5]]) && custom.s.exps.length === 1 && /<svg class="lbPrev"/.test(custom.svg), 'a map made in the editor is drawn from where its bases were painted, its starts in the order they were made', J(custom.s));
 }
 
+console.log('--- 5b. the lobby\'s words ---');
+{
+  // Found walking PLAYTEST 94 in two browser tabs (tenth session, item 7): the host's map offered "click to give it back" on
+  // the guest's chosen start, where a click sends nothing; and the note still said colours follow the seats.
+  const p = page();
+  const room = (id, players) => p.R('Net.id = ' + id + '; return Net.roomHtml({ room: "ROOM1", state: "lobby", cap: 4, layout: "temple", speed: 6, rules: {}, specs: [], players: ' + J(players) + ' });');
+  const tips = h => { const out = []; h.replace(/data-start="(\d)"><title>([^<]*)<\/title>/g, (m, j, t) => { out[+j] = t; return m; }); return out; };
+  const note = h => ((h.match(/<div class="lbSetNote">([^<]*)<\/div>/) || [])[1] || '');
+  const seats = [{ id: 1, name: 'Hal', race: 'T', team: 1, host: true }, { id: 2, name: 'Gus', race: 'Z', team: 2, start: 2 }, { id: -3, name: 'Computer 0', race: 'P', team: 2, ai: true, difficulty: 'normal', style: 'standard', start: 3 }];
+  const asGus = room(2, seats), asHal = room(1, seats);
+  ok(J(tips(asGus)) === J(['Start 1: Hal (Auto) -- click to take it', 'Start 2: free -- click to take it', 'Start 3: Gus -- click to give it back', 'Start 4: Computer 0']),
+    'the guest\'s map: a start nobody chose is theirs to take (an Auto seat\'s too), their own choice to give back, the computer\'s nothing', J(tips(asGus)));
+  ok(J(tips(asHal)) === J(['Start 1: Hal (Auto) -- click to take it', 'Start 2: free -- click to take it', 'Start 3: Gus', 'Start 4: Computer 0 -- click to give it back']),
+    'the host\'s map: the guest\'s chosen start offers nothing, a computer\'s goes back to Auto', J(tips(asHal)));
+  const placed = room(1, [{ id: 1, name: 'Hal', race: 'T', team: 1, host: true, start: 0 }, { id: 2, name: 'Gus', race: 'Z', team: 2, start: 2 }, { id: -3, name: 'Computer 0', race: 'P', team: 2, ai: true, difficulty: 'normal', style: 'standard' }]);
+  ok(J(tips(placed)) === J(['Start 1: Hal -- click to give it back', 'Start 2: Computer 0 (Auto) -- click to give it to Computer 0', 'Start 3: Gus', 'Start 4: free -- click to give it to Computer 0']),
+    '...and once the host has chosen, a free start says it goes to the computer still on Auto', J(tips(placed)));
+  ok(/^Share the code[^]*Click your colour square to choose a colour \(a computer's too\)\./.test(note(asHal)) && /Click your colour square to choose a colour\. Click a start/.test(note(asGus)) && !/Colours follow the seats/.test(note(asHal) + note(asGus)),
+    'the note says a colour is chosen by clicking its square -- the host\'s a computer\'s too -- and no longer that colours follow the seats', J([note(asHal), note(asGus)]));
+}
+
 console.log('--- 6. the skirmish lobby, clicked ---');
 {
   const p = page();

@@ -57,7 +57,7 @@ this queue is done -- the user said so.
    army away, lets a lone worker kill its workers one by one. Probe first (a worker harassing a computer's mineral line,
    what the computer does), then pull a few workers onto the harasser and send them back to mining when it is dead or
    gone. Stamped (js/ai.js).
-7. **"anything i missed in testing, run auto tests without me"** -- from the recording, NOT exercised: 92 in a game
+7. **"anything i missed in testing, run auto tests without me"** (DONE, third batch below) -- from the recording, NOT exercised: 92 in a game
    (a rebound key training, Grid), 94 online (a guest taking a start), 95 (rematch, single player and online), 96 (the
    desktop app), 97 (password), 98 (ratings: the game had a computer, so it was unrated), 99 (stall watcher), 100 (the
    computer attacking; the games lasted 0:48 and 2:18). Run each automatically and report.
@@ -104,6 +104,21 @@ style row identical to the first batch's, queens 25/0, eightplayer 19/19; build 
   pulls only against three or more; the known failures are one defender at a time against a group (satirist.org, blog 931)
   and a chase a runner can lead round the map. `test/harass.js` (12), 8 controls, one of them a rejoin's snapshot taken
   mid-defence.
+
+**DONE, third batch -- item 7 (gate 97 of 97; no stamped file, so the stamp stays `56406f9d777368ac`; PLAYTEST-M18 item 108):**
+- **Run without the user:** 92 in a game (`.claude/review/tenth/walk-92.js`, 10 checks); 94 online, 95 online, 103-106 in two
+  real browser tabs on the relay (the `broodwar` preview server); 96 by `desktop/page-check.js` 22/22 and the relay rebuilt
+  as the desktop executable, `desktop/relay/check.js` 7/7; 97 by `test/safety.js`; 98 by `test/ratings.js` and a new walk, a
+  QUIT out of a rated duel is rated for the stayer, reported or by forfeit (`walk-98-quit.js`, 5/5); 99 by
+  `.claude/review/stall/handcheck.js` (21 s explanation, 10 s report); 100 by `aistyles` on seeds 1, 5 and 11 (unchanged).
+- **Found and fixed, all words:** (a) the menus' Resume and Back said "(Esc)" whatever the menu key was -- they name the bound
+  key (`test/escmenu.js` 4b); (b) the lobby map's hint offered "click to give it back" on a start ANOTHER player chose, where
+  the click sends nothing -- the hint now says what bindRoom does, naming the computer a host's click places
+  (`test/starts.js` 5b); (c) the lobby note still said "Colours follow the seats" -- it says a colour square is clicked.
+  5 controls, every one cleanly red.
+- **Could not be checked:** the Desktop builds' Actions runs. `https://github.com/Zacsluss/Outerworld-War` and its API answer
+  404 to an anonymous request (2026-09-13) -- the repository was public and now looks private (or renamed); `git push` still
+  works. Nothing under `desktop/` changed this session.
 
 **THE BUILD PATH** -- ordered so no file is opened twice across phases, the two stamp moves land together, and every
 relay change is followed by `node test/net_many.js`:

@@ -9,6 +9,7 @@
 //   2. ...but first cancels a placement, a target being chosen, a build menu, and the chat line
 //   3. it cancels no queued unit and no unfinished building; those Cancels have no key, and are clicked
 //   4. F10 does nothing by default; the key is a binding like any other, and the words on screen follow it
+//  4b. the menus' own Resume and Back name the bound key too
 'use strict';
 const path = require('path'), fs = require('fs'), vm = require('vm');
 const { ok, counts, mkDom, root } = require('./_harness');
@@ -98,6 +99,15 @@ console.log('--- 4. a binding like any other ---');
   ok(r.f10Default === null, 'F10 opens nothing by default any more', J(r));
   ok(r.escAfter === null && r.f10After === 'pause', 'the menu key is a binding: put it on F10 and F10 opens the menu while Escape does not', J(r));
   ok(r.helpF10 && r.helpEsc && r.noF10, 'the help overlay names the key as it is bound -- Escape by default, F10 when set -- and no longer says F10 on its own', J(r));
+}
+
+console.log('--- 4b. the menus\' own words ---');
+{
+  // Found walking PLAYTEST 92 automatically (tenth session, item 7): with the key on F10, Resume and Back still said Esc.
+  const r = R(`scene(); const words = () => { UI.menu = 'pause'; const p = UI.menuItems().items[0][0]; UI.menu = 'settings'; const s = UI.menuItems().items.slice(-1)[0][0]; UI.menu = null; return [p, s]; };
+    const dflt = words(); UI.setBinding('pause', 'F10'); const f10 = words(); UI.setBinding('pause', ''); const none = words(); UI.resetBindings(); return { dflt, f10, none };`);
+  ok(J(r.dflt) === J(['Resume (Escape)', 'Back (Escape)']) && J(r.f10) === J(['Resume (F10)', 'Back (F10)']) && J(r.none) === J(['Resume', 'Back']),
+    '...and so do the menus\' own words: Resume and Back name Escape, F10 when the key is put there, and no key when it has none', J(r));
 }
 
 const { pass, fail } = counts();
