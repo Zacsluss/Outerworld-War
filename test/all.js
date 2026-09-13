@@ -96,6 +96,7 @@ const TESTS = [
   { name: 'ratings', args: ['ratings.js'], what: 'ratings: OpenSkill against published vectors, agreed and forfeited results, what is unrated, the file, BALANCE TEAMS' },
   { name: 'safety', args: ['safety.js'], what: 'internet-play safety: a server password, sockets per address, message and frame caps, the address behind a tunnel' },
   { name: 'starts', args: ['starts.js'], what: 'a start chosen in the lobby: on the map, in the list, placed by the host, refused when taken, reset by a new map, and the game it starts' },
+  { name: 'stallwatch', args: ['stallwatch.js'], what: 'production or research frozen with no reason the rules give is reported once, in one line; a research paused for a rule reason is explained' },
   { name: 'shots', args: ['shots.js'], what: 'every weapon has its own shot, the races are disjoint, and every kind actually draws' },
   { name: 'wavetarget', args: ['wavetarget.js'], what: 'an attack wave scores a defended main above a bare expansion, and finishes the base it is in' },
   { name: 'fognight', args: ['fognight.js'], what: 'explored ground remembers, and night shortens sight on maps that have one' },

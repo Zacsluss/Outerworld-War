@@ -5,7 +5,7 @@ traps and the kickoff prompt; this file is the open list. **Its first section, T
 user's decision on every open item after the eighth session, in order. The sessions' lists follow it (what each did,
 with commits), then the older open items with their measurements, then what is closed. There are no worktrees.
 
-The gate is **87 suites** (`node test/all.js`, ~5 min); in the ninth session it is 2 red, `aistyles` and
+The gate is **90 suites** (`node test/all.js`, ~5 min); in the ninth session it is 2 red, `aistyles` and
 `queens`, both the AI pacing -- queue item G, which the user has now authorized (see below). It was last all green at `136b1b0`. Every rule in `CLAUDE.md`
 applies to every item here: measure before fixing, a negative control that goes cleanly RED, `tools/patch.js`
 for edits, and the gate green before the commit.
@@ -142,7 +142,13 @@ The plan as it was written:
   frame cap for everything except snapshots, and the tunnel advice written where a host will read it. Nothing that
   needs accounts or certificates.
 
-**F. Research sometimes gets stuck (item 1, "fix").**
+**F. Research sometimes gets stuck (item 1, "fix").** **DONE AS FAR AS IT CAN BE (ninth session)** -- still not reproduced on
+today's code (75 more minutes of six-player hard-AI games: 9 pauses over ten seconds, all rules; the scenes unchanged; the
+user's recorded game replayed: 3 supply blocks), so the game now watches instead of guessing. A research kept waiting 20 s
+for a rule reason is explained once in words (the probe's one pause that never ended was a Protoss upgrade that lost its
+Pylon); anything that stops 10 s for no rule reason is reported once, in one line, on screen, in the console and in
+`bw_stall` (`UI.watchStalls`, read-only, never in a replay, no stamp move). `tools/stall-replay.js` re-runs a recorded game.
+`PLAYTEST-M18.md` item 99, `test/stallwatch.js` (17), 15 negative controls. The plan as it was written:
 - Status and everything ruled out: "4. Some tech gets stuck during research" below. Not reproduced in 75 minutes of
   six-player hard-AI games. The probes are `tools/stall-probe.js` and `tools/stall-scenes.js`.
 - Re-run both on today's code (units now keep bodies apart and the economy is slower -- the conditions changed).
@@ -184,6 +190,8 @@ repo goes private).
   first run (commit 3eeeab6) succeeded on all three machines.
 - **Queue item E, basic internet-play safety: DONE** (above).
 - **Queue item C, ratings and balanced teams: DONE** (above).
+- **Queue item F, research that gets stuck: still not reproduced, now watched and explained in the game** (above, and item 4
+  below). Two guards the negative controls showed did nothing (a pause check, a per-game reset) were removed rather than kept.
 
 ## The eighth session's list (the user's third message, 2026-09-12)
 
@@ -258,7 +266,16 @@ command log carries, not a silent teleport or an unbounded walk. **Anything that
 is the suite that catches that class of mistake and `REVIEW-M17.md` entry 6 is the last time it happened.
 Decide and record whether this applies to every targeted ability or only the tumour.
 
-### 4. Some tech gets stuck during research — STILL NOT REPRODUCED, and here is what is ruled out
+### 4. Some tech gets stuck during research — STILL NOT REPRODUCED; the game now watches for it (ninth session)
+**Ninth session, on today's code** (bodies apart, the slower economy): `node tools/stall-probe.js --minutes=25
+--seeds=3,7,11` -- seed 3: 3 pauses, all supply; seed 7: 2, one an add-on building and one a Protoss upgrade UNPOWERED that
+never resumed before the game ended; seed 11: 4, three supply and one Maelstrom. 9 in all, none unexplained.
+`tools/stall-scenes.js`: the same eleven verdicts (scene 6, the owner change, still the only STUCK, still with no door).
+The user's recorded 15-minute game re-simulated from its replay (`tools/stall-replay.js`; the replay was from build
+71053b30, so it may drift, but all 1046 commands applied): 3 pauses, all the player's Nexus or Gateway on supply. So
+`UI.watchStalls` (`js/ui.js`) now explains a research paused 20 s for a rule reason and reports, in one line, anything
+stopped 10 s for none -- `PLAYTEST-M18.md` item 99. **The next report should come with that `[stall]` line.**
+
 **The probes are written and committed** (`tools/stall-probe.js`, `tools/stall-scenes.js`)
 and 75 minutes of six-player hard-AI games across three seeds did not produce it. 25 stalls over ten
 seconds, every one of them the rules working (supply, an add-on still building, a Protoss blackout) except

@@ -1,6 +1,6 @@
 # HANDOFF — M18 (the ninth session: the user's answers, the playtest recorder, start positions)
 
-Written during the ninth session (2026-09-12), after queue items A to E. Branch `m10-overnight`, which is `origin/main`.
+Written during the ninth session (2026-09-12), after queue items A to F. Branch `m10-overnight`, which is `origin/main`.
 **Everything is committed and pushed; there are no open pull requests, no other branches and no extra worktrees.**
 Trust `git log -1` for HEAD, not a hash written here.
 
@@ -12,7 +12,7 @@ Trust `git log -1` for HEAD, not a hash written here.
 
 ## The state
 
-- **The gate is 89 suites (new: `starts`, 58 checks; `rematch`, 39; `safety`, 25; `ratings`, 37) and 2 are red: `aistyles` and `queens`**,
+- **The gate is 90 suites (new: `starts`, 58 checks; `rematch`, 39; `safety`, 25; `ratings`, 37; `stallwatch`, 17) and 2 are red: `aistyles` and `queens`**,
   and every failing line is byte-identical to the eighth session's gate log -- no item moved an AI measurement.
 - **The desktop builds run in GitHub Actions** (`.github/workflows/desktop.yml`); the first run, on 3eeeab6, succeeded on
   Windows, macOS Apple silicon and macOS Intel. Check a run with the public API
@@ -64,7 +64,14 @@ Trust `git log -1` for HEAD, not a hash written here.
 **Saves and replays from before this session are refused** (the build stamp moved with item A; item B changed no stamped
 file).
 
-**Not done yet:** queue items F and G.
+9. **Research that stops now says why** (PLAYTEST 99): a research or upgrade kept waiting 20 seconds -- most likely a
+   Forge whose Pylon died out of sight -- puts "Forge has stopped researching Ground Weapons: it has no power" in the
+   message area, once. And anything that stops for ten seconds for no reason the rules know says so on screen and writes
+   one `[stall]` line to the console and to `bw_stall`, to send in. **Deliberately not a fix:** the stuck research was
+   still not reproduced on today's code (75 minutes of computer games, the eleven scenes, and the user's own game
+   replayed), so the game watches rather than a guess being changed.
+
+**Not done yet:** queue item G.
 
 ## Traps found this session
 
@@ -110,12 +117,25 @@ file).
     it free of anything else in the file, and keep the markers.
 20. **A ratings file exists only once a rated game is recorded** (default `~/.broodwar-remake/ratings.json`); suites set
     `BW_RATINGS` to a temporary file. Nothing but test/ratings.js sends an identity key to a real relay.
+21. **A guard no control can tell from its absence is dead weight**: the stall watcher's pause check (a paused game's
+    `G.frame` does not move, so no timer grows) and its per-game reset (a new game's queue items are new objects) were
+    both removed when their controls stayed green, with a comment in `js/ui.js` saying why they are not there.
+22. **A "new game starts afresh" check must make the old entry match on everything but the thing under test**: the first
+    version let game two's research move for 48 frames, so progress alone replaced the old entry and deleting the
+    `w.item !== it` identity test changed nothing. It now reports game one's stall, then freezes the same research on the
+    same Academy id at the same progress in game two.
+23. **A lifted building never has a queue** (`G.liftBuilding` refuses): a by-hand step that lifts one to show "no
+    report" proves nothing. The stall watcher's lifted excuse exists for queue items pushed by hand in tests and scenes.
 
 ## Diagnostics added this session
 
 `tools/playtest-listen.js`, `tools/playtest-client.js`, `tools/playtest-report.js` (tracked). `.claude/review/starts/` --
 `probe.js` (the placement baseline, run before any change), the patch specs, `controls.js` (30), `gate-1.log`, the
 `aistyles` / `eightplayer` / `net_many` logs. `.claude/review/playtest/` -- the user's recorded playtest and `report-1.txt`.
+`tools/stall-replay.js` (tracked): a recorded game re-simulated from its replay, every pause over ten seconds named with its
+reason. `.claude/review/stall/` -- `probe-25min.log` and `scenes.log` (today's code), `replay-probe.log`, `controls.js` (15),
+`handcheck.js` (PLAYTEST 99's by-hand steps walked headlessly: the explanation 21 game seconds after the Pylon dies, the
+report at 10), the patch specs and the gate logs.
 
 ---
 
@@ -138,22 +158,24 @@ READ IN THIS ORDER, then start:
   3. HANDOFF-M18.md     -- the state and the traps, newest session first.
   4. PLAYTEST-M18.md (items 64 on) and RESEARCH-LOBBY.md -- as each item needs them.
 
-THE STATE: node test/all.js is 89 suites, ~5 minutes, and 2 are RED: aistyles and queens (the computer AI's pacing under
+THE STATE: node test/all.js is 90 suites, ~5 minutes, and 2 are RED: aistyles and queens (the computer AI's pacing under
 the slower economy). Build stamp 506fb0d48d1e1d36. Queue items A (start positions), B (rematch), C (ratings and balanced
-teams), D (unsigned desktop builds in GitHub Actions, first run green) and E (relay safety) are DONE.
+teams), D (unsigned desktop builds in GitHub Actions, first run green), E (relay safety) and F (research that gets stuck:
+still not reproduced, so the game now explains a rule pause and reports an unexplained one in one line) are DONE.
 
 THE USER'S ANSWERS (do not ask again): G is AUTHORIZED ("you can fix now") -- narrowly, with test/balance.js and
 test/proxy.js untouched; D is UNSIGNED BUILDS ONLY (no Apple Developer Program, no paid Windows signing); their playtest
 of 88-93 is done and written up in TODO-M18 ("The ninth session"). The user wants EVERY queue item finished: do not
 stop between items, and resume anything a message interrupts.
 
-THE SINGLE NEXT ACTION: queue item F -- research that sometimes gets stuck. Re-run tools/stall-probe.js and
-tools/stall-scenes.js on today's code first; if it still does not reproduce, add the in-game detector TODO-M18 item F
-describes (a production slot that stops advancing for no rule-backed reason writes one line the player can copy). Then G.
+THE SINGLE NEXT ACTION: queue item G -- make aistyles and queens honestly green. Measure first: run node test/aistyles.js
+and node test/queens.js alone, and node tools/attack-clock.js, and write down every failing line and number. Then change
+js/ai.js NARROWLY (the threshold that commits a wave, the build-order step timings, the Queen's Nest and Queen timing),
+absorbing that bodies are kept apart (fewer melee attackers fit round one target). Never loosen a suite's expectation
+to match an AI that never attacks. The claim order in AI.budget() stays as it is.
 
-THE QUEUE, in order: F research that gets stuck (reproduce first;
-the playtest recorder's stall detector helps) -> G the two red suites (authorized). DEFERRED until the user says so:
-the AI rebalance (TODO-M18 7b) and the terrain art path.
+THE QUEUE: G the two red suites (authorized) is the last item. DEFERRED until the user says so: the AI rebalance
+(TODO-M18 7b) and the terrain art path.
 
 FOR EVERY ITEM:
   - Research how established games do it first and tell the user what you found, with sources. A research subagent

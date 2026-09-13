@@ -274,6 +274,7 @@ const UI = {
     // calls the game over when every player still in it says the same frame, and only then can one player's BACK TO LOBBY
     // take the room with them. A spectator's word counts for nothing, so a spectator sends none.
     this.reportOver();
+    this.watchStalls();
     if (this.menu) this.drawMenu();
     this.frames++; if (t - this.fpsT > 1000) { this.fps = this.frames; this.frames = 0; this.fpsT = t; }
   },
@@ -1562,6 +1563,79 @@ const UI = {
     if (this.fromLobby === 'net' && typeof Net !== 'undefined' && Net.connected) return (this.mode === 'replay' ? [] : [['Rematch', () => Net.backToLobby(true)]]).concat([['Back to lobby', () => Net.backToLobby(false)]]);
     if (this.fromLobby === 'skirmish' && this.Skirmish && this.Skirmish.L) return [['Rematch', () => this.Skirmish.rematch()], ['Back to lobby', () => this.Skirmish.backToLobby()]];
     return [];
+  },
+  // A PRODUCTION SLOT THAT STOPS FOR NO REASON (ninth session, queue item F; the user's report, "some tech gets stuck during
+  // research"). Never reproduced: not in the eighth session's 75 minutes of six-player hard-AI games, not in the ninth's 75
+  // more on today's code (tools/stall-probe.js), not in the eleven directed scenes (tools/stall-scenes.js), and not in the
+  // user's own recorded game replayed frame by frame (tools/stall-replay.js) -- every pause in all of them was
+  // a rule working. So rather than guess, the game watches: once a game second it looks at the head of each of your
+  // production queues, and a slot that has not moved for STALL_FRAMES of game time with none of the reasons the rules give
+  // for waiting (stallExcuse) is reported ONCE, in one line -- on screen, in the browser console, and in localStorage as
+  // bw_stall -- with what the building, the item and the player looked like, so the next time it happens the line names
+  // the cause (PLAYTEST-M18 item 68 asked players for exactly this by hand). It only reads the simulation, and never in a
+  // replay, so it cannot change a game, a replay or a lockstep hash.
+  //
+  // AND A PAUSE THE RULES DO EXPLAIN is said out loud when it is a RESEARCH that has waited EXPLAIN_FRAMES: the ninth session's
+  // probe on today's code found a Protoss upgrade whose building lost its power and never got it back before the game ended --
+  // the exact shape of "research gets stuck" -- and the only sign of it was the word UNPOWERED on a building possibly off
+  // the screen. (A unit waiting on supply has its own alert already, so it is left to that.)
+  STALL_FRAMES: 240, EXPLAIN_FRAMES: 480,
+  STALL_WHY: { unpowered: 'it has no power: a Pylon has to reach it', lifted: 'it is lifted off the ground', addon: 'its add-on is still being built', disabled: 'it is disabled (stasis, lockdown or maelstrom)', morph: 'it is changing form', inside: 'it is inside a transport' },
+  watchStalls() {
+    // (No pause guard and no per-game reset: every clock here is G.frame, which a paused game does not move, and a new game's
+    // queue items are new objects that no old entry can match -- negative controls found both guards changed nothing.)
+    if (!this.running || this.mode !== 'play' || typeof G === 'undefined' || !G.players || !G.players.length) return false;
+    if (this._stallFrame != null && G.frame >= this._stallFrame && G.frame - this._stallFrame < TPS) return false;
+    this._stallFrame = G.frame;
+    if (!this._stalls) this._stalls = new Map();
+    const seen = this._stalls, live = new Set(); let told = false;
+    for (const u of G.units) {
+      if (!u.alive || u.owner !== G.human || !u.prod || !u.prod.length) continue;
+      const it = u.prod[0], key = u.id + '|' + it.kind + '|' + it.id + '|' + (it.level || 0); live.add(key);
+      const w = seen.get(key), why = this.stallExcuse(u, it);
+      if (!w || w.item !== it || w.p !== it.progress) { seen.set(key, { item: it, p: it.progress, f: G.frame, told: !!(w && w.item === it && w.told), why: '', whyF: G.frame, explained: false }); continue; }
+      if (why) {   // waiting for a reason the rules give: not a stall, but a research kept waiting long enough is explained once
+        if (w.why !== why) { w.why = why; w.whyF = G.frame; w.explained = false; }
+        if (!w.explained && it.kind !== 'unit' && why !== 'supply' && G.frame - w.whyF >= this.EXPLAIN_FRAMES) { w.explained = true; this.explainPause(u, it, why); }
+        w.f = G.frame; continue;
+      }
+      w.why = '';
+      if (!w.told && G.frame - w.f >= this.STALL_FRAMES) { w.told = true; told = true; this.reportStall(u, it, G.frame - w.f); }
+    }
+    for (const k of [...seen.keys()]) if (!live.has(k)) seen.delete(k);
+    return told;
+  },
+  // The rules' reasons for a slot to wait, as the probe knows them: a unit that has not started and has no supply room, an
+  // add-on still being built, a lifted, unpowered or morphing building, stasis, lockdown or maelstrom, a unit in a transport.
+  stallExcuse(u, it) {
+    if (u.unpowered) return 'unpowered';
+    if (u.lifted) return 'lifted';
+    if (u.morphT) return 'morph';
+    if (u.inside) return 'inside';
+    if (u.addon && !u.addon.done) return 'addon';
+    if (u.fx && (u.fx.stasis || u.fx.lockdown || u.fx.maelstrom)) return 'disabled';
+    if (it.kind === 'unit' && !it.started && !it.reserved && typeof DATA !== 'undefined' && DATA.units[it.id] && G.supplyBlocked(u.player, DATA.units[it.id])) return 'supply';
+    return '';
+  },
+  explainPause(u, it, why) {
+    const p = G.players[u.owner], def = (typeof DATA !== 'undefined' && (DATA.techs[it.id] || DATA.upgrades[it.id])) || {};
+    const text = (u.def.name || u.def.id) + ' has stopped researching ' + (def.name || it.id) + ': ' + (this.STALL_WHY[why] || why) + '.';
+    if (p && p.msg) p.msg(text, 'info');
+    return text;
+  },
+  reportStall(u, it, frames) {
+    const p = G.players[u.owner], clock = f => Math.floor(f / TPS / 60) + ':' + String(Math.floor(f / TPS) % 60).padStart(2, '0');
+    const def = (typeof DATA !== 'undefined' && (DATA.techs[it.id] || DATA.upgrades[it.id] || DATA.units[it.id] || DATA.buildings[it.id])) || {};
+    const line = '[stall] build ' + (typeof BUILD !== 'undefined' && BUILD.hash ? BUILD.hash() : '?') + ' at ' + clock(G.frame) + ' (frame ' + G.frame + '): '
+      + u.def.id + ' #' + u.id + ' ' + it.kind + ':' + it.id + (it.level ? ' L' + it.level : '') + ' stuck at ' + Math.round(it.progress) + '/' + it.total + ' for ' + Math.round(frames / TPS) + ' s'
+      + '; done ' + (u.done ? 1 : 0) + ', lifted ' + (u.lifted ? 1 : 0) + ', unpowered ' + (u.unpowered ? 1 : 0) + ', morphT ' + (u.morphT | 0) + ', addon ' + (u.addon ? u.addon.def.id + (u.addon.done ? '' : ' building') : '-')
+      + ', started ' + (it.started ? 1 : 0) + ', reserved ' + (it.reserved ? 1 : 0)
+      + '; researching [' + (p.researching ? [...p.researching].join(', ') : '') + ']; queue [' + u.prod.map(x => x.kind + ':' + x.id + ':' + Math.round(x.progress)).join(', ') + ']; supply ' + Math.ceil(p.supUsed) + '/' + p.supMax;
+    this.stallReport = line;
+    try { console.warn(line); } catch (e) { }
+    try { localStorage.setItem('bw_stall', line); } catch (e) { }
+    if (p.msg) p.msg((u.def.name || u.def.id) + ' has not moved ' + (def.name || it.id) + ' on for ' + Math.round(frames / TPS) + ' seconds, and the game cannot say why. Please send the line it wrote to the browser console (F12).', 'error');
+    return line;
   },
   reportOver() { if (G.over && this.net && !this.overSent && typeof Net !== 'undefined' && Net.active && !Net.spectating) { this.overSent = true; Net.send({ t: 'over', f: G.frame, team: G.winTeam }); return true; } return false; },
   // Restart keeps where the game came from, so a restarted skirmish still offers its lobby.

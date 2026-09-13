@@ -194,17 +194,17 @@ ever see this as "the Zerg AI has slightly too much creep"; it is pinned in `tes
 ## 68. Research that gets stuck — NOT reproduced, and here is everything that was ruled out
 
 *(TODO-M18 item 4. This entry is the record of a hunt, not a fix. One real fault was found on the way and
-is item 69.)*
+is item 69. **Ninth session: the game now watches for this itself and says what it finds -- item 99.**)*
 
 **What was asked.** "A research or upgrade begins and never finishes." Never reproduced, so the brief was
 to write a probe first and let it name the case rather than guess at one.
 
-**What was built.** Two probes, both kept in `.claude/review/` and both re-runnable:
+**What was built.** Two probes, both kept in `tools/` and both re-runnable:
 
-- `node .claude/review/stall-probe.js --minutes=25 --seeds=3,7,11` — plays three 25-minute
+- `node tools/stall-probe.js --minutes=25 --seeds=3,7,11` — plays three 25-minute
   six-player games with hard AIs of all three races and reports every production slot whose progress
   stops advancing for more than ten seconds, with the state of the building at that moment.
-- `node .claude/review/stall-scenes.js` — eleven directed scenes that each *create* a candidate cause on
+- `node tools/stall-scenes.js` — eleven directed scenes that each *create* a candidate cause on
   a building that is mid-research and ask whether the research comes back. Every scene asserts its own
   setup, because the first version had four scenes that silently did nothing and reported "ok".
 
@@ -949,3 +949,45 @@ window. Run `PLAY.bat`; both open the page, press Multiplayer; one hosts, the ot
   split so the totals are as close as they go, and the log says the difference. With equal players, pressing it again can
   deal a different split. With a computer in the lobby it refuses and says why.
 - **Single player and games against computers are never rated**, and the skirmish lobby shows no ratings.
+
+---
+
+## 99. Research that stops says why -- and a real freeze writes the one line to send
+
+*(Ninth session, queue item F: "research sometimes gets stuck". Items 68 and TODO-M18 item 4 are the hunt before.)*
+
+**What was found first.** It still does not happen by itself. On today's code (bodies kept apart, the slower economy) three
+25-minute six-player games with hard computers of all three races had **9 pauses over ten seconds, every one with a reason
+the rules give**: 6 waiting on supply, 1 on an add-on still being built, 1 under Maelstrom -- and 1 a Protoss upgrade whose
+building lost its Pylon and never got power back before the game ended. The eleven scenes of item 68 give the same
+verdicts as before. Your own recorded game, re-simulated from its replay: 3 pauses, all a Nexus or Gateway waiting on
+supply. So the likeliest "stuck research" is a Forge or Cybernetics Core whose Pylon died out of sight: the bar stops and
+nothing said so.
+
+**What changed.**
+- **A research or upgrade kept waiting 20 seconds for a reason the rules give now says so, once**, in the message area:
+  "Forge has stopped researching Ground Weapons: it has no power: a Pylon has to reach it." The other reasons it can give:
+  lifted off the ground, its add-on still being built, disabled (stasis, lockdown or maelstrom), changing form, inside a
+  transport. A unit waiting on supply is left to the supply alert you already get.
+- **Anything in a production queue that stops for ten seconds with NO reason the rules give is reported, once**: on screen,
+  "Academy has not moved Stim Packs on for 10 seconds, and the game cannot say why. Please send the line it wrote to the
+  browser console (F12)." The line starts `[stall] build ...` and names the time, the building, the item, how far it got and
+  everything the rules look at. It is also kept in the browser as `bw_stall`, so it survives closing the tab.
+- **The game itself is unchanged**: the watcher only reads, only watches your own buildings, never runs in a replay, and
+  cannot change a game's result or an online game's sync. The build stamp did not move.
+
+**How to see it by hand** (Single Player, any map; cheats are typed into chat with **Enter**).
+1. **The explanation.** Play Protoss, type `show me the money`. Build a Pylon and a Forge in its field, and start Ground
+   Weapons. Select the Pylon, open the browser console (**F12**) and run `G.kill(UI.selection[0])`. The Forge goes dark and
+   the bar stops. **About 20 game seconds later** the message above appears -- once, however long you wait. Build a new
+   Pylon beside the Forge: when it finishes, the bar moves again.
+2. **The report of a real freeze** (forced by hand, because a real one has never been caught). Play Terran, `show me the
+   money`, build an Academy and start Stim Packs. Select the Academy, F12, run `UI.selection[0].tickProduction = () => {}`.
+   **About ten game seconds later**: the on-screen message, a yellow `[stall] build ...` line in the console, and
+   `localStorage.bw_stall` in the console returns the same line. Nothing more is said however long it stays frozen. (Reload
+   the page to undo the freeze.)
+3. **Honest waiting stays quiet.** Fill your supply and queue a Marine: the supply alert, and nothing from the watcher.
+   Start a Machine Shop on a Factory and queue a Vulture while the shop builds: the Vulture waits, and no report.
+4. **If research ever sticks for real**, send the `[stall]` line (from the console, or `localStorage.bw_stall` in the same
+   browser later). If you played through the playtest recorder, `node tools/stall-replay.js` re-runs your saved replay and
+   lists every pause over ten seconds with its reason.
