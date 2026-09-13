@@ -541,7 +541,49 @@ class AI {
     if (G.frame - this.lastThink < this.thinkEvery) { if ((G.frame - this.p.id) % 12 === 0) this.micro(); return; }
     this.lastThink = G.frame;
     this.budget();
-    try { this.phase = 'economy'; this.economy(); this.phase = 'supply'; this.supply(); this.phase = 'script'; this.script(); this.phase = 'macro'; this.macro(); this.phase = 'production'; this.production(); this.phase = 'research'; this.research(); this.phase = 'army'; this.army(); this.scout(); this.drops(); this.micro(); this.phase = null; } catch (e) { G.tickErrors++; console.error('AI', e); }
+    try { this.phase = 'economy'; this.economy(); this.defendWorkers(); this.phase = 'supply'; this.supply(); this.phase = 'script'; this.script(); this.phase = 'macro'; this.macro(); this.phase = 'production'; this.production(); this.phase = 'research'; this.research(); this.phase = 'army'; this.army(); this.scout(); this.drops(); this.micro(); this.phase = null; } catch (e) { G.tickErrors++; console.error('AI', e); }
+  }
+  // WORKERS ANSWER A WORKER (tenth session, item 8; the user: "if i send a probe/drone/scv to an enemy base and start attacking
+  // it, the AI enemy should know to swarm the probe/drone/scv with their probes/drones/scvs to repel/destroy the attacking
+  // probe/drone/scv"). Measured before (.claude/review/tenth/harass-probe.js): one enemy worker attacking a computer's mineral
+  // line at one minute was still alive after 45 seconds in 9 match-ups of 9 and killed 18 workers between them -- army()
+  // answers with an army only, and G.onHit's retaliation leaves workers out. So an enemy WORKER that has hit something of this
+  // player's in the last three seconds, inside HARASS_R of a hall and in sight, is attacked by HARASS_PULL of the nearest
+  // workers mining within ten tiles of it; each goes back to its minerals once the harasser is dead, out of sight or past
+  // HARASS_R + 4 tiles, so a worker that runs is not chased across the map and a scout that only looks is left alone.
+  // Measured after, pulling 2, 3 and 4: every harasser died in 3.4 to 6.3 seconds and no computer lost a worker in any of
+  // the three; 3 is the middle. RESEARCHED: Brood War's AI pulls every worker within 3 tiles of the unit hit (6 for a
+  // building), uncapped, on a hit from a worker (teippi's ai_hit_reactions.cpp, reverse-engineered); StarCraft II's scripts
+  // defend with workers at every difficulty (c_diffDefendWithPeons); the bots' known failures are one defender at a time
+  // against attackers who come together (satirist.org, blog 931) and a chase a runner can lead round the map. So the pull
+  // is PER harasser -- three attacking together met 3 to 7 workers and all died in 9 match-ups of 9, the computer losing 1
+  // to 3 of its 5 to 7 (.claude/review/tenth/harass-group-probe.js) -- and the chase ends at the edge of the base. The
+  // worker is marked on the unit (aiDefend), which a snapshot carries by id like any unit reference (test/harass.js, 7).
+  defendWorkers() {
+    const p = this.p, halls = this.halls().filter(h => h.done); if (!halls.length) return;
+    const HARASS_R = 12 * TILE, HARASS_PULL = 3;
+    const inBase = (x, y, r) => halls.some(h => distPt(x, y, h.x, h.y) < r);
+    const harassers = [];
+    for (const u of G.units) {
+      if (!u.alive || u.owner !== p.id || !u.lastHitBy || G.frame - u.lastHit >= 72) continue;
+      const h = u.lastHitBy; if (!h.alive || !h.def.worker || h.owner === p.id || G.allied(h.owner, p.id) || G.players[h.owner].neutral) continue;
+      if (!inBase(h.x, h.y, HARASS_R) || !G.canSee(p.id, h) || harassers.includes(h)) continue;
+      harassers.push(h);
+    }
+    const workers = this.mine(u => u.def.worker && !u.def.mule && !u.inside);
+    for (const w of workers) {
+      const t = w.aiDefend; if (!t) continue;
+      if (!t.alive || !G.canSee(p.id, t) || !inBase(t.x, t.y, HARASS_R + 4 * TILE)) {
+        w.aiDefend = null;
+        if (w.order.type === 'attack' || w.order.type === 'idle') { const home = halls.reduce((a, hh) => !a || distPt(w.x, w.y, hh.x, hh.y) < distPt(w.x, w.y, a.x, a.y) ? hh : a, null); const m = G.findNearestResource(home, 'mineral'); if (m) w.applyOrder({ type: 'gather', target: m, phase: 'goto' }); }   // home's minerals, not the patch nearest the end of the chase
+      }
+    }
+    for (const h of harassers) {
+      const on = workers.filter(w => w.aiDefend === h).length; if (on >= HARASS_PULL) continue;
+      const free = workers.filter(w => !w.aiDefend && (w.order.type === 'gather' || w.order.type === 'return' || w.order.type === 'idle') && w.weaponFor(h) && distPt(w.x, w.y, h.x, h.y) < 10 * TILE)
+        .sort((a, b) => distPt(a.x, a.y, h.x, h.y) - distPt(b.x, b.y, h.x, h.y) || a.id - b.id);
+      for (const w of free.slice(0, HARASS_PULL - on)) { w.aiDefend = h; w.applyOrder({ type: 'attack', target: h }); }
+    }
   }
   // ---------------- economy ----------------
   economy() {

@@ -1031,7 +1031,7 @@ beats a Zerg at about thirteen minutes. Fixing Zerg is the AI rebalance (TODO-M1
 
 # The tenth session -- the user's playtest of 94-100
 
-**The build stamp moved** (to `096229469e3da005` with items 101-105): saves and replays from before are refused.
+**The build stamp moved** (to `096229469e3da005` with items 101-105, and to `56406f9d777368ac` with 106-107): saves and replays from before are refused.
 
 ## 101. Attack your own units and buildings on purpose -- and right-click still never does
 
@@ -1110,3 +1110,52 @@ as its host (which is what the playtest made). Host a game in another tab, copy 
    choose its colour.
 4. **Auto** gives your colour back (your seat's own, or the first free one). A lobby where nobody chooses looks and plays
    exactly as before; the Skirmish lobby remembers your choice.
+
+---
+
+## 106. A player who leaves is out -- and a duel ends
+
+*(Tenth session, item 4: "when the one human opponent leaves, it does NOT trigger an end game - it should". StarCraft II's
+leaving is a surrender and a disconnect waits for the others; Brood War marks a leaver defeated and its victory check fires.)*
+
+**How to see it by hand** (Multiplayer; two tabs are enough, one hosting, the other joined and ready; START GAME):
+1. **Quit is leaving.** In the host's tab press **Escape -> Quit to menu**. In the other tab: "<host> has left the game."
+   and, within a second, the victory screen. Before, it said "...dropped. Their units stop at 0:51; the game continues."
+   and the game never ended.
+2. **A drop gets a minute.** Start again and this time close the host's TAB (not Quit). The other tab reads "<host>
+   dropped. Their units stop at <time>; they have 60 seconds to rejoin." Open the page again, Multiplayer, join that game
+   with the same name inside the minute: you are back in and play on. Or wait the minute: "<host> has left the game." and
+   the victory screen.
+3. **A team game goes on.** Host with a computer on your team against the other tab, and quit: the other tab reads that
+   you left and keeps playing against your computer.
+4. **The replay agrees.** From the victory screen press Save replay, then watch it: it ends at the same moment with the
+   same winner.
+5. **A quit is final.** After quitting, join the same game again with the same name: it is refused.
+
+**Deliberately different:** there is no vote to drop a player as in StarCraft II -- a player who drops has 60 seconds, then
+is out by themselves. The leaver's units stay on the map where they stood, stopped, as in Brood War. Quit to menu from a
+game that is already over changes nothing. **The build stamp moved:** saves and replays from before are refused.
+
+---
+
+## 107. A computer's workers fight a worker that attacks its base
+
+*(Tenth session, item 8, locked in by the user until fixed. Brood War's own AI pulls every worker near the one that was hit;
+StarCraft II's scripts defend with workers at every difficulty; bots that answer one attacker at a time lose to a group.)*
+
+**How to see it by hand** (Single Player -> Skirmish against one computer, any races; type `black sheep wall` into chat with
+Enter to see its base):
+1. **One worker attacks.** Send one of your workers into the computer's mineral line, press **A** and click one of its
+   workers. **Two or three of its workers leave the minerals and attack yours**; yours dies in about five seconds and
+   kills nobody. Before, it lived for 45 seconds and killed about two.
+2. **They go back to work.** A few seconds later every worker that chased is mining its own base again.
+3. **Three at once meet more.** Send three workers and attack together: up to three of theirs come for each of yours, and
+   all three of yours die (the computer may lose one to three workers).
+4. **Hit and run.** Hit one of its workers, then run out of its base: they follow you only to the edge of their base and
+   turn back to mine -- they cannot be led around the map.
+5. **Only looking is left alone.** Walk a worker through its mineral line without attacking: nobody comes.
+6. **A soldier is its army's business.** A Marine or Zergling attacking its workers pulls none of them.
+
+**Deliberately different:** Brood War pulls every worker near the one hit, however many; here it is up to three for each
+attacker (two, three and four were measured: all killed a lone worker with no loss; three is the middle), so the rest keep
+mining.

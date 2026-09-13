@@ -270,13 +270,28 @@ function catchUp(L, c, idx) {
 //     REMATCH brings them in. A player who closed the socket loses the seat; spectators stay spectators.
 //   * Nobody going back leaves today's behaviour alone: players who all DROP while a spectator watches still leave the game
 //     running for a rejoin by name.
-function dropFromGame(L, idx, back) {
+function dropFromGame(L, idx, back, quit) {
   const stopAt = Math.max((L.lastF[idx] == null ? -1 : L.lastF[idx]) + 1, DELAY);
   L.players[idx].gone = true; L.gone[idx] = { from: stopAt, to: null };
   L.leftAt = L.leftAt || {}; L.leftAt[idx] = Date.now();   // queue item C: who stayed longest, for a forfeit
-  broadcast(L, back ? { t: 'left', p: idx, f: stopAt, back: true } : { t: 'left', p: idx, f: stopAt });
+  broadcast(L, back ? { t: 'left', p: idx, f: stopAt, back: true } : quit ? { t: 'left', p: idx, f: stopAt, quit: true } : { t: 'left', p: idx, f: stopAt, grace: Math.round(DROP_OUT_MS / 1000) });
   return stopAt;
 }
+// A PLAYER WHO LEAVES IS OUT OF THE GAME (tenth session, item 4; the user: "when the one human opponent leaves, it does NOT
+// trigger an end game - it should"). Before, a leaver's units stood down and the game ran on with nobody to beat. Now:
+//   * QUIT (the game menu's Quit, `quit`) is a surrender, as StarCraft II's leaving is: out at the frame the units stop, and
+//     the seat is not rejoinable.
+//   * A DROP (the socket just went) keeps the rejoin by name it always had for DROP_OUT_MS, StarCraft II's drop dialog and
+//     Brood War's wait; then the player is out, at a frame past every batch the relay has seen, so no client has run it yet.
+// `out` reaches every client and every later rejoiner (startMsg), and each applies the `leave` command at that frame: the
+// player is defeated, and G.checkVictory ends a game whose other side is all that is left -- identically everywhere.
+const DROP_OUT_MS = Math.max(0, parseInt(process.env.BW_DROP_OUT_MS || '60000', 10) || 0);
+function outOfGame(L, idx, f, why) {
+  L.out = L.out || {}; if (L.out[idx] != null) return;
+  L.out[idx] = f; broadcast(L, { t: 'out', p: idx, f, why });
+  console.log(tag(L) + L.players[idx].name + ' is out of the game at frame ' + f + ' (' + why + ')');
+}
+function clearDropTimers(L) { for (const t of Object.values(L.dropTimers || {})) clearTimeout(t); L.dropTimers = {}; }
 const inGame = L => L.players.filter(p => !p.ai && !p.gone);
 // RATINGS (ninth session, queue item C, the user: "build this now"; RESEARCH-LOBBY.md section 10). Beyond All Reason's
 // system, as its lobby server Teiserver runs it, written out here because the relay stays dependency-free:
@@ -421,7 +436,7 @@ function checkOver(L) {
 function returnToLobby(L) {
   forfeit(L);   // a game nobody finished, before what it was made of is cleared
   if (L.timer) { clearTimeout(L.timer); L.timer = null; }
-  L.state = 'lobby'; L.started = null; L.history = []; L.lastF = {}; L.gone = {}; L.pendingSnaps = null; L.count = 0; L.over = null; L.overs = null;
+  L.state = 'lobby'; L.started = null; L.history = []; L.lastF = {}; L.gone = {}; L.pendingSnaps = null; L.count = 0; L.over = null; L.overs = null; L.out = {}; clearDropTimers(L);
   // who is still here: every computer, and every human whose socket is in this room (a player who dropped has id 0)
   const here = id => { const x = id ? clients.get(id) : null; return !!x && x.room === L.code; };
   L.players = L.players.filter(p => p.ai || here(p.id));
@@ -438,7 +453,7 @@ function returnToLobby(L) {
   broadcast(L, lobbyState(L)); pushLobbies();
   console.log(tag(L) + 'back to the lobby: ' + L.players.map(p => p.name + (p.away ? ' (away)' : p.ready && !p.ai ? ' (ready)' : '')).join(', '));
 }
-function startMsg(L, idx) { return { room: L.code, seed: L.seed, layout: L.layout, players: L.started, you: idx, delay: DELAY, gone: L.gone, speed: L.speed == null ? 6 : L.speed, cheats: CHEATS, rules: L.rules, spectate: idx < 0 }; }
+function startMsg(L, idx) { return { room: L.code, seed: L.seed, layout: L.layout, players: L.started, you: idx, delay: DELAY, gone: L.gone, out: L.out || {}, speed: L.speed == null ? 6 : L.speed, cheats: CHEATS, rules: L.rules, spectate: idx < 0 }; }
 // The body of the old start case, now reached either straight away (COUNTDOWN 0) or when the count runs
 // out. Everything the game is built from is read HERE, at zero, not when START was pressed -- which is
 // why the room is frozen in between.
@@ -447,7 +462,7 @@ function beginGame(L) {
   L.startKeys = L.players.map(p => p.key || null); L.ratedKind = ratedAs(L); L.rated = false; L.leftAt = {};   // queue item C
   L.seed = Math.floor(Math.random() * 1e9); const races = ['T', 'Z', 'P'];
   L.started = L.players.map(p => Object.assign({ name: p.name, race: p.race === 'R' ? races[Math.floor(Math.random() * 3)] : p.race, team: p.team, human: !p.ai, difficulty: p.difficulty, style: p.style }, startOf(p), colorOf(p)));
-  L.history = []; L.lastF = {}; L.gone = {};
+  L.history = []; L.lastF = {}; L.gone = {}; L.out = {}; clearDropTimers(L);
   for (const cl of inRoom(L)) { const idx = L.players.findIndex(p => p.id === cl.id); if (idx >= 0) send(cl, Object.assign({ t: 'start' }, startMsg(L, idx))); else if (specOf(L, cl.id)) send(cl, Object.assign({ t: 'start' }, startMsg(L, -1))); }
   console.log(tag(L) + 'game started: ' + L.started.map(p => p.name + '/' + p.race + (p.human ? '' : '/' + p.difficulty + '/' + (p.style || 'standard')) + (p.start != null ? '/start ' + (p.start + 1) : '')).join(', ') + ' on ' + L.layout + ' seed ' + L.seed);
 }
@@ -521,10 +536,10 @@ function onMessage(c, m) {
       }
       if (L.state !== 'lobby') { // a dropped player reconnecting under the same name takes their slot back
         if (me) { send(c, { t: 'error', msg: 'You are already in this game.' }); return; }   // a live player re-sending join with a dropped name used to take that slot too, and two slots shared one id
-        const name = String(m.name || '').slice(0, 16); const idx = L.players.findIndex(p => p.gone && !p.back && p.name === name && (!p.key || p.key === c.key));   // ...and a seat with a key is only for the browser that held it (queue item C)   // a player BACK in the lobby is gone from the game, not from the room: their seat is not for taking
+        const name = String(m.name || '').slice(0, 16); const idx = L.players.findIndex(p => p.gone && !p.back && p.name === name && (!p.key || p.key === c.key) && !(L.out && L.out[L.players.indexOf(p)] != null));   // not a seat that is OUT -- a quit is out at once, a drop once its grace has passed (tenth session, item 4); L.out, not a flag on the player, because it is reset with every game   // ...and a seat with a key is only for the browser that held it (queue item C)   // a player BACK in the lobby is gone from the game, not from the room: their seat is not for taking
         if (idx < 0) { send(c, { t: 'error', msg: 'Game already in progress' + (name ? ' and no dropped player is called ' + name : '') + '.' }); return; }
         c.room = L.code;
-        const slot = L.players[idx]; slot.id = c.id; slot.gone = false; if (L.leftAt) delete L.leftAt[idx];
+        const slot = L.players[idx]; slot.id = c.id; slot.gone = false; if (L.leftAt) delete L.leftAt[idx]; if (L.dropTimers && L.dropTimers[idx]) { clearTimeout(L.dropTimers[idx]); delete L.dropTimers[idx]; }
         const R = Math.max(maxFrame(L) + 1, DELAY); L.gone[idx].to = R;
         // ...and not a client that is itself mid-rejoin: `slot.gone` is cleared before this search, so
         // once simultaneous rejoins actually work, the previous rejoiner looks like a healthy donor
@@ -665,6 +680,15 @@ function onMessage(c, m) {
       if (checkOver(L) && L.players.some(p => p.back)) returnToLobby(L);
       break;
     }
+    // QUIT: the game menu's Quit in a running game, sent just before the socket closes (tenth session, item 4).
+    case 'quit': {
+      const i = L.players.findIndex(p => p.id === c.id);
+      if (L.state !== 'playing' || i < 0 || L.players[i].gone || L.players[i].back) break;
+      const f = dropFromGame(L, i, false, true);
+      outOfGame(L, i, f, 'quit'); broadcast(L, lobbyState(L));
+      console.log(tag(L) + L.players[i].name + ' quit the game; units stop at frame ' + f);
+      break;
+    }
     case 'back': {
       const i = L.players.findIndex(p => p.id === c.id);
       if (L.state === 'playing' && i >= 0 && !L.players[i].back) {
@@ -710,13 +734,17 @@ function leave(c) {
     if (idx >= 0 && !L.players[idx].gone) {
       // every client can only have simulated up to the last frame this player sent a batch for; stop their units on the next one
       const stopAt = dropFromGame(L, idx); L.players[idx].id = 0;
+      // ...and out of the game if they are not back by DROP_OUT_MS (item 4). `unref`: a timer is no reason to keep a relay alive.
+      L.dropTimers = L.dropTimers || {}; const i0 = idx;
+      L.dropTimers[i0] = setTimeout(() => { delete L.dropTimers[i0]; const p = L.players[i0]; if (L.state === 'playing' && p && p.gone && !p.back) outOfGame(L, i0, maxFrame(L) + 1, 'dropped'); }, DROP_OUT_MS);
+      if (L.dropTimers[i0].unref) L.dropTimers[i0].unref();
       broadcast(L, lobbyState(L)); console.log(tag(L) + L.players[idx].name + ' dropped; units stop at frame ' + stopAt);
     } else if (idx >= 0 && L.players[idx].back) {
       // back in the lobby already, and now gone from the room too: the seat is not kept for them
       L.players[idx].id = 0; delete L.players[idx].back; delete L.players[idx].readyBack; sys(L, 'leave', { name: L.players[idx].name }); broadcast(L, lobbyState(L));
     }
     if (specOf(L, c.id)) { L.specs = L.specs.filter(s => s.id !== c.id); broadcast(L, lobbyState(L)); }
-    if (!inRoom(L).length) { forfeit(L); L.players = []; L.specs = []; L.state = 'lobby'; L.started = null; L.history = []; L.lastF = {}; L.gone = {}; L.pendingSnaps = null; L.over = null; L.overs = null; console.log(tag(L) + 'all players gone, back to lobby'); }   // `started` too: `set` and `addai` gate on it, so the second game in the LAN room could change no race, team, map or speed (REVIEW-M17)
+    if (!inRoom(L).length) { forfeit(L); clearDropTimers(L); L.out = {}; L.players = []; L.specs = []; L.state = 'lobby'; L.started = null; L.history = []; L.lastF = {}; L.gone = {}; L.pendingSnaps = null; L.over = null; L.overs = null; console.log(tag(L) + 'all players gone, back to lobby'); }   // `started` too: `set` and `addai` gate on it, so the second game in the LAN room could change no race, team, map or speed (REVIEW-M17)
     else if (L.state === 'playing' && L.players.some(q => q.back) && (checkOver(L) || !inGame(L).length)) returnToLobby(L);   // the last player still in the game walked out, or the one whose report was missing: the ones who went back have their lobby
   }
   else {

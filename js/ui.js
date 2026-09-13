@@ -1760,7 +1760,9 @@ const UI = {
     this.startFromLog(b.data, 'replay');
   },
   clock(f) { const s = Math.floor(f / TPS); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); },
-  toMenu() { if (typeof Net !== 'undefined' && Net.active) Net.disconnect(); this.leaveGame('mainPanel'); },
+  // QUIT from a running network game tells the relay first (tenth session, item 4): a quit is a surrender and ends the game for
+  // the others if nobody on your side is left, where a dropped socket keeps a minute to rejoin.
+  toMenu() { if (typeof Net !== 'undefined' && Net.active) { if (this.net && this.running && !Net.spectating && Net.me >= 0 && !(G && G.over)) Net.send({ t: 'quit' }); Net.disconnect(); } this.leaveGame('mainPanel'); },
   // Out of the game onto a menu panel, keeping any connection: toMenu less the disconnect, for BACK TO LOBBY (queue item B),
   // which goes to a room the socket is still in, or to the skirmish lobby.
   leaveGame(panel) { this.running = false; this.menuCodex = false; this.menu = null; this.loading = null; if (this.refreshMapList) this.refreshMapList(); if (typeof Music !== 'undefined') Music.stop(); if (this.showPanel) this.showPanel(panel || 'mainPanel'); document.getElementById('menu').style.display = 'flex'; document.getElementById('game').style.display = 'none'; const ab = document.getElementById('autosaveBtn'); if (ab) ab.style.display = Replay.hasAutosave() ? 'block' : 'none'; },

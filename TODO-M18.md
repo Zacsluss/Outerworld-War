@@ -50,7 +50,7 @@ this queue is done -- the user said so.
    F10 (`UI.BIND_DEFAULTS`); Escape is RESERVED and cancels placement, targeting, the build menu, an unfinished building
    or the last queued item; F10 is named in the HUD's help line, the replay banner, the connection-lost line and a lobby
    message.
-8. **LOCKED IN UNTIL FIXED (the user, mid-session): "if i send a probe/drone/scv to an enemy base and start attacking it,
+8. **FIXED, SO THE LOCK IS RELEASED (the user locked it in mid-session until fixed): "if i send a probe/drone/scv to an enemy base and start attacking it,
    the AI enemy should know to swarm the probe/drone/scv with their probes/drones/scvs to repel/destroy the attacking
    probe/drone/scv."** Read before measuring: `AI.army()` defends only with army units (`state 'defend'` attack-moves
    `armyUnits()`), and `G.onHit`'s retaliation skips workers (`!t.def.worker`), so a computer with no army, or its
@@ -81,6 +81,29 @@ first waves unchanged, queens 25/0, eightplayer 19/19; build stamp `096229469e3d
 - **6** -- Escape is the pause binding's default: it cancels a placement, a target, a build menu or the chat line first, and
   otherwise opens the menu; it never cancels a queued unit or a building (their Cancel has no key); F10 is free; the HUD
   and help name the bound key. `test/escmenu.js` (13), 4 controls; `test/controls.js`'s count guard lowered on purpose.
+
+**DONE, second batch (commit after `ad06d00`; gate 97 of 97, net_many 51/51, aistyles 132/0 on seeds 1, 5 and 11 with every
+style row identical to the first batch's, queens 25/0, eightplayer 19/19; build stamp `56406f9d777368ac`; PLAYTEST-M18 items
+106-107):**
+- **4** -- Quit to menu in a running network game sends `quit` before the socket closes. The relay tells the others the player
+  left and is OUT at the frame their units stop, and every client runs a `leave` command there (defeated, units stood down,
+  in the command log), so G.tick's own victory check ends a duel within a second and its replay ends on the same frame. A
+  socket that just goes is still a drop, with `BW_DROP_OUT_MS` (60 s) to rejoin by name, then OUT at a frame past every batch
+  the relay has seen. An out seat cannot be taken back; a spectator arriving later is told who is out. It is said once, by
+  the command: "<name> has left the game." `test/leaver.js` (15, ports 8912-8913), 9 controls. **Found on the way:** the
+  rejoin guard was doubled (a `quit` flag and `L.out`), so its control stayed green; the flag, which also outlived the game,
+  is gone. And a quit was announced twice within a second; the network message is silent now.
+- **8** -- `AI.defendWorkers()`: an enemy WORKER that hit something of the computer's in the last three seconds, inside 12
+  tiles of a finished hall and in sight, is attacked by up to 3 workers per harasser (the nearest mining within 10 tiles);
+  they go back to their own base's minerals when it dies, is out of sight or is past 16 tiles. Before: 9 harassers of 9 alive
+  after 45 s, 18 workers killed. After: all dead in 3.4-6.3 s, none lost (pulls of 2, 3 and 4 measured; 3 is the middle).
+  Three harassers together: all dead in 9 of 9, 1-3 of the computer's 5-7 workers lost; five at one minute is an even fight
+  (all dead in 6 of 9). **Research:** Brood War's AI (teippi, reverse-engineered: ai_hit_reactions.cpp) pulls every worker
+  within 3 tiles of the unit hit, uncapped; StarCraft II's scripts defend with workers at every difficulty
+  (c_diffDefendWithPeons); UAlbertaBot sends one worker at a lone scout, Steamhammer lets each miner defend itself, PurpleWave
+  pulls only against three or more; the known failures are one defender at a time against a group (satirist.org, blog 931)
+  and a chase a runner can lead round the map. `test/harass.js` (12), 8 controls, one of them a rejoin's snapshot taken
+  mid-defence.
 
 **THE BUILD PATH** -- ordered so no file is opened twice across phases, the two stamp moves land together, and every
 relay change is followed by `node test/net_many.js`:

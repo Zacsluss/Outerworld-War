@@ -148,7 +148,11 @@ const Net = {
       case 'needsnap': if (this.active && typeof Snapshot !== 'undefined') { try { this.send({ t: 'snap', req: m.req, frame: G.frame, applied: this.appliedFrame === G.frame, snap: Snapshot.take() }); } catch (e) { console.error('snapshot for rejoin failed', e); } } break;
       case 'cmds': if (this.active && m.f >= G.frame) { if (!this.inbox[m.f]) this.inbox[m.f] = {}; this.inbox[m.f][m.p] = Array.isArray(m.c) ? m.c : []; } break;   // a batch that is not a list counts as an empty one that ARRIVED, so the frame is not blocked forever
       case 'hash': this.onHash(m); break;
-      case 'left': { this.gone[m.p] = { from: m.f, to: Infinity }; if (typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg(this.playerName(m.p) + (m.back ? ' went back to the lobby' : ' dropped') + '. Their units stop at ' + this.clock(m.f) + '; the game continues.', 'info'); break; }
+      case 'left': { this.gone[m.p] = { from: m.f, to: Infinity }; if (!m.quit && typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg(this.playerName(m.p) + (m.back ? ' went back to the lobby' : ' dropped') + '. Their units stop at ' + this.clock(m.f) + (m.back || !m.grace ? '; the game continues.' : '; they have ' + m.grace + ' seconds to rejoin.'), 'info'); break; }   // a QUIT is not announced here: the `leave` command at the same frame says so (below)
+      // OUT OF THE GAME at frame f (tenth session, item 4): beforeTick runs the `leave` command there, on every client alike.
+      // The command is what tells the player ("Ada has left the game."), so a replay says it too; a line here as well was
+      // read twice within a second.
+      case 'out': { (this.out = this.out || {})[m.p] = m.f; break; }
       case 'rejoined': { const g = this.gone[m.p]; if (g) g.to = m.f; else this.gone[m.p] = { from: -1, to: m.f }; if (typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg(this.playerName(m.p) + ' is rejoining; they take control again at ' + this.clock(m.f) + '.', 'info'); break; }
       // A RATED RESULT (queue item C): every player's match rating before and after. On screen if the game is still up, and
       // in the lobby's log either way; the end screen lists it too (UI.menuItems).
@@ -821,6 +825,7 @@ const Net = {
     this.active = true; this.me = m.you; this.delay = m.delay || 3; this.outbox = []; this.inbox = {}; this.sent = {}; this.gone = {}; this.appliedFrame = -1; this.players = m.players; this.myHashes = {}; this.theirHashes = {}; this.desynced = false; this.desyncFrame = -1; this.catchingUp = false;
     for (let f = 0; f < this.delay; f++) { this.inbox[f] = {}; m.players.forEach((p, i) => { if (p.human) this.inbox[f][i] = []; }); this.sent[f] = true; }
     for (const [p, g] of Object.entries(m.gone || {})) this.gone[p] = { from: g.from, to: g.to == null ? Infinity : g.to };
+    this.out = {}; for (const [p, f] of Object.entries(m.out || {})) this.out[p] = f;   // players already out, for a rejoiner or a late spectator (item 4)
   },
   startGame(m) {
     this.reset(m);
@@ -862,6 +867,7 @@ const Net = {
     if (!this.sent[tf]) { if (this.me >= 0) { const c = this.outbox; this.outbox = []; this.send({ t: 'cmds', f: tf, c }); if (!this.inbox[tf]) this.inbox[tf] = {}; this.inbox[tf][this.me] = c; } else this.outbox = []; this.sent[tf] = true; }
     if (this.appliedFrame === f) return; this.appliedFrame = f; // a finished (or paused) game must never apply a frame's batch twice
     for (let i = 0; i < this.players.length; i++) { const g = this.gone[i]; if (g && g.from === f) G.exec({ t: 'stopall', p: i }); }
+    for (const k of Object.keys(this.out || {})) if (this.out[k] === f) G.exec({ t: 'leave', p: +k });   // after the stop: a quit is both at one frame
     const b = this.inbox[f] || {};
     // The slot the batch arrived under is the owner of every command in it, whatever `p` the sender
     // wrote: the relay stamps it too, and this covers a rejoin history from an older relay. (REVIEW-M17)

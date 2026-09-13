@@ -68,6 +68,9 @@ const CMD = {
       // Single player and replays are untouched. (REVIEW-M17 decision 4)
       case 'cheat': if (typeof Net !== 'undefined' && Net.active && !Net.cheats) return false; return O.cheat.call(G, c.code, own);
       case 'stopall': for (const u of G.units) if (u.alive && u.owner === own && (!u.isBuilding || u.lifted)) O.stop.call(u); return true; // a dropped player's units stand down
+      // A PLAYER WHO LEFT IS OUT (tenth session, item 4): the relay's `out` names the frame, every client runs this at it. The
+      // units stand down and stay, as a Brood War leaver's do; the player is defeated, and a side with nobody left loses.
+      case 'leave': { const pl = G.players[own]; if (!pl || pl.neutral || pl.defeated) return true; for (const u of G.units) if (u.alive && u.owner === own && (!u.isBuilding || u.lifted)) O.stop.call(u); pl.defeated = true; pl.left = true; for (const q of G.players) if (q.human) q.msg(pl.name + ' has left the game.', 'info'); return true; }   // no checkVictory here: G.tick's own check ends a live game and its replay on one frame
     }
     return false;
   },

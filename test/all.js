@@ -103,6 +103,8 @@ const TESTS = [
   { name: 'joincode', args: ['joincode.js'], what: 'JOIN BY CODE joins a game that exists and names a code that matches none; it makes no room' },
   { name: 'aislots', args: ['aislots.js'], what: 'a computer slot is always ready and always the host\'s to change or remove, the countdown included; a guest is told' },
   { name: 'colours', args: ['colours.js'], what: 'a colour chosen in the lobby: unique, Auto, the host\'s for a computer, carried into the game and the replay, the skirmish lobby too' },
+  { name: 'leaver', args: ['leaver.js'], what: 'a player who quits is out at once and a dropped one after the grace: a 1v1 ends, a team game goes on, a replay ends on the same frame, and an out seat cannot be taken back' },
+  { name: 'harass', args: ['harass.js'], what: 'a computer\'s workers answer an enemy worker attacking its base, two or three at a time, and go back to mining; a scout, a runner and a soldier pull none' },
   { name: 'shots', args: ['shots.js'], what: 'every weapon has its own shot, the races are disjoint, and every kind actually draws' },
   { name: 'wavetarget', args: ['wavetarget.js'], what: 'an attack wave scores a defended main above a bare expansion, and finishes the base it is in' },
   { name: 'fognight', args: ['fognight.js'], what: 'explored ground remembers, and night shortens sight on maps that have one' },
