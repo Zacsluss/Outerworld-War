@@ -208,3 +208,64 @@ rather than on a form of their own.
 
 Tests: `test/menus.js` runs `js/ui.js`'s real boot against a page built from `index.html` (62 checks), with 40 negative
 controls in `.claude/review/menus/controls-menus.js`.
+
+---
+
+## 7. Choosing a start position
+
+*Ninth session, queue item A (the user: "build this now"). Before it, a seat WAS its start: seat i began on
+`map.starts[i % starts]`, and the lobby could only show which.*
+
+Researched from source where the game is open (**[src]**), from official documents (**[doc]**), and secondhand only where
+nothing better exists (**[2nd]**). Source links are pinned to the commit read.
+
+**OpenRA** [src] -- the closest model, and what was built follows it:
+- **Click a spawn on the lobby's map preview to take it**; click empty preview space to go back to random (spawn 0). Each
+  player row also has a spawn dropdown. ([LobbyUtils.cs](https://github.com/OpenRA/OpenRA/blob/f3ec7f8e1593b482f85fd101652deb740c33dee6/OpenRA.Mods.Common/Widgets/Logic/Lobby/LobbyUtils.cs#L238-L302))
+- **The host's click goes to the first of the host and the bots still on random**, in lobby order, and moves the host once
+  none are; so the host places everyone with a click each. Only the host sets a bot's spawn.
+- **The server refuses a spawn another client holds** -- "You cannot occupy the same spawn point as another player" --
+  teammates included, and ignores other players' slots unless the sender is the host, spectators and out-of-range numbers.
+  ([LobbyCommands.cs](https://github.com/OpenRA/OpenRA/blob/f3ec7f8e1593b482f85fd101652deb740c33dee6/OpenRA.Mods.Common/ServerTraits/LobbyCommands.cs#L1152-L1204))
+- **A map change puts every spawn back to random**; so does spectating. A team change does not.
+- **Random is resolved at game start** from the lobby's seed, slot by slot: uniformly among free spawns, or -- with
+  "Separate Team Spawns", on by default -- the free spawn farthest from the occupied ones.
+  ([MapStartingLocations.cs](https://github.com/OpenRA/OpenRA/blob/f3ec7f8e1593b482f85fd101652deb740c33dee6/OpenRA.Mods.Common/Traits/World/MapStartingLocations.cs#L93-L108))
+- **The preview fills a taken spawn with its owner's colour** and labels it; the tooltip names the player.
+
+**StarCraft II** [doc] -- no start-location choice was found in the lobby: start locations "are only markers", the map's
+Team Placement decides which arrangements are allowed, and the game deals them at random within those
+([Team Placement](https://s2editor-guides.readthedocs.io/New_Tutorials/01_Introduction/010_Team_Placement/)). Ladder maps
+restrict spawns (cross positions only on some four-player maps) rather than letting anyone choose.
+
+**Age of Empires II: Definitive Edition** [doc] -- no spot is chosen either. "Team Together determines whether teammates are
+adjacent to each other or randomly placed on the map" and "Team Positions uses the player color to determine a player's
+position" -- flank or pocket by colour number
+([multiplayer match](https://support.ageofempires.com/hc/en-us/articles/360047306372-How-do-I-create-a-multiplayer-match-in-Age-of-Empires-II-Definitive-Edition),
+[tournament handbook](https://www.ageofempires.com/news/tournament_handbook_ageiide/)).
+
+**Beyond All Reason** [src] -- the host draws a **start box** per team on the lobby's minimap; in a short pre-game phase each
+player clicks their spot inside their box and readies, which locks it; points within 350 map units of another team's are
+refused, and anyone who never placed gets a spot guessed for them at start
+([game_initial_spawn.lua](https://github.com/beyond-all-reason/Beyond-All-Reason/blob/28e122237458f39cd89d254aa44bfc31448cc7f6/luarules/gadgets/game_initial_spawn.lua#L465-L568)).
+
+**What they share:** automatic is the default; a player never shares a spot with another (BAR's boxes aside); the host
+speaks for computers; a new map clears choices; the choice is made on the map itself, not in a list alone.
+
+**What was built** (`PLAYTEST-M18.md` item 94):
+
+| | Here |
+|---|---|
+| Choose | **Click a start on the lobby's map** to take it; click it again to give it back. A **Start** list on every slot (Auto, Start 1...). A procedural map, which has no picture until the seed exists, shows its starts as **numbered corner chips** to click. |
+| Computers | **The host's clicks place the host, then each computer still on Auto**, in seat order (OpenRA's rule), and the host sets any computer from its Start list. A guest sets only their own. |
+| Sharing | **Never**: the relay and the skirmish lobby refuse a start another slot holds, and the list shows it closed with the holder's name. |
+| Resets | **A new map, or a new size of a procedural map**, puts every seat back on Auto, and the room is told. A team change does not. |
+| Auto | **Deliberately not random.** An Auto seat takes the start its seat always took, or the first free one if someone chose it (`GameMap.assignStarts`). The preview draws with that same function, so it shows where every seat will stand before START -- a seed-random rule could not, because the relay picks the seed at START -- and a game where nobody chose is exactly the game it was before this existed. |
+| Shown | Each start is filled with the colour of the seat that will stand on it, **ringed when chosen**, numbered, and named in its tooltip. The room hears every choice ("Ben takes start 3."). |
+| Ready | A computer moved withdraws every ready (an opponent changed); your own start withdraws only yours, like your race. |
+
+Not built: OpenRA's disabling of spawns, AoE II's Team Together (a rule that moves Auto seats by team), BAR's start boxes and
+pre-game placement.
+
+Tests: `test/starts.js` (the engine, the options, the preview, the skirmish lobby clicked, the relay over real sockets),
+with 30 negative controls in `.claude/review/starts/controls.js`.

@@ -5,6 +5,14 @@ the open list this work comes from; each item below names the task it closes.
 
 Everything here is reachable from the front menu with no flags, unless the item says otherwise.
 
+**Recording a playtest (ninth session).** Run `node tools/playtest-listen.js` (or the `playtest` entry in
+`.claude/launch.json`) and play at **http://127.0.0.1:8870**. It serves the last commit -- not work in progress -- with the
+relay beside it, from a fresh origin (so the first-launch name prompt shows and your normal game's settings are
+untouched). A **REC · NOTE** pill at the top of the page takes a sentence (and, in a game, a screenshot) whenever
+something looks wrong. Everything goes to `.claude/review/playtest/<time>/` on this machine only: every screen, click,
+key (not typed text), setting, lobby message, error, a five-second summary of the game, each game's replay, notes, and
+the right-click gathering measurement of item 93. Say "done" and the assistant reads it.
+
 ---
 
 ## 64. The multiplayer lobby is finished, and it is shaped like StarCraft II's
@@ -802,3 +810,35 @@ Select all four (click one, Shift+click the others), right-click one spot on ope
   clump of marines and right-click far away -- the clump arrives as the clump it was, not a single file.
 - **Right-click inside a group's own area** and it pulls in tighter round that spot (StarCraft II's "magic box").
 - **Right-drag a line** still spreads the selection along the line, unchanged.
+
+---
+
+## 94. Choose where you start
+
+*(Ninth session, queue item A: "build this now". `RESEARCH-LOBBY.md` section 7 -- OpenRA's lobby is the model.)*
+
+**Saves and replays from before this are refused** (the build stamp moved: the game now reads a start from the setup).
+
+**How to reach it.** Main menu → **Single Player** → **Skirmish Setup** (or Multiplayer → HOST GAME; everything below is
+the same there). The map preview is at the top of GAME SETTINGS on the right.
+
+**What to look for.**
+- **Nothing changes until you choose.** Every seat's Start list says **Auto**, and the map shows seat one's colour on
+  start 1, seat two's on start 2, the rest grey -- the game you always got. Every start now has its number on it.
+- **Click start 3 on the map.** It turns your colour with a light ring (chosen), the chat log says "<you> takes start 3.",
+  and your Start list says Start 3.
+- **Click another free start.** As the host, it goes to **Computer 1** (the first computer still on Auto) -- OpenRA's rule,
+  so you place everyone with a click each. Click a computer's start to put it back on Auto; click your own to give yours
+  back.
+- **An Auto seat goes where the map shows it.** Take start 2 yourself (Computer 1's own start): Computer 1 moves to start 1,
+  the first free one, on the picture -- and in the game.
+- **The Start list** on each slot offers Auto and every start; a start someone else holds is greyed and says who has it.
+- **START GAME, then look at where your base is**: on the start you chose. The computers' bases are where the preview
+  showed them (use F10 → Restart to see it again, or a replay with the whole map).
+- **Change the map**: everyone is back on Auto, and the log says "Start positions are back on Auto for the new map." A
+  procedural map has no picture, so its starts are **numbered chips** under "grown from the seed at START", each named by
+  its corner in the tooltip (start 1 top left, start 2 bottom right...); they are clicked the same way.
+- **Remembered**: BACK, reload, Skirmish Setup again -- your starts are still there (unless the map changed).
+- **Online** (two browser tabs, one hosting): a guest clicks a start and the host sees it at once; a guest cannot move the
+  host or a computer, and nobody can take a start someone holds. Moving a computer makes everyone ready up again; moving
+  your own start only un-readies you.

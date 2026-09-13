@@ -104,6 +104,10 @@
   .lbPrev { display: block; width: 100%; height: auto; background: #0b0e13; border: 1px solid #23283a; }
   .lbPrevNone { padding: 26px 0; text-align: center; color: #5c6473; font-size: 10px; }
   .lbPrevName { text-align: center; font-size: 10px; color: #b8c2cf; margin: 4px 0 8px; }
+  .lbStartPt { cursor: pointer; } .lbStartPt:hover circle { stroke: #f2e3b3; stroke-width: 2; }
+  .lbStartChips { display: flex; justify-content: center; gap: 6px; margin-top: 10px; }
+  .lbStartChip { display: inline-block; width: 22px; height: 22px; line-height: 22px; border-radius: 50%; color: #0b0e13; font-weight: bold; font-size: 11px; text-decoration: none; border: 1px solid #0b0e13; }
+  .lbStartChip.chosen { box-shadow: 0 0 0 2px #f2e3b3; }
   /* The start countdown. Every digit here came from the relay, never from a local timer. */
   .lbCd { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 10px 0; padding: 8px; border: 1px solid #3a3122; background: #0c1016; }
   .lbCdT { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #8f98a8; }

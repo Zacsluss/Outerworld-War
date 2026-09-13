@@ -106,6 +106,10 @@ const G = {
     this.players = [];
     const races = ['T', 'Z', 'P'];
     const pick = r => r === 'R' ? races[Math.floor(this.rand() * 3)] : r;
+    // A start chosen in the lobby, or the seat's own (GameMap.assignStarts). Read from opts.players, which a replay and a
+    // rejoin reproduce verbatim, and seed-free, so it draws nothing from G.rand() and every game without a choice is the
+    // game it always was.
+    const startOf = GameMap.assignStarts(opts.players, this.map.starts.length);
     opts.players.forEach((po, i) => {
       const p = new Player(i, pick(po.race), po.human, po.name || (po.human ? 'Player' : 'Computer ' + i)); p.team = po.team == null ? i : po.team;
       p.vis = new Uint8Array(this.map.w * this.map.h); p.ai = po.human ? null : new AI(p, po.difficulty || 'normal');
@@ -115,7 +119,7 @@ const G = {
       // anything applied outside G.init is invisible to a headless harness and to a rejoining client.
       if (po.minerals != null) p.minerals = po.minerals;
       if (po.gas != null) p.gas = po.gas;
-      const base = this.map.starts[i % this.map.starts.length];
+      const base = this.map.starts[startOf[i]];
       p.startBase = base; p.startX = base.cx; p.startY = base.cy;
       this.setupStart(p, base);
     });

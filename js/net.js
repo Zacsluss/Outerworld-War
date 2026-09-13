@@ -182,6 +182,13 @@ const Net = {
     try { L = (typeof MAP_LAYOUTS !== 'undefined' && MAP_LAYOUTS[id]) || null; } catch (ex) { }
     if (!L || !Array.isArray(L.bases) || typeof GameMap === 'undefined' || !GameMap.prototype.mirrorPt) return null;
     const w = L.w || 128, h = L.h || 128;
+    // A map made in the editor has every base where it was painted -- no mirror, no start order -- and its starts are its
+    // main bases in the order they were made (GameMap.generateCustom), so it has an honest picture too.
+    if (L.custom) {
+      const painted = L.bases.filter(b => b && Number.isFinite(b.x) && Number.isFinite(b.y)), at = b => [b.x + 2, b.y + 1.5];
+      if (!painted.some(b => b.main)) return null;
+      return { w, h, name: L.name || String(id), starts: painted.filter(b => b.main).map(at), exps: painted.filter(b => !b.main).map(at) };
+    }
     const tr = (x, y, bw, bh, qd) => { const p = GameMap.prototype.mirrorPt.call({ w, h }, x, y, qd); let tx = p[0], ty = p[1]; if (qd === 1 || qd === 3) tx -= bw - 1; if (qd === 2 || qd === 3) ty -= bh - 1; return [tx + 2, ty + 1.5]; };
     const mains = [], exps = [];
     for (let qd = 0; qd < 4; qd++) for (const bd of L.bases) {
@@ -193,19 +200,53 @@ const Net = {
     const starts = order.map(i => mains[i]).filter(Boolean); for (const m of mains) if (!starts.includes(m)) starts.push(m);
     return { w, h, name: L.name || String(id), starts, exps };
   },
-  // Numbers only, all of them derived from local constants -- nothing from the relay reaches this markup
-  // except the layout id, which is a lookup key and draws nothing when it misses. The seat number is drawn on
-  // each start so a player can see which corner their colour is.
-  mapPreview(id, n, size) {
+  // A PROCEDURAL map's starts, without its ground: which corner each start number stands in. The ground grows from the
+  // seed the relay picks at START, but the mirror and the start order are the archetype's own, the same for every seed,
+  // so the corner is known now. Resolved through the skirmish screen's setupMapInfo, as mapCap is; null without it.
+  genStarts(id, size) {
+    let L = null;
+    try { if (String(id || '').slice(0, 4) === 'gen:' && typeof UI !== 'undefined' && UI.setupMapInfo) L = UI.setupMapInfo({ map: id, size: size || 'auto', seed: 1 }).layout; } catch (ex) { L = null; }
+    if (!L || !Array.isArray(L.bases)) return null;
+    const qs = []; for (let q = 0; q < 4; q++) for (const bd of L.bases) if (bd && bd.main && (!bd.quadrants || bd.quadrants.includes(q))) qs.push(q);
+    const order = L.startOrder || [0, 3, 1, 2], starts = order.map(i => qs[i]).filter(q => q !== undefined);
+    qs.forEach((q, i) => { if (!order.includes(i)) starts.push(q); });
+    const CORNER = ['top left', 'top right', 'bottom left', 'bottom right'];
+    return { corners: starts.map(q => CORNER[q]) };
+  },
+  // Numbers only, all of them derived from local constants -- nothing from the relay reaches this markup except the layout
+  // id, which is a lookup key and draws nothing when it misses, and the players' names, which are escaped. WHO STANDS WHERE
+  // (queue item A): each start is filled with the colour of the seat that will start on it, as GameMap.assignStarts -- the
+  // function G.init places players with -- decides it, so the picture cannot disagree with the game; ringed when that seat
+  // CHOSE it; and numbered, the number the slot's Start list uses. `players` is the room's list in seat order, or a count
+  // for the game list's detail pane. `o.pick` makes each start a click (bindRoom); `o.size` is the procedural size rule.
+  mapPreview(id, players, size, o) {
+    o = o || {};
+    const list = Array.isArray(players) ? players : Array.from({ length: Math.max(0, players | 0) }, () => ({}));
+    const e = s => this.esc(s), assign = n => (typeof GameMap !== 'undefined' && GameMap.assignStarts ? GameMap.assignStarts(list, n) : list.map((_, i) => i % n));
+    const holder = (at, j) => { const i = at.indexOf(j); return i < 0 ? null : { i, p: list[i] || {} }; };
+    const chose = w => !!(w && Number.isInteger(w.p.start));
+    const tip = (j, w, where) => 'Start ' + (j + 1) + (where ? ', ' + where : '') + ': ' + (w ? (w.p.name ? e(w.p.name) : 'seat ' + (w.i + 1)) + (chose(w) ? '' : ' (Auto)') : 'free') + (o.pick ? (!w ? ' -- click to take it' : chose(w) ? ' -- click to give it back' : '') : '');
     const M = this.mapStarts(id);
-    if (!M) return '<div class="lbPrev lbPrevNone">' + (String(id || '').slice(0, 4) === 'gen:' ? 'grown from the seed at START' : 'no preview') + '</div>';
+    if (!M) {
+      const gen = String(id || '').slice(0, 4) === 'gen:', G = gen ? this.genStarts(id, o.size) : null;
+      let chips = '';
+      if (G && G.corners.length) {
+        const at = assign(G.corners.length);
+        chips = '<div class="lbStartChips">' + G.corners.map((c, j) => { const w = holder(at, j); return '<a href="#" class="lbStartChip' + (chose(w) ? ' chosen' : '') + '"' + (o.pick ? ' data-start="' + j + '"' : '') + ' style="background:' + (w ? this.slotColor(w.i) : '#39424f') + '" title="' + tip(j, w, c) + '">' + (j + 1) + '</a>'; }).join('') + '</div>';
+      }
+      return '<div class="lbPrev lbPrevNone">' + (gen ? 'grown from the seed at START' : 'no preview') + chips + '</div>';
+    }
     const S = size || 132, k = S / Math.max(M.w, M.h), ox = (S - M.w * k) / 2, oy = (S - M.h * k) / 2, R = Math.max(4.2, S / 32);
     const X = p => (ox + p[0] * k).toFixed(1), Y = p => (oy + p[1] * k).toFixed(1);
     let g = '<rect x="' + ox.toFixed(1) + '" y="' + oy.toFixed(1) + '" width="' + (M.w * k).toFixed(1) + '" height="' + (M.h * k).toFixed(1) + '" fill="#0e141b" stroke="#3a3122"/>';
     for (const x of M.exps) g += '<circle cx="' + X(x) + '" cy="' + Y(x) + '" r="' + (R * 0.45).toFixed(1) + '" fill="#5d6775"/>';
-    M.starts.forEach((s, i) => {
-      g += '<circle cx="' + X(s) + '" cy="' + Y(s) + '" r="' + R.toFixed(1) + '" fill="' + (i < n ? this.slotColor(i) : '#39424f') + '" stroke="#0b0e13" stroke-width="1"/>';
-      if (i < n && S >= 160) g += '<text x="' + X(s) + '" y="' + (+Y(s) + R * 0.42).toFixed(1) + '" text-anchor="middle" font-size="' + (R * 1.15).toFixed(1) + '" font-weight="bold" fill="#0b0e13">' + (i + 1) + '</text>';
+    const at = assign(M.starts.length);
+    M.starts.forEach((s, j) => {
+      const w = holder(at, j);
+      g += '<g' + (o.pick ? ' class="lbStartPt" data-start="' + j + '"' : '') + '><title>' + tip(j, w) + '</title>'
+        + '<circle cx="' + X(s) + '" cy="' + Y(s) + '" r="' + R.toFixed(1) + '" fill="' + (w ? this.slotColor(w.i) : '#39424f') + '" stroke="' + (chose(w) ? '#f2e3b3' : '#0b0e13') + '" stroke-width="' + (chose(w) ? 2 : 1) + '"/>';
+      if (S >= 160) g += '<text x="' + X(s) + '" y="' + (+Y(s) + R * 0.42).toFixed(1) + '" text-anchor="middle" font-size="' + (R * 1.15).toFixed(1) + '" font-weight="bold" fill="' + (w ? '#0b0e13' : '#9aa3b0') + '">' + (j + 1) + '</text>';
+      g += '</g>';
     });
     return '<svg class="lbPrev" viewBox="0 0 ' + S + ' ' + S + '" width="' + S + '" height="' + S + '" role="img" aria-label="map preview">' + g + '</svg>';
   },
@@ -243,6 +284,7 @@ const Net = {
     let bank = null; try { if (U && U.setupBank) bank = U.setupBank(r.bank); } catch (ex) { bank = null; }
     const players = (m.players || []).map(p => {
       const o = { race: p.race, human: p.human, name: p.name, difficulty: p.difficulty, team: p.team, style: p.style, minerals: p.minerals, gas: p.gas };
+      if (Number.isInteger(p.start)) o.start = p.start;   // a start chosen in the lobby (GameMap.assignStarts); absent is Auto
       if (bank && bank[2] !== 50 && o.minerals === undefined) o.minerals = bank[2];
       if (bank && bank[3] !== 0 && o.gas === undefined) o.gas = bank[3];
       return o;
@@ -357,7 +399,8 @@ const Net = {
       case 'waiting': return 'Waiting for ' + (Array.isArray(m.names) ? m.names.map(n).join(', ') : '') + ' to ready up.';
       case 'spectate': return n(m.name) + ' is watching.';
       case 'play': return n(m.name) + ' took a seat.';
-    }
+      case 'start': return n(m.name) + (Number.isInteger(m.start) ? ' takes start ' + (m.start + 1) + '.' : ' is on Auto.');
+      case 'starts': return 'Start positions are back on Auto for the new map.';    }
     return '';
   },
   logLine(entry) { this.chatLog.push(entry); if (this.chatLog.length > 80) this.chatLog.shift(); },
@@ -443,7 +486,7 @@ const Net = {
     // own, which is what a client that predates editable AI slots sent.
     for (const s of q('[data-slot]')) s.onchange = () => {
       const id = parseInt(s.dataset.slot, 10), field = s.dataset.field, msg = { t: 'set', id };
-      msg[field] = field === 'team' ? parseInt(s.value, 10) : s.value;
+      msg[field] = field === 'team' ? parseInt(s.value, 10) : field === 'start' ? (s.value === '' ? null : parseInt(s.value, 10)) : s.value;
       if (!local && field === 'race' && id === me) { this.race = s.value; this.saveIdentity(); }   // so a rejoin or a re-host keeps the race just chosen
       send(msg);
     };
@@ -474,6 +517,17 @@ const Net = {
     for (const a of q('[data-addai]')) a.onclick = ev => { ev.preventDefault(); const last = L.players.filter(p => p.ai).pop() || {}; send({ t: 'addai', race: last.race || 'R', difficulty: last.difficulty || 'normal', style: last.style || 'standard', team: parseInt(a.dataset.addai, 10) }); };
     for (const a of q('[data-kick]')) a.onclick = ev => { ev.preventDefault(); send({ t: 'kick', id: parseInt(a.dataset.kick, 10) }); };
     for (const a of q('[data-ring]')) a.onclick = ev => { ev.preventDefault(); send({ t: 'ring', id: parseInt(a.dataset.ring, 10) }); };
+    // A START ON THE MAP (queue item A; OpenRA's lobby, LobbyUtils). A free start goes to you -- or, for the host, to the first
+    // of the host and the computers still on Auto, in seat order, so a host places everyone with a click each, as OpenRA's
+    // does. A start of your own (or, for the host, a computer's) goes back to Auto. A start another player holds sends nothing.
+    for (const a of q('[data-start]')) a.onclick = ev => {
+      if (ev && ev.preventDefault) ev.preventDefault();
+      if (!meP || L.state !== 'lobby') return;
+      const j = parseInt(a.dataset.start, 10), held = L.players.find(p => p.start === j);
+      if (held) { if (held.id === me || (meP.host && held.ai)) send({ t: 'set', id: held.id, start: null }); return; }
+      const next = meP.host ? L.players.find(p => (p.id === me || p.ai) && !Number.isInteger(p.start)) : null;
+      send({ t: 'set', id: (next || meP).id, start: j });
+    };
     const log = $('lbChatLog'); if (log && typeof log.scrollTop === 'number') log.scrollTop = 1e9;
   },
   // The list: a row per hosted game, clicked to see it and double-clicked to join. Everything in it came from other
@@ -541,6 +595,12 @@ const Net = {
     const diffOpts = Object.keys(this.DIFF_NAMES).map(d => [d, this.DIFF_NAMES[d]]);
     const styleOpts = this.styles();
     const teamOpts = []; for (let t = 1; t <= maxTeam; t++) teamOpts.push([String(t), 'Team ' + t]);
+    // THE START, per slot, beside the clicks on the map (OpenRA's lobby has both): Auto, or a start by its number, a start
+    // someone else holds named and closed. A player sets their own; the host sets a computer's.
+    const startSel = p => '<select class="lbSel" data-slot="' + (p.id | 0) + '" data-field="start" title="Where this seat starts. Auto: its own start, or the first free one">'
+      + opt('', 'Auto', !Number.isInteger(p.start))
+      + Array.from({ length: seats }, (_, j) => { const h = L.players.find(q => q !== p && q.start === j); return '<option value="' + j + '"' + (p.start === j ? ' selected' : '') + (h ? ' disabled' : '') + '>Start ' + (j + 1) + (h ? ' (' + e(h.name) + ')' : '') + '</option>'; }).join('')
+      + '</select>';
     // A row is a SLOT: colour, ready, host star, name, latency, then what that slot may be set to. A human's own row
     // offers race and team (the team only while teams are unlocked, or to the host); an AI's row offers race,
     // difficulty, play style and team TO THE HOST -- an AI has no socket of its own, so the host is the only one who
@@ -561,6 +621,7 @@ const Net = {
         + (p.ai ? (editable ? slotSel(p, 'difficulty', diffOpts, p.difficulty || 'normal') + slotSel(p, 'style', styleOpts, p.style || 'standard')
           : fixed(this.DIFF_NAMES[p.difficulty] || p.difficulty || 'Normal') + fixed(this.STYLE_NAMES[p.style] || p.style || 'Standard')) : '')
         + (teamEditable ? slotSel(p, 'team', teamOpts, String(p.team || 1)) : '')
+        + (editable ? startSel(p) : Number.isInteger(p.start) ? fixed('Start ' + (p.start + 1)) : '')
         + '</span>'
         + (host && open && p.id !== myId ? '<a href="#" class="lbKick" data-kick="' + (p.id | 0) + '" title="Remove this slot">&#10005;</a>' : '')
         + '</div>';
@@ -604,7 +665,7 @@ const Net = {
     const ruleRow = k => setRow(e(this.RULE_NAMES[k]), edit ? sel('data-rule="' + k + '"', this.ruleOptions(k), rules[k]) : '<span>' + e(this.ruleLabel(k, rules[k])) + '</span>');
     const invite = code ? this.inviteLink(code) : '';
     const settings = '<div class="lbSettings"><div class="lbSetHead">GAME SETTINGS</div>'
-      + this.mapPreview(L.layout, L.players.length, 236)
+      + this.mapPreview(L.layout, L.players, 236, { pick: open && !!meP, size: rules.size })
       + '<div class="lbPrevName">' + e(this.mapName(L.layout)) + '</div>'
       + setRow('Map', edit ? mapSel : '<span>' + e(this.mapName(L.layout)) + '</span>')
       + (String(L.layout || '').slice(0, 4) === 'gen:' ? ruleRow('size') : '')
@@ -616,7 +677,7 @@ const Net = {
       + setRow('Alliances', '<span>Locked</span>')
       + (edit && !local ? setRow('Name', '<input id="lbRename" maxlength="40" class="lbSel grow" value="' + e(L.title || '') + '">') : '')
       + (code ? setRow('Code', '<b class="lbCodeVal">' + e(code) + '</b><button id="lbCopy" class="small inline">COPY</button>' + (invite ? '<button id="lbInvite" class="small inline" title="' + e(invite) + '">INVITE LINK</button>' : '')) : '')
-      + '<div class="lbSetNote">' + (local ? '' : 'Share the code or the invite link to bring a player in. ') + 'Colours and start positions follow the seats, in the order shown.</div>'
+      + '<div class="lbSetNote">' + (local ? '' : 'Share the code or the invite link to bring a player in. ') + 'Colours follow the seats, in the order shown. Click a start on the map to take it' + (host ? ' (then each computer on Auto)' : '') + ', and click it again to give it back. A seat on Auto starts on its own start, or the first free one.</div>'
       + '</div>';
     let h = '<div class="lbHead"><span class="lbHeadTitle">' + e(L.title || (local ? 'Skirmish' : code ? 'Room ' + code : 'LAN game')) + '</span>'
       + '<span class="lbHeadInfo">' + e(this.mapName(L.layout)) + ' &middot; <span' + (over ? ' class="lbOver"' : '') + '>' + L.players.length + '/' + seats + ' players</span>' + (specs.length ? ' &middot; ' + specs.length + ' watching' : '') + ' &middot; ' + e(speed)

@@ -19,6 +19,26 @@
         "6"
       ],
       "port": 8765
+    },
+    {
+      "name": "playtest",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "tools/playtest-listen.js",
+        "8870"
+      ],
+      "port": 8870,
+      "url": "http://127.0.0.1:8870"
+    },
+    {
+      "name": "playtest-check",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "tools/playtest-listen.js",
+        "8880"
+      ],
+      "port": 8880,
+      "url": "http://127.0.0.1:8880"
     }
   ]
 }

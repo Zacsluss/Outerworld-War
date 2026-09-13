@@ -5,8 +5,8 @@ traps and the kickoff prompt; this file is the open list. **Its first section, T
 user's decision on every open item after the eighth session, in order. The sessions' lists follow it (what each did,
 with commits), then the older open items with their measurements, then what is closed. There are no worktrees.
 
-The gate is **85 suites** (`node test/all.js`, ~5 min); at the end of the eighth session it is 2 red, `aistyles` and
-`queens`, both the AI pacing that waits on 7b (see `HANDOFF-M18.md`). It was last all green at `136b1b0`. Every rule in `CLAUDE.md`
+The gate is **86 suites** (`node test/all.js`, ~5 min); in the ninth session it is 2 red, `aistyles` and
+`queens`, both the AI pacing -- queue item G, which the user has now authorized (see below). It was last all green at `136b1b0`. Every rule in `CLAUDE.md`
 applies to every item here: measure before fixing, a negative control that goes cleanly RED, `tools/patch.js`
 for edits, and the gate green before the commit.
 
@@ -24,7 +24,19 @@ This section is the queue a new chat works from; everything below it is history 
 each, a PLAYTEST entry for each, and TODO/HANDOFF updated as items close.** If the chat gets long, write the handoff
 and a kickoff prompt before starting the next item rather than half-finishing one.
 
-### Ask the user first (in the opening message), then start item A without waiting
+### The user's answers (ninth session, 2026-09-12)
+
+- **Question 1 (items 2 and 3 conflict): "you can fix now."** Item G is authorized: change the AI's wave threshold and
+  Queen timing NARROWLY to make `aistyles` and `queens` honestly green. `test/balance.js` and `test/proxy.js` stay untouched,
+  and the AI rebalance (7b) stays deferred.
+- **Question 2 (Mac build and signing): "if it costs money to do apple dev program i will skip it - remove it from tasks."**
+  No Apple Developer Program, so no Mac signing or notarization. Windows signing costs money too (Azure Artifact Signing,
+  about $10 a month; a plain .pfx certificate is no longer issued -- code-signing keys must live on hardware since 2023),
+  so item D is **unsigned builds only**. The secrets a signed build would read are listed under D for the day that changes.
+- **Question 3 (their playtest of 88-93): done**, recorded by the new playtest recorder (`tools/playtest-listen.js`). Results
+  in "The ninth session" below: 88, 89, 90 and 93 work as far as they were exercised; 91 and 92 were not visited.
+
+### Ask the user first (in the opening message), then start item A without waiting -- ANSWERED, above
 
 1. **Items 2 and 3 conflict.** The user deferred the AI rebalance (2) and asked for the two red suites to be fixed now
    (3). Both reds are the rebalance: `aistyles` fails because NO computer style attacks inside its ten-minute window
@@ -44,7 +56,11 @@ and a kickoff prompt before starting the next item rather than half-finishing on
 
 ### The queue
 
-**A. Choose a start position in the lobby (item 8, "build this now").**
+**A. Choose a start position in the lobby (item 8, "build this now").** **DONE (ninth session)** -- click a start on the map
+preview or use the slot's Start list; the host's clicks place the host then each computer on Auto (OpenRA's rule); no two
+slots on one start; a new map or size resets to Auto; an Auto seat keeps its seat's start or takes the first free one,
+deliberately not random (`GameMap.assignStarts`), so a game with no choices is unchanged. `RESEARCH-LOBBY.md` section 7,
+`PLAYTEST-M18.md` item 94, `test/starts.js` (58), 30 negative controls. Build stamp moved. The plan as it was written:
 - Today: seat i starts at `map.starts[i % starts.length]` (the layout's `startOrder`), so a seat IS its start and its
   colour (`Net.slotColor`). The lobby's map preview already draws each start with the seat number on it.
 - Build: a per-player `start` (an index into the map's starts, or automatic) in the `G.init` options, placed by
@@ -84,7 +100,9 @@ and a kickoff prompt before starting the next item rather than half-finishing on
 - Research BAR's rating and balance guide first. Negative controls on the rating update, the agreement rule, and the
   balancer.
 
-**D. Desktop Mac build and code signing (item 10, "do this now"; blocked on the user's accounts for signing).**
+**D. Desktop Mac build -- UNSIGNED ONLY (item 10; the user will not pay for the Apple Developer Program, and Windows signing
+is paid too).** Build the GitHub Actions workflow for unsigned Windows and macOS installers and stop there; say in the
+PLAYTEST entry how a Mac user opens an unsigned app. The signing notes below are kept for the day that changes.
 - Today: a Tauri 2 app in `desktop/`, built by hand on Windows (bundle targets nsis, app, dmg); the relay sidecar is a
   Node single-executable build that CANNOT cross-build -- the Mac binary must be built on a Mac, the Apple-silicon one on
   Apple silicon. There is no CI (`.github/workflows` does not exist) and no `gh` CLI on this machine.
@@ -114,7 +132,7 @@ and a kickoff prompt before starting the next item rather than half-finishing on
   advancing for no rule-backed reason and writes one line the player can copy (PLAYTEST item 68 asks for exactly that
   line), so the user's next game names the cause.
 
-**G. The two red suites (item 3, "fix now") -- only as the user answers question 1.**
+**G. The two red suites (item 3, "fix now") -- AUTHORIZED (the user, ninth session: "you can fix now").**
 - If yes: change the AI's wave threshold and build timings narrowly (`js/ai.js`: the threshold that commits a wave, the
   build-order step timings, the Queen's Nest and Queen timing), measured by `test/aistyles.js` (seeds 1, 5, 11 by
   hand), `test/queens.js` and `tools/attack-clock.js`. The claim order in `AI.budget()` and any run of
@@ -127,6 +145,22 @@ rendered to 2D, the Daniel Thomas painted packs, or both; the repo is public, so
 repo goes private).
 
 ---
+
+## The ninth session (2026-09-12)
+
+- **The playtest recorder** (the user: "can you set up a dev listener before i test so you can do this?"). `node
+  tools/playtest-listen.js`, then play at http://127.0.0.1:8870: the last commit served out of git beside a relay, a fresh
+  origin, a REC · NOTE pill, and every screen, click, setting, lobby message, error, five-second game summary, replay,
+  supply-aware production stall and right-click gathering measurement written to `.claude/review/playtest/<time>/`.
+  `node tools/playtest-report.js` reads a session back as a timeline. How to use it: the head of `PLAYTEST-M18.md`.
+- **The user's playtest of 88-93** (one skirmish, one 15-minute online game against a Zerg computer): **88** the name
+  prompt showed on first open and not after a reload; **89** Single Player's doors exactly, the skirmish lobby's START
+  started the game (its other controls not tried); **90** MULTIPLAYER connected straight to the list, HOST GAME and the
+  countdown into the game (the unreachable-server form not tried); **91, 92 not visited**; **93** right-clicks that were
+  not overtaken by another inside eight seconds closed up (3 probes 119 -> 21 px, 7 zealots 129 -> 61 px, all within ~90
+  px of the point), lines still spread. No errors, warnings or desyncs; median 60 fps (min 49), a steady 24 game frames a
+  second. The three "stalls" were supply blocks, which the recorder now ignores.
+- **Queue item A, start positions: DONE** (above).
 
 ## The eighth session's list (the user's third message, 2026-09-12)
 

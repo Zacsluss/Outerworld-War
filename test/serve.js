@@ -91,7 +91,7 @@ const server = http.createServer((req, res) => {
 // ---------------- minimal WebSocket server ----------------
 const clients = new Map(); let nextId = 1;
 const rooms = new Map();        // code -> lobby. Created on demand, deleted when the last client leaves.
-// players: {id, name, race, team, ai, difficulty, gone}
+// players: {id, name, race, team, ai, difficulty, style, start, gone, ready}
 function newLobby(code) { return { code, players: [], state: 'lobby', layout: 'temple', seed: 0, started: null, history: [], lastF: {}, gone: {}, title: '', listed: false, count: 0, timer: null, lockTeams: false, created: Date.now(), rules: Object.assign({}, RULE_DEFAULTS), cap: MAX_PLAYERS, specs: [] }; }
 function specOf(L, id) { return (L.specs || []).find(s => s.id === id) || null; }
 // How many players the room's map has starts for. The relay never loads the map tables, so the HOST'S client says (Net.mapCap)
@@ -128,8 +128,16 @@ function hostOf(L) { return L.players.find(q => !q.ai && !q.gone) || null; }
 // The style rides here and in startMsg's player list, and that is the WHOLE plumbing an AI play style
 // needs: js/ai.js's constructor reads it off G.setup.players[id].style, and G.setup is the options object
 // Net.startGame builds. So a styled network AI costs no change to any stamped file. (item 1)
-function lobbyState(L) { const host = hostOf(L); return { t: 'lobby', room: L.code, title: L.title, listed: !!L.listed, players: L.players.map(p => ({ id: p.id, name: p.name, race: p.race, team: p.team, ai: !!p.ai, difficulty: p.difficulty, style: p.style, gone: !!p.gone, ready: !!p.ready || !!p.ai, host: host ? p.id === host.id : false, ping: p.ai ? null : pingOf(p.id) })), cap: capOf(L), specs: (L.specs || []).map(s => ({ id: s.id, name: s.name, ping: pingOf(s.id) })), layout: L.layout, state: L.state, speed: L.speed == null ? 6 : L.speed, count: L.count | 0, lockTeams: !!L.lockTeams, rules: L.rules, delay: DELAY, readyCheck: READY_CHECK }; }
+function lobbyState(L) { const host = hostOf(L); return { t: 'lobby', room: L.code, title: L.title, listed: !!L.listed, players: L.players.map(p => Object.assign({ id: p.id, name: p.name, race: p.race, team: p.team, ai: !!p.ai, difficulty: p.difficulty, style: p.style, gone: !!p.gone, ready: !!p.ready || !!p.ai, host: host ? p.id === host.id : false, ping: p.ai ? null : pingOf(p.id) }, startOf(p))), cap: capOf(L), specs: (L.specs || []).map(s => ({ id: s.id, name: s.name, ping: pingOf(s.id) })), layout: L.layout, state: L.state, speed: L.speed == null ? 6 : L.speed, count: L.count | 0, lockTeams: !!L.lockTeams, rules: L.rules, delay: DELAY, readyCheck: READY_CHECK }; }
 function pingOf(id) { const c = clients.get(id); return c && c.rtt != null ? c.rtt : null; }
+// A START POSITION (ninth session, queue item A; OpenRA, StarCraft II and Age of Empires II all let a lobby place players).
+// `start` is an index into the map's starts -- the lobby draws it plus one -- and a slot without one is AUTOMATIC: the
+// game puts it on its seat's own start, or the first free one (GameMap.assignStarts, which the relay never loads). The
+// relay checks what it can know without the map: a whole number below the cap the host's client declared for the map,
+// and nobody else's. Carried only when chosen, so a lobby where nobody chooses sends exactly what it always sent.
+function startOf(p) { return Number.isInteger(p.start) ? { start: p.start } : {}; }
+// Starts belong to a map: a new map, or a new size of a procedural one, puts everyone back on automatic, and the room hears it.
+function clearStarts(L) { let n = 0; for (const p of L.players) if (Number.isInteger(p.start)) { delete p.start; n++; } if (n) sys(L, 'starts', { reset: true }); return n; }
 // A line for the lobby chat, written by the relay (item 2). Every change a player did not make themselves -- a join, a
 // kick, a new map, a shuffle -- is said out loud, so nobody is surprised by one. Structured rather than worded: the relay
 // knows a map only by its id, and the client that knows its name writes the sentence.
@@ -192,10 +200,10 @@ function startMsg(L, idx) { return { room: L.code, seed: L.seed, layout: L.layou
 function beginGame(L) {
   L.state = 'playing'; L.count = 0; L.timer = null; pushLobbies();
   L.seed = Math.floor(Math.random() * 1e9); const races = ['T', 'Z', 'P'];
-  L.started = L.players.map(p => ({ name: p.name, race: p.race === 'R' ? races[Math.floor(Math.random() * 3)] : p.race, team: p.team, human: !p.ai, difficulty: p.difficulty, style: p.style }));
+  L.started = L.players.map(p => Object.assign({ name: p.name, race: p.race === 'R' ? races[Math.floor(Math.random() * 3)] : p.race, team: p.team, human: !p.ai, difficulty: p.difficulty, style: p.style }, startOf(p)));
   L.history = []; L.lastF = {}; L.gone = {};
   for (const cl of inRoom(L)) { const idx = L.players.findIndex(p => p.id === cl.id); if (idx >= 0) send(cl, Object.assign({ t: 'start' }, startMsg(L, idx))); else if (specOf(L, cl.id)) send(cl, Object.assign({ t: 'start' }, startMsg(L, -1))); }
-  console.log(tag(L) + 'game started: ' + L.started.map(p => p.name + '/' + p.race + (p.human ? '' : '/' + p.difficulty + '/' + (p.style || 'standard'))).join(', ') + ' on ' + L.layout + ' seed ' + L.seed);
+  console.log(tag(L) + 'game started: ' + L.started.map(p => p.name + '/' + p.race + (p.human ? '' : '/' + p.difficulty + '/' + (p.style || 'standard')) + (p.start != null ? '/start ' + (p.start + 1) : '')).join(', ') + ' on ' + L.layout + ' seed ' + L.seed);
 }
 // While it runs the room state is 'starting': join, set, addai and kick all refuse, because the player
 // list beginGame() reads must not move under the count. Anyone leaving cancels it -- a game that counted
@@ -290,15 +298,23 @@ function onMessage(c, m) {
         // or the host, editing another HUMAN's race out from under them.
         const t = (m.id != null) ? L.players.find(p => p.id === m.id) : me;
         if (t && (t === me || (isHost && t.ai))) {
-          const was = t.race + '|' + t.team + '|' + t.difficulty + '|' + t.style;
+          const was = t.race + '|' + t.team + '|' + t.difficulty + '|' + t.style, wasStart = t.start;
           if (m.race) t.race = raceOf(m.race);
           // LOCK TEAMS (item 2; StarCraft II's lobby option): once the host locks them only the host moves anyone.
           if (m.team && (!L.lockTeams || isHost)) t.team = teamOf(m.team, t.team);
           if (t.ai && m.difficulty) t.difficulty = diffOf(m.difficulty, t.difficulty);
           if (t.ai && m.style) t.style = styleOf(m.style, t.style);
-          if (was !== t.race + '|' + t.team + '|' + t.difficulty + '|' + t.style) {
-            // An opponent changed under everyone: every agreement is withdrawn. A player's own race or team: only theirs.
-            if (t.ai) { sys(L, 'ai', { name: t.name }); unreadyAll(L, 'ai'); } else if (t.ready && t !== hostOf(L)) t.ready = false;
+          // null is automatic. A start another slot holds is refused without a word: the lobby draws it as taken, and two
+          // players on one start would be two halls on one base.
+          if ('start' in m) {
+            if (m.start === null) delete t.start;
+            else if (Number.isInteger(m.start) && m.start >= 0 && m.start < capOf(L) && !L.players.some(q => q !== t && q.start === m.start)) t.start = m.start;
+          }
+          const moved = wasStart !== t.start;
+          if (moved) sys(L, 'start', Object.assign({ name: t.name }, startOf(t)));
+          if (was !== t.race + '|' + t.team + '|' + t.difficulty + '|' + t.style || moved) {
+            // An opponent changed under everyone: every agreement is withdrawn. A player's own race, team or start: only theirs.
+            if (t.ai) { if (was !== t.race + '|' + t.team + '|' + t.difficulty + '|' + t.style) sys(L, 'ai', { name: t.name }); unreadyAll(L, 'ai'); } else if (t.ready && t !== hostOf(L)) t.ready = false;
           }
         }
         // PLAY / SPECTATE. The host cannot step out: the host is the first human in the game, and a room whose host was only
@@ -309,10 +325,10 @@ function onMessage(c, m) {
           else if (!m.spectate && sp && L.players.length < capOf(L)) { L.specs = L.specs.filter(s => s !== sp); L.players.push({ id: sp.id, name: sp.name, race: raceOf(m.race), team: joinTeam(L) }); sys(L, 'play', { name: sp.name }); }
         }
         if (me && typeof m.ready === 'boolean' && !!me.ready !== m.ready) { me.ready = m.ready; sys(L, m.ready ? 'ready' : 'notready', { name: me.name }); }
-        if (isHost && typeof m.layout === 'string' && m.layout.length <= 64 && m.layout !== L.layout) { L.layout = m.layout; sys(L, 'map', { layout: L.layout }); unreadyAll(L, 'map'); }
+        if (isHost && typeof m.layout === 'string' && m.layout.length <= 64 && m.layout !== L.layout) { L.layout = m.layout; sys(L, 'map', { layout: L.layout }); clearStarts(L); unreadyAll(L, 'map'); }
         if (isHost && m.speed != null) { const sp = Math.max(0, Math.min(6, m.speed | 0)); if (sp !== (L.speed == null ? 6 : L.speed)) { L.speed = sp; sys(L, 'speed', { speed: sp }); unreadyAll(L, 'speed'); } }
         if (isHost && typeof m.title === 'string' && m.title.trim()) L.title = m.title.trim().slice(0, 40);
-        if (isHost && m.cap != null) L.cap = Math.max(1, Math.min(MAX_PLAYERS, m.cap | 0));
+        if (isHost && m.cap != null) { L.cap = Math.max(1, Math.min(MAX_PLAYERS, m.cap | 0)); if (L.players.some(p => p.start >= L.cap)) clearStarts(L); }
         // GAME PRIVACY (the SC2 lobby's row, and a real one): listed means every browser on this server
         // sees the game, unlisted means only the code reaches it. The code never changes, so going private
         // does not lock out the people already in the room.
@@ -320,7 +336,7 @@ function onMessage(c, m) {
         if (isHost && typeof m.lockTeams === 'boolean' && m.lockTeams !== !!L.lockTeams) { L.lockTeams = m.lockTeams; sys(L, 'lock', { on: L.lockTeams }); }
         if (isHost && m.rules && typeof m.rules === 'object') {
           let changed = false;
-          for (const k of RULE_KEYS) { if (!(k in m.rules)) continue; const v = ruleOf(m.rules[k]); if (v !== null && v !== L.rules[k]) { L.rules[k] = v; changed = true; sys(L, 'rule', { key: k, value: v }); } }
+          for (const k of RULE_KEYS) { if (!(k in m.rules)) continue; const v = ruleOf(m.rules[k]); if (v !== null && v !== L.rules[k]) { L.rules[k] = v; changed = true; sys(L, 'rule', { key: k, value: v }); if (k === 'size') clearStarts(L); } }
           if (changed) unreadyAll(L, 'rules');
         }
       }

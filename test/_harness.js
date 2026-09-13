@@ -99,4 +99,66 @@ function summary(o = {}) {
   process.exit(fail ? 1 : 0);
 }
 
-module.exports = { SIM, COLLECT, makeCtx, load, makeOk, ok, okMC, counts, summary, root };
+// mkDom(indexHtmlText) -> a document built from index.html's <body>: every element with an id (and the settings tabs' data-
+// attributes) is an element, and an element's innerHTML is parsed on demand, so querySelector('[data-kick]'), .value, .onchange
+// and .click() behave as the menus need them to. Moved here verbatim from test/menus.js (ninth session) for test/starts.js.
+function mkDom(text) {
+  const document = { activeElement: undefined };
+  const statics = [];
+  const parseAttrs = s => { const a = {}; const re = /([\w-]+)(?:="([^"]*)")?/g; let m; while ((m = re.exec(s || ''))) a[m[1]] = m[2] === undefined ? '' : m[2]; return a; };
+  const tagsOf = t => { const out = []; const re = /<([a-zA-Z][\w-]*)(\s[^<>]*?)?\s*\/?>/g; let m; while ((m = re.exec(t))) out.push({ tag: m[1].toLowerCase(), attrs: parseAttrs(m[2]), index: m.index, end: re.lastIndex }); return out; };
+  const matches = (t, sel) => {
+    if (sel[0] === '#') return t.attrs.id === sel.slice(1);
+    if (sel[0] === '.') return String(t.attrs.class || '').split(/\s+/).includes(sel.slice(1));
+    if (sel[0] === '[') {   // one attribute or several: [data-slot="-2"][data-field="race"]
+      const parts = sel.match(/\[[^\]]+\]/g) || [];
+      return parts.join('') === sel && parts.every(part => { const am = /^\[([\w-]+)(?:="([^"]*)")?\]$/.exec(part); return !!am && am[1] in t.attrs && (am[2] === undefined || t.attrs[am[1]] === am[2]); });
+    }
+    return t.tag === sel.toLowerCase();
+  };
+  const lastPart = sel => sel.trim().split(/\s+/).pop();
+  const decode = s => s.replace(/&mdash;/g, '—').replace(/&#(\d+);/g, (m, n) => String.fromCharCode(+n)).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+  function mkEl(tag, attrs, inner) {
+    const listeners = {};
+    const el = {
+      tagName: tag.toUpperCase(), id: attrs.id || '', attrs, style: {}, dataset: {}, kids: [], _html: '', _cache: null,
+      value: attrs.value || '', checked: 'checked' in attrs, disabled: 'disabled' in attrs, placeholder: attrs.placeholder || '', textContent: inner || '', title: attrs.title || '',
+      classList: { set: new Set(String(attrs.class || '').split(/\s+/).filter(Boolean)), toggle(c, on) { if (on === undefined ? !this.set.has(c) : on) this.set.add(c); else this.set.delete(c); }, contains(c) { return this.set.has(c); }, add(c) { this.set.add(c); }, remove(c) { this.set.delete(c); } },
+      get className() { return [...this.classList.set].join(' '); }, set className(v) { this.classList.set = new Set(String(v).split(/\s+/).filter(Boolean)); },
+      addEventListener(t, fn) { (listeners[t] = listeners[t] || []).push(fn); },
+      removeEventListener(t, fn) { const l = listeners[t] || []; const i = l.indexOf(fn); if (i >= 0) l.splice(i, 1); },
+      fire(t, extra) { const ev = Object.assign({ type: t, target: el, preventDefault() { }, stopPropagation() { } }, extra || {}); for (const fn of (listeners[t] || []).slice()) fn(ev); if (typeof el['on' + t] === 'function') el['on' + t](ev); },
+      click() { el.fire('click'); },
+      focus() { document.activeElement = el; },
+      appendChild(c) { el.kids.push(c); return c; },
+      get innerHTML() { return el._html; }, set innerHTML(v) { el._html = String(v); el.kids = []; el._cache = null; },
+      querySelectorAll(sel) {
+        const part = lastPart(sel);
+        if (el._html) {
+          if (!el._cache) el._cache = new Map();
+          return tagsOf(el._html).filter(t => matches(t, part)).map(t => {
+            if (!el._cache.has(t.index)) { const close = el._html.indexOf('<', t.end); el._cache.set(t.index, mkEl(t.tag, t.attrs, close > t.end ? decode(el._html.slice(t.end, close)) : '')); }
+            return el._cache.get(t.index);
+          });
+        }
+        return statics.filter(e => e !== el && matches({ tag: e.tagName.toLowerCase(), attrs: Object.assign({}, e.attrs, { class: e.className }) }, part));
+      },
+      querySelector(sel) { return el.querySelectorAll(sel)[0] || null; },
+      getContext() { return null; },
+    };
+    if (/display:\s*none/.test(attrs.style || '')) el.style.display = 'none';
+    for (const k of Object.keys(attrs)) if (k.startsWith('data-')) el.dataset[k.slice(5).replace(/-(\w)/g, (m, ch) => ch.toUpperCase())] = attrs[k];
+    return el;
+  }
+  const body = text.slice(text.indexOf('<body>'));
+  for (const t of tagsOf(body)) if (t.attrs.id || 'data-tab' in t.attrs || 'data-body' in t.attrs || 'data-keys' in t.attrs) { const close = body.indexOf('<', t.end); statics.push(mkEl(t.tag, t.attrs, close > t.end ? body.slice(t.end, close) : '')); }
+  document.getElementById = id => statics.find(e => e.id === id) || null;
+  document.querySelectorAll = sel => statics.filter(e => matches({ tag: e.tagName.toLowerCase(), attrs: Object.assign({}, e.attrs, { class: e.className }) }, lastPart(sel)));
+  document.createElement = tag => mkEl(tag, {});
+  document.addEventListener = () => { };
+  document.hasFocus = () => true;
+  document.body = { appendChild() { } };
+  return document;
+}
+
+module.exports = { SIM, COLLECT, makeCtx, load, makeOk, ok, okMC, counts, summary, root, mkDom };

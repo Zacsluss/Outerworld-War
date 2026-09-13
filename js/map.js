@@ -608,6 +608,33 @@ class GameMap {
     for (let i = 0; i < n; i++) this.noise[i] = Math.floor(this.rand() * 255);
     this.generate();
   }
+  // WHO STARTS WHERE (ninth session, queue item A: a start position chosen in the lobby). `players` is G.init's players
+  // array and `count` the map's number of starts; the answer is one index into this.starts per player. A player's
+  // `start` is the start they chose (the number the lobby draws, less one); without one the player is AUTOMATIC.
+  //   * A chosen start in range is honoured. A second claim on the same start is automatic -- only a hand-made options
+  //     object can make one, because the relay and the skirmish lobby both refuse it.
+  //   * An automatic player takes the start its SEAT always took, i % count, when nobody has it, and otherwise the first
+  //     free start in the map's start order. So a game where nobody chose starts exactly as every game started before
+  //     this existed -- every AI figure measured on it and every suite's map position still hold -- and choosing only
+  //     ever moves the players it has to.
+  //   * More players than starts wraps onto a start already taken, as it always did (test/net_many.js plays five on
+  //     four-start maps on purpose; the lobby refuses it).
+  // DELIBERATELY NOT RANDOM, where StarCraft II and OpenRA deal automatic players a random free start: nothing here reads
+  // the seed, so the lobby's preview calls this same function and shows where every automatic seat will stand before
+  // anyone presses START (the relay picks the seed at START), and a game with no choices is unchanged. It is static and
+  // pure for that reason: the preview has no map built, only the layout's count.
+  static assignStarts(players, count) {
+    const n = Math.max(0, count | 0), list = Array.isArray(players) ? players : [];
+    const out = list.map(() => -1), taken = new Array(n).fill(false);
+    list.forEach((po, i) => { const s = po ? po.start : null; if (Number.isInteger(s) && s >= 0 && s < n && !taken[s]) { out[i] = s; taken[s] = true; } });
+    list.forEach((po, i) => {
+      if (out[i] >= 0 || !n) return;
+      let s = i % n;
+      if (taken[s]) { const free = taken.indexOf(false); if (free >= 0) s = free; }
+      out[i] = s; taken[s] = true;
+    });
+    return out;
+  }
   // The layout this map is built from. A plain id is a MAP_LAYOUTS key; an "arch:<key>:<seed>[:<size>]"
   // id is generated on the spot instead of being registered, because there are four billion of them
   // per archetype and MAP_LAYOUTS is hashed into the build stamp. Both clients hold the generator, so

@@ -1,4 +1,144 @@
-# HANDOFF — M18 (the eighth session: the menus, researched)
+# HANDOFF — M18 (the ninth session: the user's answers, the playtest recorder, start positions)
+
+Written during the ninth session (2026-09-12), after queue item A. Branch `m10-overnight`, which is `origin/main`.
+**Everything is committed and pushed; there are no open pull requests, no other branches and no extra worktrees.**
+Trust `git log -1` for HEAD, not a hash written here.
+
+> **READ `TODO-M18.md` FIRST.** Its first section, THE WORK QUEUE, now holds the user's answers to the three questions
+> as well as their decision on every item. `PLAYTEST-M18.md` item 94 is this session's work by hand, and its head says
+> how to record a playtest. `RESEARCH-LOBBY.md` section 7 is the start-position research.
+
+---
+
+## The state
+
+- **The gate is 86 suites (the new one is `starts`, 58 checks) and 2 are red: `aistyles` and `queens`**, and every failing
+  line is byte-identical to the eighth session's gate log -- choosing a start moved no AI measurement. **Build stamp
+  `506fb0d48d1e1d36`** (moved: `js/game.js` and `js/map.js` place players by `GameMap.assignStarts`).
+- **By hand:** `net_many` 51/51; `desktop/page-check.js` 22/22 (`desktop/dist` refreshed); `aistyles` seed 1 125/7, seed 5
+  125/7 (the same seven wave-and-attack-timing lines), seed 11 124/8 (the seven plus the long-standing flaky "harasser
+  fields more fast units than turtle", 3 vs 5); `eightplayer` 18/19 (the economy-floor line). All as before.
+- **Negative controls:** 30 in `.claude/review/starts/controls.js`, every one cleanly red.
+- **The user answered the three questions** (TODO-M18): **G is authorized**, **D is unsigned builds only**, and their
+  **playtest of 88-93 is done** (results in TODO-M18, "The ninth session"). They want every queue item finished.
+- **The playtest recorder** may still be running from this session on ports 8870-8871 (a `preview_start` server named
+  `playtest`). It is harmless, gitignored in what it writes, and not on any gate port.
+
+## What changed this session, in a player's language
+
+1. **You can choose where you start** -- in the skirmish lobby and online. Click a start on the lobby's map (click it
+   again to give it back), or use the Start list on your slot. As the host, your clicks place you and then each computer
+   still on Auto; a computer's Start list sets it directly. Nobody can take a start someone holds. A new map puts
+   everyone back on Auto. The map shows every seat on the start it will really get, a chosen start ringed. (PLAYTEST 94)
+2. **Deliberately different from the research's models:** OpenRA and StarCraft II deal Auto players a random start. Here
+   an Auto seat keeps its seat's own start, or takes the first free one -- so the lobby can show exactly where everyone
+   will be before START, and a game where nobody chooses is the same game as before.
+3. **A playtest can be recorded** (for the assistant, not the player): `node tools/playtest-listen.js`, play at
+   http://127.0.0.1:8870, press NOTE when something looks wrong.
+
+**Saves and replays from before this session are refused** (the build stamp moved).
+
+**Not done yet:** queue items B-G.
+
+## Traps found this session
+
+1. **A research subagent put the user's email address in a User-Agent header** on one request to a public API. Tell every
+   research agent, in its prompt, never to put an email address or any personal detail in a request, URL or header.
+2. **A playtest served from the working tree shows work in progress** -- a half-made edit, a negative control breaking a
+   file for a minute. The recorder serves the COMMIT (`git show <rev>:path`); restart it to serve a newer one.
+3. **A placement check whose chosen starts equal the seats' own proves nothing:** the skirmish-lobby check first chose
+   starts 1 and 2 for seats one and two, and a control placing everyone by seat still passed it. Choose other starts.
+4. **`UI.showPanel` is ASSIGNED inside the DOMContentLoaded handler**, and the first screen is shown from that handler, so
+   anything that wraps it later misses the first screen. The recorder traps the assignment instead.
+5. **A start is an index into `G.map.starts` AFTER the layout's `startOrder`**; the lobby draws index + 1. On Lost Ruins
+   start 1 is top left, 2 bottom right, 3 top right, 4 bottom left.
+6. **Tests make "custom" maps by copying a fixed layout** (bases with `hall`, no `x`/`y`); `Net.mapStarts` draws nothing
+   for a custom layout without painted coordinates rather than NaN circles.
+7. **`mkDom` (the page built from index.html) now lives in `test/_harness.js`**, shared by `test/menus.js` and
+   `test/starts.js`. `test/menus.js` is still 79/79.
+8. **A Monitor tailing the recorder's notable log floods during combat micro** (a line per right-click). Filter
+   `RIGHT-CLICK` out; the lines are in the file anyway.
+
+## Diagnostics added this session
+
+`tools/playtest-listen.js`, `tools/playtest-client.js`, `tools/playtest-report.js` (tracked). `.claude/review/starts/` --
+`probe.js` (the placement baseline, run before any change), the patch specs, `controls.js` (30), `gate-1.log`, the
+`aistyles` / `eightplayer` / `net_many` logs. `.claude/review/playtest/` -- the user's recorded playtest and `report-1.txt`.
+
+---
+
+## Kickoff prompt for a fresh chat
+
+Paste everything inside the fence into an empty chat. **Replace the HEAD placeholder with `git log -1 --format=%h`
+first** -- committing this file moves it.
+
+```
+Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
+Branch: m10-overnight, which IS origin/main (https://github.com/Zacsluss/Outerworld-War -- a PUBLIC repo; git push
+publishes). HEAD: <run git log -1 --format=%h>. Working tree clean, nothing unpushed, no open PRs, no other branches,
+no extra worktrees. Keep it that way.
+Machine: Windows 11; PowerShell and Git Bash; Node 24. There is no gh CLI and no Blender.
+
+READ IN THIS ORDER, then start:
+  1. CLAUDE.md          -- the working agreement. Every rule in it is non-negotiable.
+  2. TODO-M18.md        -- its FIRST section, "THE WORK QUEUE": the user's decision on every open item, THEIR ANSWERS
+                           to the three questions (ninth session), the order, and what each item needs.
+  3. HANDOFF-M18.md     -- the state and the traps, newest session first.
+  4. PLAYTEST-M18.md (items 64 on) and RESEARCH-LOBBY.md -- as each item needs them.
+
+THE STATE: node test/all.js is 86 suites, ~5 minutes, and 2 are RED: aistyles and queens (the computer AI's pacing under
+the slower economy). Build stamp 506fb0d48d1e1d36. Queue item A (start positions) is DONE.
+
+THE USER'S ANSWERS (do not ask again): G is AUTHORIZED ("you can fix now") -- narrowly, with test/balance.js and
+test/proxy.js untouched; D is UNSIGNED BUILDS ONLY (no Apple Developer Program, no paid Windows signing); their playtest
+of 88-93 is done and written up in TODO-M18 ("The ninth session"). The user wants EVERY queue item finished: do not
+stop between items, and resume anything a message interrupts.
+
+THE SINGLE NEXT ACTION: queue item B -- rematch / back to the same lobby after a game. Research first (OpenRA, BAR/SPADS,
+FAF, StarCraft II, Age of Empires II), write the design for the hard cases BEFORE code (who is host, players who left,
+spectators, a player still on the end screen, the room code), then build it, test it on its own relay ports, and
+negative-control it. Then C, D, E, F, G in order.
+
+THE QUEUE, in order: B rematch / back to the lobby -> C ratings and skill-balanced teams -> D the desktop Mac build in
+GitHub Actions, unsigned -> E basic internet-play safety for the relay -> F research that gets stuck (reproduce first;
+the playtest recorder's stall detector helps) -> G the two red suites (authorized). DEFERRED until the user says so:
+the AI rebalance (TODO-M18 7b) and the terrain art path.
+
+FOR EVERY ITEM:
+  - Research how established games do it first and tell the user what you found, with sources. A research subagent
+    must be told never to put an email address or any personal detail in a request, URL or header (one did, once).
+  - MEASURE BEFORE FIXING: build the probe first and make it assert its own setup.
+  - Every new behaviour gets a negative control that goes cleanly RED (tools/control.js, or a runner like
+    .claude/review/starts/controls.js). A check a control does not turn red is a weak check: strengthen it.
+  - node test/all.js before every commit; touch nothing in js/ or test/ while it runs. A red rooms/lobby/starts with
+    EADDRINUSE is a stray server on the relay ports (CLAUDE.md lists them): re-run that suite alone, then the gate.
+  - After any relay or net change run node test/net_many.js by hand; after any AI or simulation change run
+    node test/aistyles.js --seed=1 / --seed=5 / --seed=11 and node test/eightplayer.js, and record ALL the numbers.
+  - Write a PLAYTEST-M18.md entry saying how to try it by hand; update TODO-M18.md and HANDOFF-M18.md; commit and push.
+  - To let the user playtest with a record: node tools/playtest-listen.js (http://127.0.0.1:8870, serves the last
+    commit), then node tools/playtest-report.js when they say done.
+
+HARD RULES:
+  - Never Math.random() in simulation code (G.rand()). Anything a replay or a rejoin must reproduce goes through the
+    G.init options or the command log (test/cmdlog.js).
+  - A change to a stamped file (js/data, map, sim, game, combat, abilities, commands, ai, missions, build) moves the
+    build stamp: old saves and replays are refused. Say so in the PLAYTEST entry.
+  - The relay (test/serve.js) must stay dependency-free: the desktop app's relay is built from it as one executable.
+  - Detect line endings per file. Edit with tools/patch.js and write every spec and probe with the Write tool (bash
+    mangles backslashes and backticks, heredocs included). Never sed -i.
+  - Never start test/balance.js or test/proxy.js without an explicit, double-checked instruction.
+  - Never type, store or handle the user's passwords, certificates or API keys. Art or assets someone bought stay out
+    of this public repository.
+  - The comments in js/ are load-bearing: they record why the obvious thing was not done. Do not delete reasoning.
+
+CLOSE THE SESSION the CLAUDE.md way: a numbered list of what changed FOR A PLAYER (including anything deliberately
+different from what was asked, and anything unfinished), how to playtest each item by hand (written into
+PLAYTEST-M18.md), a new kickoff prompt at the top of HANDOFF-M18.md, and everything committed and pushed.
+```
+
+---
+
+# The eighth session (the menus, researched), kept for the record
 
 Written at the end of the eighth session (2026-09-12). Branch `m10-overnight`, which is `origin/main`. **Everything is
 committed and pushed; there are no open pull requests, no other branches and no extra worktrees.** Trust `git log -1`
@@ -96,7 +236,7 @@ a start position, the research stall (TODO-M18 item 4, not reproduced).
 
 ---
 
-## Kickoff prompt for a fresh chat
+## The eighth session's kickoff prompt (SUPERSEDED by the one at the top of this file)
 
 Paste everything inside the fence into an empty chat. **Replace the HEAD placeholder with `git log -1 --format=%h`
 first** -- committing this file moves it.

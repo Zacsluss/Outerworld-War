@@ -1688,7 +1688,7 @@ const UI = {
   // reload would silently be a different match. There are therefore exactly two places a setting is
   // allowed to live, and every control on this screen goes to one of them:
   //
-  //   * PER PLAYER   -- race, difficulty, play style, team, starting bank. These ride on the
+  //   * PER PLAYER   -- race, difficulty, play style, team, starting bank, start position. These ride on the
   //                     players[] entries, which round-trip verbatim.
   //   * IN THE MAP   -- size, archetype, weather, destructibles, derelicts, wildlife. These are
   //                     properties of the LAYOUT, which is named by one string, and that string
@@ -1872,6 +1872,9 @@ const UI = {
     // where the next version of this control goes.
     const purse = p => { if (bank[2] !== 50) p.minerals = bank[2]; if (bank[3] !== 0) p.gas = bank[3]; return p; };
     const players = [purse({ race: String(pick('race')), human: true, name: 'Player', team: parseInt(pick('team'), 10) || 1 })];
+    // A start chosen in the lobby, and only then: an Auto seat carries no key, so an untouched lobby's options stay the old
+    // menu's byte for byte (G.init places a keyless player on its seat's own start, GameMap.assignStarts).
+    if (Number.isInteger(s.start)) players[0].start = s.start;
     const opps = Array.isArray(s.opponents) ? s.opponents : d.opponents;
     opps.forEach((o, i) => {
       o = o || {};
@@ -1879,6 +1882,7 @@ const UI = {
       // 'standard' is the zero delta and is what AI's constructor falls back to, so leaving the key off
       // keeps a default game's options byte-identical to the ones the old menu produced.
       if (o.style && o.style !== 'standard') p.style = String(o.style);
+      if (Number.isInteger(o.start)) p.start = o.start;
       players.push(purse(p));
     });
     return { players, seed: this.skirmishSeed(s), layout: this.skirmishLayoutId(s) };
@@ -1982,6 +1986,8 @@ UI.Skirmish = {
   teamOf(t, d) { const n = parseInt(t, 10); return n >= 1 && n <= 8 ? n : d; },
   diffOf(v) { return Object.prototype.hasOwnProperty.call(Net.DIFF_NAMES, v) ? v : 'normal'; },
   styleOf(v) { return Net.styles().some(x => x[0] === v) ? v : 'standard'; },
+  // Starts belong to a map: a new map, or a new size of a procedural one, puts every seat back on Auto, and the log says so.
+  clearStarts(L, line) { let n = 0; for (const p of L.players) if (Number.isInteger(p.start)) { delete p.start; n++; } if (n && line) line('starts', { reset: true }); return n; },
   // Computer 1, Computer 2... in seat order, which is the order UI.skirmishOptions names them in the game.
   renumber(L) { let n = 0; for (const p of L.players) if (p.ai) p.name = 'Computer ' + (++n); return L; },
   // A new room: you and one computer on the settings the skirmish screen always opened with (UI.setupDefaults).
@@ -1994,7 +2000,7 @@ UI.Skirmish = {
   },
   save() {
     const L = this.L; if (!L) return;
-    const keep = { layout: L.layout, speed: L.speed, rules: L.rules, players: L.players.map(p => p.ai ? { ai: true, race: p.race, difficulty: p.difficulty, style: p.style, team: p.team } : { race: p.race, team: p.team }) };
+    const keep = { layout: L.layout, speed: L.speed, rules: L.rules, players: L.players.map(p => Object.assign(p.ai ? { ai: true, race: p.race, difficulty: p.difficulty, style: p.style, team: p.team } : { race: p.race, team: p.team }, Number.isInteger(p.start) ? { start: p.start } : {})) };
     try { localStorage.setItem(this.KEY, JSON.stringify(keep)); } catch (e) { }
   },
   // Last time's room, read back through the same checks a message from the lobby's controls passes. Whatever does not
@@ -2011,6 +2017,10 @@ UI.Skirmish = {
     const ais = ps.filter(p => p.ai).slice(0, 7);
     if (ais.length) L.players = [L.players[0]].concat(ais.map((a, i) => ({ id: -(i + 1), ai: true, name: '', race: this.raceOf(a.race, 'R'), difficulty: this.diffOf(a.difficulty), style: this.styleOf(a.style), team: this.teamOf(a.team, i + 2) })));
     L.cap = this.cap(L);
+    // Starts come back only where they still hold: on this map's starts, one seat each. The computers' are theirs only when
+    // the computers themselves came back.
+    const from = [me || null].concat(ais.length ? ais : L.players.slice(1).map(() => null));
+    L.players.forEach((p, i) => { const s = from[i] ? from[i].start : null; if (Number.isInteger(s) && s >= 0 && s < L.cap && !L.players.some(q => q !== p && q.start === s)) p.start = s; });
     return this.renumber(L);
   },
   // The lobby's messages, answered as test/serve.js answers them for a host -- less everything about other humans.
@@ -2026,13 +2036,20 @@ UI.Skirmish = {
           if (m.team) t.team = this.teamOf(m.team, t.team);
           if (t.ai && m.difficulty) t.difficulty = this.diffOf(m.difficulty);
           if (t.ai && m.style) t.style = this.styleOf(m.style);
+          // As the relay: a start on this map that no other seat holds, or null for Auto.
+          if ('start' in m) {
+            const was = t.start;
+            if (m.start === null) delete t.start;
+            else if (Number.isInteger(m.start) && m.start >= 0 && m.start < this.cap(L) && !L.players.some(q => q !== t && q.start === m.start)) t.start = m.start;
+            if (was !== t.start) line('start', Object.assign({ name: t.name }, Number.isInteger(t.start) ? { start: t.start } : {}));
+          }
         }
-        if (typeof m.layout === 'string' && m.layout !== L.layout && Net.maps(true).some(x => x[0] === m.layout)) { L.layout = m.layout; line('map', { layout: L.layout }); }
+        if (typeof m.layout === 'string' && m.layout !== L.layout && Net.maps(true).some(x => x[0] === m.layout)) { L.layout = m.layout; line('map', { layout: L.layout }); this.clearStarts(L, line); }
         if (m.speed != null) { const sp = Math.max(0, Math.min(6, m.speed | 0)); if (sp !== L.speed) { L.speed = sp; line('speed', { speed: sp }); } }
         if (m.seed != null) { const n = parseInt(m.seed, 10); if (isFinite(n) && n >= 1) L.seed = Math.min(999999, n); }
         if (m.rules && typeof m.rules === 'object') for (const k of Object.keys(Net.RULE_DEFAULTS)) {
           if (!(k in m.rules)) continue;
-          const v = m.rules[k]; if (v !== L.rules[k] && Net.ruleOptions(k).some(x => x[0] === v)) { L.rules[k] = v; line('rule', { key: k, value: v }); }
+          const v = m.rules[k]; if (v !== L.rules[k] && Net.ruleOptions(k).some(x => x[0] === v)) { L.rules[k] = v; line('rule', { key: k, value: v }); if (k === 'size') this.clearStarts(L, line); }
         }
         break;
       }
@@ -2062,8 +2079,8 @@ UI.Skirmish = {
   // The room as the settings object UI.skirmishOptions reads. You are seat one; the computers follow in seat order.
   setup(L) {
     L = L || this.L; const me = L.players.find(p => p.id === this.ME) || L.players[0], r = Object.assign({}, Net.RULE_DEFAULTS, L.rules);
-    return { race: me.race, team: me.team, seed: L.seed, map: L.layout, size: r.size, bank: r.bank, hazard: r.hazard, night: r.night, features: r.features,
-      derelicts: r.derelicts, wildlife: r.wildlife, opponents: L.players.filter(p => p.ai).map(p => ({ race: p.race, difficulty: p.difficulty, style: p.style, team: p.team })) };
+    return { race: me.race, team: me.team, start: me.start, seed: L.seed, map: L.layout, size: r.size, bank: r.bank, hazard: r.hazard, night: r.night, features: r.features,
+      derelicts: r.derelicts, wildlife: r.wildlife, opponents: L.players.filter(p => p.ai).map(p => ({ race: p.race, difficulty: p.difficulty, style: p.style, team: p.team, start: p.start })) };
   },
   // START needs someone to play and a map with a start for everyone -- nothing else, because there is nobody to wait for.
   canStart(L) { L = L || this.L; return !!L && L.players.some(p => p.ai) && L.players.length <= this.cap(L); },

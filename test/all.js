@@ -92,6 +92,7 @@ const TESTS = [
   { name: 'menus', args: ['menus.js'], what: 'the menus: three doors, a name asked once, MULTIPLAYER connects, the skirmish lobby is the multiplayer lobby, the Codex and Controls tabs' },
   { name: 'hotkeys', args: ['hotkeys.js'], what: 'every command card key belongs to the player: the editor shows the real cards, one key per command, per layout, remembered, clashes named' },
   { name: 'lobby', args: ['lobby.js'], what: 'ready means ready, latency, system lines, teams, seats per map, rules, the browser and the invite link' },
+  { name: 'starts', args: ['starts.js'], what: 'a start chosen in the lobby: on the map, in the list, placed by the host, refused when taken, reset by a new map, and the game it starts' },
   { name: 'shots', args: ['shots.js'], what: 'every weapon has its own shot, the races are disjoint, and every kind actually draws' },
   { name: 'wavetarget', args: ['wavetarget.js'], what: 'an attack wave scores a defended main above a bare expansion, and finishes the base it is in' },
   { name: 'fognight', args: ['fognight.js'], what: 'explored ground remembers, and night shortens sight on maps that have one' },
