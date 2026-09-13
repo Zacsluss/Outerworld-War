@@ -2,7 +2,7 @@
 
 Loaded automatically every session. Kept short on purpose; the detail lives in `HANDOFF-M18.md` (**current
 state, the decisions waiting on the user, known reds, traps, the kickoff prompt**), `TODO-M18.md` (the open
-list with every measurement), `PLAYTEST-M18.md` (items 64 onward, by hand), `RESEARCH-LOBBY.md` (the lobby research), `HANDOFF-M17.md` and
+list with every measurement), `PLAYTEST-M18.md` (items 64 onward, by hand), `RESEARCH-LOBBY.md` (the lobby research), `RESEARCH-TERRAIN.md` (OpenRA's map editor and terrain, and ours), `HANDOFF-M17.md` and
 `PLAYTEST-M17.md` (everything before), `REVIEW-M17.md` (the full codebase review) and `DESIGN-M13.md`.
 
 ---

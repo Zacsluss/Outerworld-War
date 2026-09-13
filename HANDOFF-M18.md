@@ -20,12 +20,15 @@ HEAD, not a hash written here.
 - **By hand after the last AI and relay change:** `net_many` 51/51; `aistyles` 132/0 on seeds 1, 5 and 11 with every style row
   identical to the first batch's; `queens` 25/0; `eightplayer` 19/19; `desktop/page-check.js` 22/22; the relay rebuilt as the
   desktop executable from today's `test/serve.js`, `desktop/relay/check.js` 7/7.
+- **The desktop app, tested on this machine:** `desktop/window-check.js` 23/23 on a debug build of today's tree, and 23/23 on
+  the NSIS installer built with the CI's command, installed silently, run and uninstalled clean
+  (`.claude/review/tenth/install-test.js`).
 - **46 negative controls this session, every one cleanly red** (`.claude/review/tenth/controls-*.js`, run with
   `.claude/review/aipace/arms.js`).
 - **The repository is public** (the user made it private for a while on 2026-09-13, when it answered 404 to anonymous
   requests, and public again). **The Desktop builds rebuild when `desktop/`, `test/serve.js` or the workflow changes -- not
-  for the game page alone**: `ad06d00` and `372c4cc` built all three installers green; `3f43c93` (words only) is in none
-  yet. Private would cost those builds: 2,000 free Actions minutes a month and 500 MB of artifact storage (three installers
+  for the game page alone**: `ad06d00` and `372c4cc` built all three installers green; `f68e8f3` rebuilt them from today's whole
+  game. Private would cost those builds: 2,000 free Actions minutes a month and 500 MB of artifact storage (three installers
   are ~210 MB a run, kept 90 days) instead of free, blocked rather than billed once used.
 - **The user's playtest was recorded** (`.claude/review/playtest/2026-09-13_09-39-07/`, `report-2.txt`). Their six findings
   and the item they locked in mid-session (8) are fixed; what the recording shows they did not reach was run without them
@@ -64,10 +67,12 @@ HEAD, not a hash written here.
 - An Auto colour is the seat's own or the first free one, the rule the starts use, rather than a random one.
 
 **Not done, and why:**
-- **Deferred by the user until they say:** their playtest of 101-108, the AI rebalance (TODO-M18 7b -- the Zerg computer is
-  still passive for ten minutes) and the terrain art path. **The research stall is closed:** the user says it is fixed.
-- **The desktop app was not downloaded and installed** -- that needs the user's GitHub account for the artifacts and their
-  machine to run an unsigned installer.
+- **Deferred by the user until they say:** the AI rebalance (TODO-M18 7b -- the Zerg computer is still passive for ten
+  minutes). **Optional:** a look-and-feel pass of 101-108 -- everything in them is tested automatically. **Being discussed:**
+  the terrain art path (`RESEARCH-TERRAIN.md`). **Closed:** the research stall (the user says it is fixed).
+- **No Mac test**: there is no Mac here. The CI's Mac jobs build the app and check its relay and page; nothing opens it. The
+  Windows installer was tested as built locally with the CI's command, not as downloaded (an artifact needs a signed-in
+  account).
 
 ## Traps found this session
 
@@ -93,6 +98,10 @@ HEAD, not a hash written here.
 11. **The Desktop builds workflow does not rebuild for a change to the game page alone** (`js/`, `index.html`, `assets/`), so
     an installer can be older than the game: run it by hand (Actions -> Desktop builds -> Run workflow) before testing one.
     Its runs, jobs and artifacts read from `api.github.com` without signing in -- while the repository is public.
+12. **`desktop/window-check.js` is in no gate and no CI job**, so it drifted from the page for two sessions -- a START button,
+    a name field and a room field the eighth session's menus removed -- and failed at its fifth check. Run it after any change
+    to the Multiplayer screen or `js/desktop.js` (a debug build first: `npm run build:relay`, `npm run build:dist`, then
+    `cargo build` in `desktop/src-tauri`), and `.claude/review/tenth/install-test.js` for the installer cycle.
 
 ## Diagnostics added this session
 
@@ -122,18 +131,18 @@ READ IN THIS ORDER, then start:
   2. TODO-M18.md        -- its first section, THE USER'S DECISIONS AFTER THE TENTH SESSION (what is closed, what is
                            deferred), then THE TENTH SESSION'S QUEUE: their playtest findings, measured and done.
   3. HANDOFF-M18.md     -- the state and the traps, newest session first.
-  4. PLAYTEST-M18.md items 101-108 -- this session's work by hand; RESEARCH-LOBBY.md as an item needs it.
+  4. RESEARCH-TERRAIN.md for the terrain art discussion; PLAYTEST-M18.md items 101-108; RESEARCH-LOBBY.md as needed.
 
 THE STATE: node test/all.js is 97 suites, about two minutes, ALL GREEN. Build stamp 56406f9d777368ac. Every finding of the
 user's playtest of 2026-09-13 is fixed (PLAYTEST 101-107: force-attack your own side, Escape opens the menu, join by code,
 computer slots, colours, a leaver is out, workers answer a harassing worker), and what they did not reach was run without
 them (108, which found and fixed three wrong words).
 
-THE SINGLE NEXT ACTION: ask the user what to work on, and wait for the answer. Everything open is DEFERRED by the user
-until they say: their playtest of PLAYTEST-M18 101-108 (when they want it: start the recorder -- the `playtest` entry in
-.claude/launch.json, or node tools/playtest-listen.js, http://127.0.0.1:8870 -- and read it with
-node tools/playtest-report.js), the AI rebalance (TODO-M18 7b -- the Zerg computer first) and the terrain art path. The
-research stall is CLOSED (the user: fixed). Start nothing deferred without their word.
+THE SINGLE NEXT ACTION: ask the user where the terrain art discussion stands, and wait. They asked how OpenRA does its map
+editor and what its stack is; RESEARCH-TERRAIN.md holds the answer, what this game already has, and the choices it leaves.
+The rest: the AI rebalance (TODO-M18 7b) is DEFERRED until they say; a look-and-feel pass of PLAYTEST-M18 101-108 is
+OPTIONAL (when they want it: the `playtest` entry in .claude/launch.json, then node tools/playtest-report.js); the research
+stall is CLOSED. Start nothing deferred without their word.
 
 FOR EVERY ITEM:
   - Research how established games do it first and tell the user what you found, with sources. Tell every research

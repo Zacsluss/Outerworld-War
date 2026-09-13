@@ -17,8 +17,19 @@ for edits, and the gate green before the commit.
 
 - **The research stall is CLOSED** (Open, item 4) -- the user: "this bug is fixed - remove from tasks/todos list". The stall
   watcher stays in the game (PLAYTEST-M18 99); a `[stall]` report from it would reopen this.
-- **DEFERRED until the user says:** their playtest of PLAYTEST-M18 101-108, the AI rebalance (7b) and the terrain art path.
-- **The user's own:** Actions -> Desktop builds, and trying the installers (PLAYTEST-M18 96).
+- **DEFERRED until the user says:** the AI rebalance (7b).
+- **OPTIONAL, whenever the user likes:** a look-and-feel pass of PLAYTEST-M18 101-108. Every item in them is tested
+  automatically (their suites, 46 negative controls, and 103-106 clicked through in two browser tabs); what no test judges is
+  how they look and feel on screen.
+- **BEING DISCUSSED:** the terrain art path. The user asked how OpenRA does its map editor and what its stack is:
+  `RESEARCH-TERRAIN.md`.
+- **DONE without the user** (the user: "test this yourself ... then clear from list"): the Desktop builds -- Actions built
+  all three installers green from `f68e8f3`, today's whole game (Windows 4.9 min, Apple silicon 2.5, Intel 5.0) -- and the
+  Windows installer: built locally with the CI's own command, installed silently, `desktop/window-check.js` 23/23 on the
+  INSTALLED app (a real window: host, a second player joins by the code, stop, close, hard kill), uninstalled leaving nothing
+  (`.claude/review/tenth/install-test.js`). `desktop/window-check.js` had drifted from the page since the eighth session and
+  was brought up to date first (`f68e8f3`). **Not tested: a Mac** -- there is none here; the CI's Mac jobs build the app and
+  check its relay and page, and nothing opens it.
 - **The repository is PUBLIC.** The user made it private for a while on 2026-09-13 and public again the same day. Private
   would cost the Desktop builds: 2,000 free Actions minutes a month and 500 MB of artifact storage instead of free (three
   installers are ~210 MB a run, kept 90 days), blocked rather than billed once used (docs.github.com, GitHub Actions billing).
