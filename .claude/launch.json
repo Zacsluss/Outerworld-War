@@ -31,6 +31,15 @@
       "url": "http://127.0.0.1:8870"
     },
     {
+      "name": "terrain-shot",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "tools/terrain-shot.js",
+        "8897"
+      ],
+      "port": 8897
+    },
+    {
       "name": "playtest-check",
       "runtimeExecutable": "node",
       "runtimeArgs": [

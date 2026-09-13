@@ -1203,3 +1203,25 @@ a game, 94 online, 95, 96, 97, 98, 99 and 100 not exercised.)*
    With your start chosen and a computer on Auto, hover a free start: **"click to give it to Computer 0"** -- which is what
    the click does. A start an Auto seat stands on says "click to take it".
 3. **The note under GAME SETTINGS** says "Click your colour square to choose a colour" (the host's adds "a computer's too").
+
+---
+
+# Terrain
+
+## 109. Detailed terrain -- the Badlands test run (OFF unless you ask for it)
+
+*(The user, 2026-09-13: "i do not need an editor. i just want great looking maps", then, of the before/after: "this looks amazing
+so far - exactly the direction i want". `RESEARCH-TERRAIN.md` sections 7-8; the approved images are in `docs/terrain/`.)*
+
+**How to see it by hand:**
+1. Start the game as usual (PLAY.bat), then add **`?hd=1`** to the end of the address and reload.
+2. Single Player -> Skirmish on **Lost Ruins** (a Badlands map), START.
+3. **What working looks like:** the ground is photographic dry dirt; your base's high ground is lighter packed earth; its edge is
+   a natural, irregular cliff of orange layered rock, sunlit on its upper and left faces and in shadow on its lower and right
+   ones; ramps are worn slopes; rock zones are lumpy orange rock. No cartoon boulders, crack lines or striped ramps. Units,
+   minerals and buildings stand out against it.
+4. **Without `?hd=1`** the game looks exactly as before -- nothing changed for anyone else.
+
+**Not in the test run, and next (TODO-M18, THE TERRAIN QUEUE):** props on open ground, ramps walled on both sides, the other four
+tilesets (Jungle, Ice, Desert, Space Platform keep the old look even with `?hd=1`), a matching zoomed-out view and minimap (both
+still the old colours), a speed check on the biggest map, and switching it on for everyone.

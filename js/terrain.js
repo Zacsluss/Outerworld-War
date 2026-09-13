@@ -101,6 +101,20 @@ const TILESETS = {
 // the 4x4 Bayer matrix to show its whole ramp of densities, which is what reads as a dither rather
 // than as a jagged line. Narrower than about 0.12 and the stipple disappears into a hard step; wider
 // than about 0.4 and the dots spread far enough apart to read as noise on the terrain.
+// TEXTURED GROUND -- A TEST RUN, OFF BY DEFAULT (the user, 2026-09-13: "i do not need an editor. i just want great looking maps";
+// RESEARCH-TERRAIN.md). A tileset may name photographic ground textures (Poly Haven, CC0: assets/terrain/SOURCES.md). With
+// Terrain.textured on (?hd=1 in the address) and the set's textures loaded, a chunk is painted from them instead of from the
+// palette: low ground, high ground, ramps, cliffs and rock, blended along the height steps and lit from the upper left like
+// every sprite, with the high ground's shadow thrown down its cliff. The map, the pathing and the simulation are untouched --
+// this is drawing only, so no replay or network game can tell the difference.
+const TERRAIN_TEX = {
+  badlands: { low: 'assets/terrain/aerial_ground_rock_diff_1k.jpg', high: 'assets/terrain/dirt_aerial_03_diff_1k.jpg', ramp: 'assets/terrain/dirt_aerial_02_diff_1k.jpg', rock: 'assets/terrain/cliff_side_diff_1k.jpg' },
+};
+// A colour grade per material, multiplied in: the high ground warmer and lighter than the low, so which is which reads at a
+// glance the way the palette tilesets make it read.
+const TERRAIN_GRADE = {
+  badlands: { low: [0.74, 0.72, 0.7], high: [1.2, 1.11, 0.98], ramp: [1.04, 0.98, 0.9], rock: [0.92, 0.8, 0.7] },
+};
 const CREEP_LO = 0.37, CREEP_BAND = 0.26;
 const Terrain = {
   CH: 8, chunks: new Map(), _bakedAt: 1, seed: 1, mini: null, setId: 'badlands',
@@ -234,7 +248,110 @@ const Terrain = {
   // Bayer cell. The threshold pattern keeps exactly the apparent size it has at ratio 1; what gets
   // finer is the noise, the material blend and the vector pass on top.
   bakeDpr() { return (typeof Render !== 'undefined' && Render.dpr) || 1; },
+  // ---- textured ground (see TERRAIN_TEX) --------------------------------
+  textured: typeof location !== 'undefined' && /[?&]hd=1(&|$)/.test(String(location.search || '')),
+  TEX_PX: 512,   // texels in one repeat of a ground texture: sixteen tiles, which puts a metre of a 20 m aerial scan at about 25 px, a Marine's width
+  _tex: {},
+  // The set's textures, each drawn once into a TEX_PX canvas and kept as pixels; null until every one has loaded (the palette
+  // paints until then), and the chunk cache is dropped as each arrives so the ground bakes again with it.
+  texSet() {
+    const spec = this.textured && TERRAIN_TEX[this.setId];
+    if (!spec || typeof Image === 'undefined' || typeof document === 'undefined') return null;
+    const S = this.TEX_PX, out = {}; let ready = true;
+    for (const part of Object.keys(spec)) {
+      const url = spec[part]; let e = this._tex[url];
+      if (!e) { e = this._tex[url] = { img: new Image(), ok: false, data: null }; e.img.onload = () => { e.ok = true; this.chunks.clear(); }; e.img.src = url; }
+      if (!e.ok) { ready = false; continue; }
+      if (!e.data) { const cv = document.createElement('canvas'); cv.width = cv.height = S; const x = cv.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(e.img, 0, 0, S, S); e.data = x.getImageData(0, 0, S, S).data; }
+      out[part] = e.data;
+    }
+    return ready ? out : null;
+  },
+  // A textured chunk. Baked at ratio 1 whatever the display: a photograph survives the upscale where the dither did not, and
+  // this bake is several times the palette's per pixel.
+  renderChunkTex(cx, cy, T) {
+    const m = G.map, CH = this.CH, W = CH * TILE, S = this.TEX_PX, grade = TERRAIN_GRADE[this.setId] || {};
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = W; const x = cv.getContext('2d');
+    const img = x.createImageData(W, W), d = img.data, ox = cx * CH * TILE, oy = cy * CH * TILE;
+    // How HIGH each tile centre is -- low 0, a ramp or a cliff tile halfway, high 1 -- with where the rock zones and the ramps
+    // are, softened by a 3x3 blur so a diagonal cliff is a slope and not a staircase of tile corners (the first pass traced
+    // the grid exactly). It is read LINEARLY between centres and then pushed through a steep curve, so a cliff is one drop
+    // about two thirds of a tile wide at the cliff tile -- the smoothstep of the second pass made two small steps with a
+    // shelf between them, which read as a trench -- while a ramp keeps the linear value and climbs evenly from end to end.
+    const M = 3, GW = CH + 2 * M + 1, raw = new Float32Array(GW * GW), rz = new Float32Array(GW * GW), rpz = new Float32Array(GW * GW), t0x = cx * CH - M, t0y = cy * CH - M;
+    for (let j = 0; j < GW; j++) for (let i = 0; i < GW; i++) {
+      const tx = t0x + i, ty = t0y + j, o = j * GW + i;
+      if (tx < 0 || ty < 0 || tx >= m.w || ty >= m.h) { raw[o] = 1.25; rz[o] = 1; continue; }
+      const q = ty * m.w + tx, cl = m.cliff[q], h = m.height[q];
+      raw[o] = cl === 2 ? 1 : cl === 1 ? 0.5 : h === 2 ? 1 : h === 1 ? 0.5 : 0; rz[o] = cl === 2 ? 1 : 0; rpz[o] = !cl && h === 1 ? 1 : 0;
+    }
+    const blur = src => { const out = new Float32Array(GW * GW); for (let j = 0; j < GW; j++) for (let i = 0; i < GW; i++) { let s = 0, wsum = 0; for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const ii = i + a, jj = j + b; if (ii < 0 || jj < 0 || ii >= GW || jj >= GW) continue; const w = (a ? 1 : 2) * (b ? 1 : 2); s += src[jj * GW + ii] * w; wsum += w; } out[j * GW + i] = s / wsum; } return out; };
+    const gh = blur(raw), gr = blur(rz), gp = rpz;   // the ramp mask stays sharp: a ramp is a passage and has to read as one
+    const sm = t => t * t * (3 - 2 * t), PAD = 24, PW = W + 2 * PAD;
+    const hf = new Float32Array(PW * PW), rk = new Float32Array(PW * PW), rp = new Float32Array(PW * PW);
+    for (let py = 0; py < PW; py++) for (let pxx = 0; pxx < PW; pxx++) {
+      const wx = ox + pxx - PAD, wy = oy + py - PAD;
+      // a gentle warp of where the grid is read, so an edge wanders by up to a third of a tile instead of running dead straight
+      const qx = wx + (this.vnoise(wx / 37, wy / 37) - 0.5) * 22, qy = wy + (this.vnoise(wx / 37 + 17, wy / 37 + 29) - 0.5) * 22;
+      const fx = qx / TILE - 0.5 - t0x, fy = qy / TILE - 0.5 - t0y;
+      let i0 = Math.floor(fx), u = fx - i0, j0 = Math.floor(fy), v = fy - j0;
+      if (i0 < 0) { i0 = 0; u = 0; } else if (i0 > GW - 2) { i0 = GW - 2; u = 1; } if (j0 < 0) { j0 = 0; v = 0; } else if (j0 > GW - 2) { j0 = GW - 2; v = 1; }
+      const a = j0 * GW + i0, b = a + 1, c = a + GW, e = c + 1, o = py * PW + pxx;
+      const w00 = (1 - u) * (1 - v), w10 = u * (1 - v), w01 = (1 - u) * v, w11 = u * v;
+      const rock = gr[a] * w00 + gr[b] * w10 + gr[c] * w01 + gr[e] * w11, lin = gh[a] * w00 + gh[b] * w10 + gh[c] * w01 + gh[e] * w11;
+      rk[o] = rock;
+      // the ramp mask without the warp or the smoothstep, so its sides are where the passage really is
+      const gx2 = wx / TILE - 0.5 - t0x, gy2 = wy / TILE - 0.5 - t0y; let i1 = Math.floor(gx2), u1 = gx2 - i1, j1 = Math.floor(gy2), v1 = gy2 - j1;
+      if (i1 < 0) { i1 = 0; u1 = 0; } else if (i1 > GW - 2) { i1 = GW - 2; u1 = 1; } if (j1 < 0) { j1 = 0; v1 = 0; } else if (j1 > GW - 2) { j1 = GW - 2; v1 = 1; }
+      const a1 = j1 * GW + i1; rp[o] = gp[a1] * (1 - u1) * (1 - v1) + gp[a1 + 1] * u1 * (1 - v1) + gp[a1 + GW] * (1 - u1) * v1 + gp[a1 + GW + 1] * u1 * v1;
+      const kRamp = sm(Math.min(1, rp[o] * 1.5)), cliffH = sm(Math.min(1, Math.max(0, (lin - 0.5) / 0.36 + 0.5)));
+      // rock zones stand a little above the high ground and are lumpy, so the light finds boulders and hollows in them
+      hf[o] = cliffH * (1 - kRamp) + lin * kRamp + (rock > 0.05 ? (0.22 + (this.fbm(wx / 26, wy / 26, 2) - 0.5) * 0.6) * rock : 0);
+    }
+    const Ln = Math.hypot(0.5, 0.6, 0.62), lx = -0.5 / Ln, ly = -0.6 / Ln, lz = 0.62 / Ln, RISE = 22, BUMP = 4;   // the sun: upper left and above; RISE world px of height per unit
+    const A = [0, 0, 0], B = [0, 0, 0], col = [0, 0, 0], tmp = [0, 0, 0], one = [1, 1, 1];
+    const tex = (t, u, v, o) => { const p = ((((v | 0) % S) + S) % S * S + ((((u | 0) % S) + S) % S)) * 4; o[0] = t[p]; o[1] = t[p + 1]; o[2] = t[p + 2]; };
+    // A material is two samples of its texture -- the second transposed and rescaled -- mixed by broad noise, so the
+    // sixteen-tile repeat does not line up into a visible grid across a map.
+    const mat = (t, g, wx, wy, q, o) => { tex(t, wx, wy, A); tex(t, wy * 0.83 + 331, wx * 0.83 + 173, B); o[0] = (A[0] + (B[0] - A[0]) * q) * g[0]; o[1] = (A[1] + (B[1] - A[1]) * q) * g[1]; o[2] = (A[2] + (B[2] - A[2]) * q) * g[2]; };
+    const gLow = grade.low || one, gHigh = grade.high || one, gRamp = grade.ramp || one, gRock = grade.rock || one;
+    for (let py = 0; py < W; py++) for (let pxx = 0; pxx < W; pxx++) {
+      const wx = ox + pxx, wy = oy + py, o = (py + PAD) * PW + pxx + PAD, h = hf[o];
+      const q = sm(Math.min(1, Math.max(0, (this.vnoise(wx / 230, wy / 230) - 0.3) / 0.4)));
+      const dxh = (hf[o + 1] - hf[o - 1]) / 2, dyh = (hf[o + PW] - hf[o - PW]) / 2, steep = Math.sqrt(dxh * dxh + dyh * dyh);
+      // low ground under high, the seam pushed about by noise; the high ground carries some of the low ground's grit, so it is
+      // the same country raised up rather than a different floor
+      const tH = sm(Math.min(1, Math.max(0, (h + (this.vnoise(wx / 19, wy / 19) - 0.5) * 0.3 - 0.3) / 0.35)));
+      mat(T.low, gLow, wx, wy, q, col);
+      if (tH > 0) {
+        mat(T.high, gHigh, wx, wy, q, tmp); const gl = 0.38;
+        const hr = tmp[0] * (1 - gl) + col[0] * gl * 1.3, hg = tmp[1] * (1 - gl) + col[1] * gl * 1.3, hb = tmp[2] * (1 - gl) + col[2] * gl * 1.3;
+        col[0] += (hr - col[0]) * tH; col[1] += (hg - col[1]) * tH; col[2] += (hb - col[2]) * tH;
+      }
+      const pr = rp[o]; if (pr > 0.02) { mat(T.ramp, gRamp, wx, wy, q, tmp); const kp = sm(Math.min(1, pr * 1.3)) * 0.5; col[0] += (tmp[0] - col[0]) * kp; col[1] += (tmp[1] - col[1]) * kp; col[2] += (tmp[2] - col[2]) * kp; }   // half strength: worn tracks on the ground, not a new floor
+      // rock where the ground is steep -- the cliff's own face, not the whole tile around it -- and in the rock zones
+      const kr = Math.max(sm(Math.min(1, Math.max(0, (steep - 0.016) / 0.02))) * (pr > 0.35 ? 0 : 1), sm(Math.min(1, rk[o] * 1.3)));
+      let bx = 0, by = 0;
+      if (kr > 0.02) {   // the canyon texture, its strata squeezed flat, and its own brightness read as relief
+        const ry = wy * 1.35;
+        tex(T.rock, wx, ry, tmp);
+        tex(T.rock, wx + 1, ry, A); tex(T.rock, wx - 1, ry, B); bx = (A[0] + A[1] - B[0] - B[1]) / 510 * kr;
+        tex(T.rock, wx, ry + 1, A); tex(T.rock, wx, ry - 1, B); by = (A[0] + A[1] - B[0] - B[1]) / 510 * kr;
+        col[0] += (tmp[0] * gRock[0] - col[0]) * kr; col[1] += (tmp[1] * gRock[1] - col[1]) * kr; col[2] += (tmp[2] * gRock[2] - col[2]) * kr;
+      }
+      // the light: the height field's slope plus the rock's relief against the sun, so flat ground is exactly 1
+      const sx = dxh * RISE + bx * BUMP, sy = dyh * RISE + by * BUMP;
+      let shade = (-sx * lx - sy * ly + lz) / Math.sqrt(sx * sx + sy * sy + 1) / lz; shade = shade < 0.5 ? 0.5 : shade > 1.35 ? 1.35 : shade;
+      const up = hf[o - 11 * PW - 9] - h; if (up > 0.08) shade *= 1 - Math.min(0.32, (up - 0.08) * 0.7);   // the shadow of higher ground towards the sun
+      shade *= 0.94 + (this.vnoise(wx / 150 + 40, wy / 150 + 40) - 0.5) * 0.18;   // broad light and dark patches, as clouds or wear
+      const oo = (py * W + pxx) * 4, r = col[0] * shade, g = col[1] * shade, b = col[2] * shade;
+      d[oo] = r > 255 ? 255 : r; d[oo + 1] = g > 255 ? 255 : g; d[oo + 2] = b > 255 ? 255 : b; d[oo + 3] = 255;
+    }
+    x.putImageData(img, 0, 0);
+    return cv;
+  },
   renderChunk(cx, cy) {
+    const T = this.texSet(); if (T) return this.renderChunkTex(cx, cy, T);   // textured ground, when it is on and loaded
     const m = G.map, CH = this.CH, px = CH * TILE, k = this.bakeDpr(), W = px * k;
     const cv = document.createElement('canvas'); cv.width = W; cv.height = W; const x = cv.getContext('2d');
     const img = x.createImageData(W, W); const d = img.data; const ox = cx * CH * TILE, oy = cy * CH * TILE;
