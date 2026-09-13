@@ -876,3 +876,26 @@ console (the relay only believes the end when both say the same frame -- which a
 - **A spectator** (join with SPECTATE) gets Back to lobby, never Rematch, and stays a spectator in the lobby.
 - **F10 in an online game has no Restart and no Save game any more.** Restart used to start a private copy of a game
   everyone else was still in, and Save game did nothing online. A game against the computer still has both.
+
+---
+
+## 96. The desktop app for Windows and Mac, built by GitHub
+
+*(Ninth session, queue item D. Unsigned, as the user decided: no Apple Developer Program, no paid Windows certificate.)*
+
+**How to reach it.** On GitHub: the repository → **Actions** → **Desktop builds** → the newest run with a green tick →
+**Artifacts** at the bottom: `brood-war-remake-windows-x64`, `brood-war-remake-macos-apple-silicon`,
+`brood-war-remake-macos-intel` (each a zip). Downloading artifacts needs you to be signed in to GitHub. A run starts by
+itself when `desktop/` or the workflow changes, on a `v*` tag, or from **Run workflow** on that page.
+
+**What to look for.**
+- **Windows:** the zip holds `Brood War Remake_0.1.0_x64-setup.exe`. Running it, SmartScreen says "Windows protected your
+  PC" -- **More info → Run anyway** (that is what unsigned means). The app installs, opens on the main menu, and
+  Multiplayer → HOST A GAME starts its own relay.
+- **Mac:** the zip holds a `.dmg`; drag the app to Applications. The first open is refused ("cannot be opened because it is
+  from an unidentified developer" or "Apple could not verify..."). **System Settings → Privacy & Security → Open Anyway**,
+  or right-click the app → Open. If macOS instead says the app "is damaged", run
+  `xattr -dr com.apple.quarantine "/Applications/Brood War Remake.app"` in Terminal once. After that it opens normally.
+- **Both Macs have their own build**: Apple silicon (M1 and later) and Intel. The wrong one will not start.
+- **Each run also checks** that the built relay answers a room join and that the page works as a desktop page; a red run
+  names which step failed.

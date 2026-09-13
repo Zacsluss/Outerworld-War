@@ -107,7 +107,9 @@ and fixed on the way: F10 in an online game offered Restart and Save game. `PLAY
   balancer.
 
 **D. Desktop Mac build -- UNSIGNED ONLY (item 10; the user will not pay for the Apple Developer Program, and Windows signing
-is paid too).** Build the GitHub Actions workflow for unsigned Windows and macOS installers and stop there; say in the
+is paid too).** **BUILT (ninth session)**: `.github/workflows/desktop.yml` -- Windows x64, macOS Apple silicon and macOS Intel
+(`macos-15-intel`, GitHub's last Intel image, until August 2027), each checked (the relay answers a join, the page check),
+the macOS app ad-hoc signed without the hardened runtime (the node sidecar's JIT). `PLAYTEST-M18.md` item 96. Build the GitHub Actions workflow for unsigned Windows and macOS installers and stop there; say in the
 PLAYTEST entry how a Mac user opens an unsigned app. The signing notes below are kept for the day that changes.
 - Today: a Tauri 2 app in `desktop/`, built by hand on Windows (bundle targets nsis, app, dmg); the relay sidecar is a
   Node single-executable build that CANNOT cross-build -- the Mac binary must be built on a Mac, the Apple-silicon one on
@@ -168,6 +170,7 @@ repo goes private).
   second. The three "stalls" were supply blocks, which the recorder now ignores.
 - **Queue item A, start positions: DONE** (above).
 - **Queue item B, rematch and back to the lobby: DONE** (above), with the online F10 menu's Restart and Save game removed.
+- **Queue item D, unsigned desktop builds in GitHub Actions: BUILT** (above); taken before C while C's research ran.
 
 ## The eighth session's list (the user's third message, 2026-09-12)
 

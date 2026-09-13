@@ -1,0 +1,89 @@
+# DESKTOP INSTALLERS, UNSIGNED (ninth session, queue item D). The user will not pay for the Apple Developer Program, and
+# Windows code signing is paid too, so these are unsigned builds: Windows x64 (NSIS installer), macOS on Apple silicon and
+# macOS on Intel (.dmg). Each is built on its own kind of machine, because the relay sidecar is a copy of the node that
+# builds it (desktop/relay/build.js) and cannot be cross-built.
+#
+# The macOS app is AD-HOC signed (bundle.macOS.signingIdentity "-" in desktop/src-tauri/tauri.conf.json): free, and required
+# for anything downloaded to run on Apple silicon at all. hardenedRuntime is false beside it: the relay sidecar is a copy of
+# node, V8's JIT under the hardened runtime needs the allow-jit entitlement, and the hardened runtime is only required for
+# notarization, which needs the paid program. It is not a Developer ID signature, so macOS still asks the player
+# to allow the app once, and Windows SmartScreen warns about the unsigned installer; PLAYTEST-M18 item 96 says what to click.
+#
+# Signing later is additive: add the repository secrets TODO-M18 item D lists and pass Tauri's documented variables to the
+# build step (v2.tauri.app/distribute/sign/macos/ and /windows/). Nothing here reads a secret today.
+#
+# Runs on a push to main that changes the desktop wrapper or this file, on a v* tag, and by hand (Actions -> Desktop builds
+# -> Run workflow). The installers are the run's artifacts. macos-15-intel is GitHub's last Intel image (until August 2027).
+name: Desktop builds
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/desktop.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x64
+            bundles: nsis
+          - os: macos-latest
+            name: macos-apple-silicon
+            bundles: app,dmg
+          - os: macos-15-intel
+            name: macos-intel
+            bundles: app,dmg
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+
+      - name: Install the wrapper's tools (the Tauri CLI and postject)
+        run: npm ci
+
+      - name: Build the installer (beforeBuildCommand builds the relay sidecar and the page first)
+        run: npx tauri build --bundles ${{ matrix.bundles }}
+
+      - name: The built relay answers a room join
+        run: npm run check:relay
+
+      - name: The page the wrapper loads works as a desktop page
+        run: npm run check:page
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: brood-war-remake-${{ matrix.name }}
+          path: |
+            desktop/src-tauri/target/release/bundle/nsis/*.exe
+            desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
