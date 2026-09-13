@@ -899,3 +899,25 @@ itself when `desktop/` or the workflow changes, on a `v*` tag, or from **Run wor
 - **Both Macs have their own build**: Apple silicon (M1 and later) and Intel. The wrong one will not start.
 - **Each run also checks** that the built relay answers a room join and that the page works as a desktop page; a red run
   names which step failed.
+
+---
+
+## 97. A password for your server, and a relay that shrugs off floods
+
+*(Ninth session, queue item E. `RESEARCH-LOBBY.md` section 9.)*
+
+**How to reach it.** Run **PLAY-ONLINE.bat**: it now asks "Password for this server". Type one (or, by hand,
+`set BW_PASSWORD=something` then `node test\serve.js 8765 6`). The window says `PASSWORD ON`.
+
+**What to look for.**
+- **Open the game and press Multiplayer.** Instead of the game list: "This server needs a password", a box and JOIN
+  SERVER. A wrong password says "Wrong password." and asks again; the right one shows the game list.
+- **Press Back, then Multiplayer again, or reload the page**: the list comes straight up -- the password was remembered
+  for this server.
+- **Restart the server with a different password**: the remembered one is refused, forgotten, and you are asked again.
+- **Without a password** (PLAY.bat, or Enter at the prompt) nothing is asked, exactly as before.
+- **The flood caps are invisible in honest play.** In a normal game nothing changes; a chat line typed and sent very fast
+  more than eight times in a row stops appearing until you slow down. (The caps themselves are proven by
+  `node test/safety.js`: a thousand messages at once gets a socket dropped, a 100 KB message is refused.)
+- **A tab closed abruptly** (end the browser's process) now leaves the game at once -- the others see "dropped" in a
+  second, not after 45 seconds.

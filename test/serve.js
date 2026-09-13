@@ -109,6 +109,55 @@ function frame(text) { return frameRaw(1, Buffer.from(text, 'utf8')); }
 // about a megabyte after twenty minutes with 550 units; a client claiming a 2^63-byte frame used to be
 // believed and streamed into memory. (REVIEW-M17)
 const MAX_FRAME = 16 * 1024 * 1024;
+// BASIC INTERNET-PLAY SAFETY (ninth session, queue item E, the user: "if there's something simple and basic we can implement,
+// let's do it"; RESEARCH-LOBBY.md section 9). Measured before any of it existed (.claude/review/safety/probe.js): one address
+// held 150 sockets at once, 3000 chat lines sent in 18 ms were every one relayed to the room, 2000 lobby changes made 2001
+// broadcasts to everyone in it, an 8 MB chat line was read and parsed whole, and anyone who reached the relay was handed the
+// game list. Five things, none of which needs an account or a certificate:
+//   * BW_PASSWORD, an optional server password. `hello` says one is needed; until it is given nothing but `auth` is answered.
+//     It is compared in constant time and never logged; five wrong answers close the socket, and every answer counts
+//     against the address's join limit, so guessing is slow. The client asks once and remembers it (Net.password).
+//   * BW_IP_SOCKETS, the sockets one address may hold at once.
+//   * A message cap per socket (a token bucket). A socket past it is DROPPED, not throttled: throttling would lose a lockstep
+//     batch and wedge the game for everyone, while a dropped player can rejoin.
+//   * Chat and lobby changes have narrower caps of their own, and past them are IGNORED: those are the two messages every
+//     other member of the room pays for, and a player mashing a dropdown has done nothing to deserve a disconnect.
+//   * SMALL_FRAME for every message except a snapshot the relay has asked this socket for (a rejoin or a spectator catching
+//     up), the one honestly large message.
+// THE NUMBERS, MEASURED (BW_RATE_LOG, below). A browser game sends a batch a frame and runs 24 frames a second (the playtest
+// recorder's online game: a median of 24), so an honest socket sends 25 to 30 messages a second; the cap is ten times that.
+// test/net_many.js's headless clients simulate as fast as the CPU allows and peaked at 670 in one second, so that suite
+// raises BW_MSG_RATE rather than the default being raised for it. The largest message in the same run that was not a
+// snapshot was 132 bytes; the largest snapshot 444,841 -- hence 64 KB for everything else.
+const PASSWORD = String(process.env.BW_PASSWORD || '');
+const PASS_HASH = PASSWORD ? crypto.createHash('sha256').update(PASSWORD).digest() : null;
+function passwordOk(p) { if (!PASS_HASH) return true; const h = crypto.createHash('sha256').update(String(p == null ? '' : p)).digest(); return crypto.timingSafeEqual(h, PASS_HASH); }
+const IP_SOCKETS = Math.max(1, parseInt(process.env.BW_IP_SOCKETS || '24', 10) || 24);
+const SMALL_FRAME = 64 * 1024;
+const MSG_RATE = Math.max(1, parseInt(process.env.BW_MSG_RATE || '300', 10) || 300);
+const RATE = { all: { perSec: MSG_RATE, burst: MSG_RATE * 2 }, chat: { perSec: 3, burst: 8 }, lobby: { perSec: 10, burst: 30 } };
+const LOBBY_MSGS = new Set(['set', 'addai', 'kick', 'ring', 'shuffle', 'start', 'cancel', 'list', 'back', 'leave']);
+function spend(c, kind, now) {
+  const spec = RATE[kind], B = c.buckets || (c.buckets = {}), b = B[kind] || (B[kind] = { tokens: spec.burst, at: now });
+  b.tokens = Math.min(spec.burst, b.tokens + (now - b.at) * spec.perSec / 1000); b.at = now;
+  if (b.tokens < 1) return false;
+  b.tokens -= 1; return true;
+}
+// A tunnel (cloudflared, ngrok) delivers every socket from 127.0.0.1 with the real address in a header. The headers are
+// believed ONLY on a socket that came from this machine -- anyone connecting directly could write them -- and of
+// X-Forwarded-For the LAST entry, the one the nearest proxy added, since the first is whatever the client sent.
+const LOOPBACK = a => a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
+function ipOf(req, socket) {
+  const own = String(socket.remoteAddress || '?');
+  if (!LOOPBACK(own)) return own;
+  const cf = String(req.headers['cf-connecting-ip'] || '').trim(); if (cf) return cf;
+  const xff = String(req.headers['x-forwarded-for'] || '').split(',').map(s => s.trim()).filter(Boolean);
+  return xff.length ? xff[xff.length - 1] : own;
+}
+const ipSockets = new Map();   // address -> sockets open
+// BW_RATE_LOG=<file>: when a socket closes, one JSON line with its busiest second, its total and its largest message -- how
+// the caps above were measured against honest play, kept for the next time they need checking.
+const RATE_LOG = process.env.BW_RATE_LOG || '';
 function raceOf(r) { return /^[TZPR]$/.test(r) ? r : 'R'; }
 // Difficulty and play style for an AI slot. The style list is MIRRORED from AI.prototype.styleDeltas()
 // rather than read from it: the relay is a plain node process that never loads js/ai.js, and pulling the
@@ -281,6 +330,18 @@ function cancelCountdown(L, why) {
   console.log(tag(L) + 'countdown cancelled: ' + (why || ''));
 }
 function onMessage(c, m) {
+  if (!m || typeof m !== 'object') return;
+  // THE PASSWORD (BW_PASSWORD): nothing else is answered until it has been given.
+  if (!c.authed) {
+    if (m.t !== 'auth') return;
+    if (!joinAllowed(c.ip)) { send(c, { t: 'auth', ok: false, msg: 'Too many attempts from this address. Wait a minute.' }); return; }
+    if (passwordOk(m.password)) { c.authed = true; send(c, { t: 'auth', ok: true }); return; }
+    c.authFails = (c.authFails || 0) + 1; send(c, { t: 'auth', ok: false, msg: 'Wrong password.' });
+    if (c.authFails >= 5) drop(c, 'five wrong passwords');
+    return;
+  }
+  if (m.t === 'chat' && !spend(c, 'chat', Date.now())) return;
+  if (LOBBY_MSGS.has(m.t) && !spend(c, 'lobby', Date.now())) return;
   // `join` and `list` are the only messages a client with no room may send: one puts it in a room, the
   // other makes it a browser that is told the listed rooms until it joins one.
   if (m.t === 'list' && !roomOf(c)) { c.browsing = true; send(c, lobbies()); return; }
@@ -481,6 +542,8 @@ function onMessage(c, m) {
 }
 function leave(c) {
   if (!clients.has(c.id)) return; clients.delete(c.id);
+  { const n = (ipSockets.get(c.ip) || 1) - 1; if (n > 0) ipSockets.set(c.ip, n); else ipSockets.delete(c.ip); }
+  if (RATE_LOG && c.rate) { try { fs.appendFileSync(RATE_LOG, JSON.stringify({ peak: c.rate.peak, total: c.rate.total, max: c.rate.max }) + '\n'); } catch (e) { } }
   const L = roomOf(c); if (!L) return;                 // never joined a room: nothing to clean up
   const idx = L.players.findIndex(p => p.id === c.id);
   if (L.state === 'playing') {
@@ -519,6 +582,7 @@ function departed(L, who, wasHost) {
 }
 // THE LOBBY PING (LOBBY_PING_MS). One numbered ping out; the answer's delay, smoothed, is that member's round trip.
 function lobbyPing(c) { c.pingN = (c.pingN || 0) + 1; c.pingAt = Date.now(); send(c, { t: 'lping', n: c.pingN }); }
+function mayDonate(c) { const L = roomOf(c); return !!(L && L.pendingSnaps && [...L.pendingSnaps.values()].some(ps => ps.donor === c.id)); }
 function drop(c, why) { console.log('  dropping client ' + c.id + ': ' + why); try { c.socket.destroy(); } catch (e) { } leave(c); }
 function onData(c, data) {
   c.lastSeen = Date.now();
@@ -529,7 +593,9 @@ function onData(c, data) {
   for (;;) {
     if (c.buf.length < 2) return; const b0 = c.buf[0], b1 = c.buf[1]; const fin = !!(b0 & 0x80), op = b0 & 0x0f, masked = !!(b1 & 0x80); let len = b1 & 0x7f, off = 2;
     if (len === 126) { if (c.buf.length < 4) return; len = c.buf.readUInt16BE(2); off = 4; } else if (len === 127) { if (c.buf.length < 10) return; len = Number(c.buf.readBigUInt64BE(2)); off = 10; }
-    if (len > MAX_FRAME) { drop(c, 'frame of ' + len + ' bytes'); return; }
+    // Only a socket the relay has asked for a snapshot may send a large frame (queue item E, SMALL_FRAME above).
+    const cap = mayDonate(c) ? MAX_FRAME : SMALL_FRAME;
+    if (len > cap) { drop(c, 'frame of ' + len + ' bytes' + (cap < MAX_FRAME ? ' that is not a snapshot the relay asked for' : '')); return; }
     if (!fin || op === 0) { drop(c, 'fragmented frame'); return; }   // never assembled here; browsers and Node send whole frames, and half a message used to become 'bad message' plus lost pieces
     const mlen = masked ? 4 : 0; if (c.buf.length < off + mlen + len) { c.need = off + mlen + len - c.buf.length; return; }
     const mask = masked ? c.buf.subarray(off, off + 4) : null; const payload = Buffer.from(c.buf.subarray(off + mlen, off + mlen + len)); if (mask) for (let i = 0; i < payload.length; i++) payload[i] ^= mask[i & 3];
@@ -537,20 +603,32 @@ function onData(c, data) {
     if (op === 8) { try { c.socket.end(); } catch (e) { } leave(c); return; }
     if (op === 9) { try { c.socket.write(frameRaw(0xa, payload)); } catch (e) { } continue; }   // a pong with the right length header (the one-byte form was malformed past 125 bytes)
     if (op === 10) continue;   // a pong to our keepalive ping; lastSeen is already updated
-    if (op === 1) { try { onMessage(c, JSON.parse(payload.toString('utf8'))); } catch (e) { console.error('bad message', e.message); } }
+    if (op === 1) {
+      const now = Date.now();
+      if (RATE_LOG) { const s = Math.floor(now / 1000), r = c.rate || (c.rate = { sec: s, n: 0, peak: 0, total: 0, max: 0 }); if (r.sec !== s) { r.sec = s; r.n = 0; } r.n++; r.total++; if (r.n > r.peak) r.peak = r.n; if (len > r.max) r.max = len; }
+      if (!spend(c, 'all', now)) { drop(c, 'more than ' + RATE.all.burst + ' messages at once or ' + RATE.all.perSec + ' a second'); return; }
+      try { onMessage(c, JSON.parse(payload.toString('utf8'))); } catch (e) { console.error('bad message', e.message); }
+    }
   }
 }
 server.on('upgrade', (req, socket) => {
   if (req.url !== '/ws') { socket.destroy(); return; }
   const key = req.headers['sec-websocket-key']; const accept = crypto.createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
+  // THE SOCKET CAP (queue item E): counted by address before the handshake is answered, so a refused socket costs nothing.
+  const ip = ipOf(req, socket);
+  if ((ipSockets.get(ip) || 0) >= IP_SOCKETS) { try { socket.write('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n'); } catch (e) { } socket.destroy(); console.log('  refused a socket: ' + IP_SOCKETS + ' already open from one address'); return; }
+  ipSockets.set(ip, (ipSockets.get(ip) || 0) + 1);
   socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n');
-  const ip = String(req.headers['cf-connecting-ip'] || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || socket.remoteAddress || '?');
-  const c = { id: nextId++, socket, ip, buf: Buffer.alloc(0), chunks: [], chunked: 0, need: 0, room: null, lastSeen: Date.now() }; clients.set(c.id, c); socket.setNoDelay(true);
+  const c = { id: nextId++, socket, ip, buf: Buffer.alloc(0), chunks: [], chunked: 0, need: 0, room: null, lastSeen: Date.now(), authed: !PASSWORD }; clients.set(c.id, c); socket.setNoDelay(true);
   socket.on('data', d => onData(c, d)); socket.on('close', () => leave(c)); socket.on('error', () => leave(c));
+  // A far end that has GONE -- a FIN without a WebSocket close frame: a killed tab, a dropped tunnel -- is left at once. The
+  // HTTP server's sockets are half-open, so 'close' never fired for it, and until the keepalive noticed 45 s later it held
+  // its place under BW_IP_SOCKETS and its seat in a running game (measured: .claude/review/safety/cap-debug.js, queue item E).
+  socket.on('end', () => { try { socket.end(); } catch (e) { } leave(c); });
   // `state` describes the relay, not a game: a client that has not sent a code cannot be told whether
   // some room is playing without being told that room exists. The real state arrives with the `lobby`
   // message `join` triggers, or with the `error` that refuses it.
-  send(c, { t: 'hello', id: c.id, state: 'lobby', rooms: true, browser: true });
+  send(c, Object.assign({ t: 'hello', id: c.id, state: 'lobby', rooms: true, browser: true }, PASSWORD ? { password: true } : {}));
 });
 // KEEPALIVE. A connection that dies without a FIN -- wifi drop, a laptop closing, a tunnel hiccup, the
 // ordinary internet failure -- was never leave()d: every other client waited on that player's batch
@@ -572,5 +650,5 @@ setInterval(() => {
 setInterval(() => { const now = Date.now(); for (const c of [...clients.values()]) { if (now - c.lastSeen > DEAD_MS) drop(c, 'no data for ' + Math.round((now - c.lastSeen) / 1000) + ' s'); else { try { c.socket.write(frameRaw(9, Buffer.alloc(0))); } catch (e) { } } } }, PING_MS).unref();
 server.listen(port, () => {
   const ips = []; for (const ifs of Object.values(os.networkInterfaces())) for (const i of ifs) if (i.family === 'IPv4' && !i.internal) ips.push(i.address);
-  console.log('Brood War Remake: http://localhost:' + port + (ips.length ? '   LAN: ' + ips.map(ip => 'http://' + ip + ':' + port).join(' ') : '') + '   delay ' + DELAY + ' frames' + (CHEATS ? '   CHEATS ON' : ''));
+  console.log('Brood War Remake: http://localhost:' + port + (ips.length ? '   LAN: ' + ips.map(ip => 'http://' + ip + ':' + port).join(' ') : '') + '   delay ' + DELAY + ' frames' + (CHEATS ? '   CHEATS ON' : '') + (PASSWORD ? '   PASSWORD ON' : ''));
 });

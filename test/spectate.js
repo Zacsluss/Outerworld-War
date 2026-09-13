@@ -23,7 +23,7 @@ const ok = (c, m, x) => { if (c) { pass++; console.log('PASS ' + m); } else { fa
 async function until(cond, ms, what) { const t0 = Date.now(); while (!cond()) { if (Date.now() - t0 > ms) throw new Error('timeout waiting for ' + what); await sleep(20); } }
 // BW_CHEATS so the humans can be made invulnerable and the game lasts; the ready check stays ON, because section 1 is
 // partly about it.
-const relay = spawn(process.execPath, [path.join(__dirname, 'serve.js'), String(PORT)], { stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({}, process.env, { BW_CHEATS: '1', BW_COUNTDOWN: '0' }) });
+const relay = spawn(process.execPath, [path.join(__dirname, 'serve.js'), String(PORT)], { stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({}, process.env, { BW_CHEATS: '1', BW_COUNTDOWN: '0', BW_MSG_RATE: '100000' }) });   // BW_MSG_RATE: headless clients simulate as fast as the CPU allows -- net_many peaked at 670 messages in one second against the relay's cap of 300, which is ten times a browser's (test/serve.js, BASIC INTERNET-PLAY SAFETY)
 const relayLog = [];
 relay.stdout.on('data', d => relayLog.push(String(d))); relay.stderr.on('data', d => console.log('  [relay err] ' + String(d).trim()));
 process.on('exit', () => { try { relay.kill(); } catch (e) { } });

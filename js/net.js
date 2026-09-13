@@ -45,6 +45,7 @@ const Net = {
   // `room` is KEPT ON `this` so a caller that passes no room lands in the one it had: what keeps a rejoin
   // in its room is the code still held here.
   open(url, name, onopen) {
+    this.onAuthed = onopen; this.needAuth = false; this.authMsg = '';   // see THE SERVER PASSWORD
     this.disconnect(); this.name = name || 'Player'; this.lobbies = null; this.chatLog = []; this.teamsShown = 2; this.url = url || this.defaultUrl(); this.pings = {}; this.pick = null; this.online = 0; this.rungAt = 0; this.connecting = true; this.failed = false;
     // A typed address that is not a URL at all makes the constructor throw; it is a server that could not be reached.
     let ws; try { ws = new WebSocket(this.url); } catch (e) { this.connecting = false; this.failed = 'unreachable'; this.render(); return; }
@@ -74,6 +75,14 @@ const Net = {
     this.render();
     return true;
   },
+  // Remembered per server address, in this browser only, so a player types it once. It is the player's own storage; the
+  // relay never sees it except as an `auth` message on the socket (wss through a tunnel).
+  PASS_KEY: 'bw_pass',
+  passwords() { try { const o = JSON.parse((typeof localStorage !== 'undefined' && localStorage.getItem(this.PASS_KEY)) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (ex) { return {}; } },
+  savedPassword() { const p = this.passwords()[this.url]; return typeof p === 'string' ? p : ''; },
+  rememberPassword(p) { const all = this.passwords(); all[this.url] = String(p); try { localStorage.setItem(this.PASS_KEY, JSON.stringify(all)); } catch (ex) { } },
+  forgetPassword() { const all = this.passwords(); if (!(this.url in all)) return; delete all[this.url]; try { localStorage.setItem(this.PASS_KEY, JSON.stringify(all)); } catch (ex) { } },
+  submitPassword(p) { this.typedPassword = String(p == null ? '' : p); this.authMsg = ''; this.send({ t: 'auth', password: this.typedPassword }); },
   leaveRoom() { this.send({ t: 'leave' }); this.lobby = null; this.room = ''; this.browsing = true; this.chatLog = []; this.teamsShown = 2; this.count = 0; this.countMsg = ''; this.status('Connected.'); this.render(); },
   disconnect() { if (this.ws) { try { this.ws.close(); } catch (e) { } } this.ws = null; this.connected = false; this.connecting = false; this.active = false; this.lobby = null; this.catchingUp = false; },
   send(m) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(m)); },
@@ -87,7 +96,16 @@ const Net = {
       // state arrives with the `lobby` message `join` triggers, or the `error` that refuses it. Without
       // the guard `undefined !== 'lobby'` is true and every fresh connection announces a game in
       // progress that may not exist.
-      case 'hello': this.id = m.id; if (m.state && m.state !== 'lobby') this.status('A game is running on this server. Connect with the name you used to rejoin it.'); break;
+      case 'hello': this.id = m.id; if (m.state && m.state !== 'lobby') this.status('A game is running on this server. Connect with the name you used to rejoin it.');
+        // THE SERVER PASSWORD (queue item E; test/serve.js, BW_PASSWORD). The relay answers nothing else until it has one, so
+        // whatever the socket's first action sent was ignored; a password it remembers for this server goes at once, and the
+        // action runs again when the relay accepts it (case 'auth'). Otherwise the lobby area asks for it.
+        if (m.password) { this.needAuth = true; const saved = this.savedPassword(); if (saved) this.send({ t: 'auth', password: saved }); this.render(); }
+        break;
+      case 'auth':
+        if (m.ok) { this.needAuth = false; this.authMsg = ''; if (this.typedPassword != null) this.rememberPassword(this.typedPassword); this.typedPassword = null; if (typeof this.onAuthed === 'function') this.onAuthed(); }
+        else { this.forgetPassword(); this.typedPassword = null; this.authMsg = String(m.msg || 'Wrong password.'); }
+        this.render(); break;
       // Only a client in no room is sent the list, so receiving it means the relay has us out of any lobby
       // (left, or kicked): back to the browser.
       case 'lobbies': this.lobbies = Array.isArray(m.rooms) ? m.rooms : []; this.online = m.online | 0; this.lobby = null; this.browsing = true; this.render(); if (typeof Desktop !== 'undefined' && Desktop.hosting) Desktop.share(); break;
@@ -450,6 +468,15 @@ const Net = {
     const el = document.getElementById('lobby'); if (!el) return;
     this.renderBar();
     const L = this.lobby;
+    if (this.needAuth && this.connected) {   // the server wants its password before anything else
+      this.paint(el, '<div class="lbDetail lbAuth"><div class="lbDetTitle">This server needs a password</div>'
+        + '<div class="sub">' + this.esc(this.authMsg || 'Ask whoever runs it. This browser remembers it for ' + this.hostLabel() + '.') + '</div>'
+        + '<div class="lbBar"><input id="lbPass" type="password" maxlength="100" placeholder="Server password" autocomplete="off"><button id="lbPassOk" class="small inline">JOIN SERVER</button></div></div>');
+      const $ = this.finder(el), box = $('lbPass'), go = () => this.submitPassword(box ? box.value : '');
+      if ($('lbPassOk')) $('lbPassOk').onclick = go;
+      if (box) box.onkeydown = ev => { if (ev.key === 'Enter') go(); };
+      return;
+    }
     if (!L) {   // no room: the browser while connected, nothing otherwise
       if (!(this.browsing && this.connected)) { el.innerHTML = ''; return; }
       this.paint(el, this.browserHtml());
@@ -482,7 +509,7 @@ const Net = {
   // comes from the room (the game's name, the seed) is only kept while it has the focus, so a change made elsewhere shows.
   paint(el, html) {
     const $ = this.finder(el), keep = {};
-    for (const id of ['lbChat', 'lbSearch', 'lbCode', 'lbTitle', 'lbRename', 'lbSeed']) {
+    for (const id of ['lbChat', 'lbSearch', 'lbCode', 'lbTitle', 'lbRename', 'lbSeed', 'lbPass']) {
       const x = $(id); if (!x || typeof x.value !== 'string') continue;
       keep[id] = { v: x.value, f: typeof document !== 'undefined' && typeof document.activeElement !== 'undefined' && document.activeElement === x, s: x.selectionStart, e: x.selectionEnd };
     }

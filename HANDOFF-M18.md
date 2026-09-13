@@ -1,6 +1,6 @@
 # HANDOFF — M18 (the ninth session: the user's answers, the playtest recorder, start positions)
 
-Written during the ninth session (2026-09-12), after queue items A and B. Branch `m10-overnight`, which is `origin/main`.
+Written during the ninth session (2026-09-12), after queue items A, B, D and E. Branch `m10-overnight`, which is `origin/main`.
 **Everything is committed and pushed; there are no open pull requests, no other branches and no extra worktrees.**
 Trust `git log -1` for HEAD, not a hash written here.
 
@@ -12,8 +12,11 @@ Trust `git log -1` for HEAD, not a hash written here.
 
 ## The state
 
-- **The gate is 87 suites (new: `starts`, 58 checks; `rematch`, 39) and 2 are red: `aistyles` and `queens`**, and every
-  failing line is byte-identical to the eighth session's gate log -- neither item moved an AI measurement. **Build stamp
+- **The gate is 88 suites (new: `starts`, 58 checks; `rematch`, 39; `safety`, 25) and 2 are red: `aistyles` and `queens`**,
+  and every failing line is byte-identical to the eighth session's gate log -- no item moved an AI measurement.
+- **The desktop builds run in GitHub Actions** (`.github/workflows/desktop.yml`); the first run, on 3eeeab6, succeeded on
+  Windows, macOS Apple silicon and macOS Intel. Check a run with the public API
+  (`https://api.github.com/repos/Zacsluss/Outerworld-War/actions/runs`) -- there is no gh CLI here. **Build stamp
   `506fb0d48d1e1d36`** (moved: `js/game.js` and `js/map.js` place players by `GameMap.assignStarts`).
 - **By hand:** `net_many` 51/51; `desktop/page-check.js` 22/22 (`desktop/dist` refreshed); `aistyles` seed 1 125/7, seed 5
   125/7 (the same seven wave-and-attack-timing lines), seed 11 124/8 (the seven plus the long-standing flaky "harasser
@@ -46,11 +49,16 @@ Trust `git log -1` for HEAD, not a hash written here.
    on a new seed, and Back to lobby is the skirmish lobby as you left it.
 5. **F10 in an online game no longer offers Restart or Save game** -- Restart started a private copy of the game, Save game
    did nothing.
+6. **The desktop app is built for Windows and both kinds of Mac by GitHub** on every change to it (PLAYTEST 96), unsigned:
+   Windows asks "Run anyway", macOS "Open Anyway" once.
+7. **A server can have a password** (PLAY-ONLINE.bat asks), typed once and remembered; and the relay drops a connection
+   that floods it, ignores chat and lobby spam past a few a second, refuses oversized messages, and lets one address hold
+   24 connections (PLAYTEST 97). A tab closed abruptly now leaves a game at once instead of after 45 seconds.
 
 **Saves and replays from before this session are refused** (the build stamp moved with item A; item B changed no stamped
 file).
 
-**Not done yet:** queue items C-G.
+**Not done yet:** queue items C, F and G.
 
 ## Traps found this session
 
@@ -82,6 +90,14 @@ file).
     never opens by itself and screenshots time out. Verify in-game state with `javascript_tool`.
 13. **A `tools/patch.js` replace that does not end in a newline swallows the next line's indent** when the search did: the
     item A patch left a `}` on a `case` line and a comment on another. End such replacements with an empty last element.
+14. **`tools/patch.js` checks every search against the ORIGINAL file**, so two entries where the second searches text the
+    first one writes are refused as a whole. Edit those lines in one entry.
+15. **The HTTP server's upgraded sockets are half-open**: a far end that sends a FIN without a WebSocket close frame never
+    fires 'close'. The relay now listens for 'end' too (queue item E).
+16. **Headless lockstep harnesses send far faster than a browser** (net_many: 670 messages in one second against a
+    browser's 25-30). A new harness that starts relay games must pass `BW_MSG_RATE`, as net_many, net, spectate and editor do.
+17. **PowerShell's `Set-Content -Encoding utf8` writes a byte-order mark.** Node strips it from a required spec; anything
+    else should be written with the Write tool.
 
 ## Diagnostics added this session
 
@@ -110,8 +126,9 @@ READ IN THIS ORDER, then start:
   3. HANDOFF-M18.md     -- the state and the traps, newest session first.
   4. PLAYTEST-M18.md (items 64 on) and RESEARCH-LOBBY.md -- as each item needs them.
 
-THE STATE: node test/all.js is 87 suites, ~5 minutes, and 2 are RED: aistyles and queens (the computer AI's pacing under
-the slower economy). Build stamp 506fb0d48d1e1d36. Queue items A (start positions) and B (rematch) are DONE.
+THE STATE: node test/all.js is 88 suites, ~5 minutes, and 2 are RED: aistyles and queens (the computer AI's pacing under
+the slower economy). Build stamp 506fb0d48d1e1d36. Queue items A (start positions), B (rematch), D (unsigned desktop
+builds in GitHub Actions, first run green) and E (relay safety) are DONE.
 
 THE USER'S ANSWERS (do not ask again): G is AUTHORIZED ("you can fix now") -- narrowly, with test/balance.js and
 test/proxy.js untouched; D is UNSIGNED BUILDS ONLY (no Apple Developer Program, no paid Windows signing); their playtest
@@ -121,10 +138,9 @@ stop between items, and resume anything a message interrupts.
 THE SINGLE NEXT ACTION: queue item C -- ratings and skill-balanced teams. Research Beyond All Reason's OpenSkill ratings
 and its balancer first, then: an identity token per browser, results recorded only when the connected humans agree (the
 relay's `over` agreement from item B already exists -- read L.overs), Weng-Lin/OpenSkill written inline (the relay stays
-dependency-free), a JSON file for persistence, ratings in the lobby and a BALANCE TEAMS button. Then D, E, F, G in order.
+dependency-free), a JSON file for persistence, ratings in the lobby and a BALANCE TEAMS button. Then F and G in order.
 
-THE QUEUE, in order: C ratings and skill-balanced teams -> D the desktop Mac build in
-GitHub Actions, unsigned -> E basic internet-play safety for the relay -> F research that gets stuck (reproduce first;
+THE QUEUE, in order: C ratings and skill-balanced teams -> F research that gets stuck (reproduce first;
 the playtest recorder's stall detector helps) -> G the two red suites (authorized). DEFERRED until the user says so:
 the AI rebalance (TODO-M18 7b) and the terrain art path.
 

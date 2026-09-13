@@ -319,3 +319,48 @@ Not built: BAR's automatic stop after the end (nobody is forced out of a game), 
 
 Tests: `test/rematch.js` (the relay over real sockets; the page with the real `UI.start`), with 27 negative controls in
 `.claude/review/rematch/controls.js`.
+
+---
+
+## 9. Basic safety for a relay on the internet
+
+*Ninth session, queue item E (the user: "if there's something simple and basic we can implement, let's do it"). Measured
+first (`.claude/review/safety/probe.js`): one address held 150 sockets at once, 3000 chat lines sent in 18 ms were every one
+relayed, 2000 lobby changes made 2001 broadcasts to the room, an 8 MB chat line was read and parsed whole, and anyone who
+reached the relay was handed the game list.*
+
+- **OpenRA** [src] -- a server password in the handshake (a wrong one drops the client; no delay or counter), no
+  per-address connection cap, chat flood limits (5 messages in 5 s, then muted 15 s -- not kicked), and any order over
+  **128 KB** closes the connection ([Server.cs](https://github.com/OpenRA/OpenRA/blob/bleed/OpenRA.Game/Server/Server.cs),
+  [Settings.cs](https://github.com/OpenRA/OpenRA/blob/bleed/OpenRA.Game/Settings.cs)).
+- **SPADS / Beyond All Reason** [src] -- 7 chat messages in 7 s kicks, 8 status changes in 8 s kicks, commands past 4 in 4 s are
+  ignored for two minutes; Teiserver disconnects past 200 commands a minute
+  ([SPADS settings](https://github.com/Yaribz/SPADS/blob/master/var/helpSettings.dat)).
+- **Paper (Minecraft)** [src] -- kicks a player whose packets average 500 a second over a 7-second window
+  ([configuration](https://docs.papermc.io/paper/reference/global-configuration/)).
+- **OWASP** [doc] -- message size limits "typically 64KB or less", per-address limits where users are not identified, and an
+  Origin allowlist; its "100 messages per minute" starting point would disconnect every player of a game that sends 24
+  batches a second ([WebSocket cheat sheet](https://cheatsheetseries.owasp.org/cheatsheets/WebSocket_Security_Cheat_Sheet.html)).
+- **Tunnels** [doc] -- cloudflared delivers the socket from itself with the visitor in `CF-Connecting-IP`; ngrok appends to
+  `X-Forwarded-For`, "use the last value"; and when a server can be reached directly "no part of the X-Forwarded-For IP
+  list can be considered trustworthy" ([Cloudflare](https://developers.cloudflare.com/fundamentals/reference/http-headers/),
+  [ngrok](https://ngrok.com/docs/universal-gateway/http/), [MDN](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Forwarded-For)).
+  Both tunnels end TLS on their own servers, so the tunnel company can read what passes, a password included.
+
+**What was built** (`PLAYTEST-M18.md` item 97):
+
+| | Here |
+|---|---|
+| Password | `BW_PASSWORD` (PLAY-ONLINE.bat asks for one). The relay answers nothing but the password until it is given, compares it in constant time, never logs it, closes the socket after five wrong answers, and counts every answer against the address's join limit. The game asks once and remembers it per server. |
+| Sockets per address | 24 (`BW_IP_SOCKETS`); a closed socket -- including one whose far end just vanished -- frees its place at once. |
+| Messages | A socket past 600 at once or 300 a second (ten times a browser game's 25-30) is dropped, like Paper; chat past 8 at once or 3 a second and lobby changes past 30 or 10 a second are ignored, like OpenRA's mute. |
+| Size | 64 KB, as OWASP suggests, except a snapshot the relay has asked that socket for (measured up to 445 KB in a short game). |
+| Addresses | Forwarding headers are believed only on a socket from this machine: `CF-Connecting-IP`, else the last `X-Forwarded-For`. |
+| Advice | PLAY-ONLINE.bat: the https link keeps it private on the way, send link and password separately, and never use a password from anywhere else -- the tunnel company can read it. |
+
+**Deliberately not built: an Origin check.** Players connect to each other's relays from their own page (Settings,
+Multiplayer, Server) and from the desktop app, so an allowlist would refuse honest players; the password covers what a
+hostile page could do. Found on the way: a far end that vanished without a close frame held its socket (and its seat in a
+running game) for 45 s, because the HTTP server's sockets are half-open -- it is now left at once.
+
+Tests: `test/safety.js` (25), with 21 negative controls in `.claude/review/safety/controls.js`.

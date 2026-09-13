@@ -123,7 +123,12 @@ PLAYTEST entry how a Mac user opens an unsigned app. The signing notes below are
 - The assistant never handles the certificates, passwords or keys: the user adds them as repository secrets.
   Sources: v2.tauri.app/distribute/sign/macos/ and v2.tauri.app/distribute/sign/windows/.
 
-**E. Basic internet-play safety (item 9, "if there's something simple and basic, do it").**
+**E. Basic internet-play safety (item 9, "if there's something simple and basic, do it").** **DONE (ninth session)**: an
+optional server password (`BW_PASSWORD`, asked once and remembered per server), 24 sockets per address, a message cap that
+drops a flooding socket and narrower chat and lobby caps that ignore the excess, 64 KB frames except an asked-for snapshot,
+forwarding headers believed only from this machine, and PLAY-ONLINE.bat's advice; a vanished far end is now left at once.
+No Origin check, deliberately. `RESEARCH-LOBBY.md` section 9, `PLAYTEST-M18.md` item 97, `test/safety.js` (25), 21 controls.
+The plan as it was written:
 - Today the relay has a per-IP join rate limit, room codes, a 16 MB frame cap, fragmented frames refused and a
   keepalive. It has no TLS (a tunnel such as the one PLAY-ONLINE.bat describes provides https/wss), no password, no
   per-IP connection cap, no message rate limit and no Origin check.
@@ -170,7 +175,9 @@ repo goes private).
   second. The three "stalls" were supply blocks, which the recorder now ignores.
 - **Queue item A, start positions: DONE** (above).
 - **Queue item B, rematch and back to the lobby: DONE** (above), with the online F10 menu's Restart and Save game removed.
-- **Queue item D, unsigned desktop builds in GitHub Actions: BUILT** (above); taken before C while C's research ran.
+- **Queue item D, unsigned desktop builds in GitHub Actions: BUILT** (above); taken before C while C's research ran. Its
+  first run (commit 3eeeab6) succeeded on all three machines.
+- **Queue item E, basic internet-play safety: DONE** (above).
 
 ## The eighth session's list (the user's third message, 2026-09-12)
 
