@@ -102,6 +102,25 @@ textures, 8.3 MB, in `assets/terrain/SOURCES.md`; `test/terraintex.js` (40 check
   made Chrome drop the game canvas's 2D context (a measuring loop, not play; the game caps chunks at 160 -- but The Long March has
   1,024).
 
+**PHASE 3 (item 1, props) -- DONE** (PLAYTEST-M18 112; drawing only, the stamp stays `eff84c60f4bc9cf2`). `TERRAIN_PROPS` in
+`js/terrain.js` names each set's kinds, density and colours; `Terrain.propMask` (where a prop may stand, once per map, from the map as
+generated), `propAt` (the prop on a tile: hashes of the tile under density times a cluster weight), `propLayer` and `drawProp` (four
+primitives -- a faceted rock, a blade, a leaf, a box -- each laying a swept shadow and then a height field the bake lights by its
+slopes). `test/terraintex.js` grew from 40 checks to 70, with fifteen more negative controls (`.claude/review/terrain/controls-props.log`).
+What it took:
+- **Four visual passes**, each from screenshots at full size and at x2-x3: props too small to see; smooth domes that read as clay eggs
+  and snowballs (rocks are now the part above ground of a cone of flat facets); plants lit to lime green by evenly spaced leaves;
+  pebble rings of one size read as paw prints, five-legged bushes as spiders, pipes with a ring at each end as bones; small bright
+  squares on Space Platform read as interface icons (hatches are now cut from the plating they sit in). Density 0.12 -> 0.2.
+- **Placement rules, derived independently in the suite:** a prop's tile and the eight round it open walkable ground with no cliff,
+  wall, ramp or map feature; no resource within `PROP_RES` 2 tiles (a mined-out patch included: `bases[].minerals` keeps it); outside
+  `PROP_HALL` 3 tiles of a hall site; every pixel it covers or shades inside that 3x3 block (the largest reaches 23 px of the 38 px
+  the block allows). A hulk's tiles read as the ground under them, so no prop pops in or out during play or across a save.
+- **Cost:** about 1.4 ms a chunk (7.5%), measured side by side in the browser. Seams: a prop crossing a chunk edge is drawn from the
+  same hashes by both chunks (`PROP_R` 24 px of reach; at 6 they disagree).
+- **Not done / open:** props are not in the strategic view or the minimap (phase 4 decides; Supreme Commander drops them with distance,
+  RESEARCH-TERRAIN 8.3). Space Platform's props are the least convincing of the five -- subtle floor details rather than scenery.
+
 ### The build path -- in this order, and why
 
 - **Phase 1 -- item 2, ramps (SIMULATION; stamped `js/map.js`; the build stamp moves once). DONE -- see above.** First, because it is the only item
@@ -118,7 +137,7 @@ textures, 8.3 MB, in `assets/terrain/SOURCES.md`; `test/terraintex.js` (40 check
   plate size), look at each before using it, and grade each set. Acceptance: on every tileset the high ground reads lighter than
   the low at least as clearly as Badlands (compare the graded materials' mean luminance), one crisp drop per cliff, no visible
   repeat at zoom 1, units and minerals stand out; a before/after of every tileset from `tools/terrain-shot.js`, sent to the user.
-- **Phase 3 -- item 1, props (drawing only).** Rocks, debris and dry plants per tileset (Jungle: roots and ferns; Ice: ice chunks
+- **Phase 3 -- item 1, props (drawing only). DONE -- see above.** Rocks, debris and dry plants per tileset (Jungle: roots and ferns; Ice: ice chunks
   and snow tufts; Desert: stones and dry scrub; Space Platform: bolts, panels, cable runs), shaded by the terrain's sun with a
   darkening shadow down-right, drawn from sprites baked with `tools/bake.js`'s own renderer or drawn procedurally, and placed by a
   seam-free hashed blue-noise rule per chunk (8.1). Acceptance: purely cosmetic and small on walkable ground; none on a resource or

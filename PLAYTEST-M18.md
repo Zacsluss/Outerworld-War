@@ -1355,3 +1355,62 @@ The files: thirteen Poly Haven CC0 textures, 8.3 MB (`assets/terrain/SOURCES.md`
 - Found while measuring, for phase 4: baking some 1,500 chunks in a few minutes in one page lost the game canvas (Chrome dropped
   its 2D context). That was a measuring loop, not play -- the game keeps at most 160 chunks -- but The Long March is 1,024 chunks
   and phase 4's speed work must not create canvases faster than they are freed.
+
+## 112. Rocks, debris and plants on open ground, lit like the units
+
+*(The user, 2026-09-13, the terrain queue's item 1: "Scattered rocks, debris and dry plants on open ground, lit like the units."
+TODO-M18, THE TERRAIN QUEUE, phase 3. Drawing only -- `js/terrain.js`, `TERRAIN_PROPS` and `Terrain.propMask`/`propAt`/`drawProp`; the
+build stamp does not move.)*
+
+**Detailed terrain is still OFF by default** (phase 5 switches it on): add `?hd=1` to the game's address to see any of this.
+
+**What changed for a player:**
+1. **Open ground has props on every tileset**, on one allowed tile in five to seven on the natural tilesets and one in eleven on
+   Space Platform, gathered into clusters and clearings rather than spread evenly:
+   - *Badlands*: grey-brown boulders with a few small stones beside them, stone scatters, tufts of dry grass, fallen branches.
+   - *Jungle*: mossy grey rocks, broad-leaved plants, ferns, exposed roots.
+   - *Ice*: faceted ice chunks, dark stones with snow on their tops, frozen shrubs in little snow mounds.
+   - *Desert*: pale sandstone boulders and scatters, dead bushes.
+   - *Space Platform*: floor hatches cut from the plating they sit in, vent grilles, cable runs with clamps, scrap.
+2. **They are lit like the units**: every rock face, leaf and cable is shaded by its own slope against the same sun in the upper
+   left, and throws its shadow down and to the right.
+3. **They are scenery only.** Nothing blocks, slows or hides a unit, and nothing about the game changes -- a replay or a network game
+   cannot tell they are there. A prop stands only on open walkable ground: never on or next to a cliff, a ramp or a ramp's wall, a
+   rock formation or any map feature; never within two tiles of a mineral patch or geyser (mined out or not); never in the three
+   tiles round a base's town-hall site. Buildings, creep and hulks simply cover the ones under them.
+4. **They never move.** Each prop is decided by its tile and the map's seed, so every player in a game, a replay and a reloaded save
+   sees the same ones in the same places, and breaking a rock formation or mining out a patch adds or removes none.
+
+**How to see it by hand:**
+1. **Badlands.** Open the game with `?hd=1`, **Single Player -> Skirmish**, map **Lost Ruins**, START. Scroll down the ramp from your
+   main. *Working:* stones and dry grass tufts scattered over the open ground, none on the ramp, its walls or the cliff edge, none in
+   your mineral line or round your Command Center.
+2. **Jungle.** Map **Contested Ground**. Scroll to the middle of the map. *Working:* mossy rocks, leafy plants and ferns in loose
+   clusters with bare stretches between.
+3. **Ice.** Map **The Long March** or **Nightfall**. *Working:* white faceted ice chunks and dark snow-capped stones on the snow.
+4. **Desert.** Map **Dust Bowl**. *Working:* pale sandstone rocks and dead bushes, on the sand plateaus and the orange floor.
+5. **Space Platform.** Map **Open Basin** with **Seed 1**. *Working:* hatches, vents and cable runs on the deck and the plating --
+   subtle, part of the floor, not scattered icons.
+6. **Light.** On any of them look at a single boulder: its upper-left faces are bright, its lower-right faces dark, and its shadow lies
+   down-right -- the same as the units' shading and shadows next to it.
+7. **Legibility in a fight.** Get a large battle going on open ground (or a 400-unit test fight). *Working:* every unit reads as clearly
+   as on bare ground; the props disappear under the armies.
+
+**Invisible from normal play, and where to look instead:** `test/terraintex.js` (in the gate) now checks the props too -- on seven maps
+(every tileset, the largest map, and generated maps with rock formations) no prop breaks a placement rule and none covers or shades
+a pixel outside its own tile's 3x3 block; about the set's density of the allowed ground has a prop; every kind draws a body and a
+shadow; the shadow falls away from the sun; in the bake a boulder's sunward faces are brighter; props change only the pixels they
+cover or shade; a prop crossing a chunk edge is drawn the same by both chunks; breaking every feature, dropping a hulk and mining out
+a patch moves no prop. Fifteen negative controls turn it red (`.claude/review/terrain/controls-props.log`).
+
+**Numbers recorded:**
+- Props on the ground they may stand on (`test/terraintex.js`): Lost Ruins 19.2% (density 0.2), Contested Ground 20.7% (0.22), The Long
+  March 14.0% (0.16), Dust Bowl 15.9% (0.18), Open Basin seed 1 7.9% (0.09), Chokepoint Valley 20.6% (0.22), Vertical Cliffs 16.7% (0.18).
+  The Long March has 7,408 props; working them out for the whole map takes 33 ms once, inside the test harness.
+- The bake, in the browser, 256 chunks of Contested Ground (Badlands), median a chunk, runs interleaved in one page: 18.5 and 18.7 ms
+  without props, 20.0 and 20.0 with -- about 1.4 ms, 7.5%. (The same code measured 13.5-14.5 ms earlier in the session: compare only
+  numbers taken side by side.)
+- Judged on screenshots in four passes (`.claude/review/terrain/shots/p3v1-*` to `p3v4-*`, `p3-ba-*`): pinpricks and orange blobs;
+  smooth clay eggs, snowball ice and lime-green stars; paw-print pebble rings, spider bushes and bone-shaped pipes; icon-like hatches on
+  Space Platform. Density judged at 0.12, 0.2 and 0.3; 0.2 kept.
+- 400 units on Contested Ground (Badlands, Jungle) with and without props: every unit reads the same (`shots/p3-battle-*`).

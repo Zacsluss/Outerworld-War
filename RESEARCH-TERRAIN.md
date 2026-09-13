@@ -293,3 +293,19 @@ Licence: CC0, no credit needed ([polyhaven.com/license](https://polyhaven.com/li
   help (the features are one to three tiles across). Laying the texture in squares with hashed offsets did: judged at 4, 6 and 9
   tiles; 6 kept. Hex-tiling (Mikkelsen, "Practical Real-Time Hex-Tiling", 2022) is the better-known answer and blends three samples
   at every pixel; squares need one sample in most of a square, which matters on a CPU bake.
+
+### 8.7 What phase 3 chose for props, and why *(judged on screenshots, 2026-09-13; PLAYTEST-M18 112)*
+
+- **Baked into the chunk, not drawn as sprites each frame**: the chunk is already a per-pixel loop with the sun in it, so a prop costs
+  a few thousand extra pixel writes once (about 1.4 ms a chunk) and nothing per frame, and its light is the ground's light by
+  construction. Sprites from `tools/bake.js` were the other road (8.1): a new asset pipeline for what four primitives draw.
+- **Placement is a hash per tile under a density times a cluster weight**, not Poisson-disc sampling (8.1): one candidate a tile, kept
+  in the middle three fifths of it, already never overlaps a neighbour's centre and leaves no seam to agree across; the cluster weight
+  (broad noise, squared) gives the clumps and clearings a jittered grid lacks.
+- **What reads as what, at 32 px a tile** (each learned from a screenshot): rocks need flat faces and sharp ridges -- a dome or a cone
+  reads as clay or a snowball; a scatter of stones needs one larger stone and uneven gaps -- even stones in a ring read as a paw print;
+  a dry bush needs many thin branches -- five read as a spider; a pipe needs square ends -- rings at both read as a bone; plants need
+  uneven leaves and a colour darker than the ground's brightest -- evenly spaced leaves lit to 1.4 read as lime stars; metal props need
+  to be made of the floor -- small bright squares read as icons.
+- **Scale and density**: boulders 12-22 px, most props under a Marine's width; density 0.2 of the allowed ground on the natural sets
+  (0.12 read as empty), 0.09 on Space Platform, whose props are larger.

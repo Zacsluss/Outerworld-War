@@ -153,6 +153,23 @@ const TERRAIN_LOOK = {
   desert: { mix: 1, grit: 0.25, warp: 22, squeeze: 1.35, cells: ['low', 'high'] },
   space: { mix: 0, grit: 0, warp: 0, squeeze: 1, tracks: 0.6, blur: 0, cells: ['low'] },
 };
+// PROPS ON OPEN GROUND (the terrain queue's phase 3; the user: "Scattered rocks, debris and dry plants on open ground, lit like the
+// units"). Textured ground only, and drawing only: each prop is baked into its chunk as a small height field of its own, lit by the
+// terrain's sun from the upper left as every sprite is, over a shadow that darkens the ground below and to its right. Small, and
+// never where it could read as a blocker or as cover (RESEARCH-TERRAIN.md 8.1): one candidate a tile on open walkable ground, kept
+// by a hash of the tile under a density that broad noise gathers into clusters and clearings, and none on a resource or within
+// PROP_RES tiles of one, in a base's hall clearing, on or beside a ramp or its walls, or beside a cliff (Terrain.propMask). So a
+// prop is a pure function of the map, its seed and the tile: every redraw, every chunk it crosses and every client agree.
+//   density: the share of allowed tiles with a prop, on average. kinds: [kind, weight]. stone: a stone's colour, which the cliff
+// texture's own light and dark modulate. The rest are what a kind reads: plant and tip (a leaf's base and its tip, a blade's root
+// and its end), wood, ice, metal, dark and rust; snow and moss put snow on a rock's upper faces and moss on its sides.
+const TERRAIN_PROPS = {
+  badlands: { density: 0.2, stone: [132, 118, 102], kinds: [['boulder', 2], ['stones', 5], ['grass', 5], ['branch', 1]], plant: [120, 104, 72], tip: [204, 186, 138], wood: [168, 150, 124] },
+  jungle: { density: 0.22, stone: [118, 120, 108], moss: [74, 96, 44], kinds: [['boulder', 2], ['stones', 3], ['bush', 4], ['fern', 3], ['roots', 1]], plant: [40, 66, 26], tip: [88, 118, 48], wood: [84, 62, 44] },
+  ice: { density: 0.16, stone: [92, 100, 114], snow: [236, 243, 250], kinds: [['ice', 4], ['stones', 3], ['twigs', 3]], ice: [178, 208, 228], wood: [84, 72, 62] },
+  desert: { density: 0.18, stone: [196, 160, 124], kinds: [['boulder', 2], ['stones', 5], ['deadbush', 3]], wood: [172, 150, 120] },
+  space: { density: 0.09, kinds: [['hatch', 3], ['vent', 2], ['cable', 2], ['scrap', 2]], metal: [128, 138, 152], cable: [66, 72, 82], dark: [34, 38, 46], rust: [122, 86, 58] },
+};
 const CREEP_LO = 0.37, CREEP_BAND = 0.26;
 const Terrain = {
   CH: 8, chunks: new Map(), _bakedAt: 1, seed: 1, mini: null, setId: 'badlands',
@@ -421,6 +438,7 @@ const Terrain = {
       tex(t, wx, wy, A); if (!mix) { o[0] = A[0] * g[0]; o[1] = A[1] * g[1]; o[2] = A[2] * g[2]; return; } q *= mix; tex(t, wy * 0.83 + 331, wx * 0.83 + 173, B); o[0] = (A[0] + (B[0] - A[0]) * q) * g[0]; o[1] = (A[1] + (B[1] - A[1]) * q) * g[1]; o[2] = (A[2] + (B[2] - A[2]) * q) * g[2];
     };
     const gLow = grade.low || one, gHigh = grade.high || one, gRamp = grade.ramp || one, gRock = grade.rock || one;
+    const PL = this.propLayer(cx, cy, T), PSH = this.PROP_SHADOW;   // props on open ground: null where none reaches this chunk
     for (let py = 0; py < W; py++) for (let pxx = 0; pxx < W; pxx++) {
       const wx = ox + pxx, wy = oy + py, o = (py + PAD) * PW + pxx + PAD, h = hf[o];
       const q = sm(Math.min(1, Math.max(0, (this.vnoise(wx / 230, wy / 230) - 0.3) / 0.4)));
@@ -449,9 +467,21 @@ const Terrain = {
       // the light: the height field's slope plus the rock's relief against the sun, so flat ground is exactly 1
       const sx = dxh * RISE + bx * BUMP, sy = dyh * RISE + by * BUMP;
       let shade = (-sx * lx - sy * ly + lz) / Math.sqrt(sx * sx + sy * sy + 1) / lz; shade = shade < 0.5 ? 0.5 : shade > 1.35 ? 1.35 : shade;
-      const up = hf[o - 11 * PW - 9] - h; if (up > 0.08) shade *= 1 - Math.min(0.32, (up - 0.08) * 0.7);   // the shadow of higher ground towards the sun
-      shade *= 0.94 + (this.vnoise(wx / 150 + 40, wy / 150 + 40) - 0.5) * 0.18;   // broad light and dark patches, as clouds or wear
-      const oo = (py * W + pxx) * 4, r = col[0] * shade, g = col[1] * shade, b = col[2] * shade;
+      let env = 1; const up = hf[o - 11 * PW - 9] - h; if (up > 0.08) env = 1 - Math.min(0.32, (up - 0.08) * 0.7);   // the shadow of higher ground towards the sun
+      env *= 0.94 + (this.vnoise(wx / 150 + 40, wy / 150 + 40) - 0.5) * 0.18;   // broad light and dark patches, as clouds or wear
+      shade *= env;
+      const oo = (py * W + pxx) * 4; let r = col[0] * shade, g = col[1] * shade, b = col[2] * shade;
+      if (PL) {
+        // a prop's shadow darkens the ground; the prop itself is lit by the slope of its own height field, as the ground is, and
+        // lies in the same cliff shadow and cloud
+        const LW = PL.W, li = (py + 1) * LW + pxx + 1, ps = PL.s[li], pa = PL.a[li];
+        if (ps > 0) { const k = 1 - ps * PSH; r *= k; g *= k; b *= k; }
+        if (pa > 0) {
+          const qx = (PL.h[li + 1] - PL.h[li - 1]) / 2, qy = (PL.h[li + LW] - PL.h[li - LW]) / 2;
+          let ls = (-qx * lx - qy * ly + lz) / Math.sqrt(qx * qx + qy * qy + 1) / lz; ls = (ls < 0.42 ? 0.42 : ls > 1.4 ? 1.4 : ls) * env;
+          r += (PL.c[li * 3] * ls - r) * pa; g += (PL.c[li * 3 + 1] * ls - g) * pa; b += (PL.c[li * 3 + 2] * ls - b) * pa;
+        }
+      }
       d[oo] = r > 255 ? 255 : r; d[oo + 1] = g > 255 ? 255 : g; d[oo + 2] = b > 255 ? 255 : b; d[oo + 3] = 255;
     }
     x.putImageData(img, 0, 0);
@@ -488,6 +518,250 @@ const Terrain = {
       if (top >= 0) lv[i] = Math.min(1, top + this.RAMP_WALL_RISE);
     }
     this._rampLvMap = m; this._rampLvKey = key; return this._rampLv = lv;
+  },
+  // ---- props (see TERRAIN_PROPS) ----------------------------------------
+  // PROP_R: no prop, shadow included, reaches further than this from its centre (world px), so a chunk reads the props of the tiles
+  // this far past its edge. PROP_RES and PROP_HALL: the clearing round every mineral patch and geyser, and round every base's town
+  // hall footprint, in tiles. PROP_SHADOW: how dark a prop's shadow is at its darkest.
+  PROP_R: 24, PROP_RES: 2, PROP_HALL: 3, PROP_SHADOW: 0.5,
+  // Where a prop may stand, per tile (1 or 0), once per map, from the map as generated: walkable open ground with no cliff, wall,
+  // ramp or map feature on it or next to it, clear of the resources and the halls. It reads nothing that play changes -- a
+  // mined-out patch and a base's minerals stay cleared, a broken rock formation's tiles and their neighbours stay excluded, a
+  // hulk's tiles read as the ground under it, buildings are ignored -- so props never pop in or out, and a client that joins
+  // late or loads a save computes the same mask as one that played from the start.
+  propMask() {
+    const m = G.map; if (this._propMask && this._propMap === m) return this._propMask;
+    const W = m.w, H = m.h, ok = new Uint8Array(W * H), hulk = new Map();
+    for (const wk of m.wrecks || []) wk.tiles.forEach((i, k) => hulk.set(i, wk.baseH[k]));
+    const feat = i => !!(m.featTile && m.featTile[i] >= 0);
+    const open = i => hulk.has(i) || (m.walk[i] === 1 && m.cliff[i] === 0);
+    const ramp = i => (hulk.has(i) ? hulk.get(i) : m.height[i]) === 1;
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x; if (!open(i) || ramp(i) || feat(i)) continue;
+      let clear = true;
+      for (let b = -1; b <= 1 && clear; b++) for (let a = -1; a <= 1; a++) { const j = i + b * W + a; if (!(hulk.has(j) || m.cliff[j] === 0) || ramp(j) || feat(j)) { clear = false; break; } }
+      if (clear) ok[i] = 1;
+    }
+    const cut = (x0, y0, w, h) => { for (let y = Math.max(0, y0); y < Math.min(H, y0 + h); y++) for (let x = Math.max(0, x0); x < Math.min(W, x0 + w); x++) ok[y * W + x] = 0; };
+    const R = this.PROP_RES, HC = this.PROP_HALL, patch = r => cut(r.x - R, r.y - R, r.w + 2 * R, r.h + 2 * R);
+    for (const b of m.bases || []) { cut(b.x - HC, b.y - HC, 4 + 2 * HC, 3 + 2 * HC); for (const r of b.minerals || []) patch(r); if (b.geyser) patch(b.geyser); }
+    for (const r of m.resources || []) patch(r);
+    this._propMap = m; return this._propMask = ok;
+  },
+  // The prop on a tile, or null: kept when a hash of the tile falls under the set's density times a cluster weight from broad noise
+  // (mean one), and placed within the middle three fifths of the tile, sized, turned and chosen by more hashes of the same tile.
+  propAt(tx, ty) {
+    const m = G.map, P = TERRAIN_PROPS[this.setId]; if (!P || tx < 0 || ty < 0 || tx >= m.w || ty >= m.h || !this.propMask()[ty * m.w + tx]) return null;
+    const c = this.vnoise(tx / 6.3 + 211, ty / 6.3 + 97); if (this.hash(tx * 17 + 5, ty * 23 + 11) >= P.density * (0.15 + 2.4 * c * c)) return null;
+    let sum = 0; for (const k of P.kinds) sum += k[1];
+    let pick = this.hash(tx * 29 + 3, ty * 31 + 7) * sum, kind = P.kinds[P.kinds.length - 1][0];
+    for (const k of P.kinds) { if (pick < k[1]) { kind = k[0]; break; } pick -= k[1]; }
+    return { kind, tx, ty, x: (tx + 0.2 + 0.6 * this.hash(tx * 37 + 1, ty * 41 + 2)) * TILE, y: (ty + 0.2 + 0.6 * this.hash(tx * 43 + 4, ty * 47 + 6)) * TILE,
+      s: this.hash(tx * 53 + 8, ty * 59 + 9), a: this.hash(tx * 61 + 10, ty * 67 + 12) * Math.PI * 2 };
+  },
+  // The props over a chunk as layers of its pixels, one pixel of margin all round so a prop's slope can be read at the chunk's edge:
+  // h height (px), a cover (0-1), c colour, s shadow (0-1). Null when no prop reaches the chunk. One set of layers is kept and
+  // cleared for each chunk: chunks bake one at a time.
+  propLayer(cx, cy, T) {
+    const W = this.CH * TILE, LW = W + 2, ox = cx * this.CH * TILE - 1, oy = cy * this.CH * TILE - 1, R = this.PROP_R, reach = Math.ceil(R / TILE) + 1;
+    let L = null;
+    for (let ty = cy * this.CH - reach; ty < (cy + 1) * this.CH + reach; ty++) for (let tx = cx * this.CH - reach; tx < (cx + 1) * this.CH + reach; tx++) {
+      const p = this.propAt(tx, ty); if (!p || p.x + R < ox || p.x - R >= ox + LW || p.y + R < oy || p.y - R >= oy + LW) continue;
+      if (!L) {
+        if (!this._propL || this._propL.W !== LW) this._propL = { W: LW, h: new Float32Array(LW * LW), a: new Float32Array(LW * LW), c: new Float32Array(LW * LW * 3), s: new Float32Array(LW * LW) };
+        L = this._propL; L.h.fill(0); L.a.fill(0); L.c.fill(0); L.s.fill(0); L.ox = ox; L.oy = oy;
+      }
+      this.drawProp(L, p, T);
+    }
+    return L;
+  },
+  // A texture's mean colour, once per texture.
+  texMean(t) {
+    const c = this._means || (this._means = new WeakMap()); let v = c.get(t);
+    if (!v) { let r = 0, g = 0, b = 0, n = 0; for (let q = 0; q < t.length; q += 28) { r += t[q]; g += t[q + 1]; b += t[q + 2]; n++; } v = [r / n, g / n, b / n]; c.set(t, v); }
+    return v;
+  },
+  // One prop into a layer, from four primitives -- a faceted rock, a blade, a leaf and a box -- each laying its shadow first (its
+  // footprint swept down and right by its height, darkest at the base) and then its surface, the taller surface kept where two
+  // overlap. The bake lights the surface by its slopes, so every part is lit from the upper left like the sprites.
+  drawProp(L, p, T) {
+    const P = TERRAIN_PROPS[this.setId], grade = TERRAIN_GRADE[this.setId] || {}, S = this.TEX_PX, LW = L.W, one = [1, 1, 1], C = [0, 0, 0];
+    const X = p.x - L.ox, Y = p.y - L.oy, h = (k, a, b) => this.hash(p.tx * a + k, p.ty * b + k * 7), TAU = Math.PI * 2;
+    const put = (x, y, hh, a, col) => {
+      if (x < 0 || y < 0 || x >= LW || y >= LW || a <= 0) return; const i = y * LW + x;
+      if (L.a[i] >= 0.5 && hh < L.h[i]) { if (a > L.a[i]) L.a[i] = a; return; }
+      L.h[i] = hh; if (a > L.a[i]) L.a[i] = a; L.c[i * 3] = col[0]; L.c[i * 3 + 1] = col[1]; L.c[i * 3 + 2] = col[2];
+    };
+    const dark = (x, y, k) => { if (x < 0 || y < 0 || x >= LW || y >= LW) return; const i = y * LW + x; if (k > L.s[i]) L.s[i] = k; };
+    const tint = (base, f) => { C[0] = base[0] * f; C[1] = base[1] * f; C[2] = base[2] * f; return C; };
+    const mix3 = (u, v, t, f) => { C[0] = (u[0] + (v[0] - u[0]) * t) * f; C[1] = (u[1] + (v[1] - u[1]) * t) * f; C[2] = (u[2] + (v[2] - u[2]) * t) * f; return C; };
+    const texAt = (t, u, v) => ((((v | 0) % S) + S) % S * S + ((((u | 0) % S) + S) % S)) * 4;
+    const sweep = (hh, fn) => { const sx = hh * 0.6, sy = hh * 0.72; for (const t of [0, 0.5, 1]) fn(sx * t, sy * t, 1 - 0.35 * t); };
+    // A stone's colour: the set's stone colour, lightened and darkened by the cliff texture's own detail, with snow on the upper
+    // faces or moss on the sides where the set has them. rel is the height over the rock's top; k picks the facet.
+    const rMean = this.texMean(T.rock), rm = (rMean[0] + rMean[1] + rMean[2]) || 1;
+    const stoneCol = (f, snowy) => (wx, wy, rel, k) => {
+      const q = texAt(T.rock, wx, wy * 1.35), det = Math.min(1.45, Math.max(0.55, (T.rock[q] + T.rock[q + 1] + T.rock[q + 2]) / rm)), b = f * (0.4 + 0.6 * det) * (0.93 + 0.14 * h(1500 + k, 3, 5));
+      tint(P.stone || [150, 140, 128], b);
+      if (P.snow && snowy) { const w = Math.min(1, Math.max(0, (rel - 0.5) / 0.2)) * (0.6 + 0.4 * this.vnoise(wx / 2.2, wy / 2.2)); C[0] += (P.snow[0] - C[0]) * w; C[1] += (P.snow[1] - C[1]) * w; C[2] += (P.snow[2] - C[2]) * w; }
+      if (P.moss) { const w = Math.max(0, this.vnoise(wx / 3.1 + 50, wy / 3.1) - 0.45) * 1.6 * (rel < 0.85 ? 1 : 0.4); C[0] += (P.moss[0] - C[0]) * w; C[1] += (P.moss[1] - C[1]) * w; C[2] += (P.moss[2] - C[2]) * w; }
+      return C;
+    };
+    // A rock: the part above the ground of a cone of m flat facets through an apex near (cx, cy), each tilted its own way -- so its
+    // faces are flat, its ridges sharp and its outline the irregular polygon where the facets meet the ground. flat cuts its top.
+    const rock = (cx, cy, r, hMax, m, flat, seed, colour) => {
+      const ax = cx + (h(seed, 3, 5) - 0.5) * r * 0.5, ay = cy + (h(seed + 1, 5, 3) - 0.5) * r * 0.5, dx = [], dy = [], sl = [], top = hMax * (1 - flat);
+      for (let k = 0; k < m; k++) { const ang = p.a + seed + k * TAU / m + (h(seed + 2 + k, 7, 11) - 0.5) * (TAU / m) * 0.7; dx.push(Math.cos(ang)); dy.push(Math.sin(ang)); sl.push(hMax / (r * (0.7 + 0.55 * h(seed + 20 + k, 11, 7)))); }
+      const at = (px, py, out) => { let v = top, kk = -1, s = 1; for (let k = 0; k < m; k++) { const hk = hMax - ((px - ax) * dx[k] + (py - ay) * dy[k]) * sl[k]; if (hk < v) { v = hk; kk = k; s = sl[k]; } } out[0] = v; out[1] = kk; out[2] = s; return v; };
+      const Q = [0, 0, 0], R = r * 1.3 + 1, x0 = Math.floor(cx - R), x1 = Math.ceil(cx + R + hMax * 0.6), y0 = Math.floor(cy - R), y1 = Math.ceil(cy + R + hMax * 0.72);
+      sweep(hMax, (sx, sy, w) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const v = at(x + 0.5 - sx, y + 0.5 - sy, Q) / Q[2] + 0.6; if (v > 0) dark(x, y, Math.min(1, v) * w); } });
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+        const v = at(x + 0.5, y + 0.5, Q); if (v <= 0) continue;
+        const wx = L.ox + x, wy = L.oy + y, rough = (this.vnoise(wx / 1.6 + seed, wy / 1.6) - 0.5) * 0.5 * Math.min(1, v);
+        put(x, y, v + rough, Math.min(1, v / Q[2] * 1.3), colour(wx, wy, v / hMax, Q[1]));
+      }
+    };
+    // a blade, stem or twig from a to b, wa wide at a and wb at b, round in section, ha high at a and hb at b; square: cut off flat
+    // at both ends instead of rounded
+    const blade = (xa, ya, xb, yb, wa, wb, ha, hb, colour, square) => {
+      const dx = xb - xa, dy = yb - ya, ll = dx * dx + dy * dy || 1, hm = Math.max(ha, hb);
+      const box = (ox2, oy2, fn) => { for (let y = Math.floor(Math.min(ya, yb) - 2 + oy2); y <= Math.ceil(Math.max(ya, yb) + 2 + oy2); y++) for (let x = Math.floor(Math.min(xa, xb) - 2 + ox2); x <= Math.ceil(Math.max(xa, xb) + 2 + ox2); x++) {
+        const px = x + 0.5 - ox2, py = y + 0.5 - oy2, t0 = ((px - xa) * dx + (py - ya) * dy) / ll; if (square && (t0 < 0 || t0 > 1)) continue;
+        const t = Math.min(1, Math.max(0, t0)), qx = xa + dx * t - px, qy = ya + dy * t - py, dd = Math.sqrt(qx * qx + qy * qy), w = (wa + (wb - wa) * t) / 2 + 0.45;
+        if (dd < w) fn(x, y, t, dd / w, w - dd); } };
+      sweep(hm, (sx, sy, k) => box(sx, sy, (x, y, t, e, m) => dark(x, y, Math.min(1, m) * 0.7 * k)));
+      box(0, 0, (x, y, t, e, m) => put(x, y, (ha + (hb - ha) * t) * Math.sqrt(1 - e * e), Math.min(1, m), colour(t, e)));
+    };
+    // a curved blade: two blades meeting at a midpoint pushed sideways by bend
+    const curve = (xa, ya, xb, yb, bend, wa, wm, wb, ha, hm, hb, colour) => {
+      const mx = (xa + xb) / 2 - (yb - ya) * bend, my = (ya + yb) / 2 + (xb - xa) * bend;
+      blade(xa, ya, mx, my, wa, wm, ha, hm, (t, e) => colour(t * 0.5, e)); blade(mx, my, xb, yb, wm, wb, hm, hb, (t, e) => colour(0.5 + t * 0.5, e));
+    };
+    // a leaf from (xa, ya) along angle ang: pointed at both ends, widest a third of the way out, its midrib a little higher and darker
+    const leaf = (xa, ya, ang, len, wid, hMax, colour) => {
+      const ux = Math.cos(ang), uy = Math.sin(ang), x0 = Math.floor(Math.min(xa, xa + ux * len) - wid - 1), x1 = Math.ceil(Math.max(xa, xa + ux * len) + wid + 1 + hMax), y0 = Math.floor(Math.min(ya, ya + uy * len) - wid - 1), y1 = Math.ceil(Math.max(ya, ya + uy * len) + wid + 1 + hMax);
+      const at = (px, py, fn) => { const qx = px - xa, qy = py - ya, t = (qx * ux + qy * uy) / len, s = -qx * uy + qy * ux; if (t <= 0 || t >= 1) return; const w = wid * 0.5 * Math.pow(Math.sin(Math.PI * Math.pow(t, 0.7)), 0.8) + 0.35; if (Math.abs(s) < w) fn(t, Math.abs(s) / w, w - Math.abs(s)); };
+      sweep(hMax, (sx, sy, k) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) at(x + 0.5 - sx, y + 0.5 - sy, (t, e, m) => dark(x, y, Math.min(1, m * 1.5) * 0.7 * k)); });
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) at(x + 0.5, y + 0.5, (t, e, m) => put(x, y, hMax * (0.55 + 0.45 * (1 - e * e)) * (0.75 + 0.25 * Math.sin(Math.PI * t)), Math.min(1, m * 1.5), colour(t, e)));
+    };
+    // an axis-aligned box w x hh with bevelled edges, top height top; colour(wx, wy, edgeDistance)
+    const box = (x0, y0, w, hh, top, bevel, colour) => {
+      sweep(top, (sx, sy, k) => { for (let y = Math.floor(y0 + sy); y < Math.ceil(y0 + hh + sy); y++) for (let x = Math.floor(x0 + sx); x < Math.ceil(x0 + w + sx); x++) dark(x, y, 0.85 * k); });
+      for (let y = Math.floor(y0); y < Math.ceil(y0 + hh); y++) for (let x = Math.floor(x0); x < Math.ceil(x0 + w); x++) {
+        const ed = Math.min(x + 0.5 - x0, x0 + w - x - 0.5, y + 0.5 - y0, y0 + hh - y - 0.5); if (ed <= 0) continue;
+        put(x, y, top * Math.min(1, 0.45 + ed / bevel * 0.55), Math.min(1, ed + 0.5), colour(L.ox + x, L.oy + y, ed));
+      }
+    };
+    // a tangle of twigs from a knot at (cx, cy): n branches of uneven length and angle, each with a side twig or two
+    const twigs = (cx, cy, n, len, w, hh, col, seed) => {
+      rock(cx, cy, 1.4 + w * 0.4, hh * 1.1, 6, 0.3, seed / 100, () => tint(col, 0.7));
+      for (let k = 0; k < n; k++) {
+        const a = p.a + k * TAU / n + (h(seed + k, 3, 5) - 0.5) * 1.1, l = len * (0.55 + 0.45 * h(seed + 10 + k, 5, 3)), ex = cx + Math.cos(a) * l, ey = cy + Math.sin(a) * l, f = 0.8 + 0.35 * h(seed + 20 + k, 7, 7);
+        curve(cx, cy, ex, ey, (h(seed + 70 + k, 3, 7) - 0.5) * 0.3, w, w * 0.7, w * 0.35, hh, hh * 0.8, hh * 0.5, () => tint(col, f));
+        for (let j = 0; j < 1 + (h(seed + 30 + k, 3, 3) < 0.5 ? 1 : 0); j++) {
+          const t = 0.4 + 0.3 * h(seed + 40 + k + j, 5, 7), sa = a + (j ? -1 : 1) * (0.5 + 0.4 * h(seed + 50 + k, 3, 5)), sl = l * (0.3 + 0.25 * h(seed + 60 + k + j, 7, 3)), bx = cx + (ex - cx) * t, by = cy + (ey - cy) * t;
+          blade(bx, by, bx + Math.cos(sa) * sl, by + Math.sin(sa) * sl, w * 0.6, w * 0.3, hh * 0.75, hh * 0.5, () => tint(col, f * 0.95));
+        }
+      }
+    };
+    const s = p.s, a = p.a;
+    switch (p.kind) {
+      case 'boulder': {
+        const r = 6 + 5 * s, st = stoneCol(0.9 + 0.2 * h(1, 3, 5), true);
+        rock(X, Y, r, r * 0.95, 6 + Math.floor(3 * h(2, 5, 3)), h(3, 7, 7) < 0.4 ? 0.3 : 0, 0.5, st);
+        for (let k = 0; k < 3; k++) if (h(4 + k, 7, 11) < 0.6) { const aa = a + 2 + k * 1.5, d = r + 1.5 + 3 * h(5 + k, 3, 3), rr = 1.8 + 2 * h(8 + k, 5, 7); rock(X + Math.cos(aa) * d, Y + Math.sin(aa) * d, rr, rr * 0.85, 5, 0.2, 2.5 + k, stoneCol(0.9, false)); }
+        break;
+      }
+      case 'stones': {
+        // one larger stone and a scatter of small ones at uneven distances: stones of one size in a ring read as a paw print
+        const n = 2 + Math.floor(5 * s);
+        rock(X, Y, 2.4 + 1.8 * h(9, 5, 3), 3 + 1.2 * h(8, 3, 3), 5 + Math.floor(2 * h(7, 5, 5)), h(6, 3, 7) < 0.5 ? 0.3 : 0, 3.1, stoneCol(0.85 + 0.25 * h(5, 7, 3), true));
+        for (let k = 0; k < n; k++) {
+          const aa = TAU * h(10 + k, 3, 7), d = 3.5 + 7 * h(20 + k, 7, 3) * h(25 + k, 3, 5), r = 0.9 + 1.4 * h(30 + k, 5, 5);
+          rock(X + Math.cos(aa) * d, Y + Math.sin(aa) * d * 0.85, r, r * 0.8, 5, h(40 + k, 3, 3) < 0.5 ? 0.35 : 0, 3.7 + k, stoneCol(0.82 + 0.3 * h(50 + k, 3, 3), false));
+        }
+        break;
+      }
+      case 'grass': {
+        const n = 14 + Math.floor(10 * s), f0 = 0.9 + 0.2 * h(1, 3, 3);
+        for (let k = 0; k < n; k++) {
+          const aa = a + TAU * h(10 + k, 3, 5), len = 4 + 6.5 * h(20 + k, 5, 3), f = f0 * (0.75 + 0.35 * h(30 + k, 7, 7)), o = 1.5 * h(40 + k, 3, 3), bx = X + Math.cos(aa + 1.9) * o, by = Y + Math.sin(aa + 1.9) * o;
+          curve(bx, by, bx + Math.cos(aa) * len, by + Math.sin(aa) * len * 0.9, (h(50 + k, 5, 5) - 0.5) * 0.5, 1, 0.65, 0.2, 1.3, 1.7, 0.6, t => mix3(P.plant, P.tip, t, f));
+        }
+        break;
+      }
+      case 'branch': {
+        const len = 11 + 7 * s, ex = Math.cos(a) * len / 2, ey = Math.sin(a) * len / 2;
+        curve(X - ex, Y - ey, X + ex, Y + ey, (h(3, 7, 3) - 0.5) * 0.35, 2.2, 1.8, 1.1, 1.9, 1.8, 1.4, t => tint(P.wood, 0.85 + 0.15 * t));
+        for (let k = 0; k < 2; k++) { const t = 0.3 + 0.4 * h(10 + k, 3, 5), sa = a + (k ? -0.8 : 0.9), sl = 3 + 3.5 * h(20 + k, 5, 3), bx = X - ex + ex * 2 * t, by = Y - ey + ey * 2 * t; blade(bx, by, bx + Math.cos(sa) * sl, by + Math.sin(sa) * sl, 1.1, 0.4, 1.6, 1.1, () => tint(P.wood, 0.9)); }
+        break;
+      }
+      case 'bush': {
+        const n = 4 + Math.floor(3 * s);
+        for (let k = 0; k < n; k++) { const aa = a + TAU * (k + 0.6 * h(10 + k, 3, 5)) / n, f = 0.8 + 0.3 * h(20 + k, 5, 3), len = 6.5 + 4 * h(30 + k, 7, 7); leaf(X + Math.cos(aa) * 0.8, Y + Math.sin(aa) * 0.8, aa, len, 3.6 + 1.6 * h(40 + k, 3, 3), 2.6, (t, e) => mix3(P.plant, P.tip, t * 0.85, f * (e < 0.18 ? 0.78 : 1 - 0.15 * e))); }
+        for (let k = 0; k < 3; k++) { const aa = a + 1 + TAU * (k + 0.5 * h(50 + k, 5, 5)) / 3, f = 0.9 + 0.2 * h(60 + k, 3, 7); leaf(X, Y, aa, 4 + 1.5 * h(70 + k, 7, 3), 2.8, 3.6, (t, e) => mix3(P.plant, P.tip, 0.3 + t * 0.6, f * (e < 0.2 ? 0.8 : 1 - 0.12 * e))); }
+        break;
+      }
+      case 'fern': {
+        const n = 6 + Math.floor(3 * s);
+        for (let k = 0; k < n; k++) {
+          const aa = a + TAU * (k + 0.5 * h(10 + k, 3, 5)) / n, len = 7 + 5 * h(20 + k, 5, 3), f = 0.8 + 0.3 * h(30 + k, 7, 7), bend = (h(35 + k, 5, 3) - 0.5) * 0.02;
+          const ux = Math.cos(aa), uy = Math.sin(aa);
+          blade(X, Y, X + ux * len, Y + uy * len, 0.8, 0.3, 1.8, 1.1, t => mix3(P.plant, P.tip, t * 0.4, f * 0.75));
+          for (let j = 1; j * 1.5 < len - 0.8; j++) { const t = j * 1.5 / len, bx = X + ux * j * 1.5 - uy * bend * j * j, by = Y + uy * j * 1.5 + ux * bend * j * j, ll = 3.2 * (1 - t) + 0.9;
+            for (const side of [-1, 1]) leaf(bx, by, aa + side * 1.1, ll, 1.3, 1.9 - t * 0.6, (u, e) => mix3(P.plant, P.tip, 0.25 + t * 0.6, f * (1 - 0.2 * e))); }
+        }
+        break;
+      }
+      case 'roots': {
+        for (let k = 0; k < 2 + Math.floor(2 * s); k++) {
+          let aa = a + k * 2.2, px2 = X + (h(10 + k, 3, 5) - 0.5) * 6, py2 = Y + (h(20 + k, 5, 3) - 0.5) * 6;
+          for (let j = 0; j < 3; j++) { const len = 3 + 2.5 * h(30 + k * 3 + j, 7, 5), nx = px2 + Math.cos(aa) * len, ny = py2 + Math.sin(aa) * len; blade(px2, py2, nx, ny, 2.4 - j * 0.45, 1.95 - j * 0.45, 1.6, 1.4, () => tint(P.wood, 0.85 + 0.3 * h(40 + k, 3, 3))); px2 = nx; py2 = ny; aa += (h(50 + k * 3 + j, 5, 7) - 0.5) * 1.4; }
+        }
+        break;
+      }
+      case 'ice': {
+        const r = 4 + 5 * s, ice = (wx, wy, rel, k) => mix3(P.ice, P.snow, Math.min(1, rel * 0.7 + 0.25 * h(1600 + k, 3, 3)), 0.9 + 0.2 * h(1700 + k, 5, 5));
+        rock(X, Y, r, r * 1.15, 5 + Math.floor(2 * h(1, 3, 3)), 0, 6.1, ice);
+        for (let k = 0; k < 2; k++) if (h(3 + k, 7, 7) < 0.6) { const aa = a + 2 + k * 2, d = r + 1.5 + 2 * h(9 + k, 3, 5), rr = r * (0.3 + 0.25 * h(5 + k, 3, 3)); rock(X + Math.cos(aa) * d, Y + Math.sin(aa) * d, rr, rr * 1.2, 5, 0, 7.3 + k, ice); }
+        break;
+      }
+      case 'twigs': {
+        rock(X, Y, 3.2 + 1.5 * s, 1.5, 7, 0.4, 8.9, (wx, wy) => tint(P.snow, 0.97));
+        twigs(X, Y, 7 + Math.floor(4 * s), 6 + 4 * s, 0.95, 2.6, P.wood, 900);
+        break;
+      }
+      case 'deadbush': {
+        twigs(X, Y, 8 + Math.floor(4 * s), 6 + 4 * s, 0.85, 2.3, P.wood, 1000);
+        break;
+      }
+      case 'hatch': {
+        // cut from the plating it lies in (the plateau's or the deck's), a shade lighter, a dark seam round it and a bolt at two corners
+        const m = G.map, hi = m.height[p.ty * m.w + p.tx] === 2, tx2 = hi ? T.high : T.low, gT = (hi ? grade.high : grade.low) || one;
+        const pw = 14 + 2 * Math.floor(4 * s), ph = 12 + 2 * Math.floor(3 * h(1, 3, 5)), x0 = Math.round(X - pw / 2), y0 = Math.round(Y - ph / 2), f = 1.12 + 0.1 * h(2, 5, 3);
+        box(x0, y0, pw, ph, 0.7, 1.2, (wx, wy, ed) => { const q = texAt(tx2, wx, wy), k = ed < 1 ? 0.45 : f; C[0] = tx2[q] * gT[0] * k; C[1] = tx2[q + 1] * gT[1] * k; C[2] = tx2[q + 2] * gT[2] * k; return C; });
+        for (const [bx, by] of [[x0 + 2.5, y0 + 2.5], [x0 + pw - 2.5, y0 + ph - 2.5]]) rock(bx, by, 1.1, 1.6, 6, 0.3, 11, () => tint(P.metal, 1));
+        break;
+      }
+      case 'vent': {
+        const vw = 14 + 2 * Math.floor(3 * s), vh = 10 + 2 * Math.floor(2 * h(1, 3, 3)), x0 = Math.round(X - vw / 2), y0 = Math.round(Y - vh / 2);
+        box(x0, y0, vw, vh, 1, 1, (wx, wy, ed) => ed < 1.2 ? tint(P.metal, 0.7) : ((wy - L.oy - y0) % 2 < 1 ? tint(P.metal, 0.55) : tint(P.dark, 1)));
+        break;
+      }
+      case 'cable': {
+        // a long run along the plating, square-ended, clamped every ten pixels
+        const len = 26 + 16 * s, dir = Math.floor(4 * h(1, 3, 3)) * Math.PI / 4, ux = Math.cos(dir), uy = Math.sin(dir);
+        blade(X - ux * len / 2, Y - uy * len / 2, X + ux * len / 2, Y + uy * len / 2, 2.6, 2.6, 1.8, 1.8, () => tint(P.cable, 1), true);
+        for (let d = -len / 2 + 4; d <= len / 2 - 3; d += 10) blade(X + ux * (d - 1), Y + uy * (d - 1), X + ux * (d + 1), Y + uy * (d + 1), 4, 4, 2.2, 2.2, () => tint(P.metal, 0.8), true);
+        break;
+      }
+      case 'scrap': {
+        const n = 2 + Math.floor(3 * s);
+        for (let k = 0; k < n; k++) { const aa = a + k * 2.3, d = 1.5 + 6 * h(10 + k, 3, 5), r = 2.2 + 2.3 * h(20 + k, 5, 3), rust = h(30 + k, 7, 3) < 0.4, f = 0.75 + 0.4 * h(40 + k, 3, 3);
+          rock(X + Math.cos(aa) * d, Y + Math.sin(aa) * d, r, 1.3, 4 + Math.floor(2 * h(50 + k, 5, 5)), 0.55, 12.5 + k, (wx, wy, rel, kk) => tint(rust ? P.rust : P.metal, f * (0.9 + 0.2 * h(1800 + kk, 3, 3)))); }
+        break;
+      }
+    }
   },
   renderChunk(cx, cy) {
     const T = this.texSet(); if (T) return this.renderChunkTex(cx, cy, T);   // textured ground, when it is on and loaded
