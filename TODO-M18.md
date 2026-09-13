@@ -121,6 +121,38 @@ What it took:
 - **Not done / open:** props are not in the strategic view or the minimap (phase 4 decides; Supreme Commander drops them with distance,
   RESEARCH-TERRAIN 8.3). Space Platform's props are the least convincing of the five -- subtle floor details rather than scenery.
 
+**PHASE 4 (item 4, the far view, the minimap, speed) -- DONE** (PLAYTEST-M18 113; drawing only, the stamp stays `eff84c60f4bc9cf2`).
+`test/terrainview.js` (new, 24 checks, sixteen negative controls in `.claude/review/terrain/controls-terrainview.log`) is in the gate,
+now 100 suites. What it took, measured in the browser on The Long March (1600x900) before anything was changed:
+- **Before:** a camera jump to unbaked ground 694 ms in one frame; a default-speed scroll 7 frames over 50 ms in 240 (worst 124); a
+  diagonal scroll 25 in 200 (worst 179); zoom 0.6 over unbaked ground 20 of 40 frames over 50 (CHUNK_BUDGET 3 textured chunks is 55 ms);
+  a feature change 512 ms (`Render.syncFeatures` cleared every chunk).
+- **The far view** (`Terrain.paintOverviewTex`): the whole map at 4 px a tile from each texture box-filtered to that scale, with the
+  chunks' own grids, height curve, edge wander, cells and sun; props, rock lumps and relief left out. Against the chunks tile by tile:
+  correlation 0.996, 2.5 levels apart (the palette's 23.9). 202 ms to paint on The Long March, once, at a game's start.
+- **The minimap** (`buildMini`): the textured overview averaged 4x4 to a pixel a tile.
+- **The eight lobby colours on each minimap**, measured as the share of ground tiles within CIE76 dE 25: brown #703014 on Desert 7.6% (palette)
+  -> 83.5% (textured), on Badlands 0 -> 16.6%; #cce0d0 on Ice 11.9% -> 12.6%; the rest 0. Fix: a dark rim under every unit dot
+  (`js/hud.js`), judged on screenshots of all five (`shots/p4-minimap-dots`).
+- **The budget** (`Terrain.draw`): missing chunks nearest the middle first, one a frame and up to CHUNK_BUDGET while under BAKE_MS 8, the
+  overview under what is missing; else one chunk of the ring round the view (only while view and ring fit under CHUNK_CAP -- zoomed out
+  on a big display they do not, and a ring chunk evicted as soon as baked would be a bake a frame for ever); a frame does one of
+  those or a step of a textured overview, never two.
+- **Feature changes** (`Terrain.invalidateTiles`, `Render.syncFeatures`): only the chunks within a chunk of the feature, and that part of
+  the overview. The first measurement after that was still 147 ms: the first change of a game took the "new map" branch (its map was
+  never recorded while the revision stood still), which cleared everything -- a new map now only records state.
+- **Textures arriving mid-game:** the textured overview painted four rows at a time for 6 ms a frame (`overviewStep`), the palette's in
+  use until it is whole; first measured at 50.5 ms when a step and a bake shared a frame.
+- **A hulk** (`Terrain.groundGrids`): found while measuring -- a chunk baked while a hulk stood on low ground drew a plateau with cliff
+  faces (`shots/p4-hulk-check`) and kept it after the hulk rotted. Every drawing path reads the ground under a hulk.
+- **After:** no frame over 50 ms in any of the measurements (PLAYTEST-M18 113 has the table); a web worker was not needed.
+- **Suites changed, with the reason in each:** `zoom`, `seldraw`, `review17ui` (they counted on one frame drawing the whole view).
+- **Memory:** a textured bake threw away about 2.1 MB (five float grids, an ImageData) and a retired chunk kept its canvas until collected;
+  long scrolls showed 40-159 ms frames with no drawing work in them (instrumented). Both are reused or freed now (`Terrain.scratch`,
+  `imageFor`, `releaseChunk`); 4,500 frames of the next session, none over 33 ms, and the canvas context never lost.
+- **Decided, not open:** props stay out of the far view (at 4 px a tile they are specks); the textured overview paints once at a game's
+  start (about 200 ms on The Long March, inside the first frame that used to bake thirty chunks, about 600 ms).
+
 ### The build path -- in this order, and why
 
 - **Phase 1 -- item 2, ramps (SIMULATION; stamped `js/map.js`; the build stamp moves once). DONE -- see above.** First, because it is the only item
@@ -143,7 +175,7 @@ What it took:
   seam-free hashed blue-noise rule per chunk (8.1). Acceptance: purely cosmetic and small on walkable ground; none on a resource or
   within two tiles of one, in a base's hall clearing, on a ramp or its walls, or within a tile of a cliff edge; a pure function of
   map, seed and tile; the chunk bake's cost measured before and after; a busy-battle shot where 400 units stay legible.
-- **Phase 4 -- item 4, the strategic zoom, the minimap, speed (drawing only).** `overview()` and `buildMini()` from each material's
+- **Phase 4 -- item 4, the strategic zoom, the minimap, speed (drawing only). DONE -- see above.** `overview()` and `buildMini()` from each material's
   mean colour in linear light times its grade, blended by the tile's weights and slope shade (8.3); then The Long March (256x256)
   measured at zoom 1 (camera jump, scroll), zoomed out, and on a feature change. Acceptance: the far view and the minimap match the
   ground; no hitch over about 50 ms, measured before and after -- a per-frame bake budget with the overview underneath is the first

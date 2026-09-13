@@ -179,7 +179,7 @@ const Terrain = {
   vnoise(x, y) { const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi; const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf); const a = this.hash(xi, yi), b = this.hash(xi + 1, yi), c = this.hash(xi, yi + 1), d = this.hash(xi + 1, yi + 1); return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v; },
   fbm(x, y, o = 3) { let s = 0, a = 0.5, f = 1, n = 0; for (let i = 0; i < o; i++) { s += this.vnoise(x * f, y * f) * a; n += a; a *= 0.5; f *= 2.1; } return s / n; },
   ridge(x, y) { return 1 - Math.abs(this.vnoise(x, y) * 2 - 1); },
-  reset(seed) { this.seed = seed; this.setId = (G.map && G.map.tileset) || 'badlands'; this.chunks.clear(); this.resetCreep(); this.clearStrips(); this.clearOverview(); this.mini = null; },
+  reset(seed) { this.seed = seed; this.setId = (G.map && G.map.tileset) || 'badlands'; this.clearChunks(); this.resetCreep(); this.clearStrips(); this.clearOverview(); this.mini = null; },
   // palette
   // ---- period look ------------------------------------------------------
   // The games this is imitating rendered to a small palette and covered the seams with an ordered
@@ -283,7 +283,15 @@ const Terrain = {
     x.putImageData(img, 0, 0);
     return this._ramp[key] = cv;
   },
-  checkDpr() { const k = this.bakeDpr(); if (k !== this._bakedAt) { this.chunks.clear(); this._bakedAt = k; } },   // a ratio change invalidates every cached chunk
+  checkDpr() { const k = this.bakeDpr(); if (k !== this._bakedAt) { this.clearChunks(); this._bakedAt = k; } },   // a ratio change invalidates every cached chunk
+  // A chunk canvas leaving the cache gives its backing store back now rather than whenever the collector gets to it: scrolling The
+  // Long March with the ring baked ahead retires a chunk a frame, and waiting for the collector cost 84-128 ms frames (and, baking
+  // faster, the game canvas's own context). Set to 0 x 0 only once nothing can draw it again.
+  releaseChunk(c) { if (c && c.width) { c.width = 0; c.height = 0; } },
+  clearChunks() { for (const c of this.chunks.values()) this.releaseChunk(c); this.chunks.clear(); },
+  // Scratch memory a bake reuses: a textured chunk used to allocate about 2.1 MB it threw away (five float grids and an ImageData).
+  scratch(name, n) { const s = this._scratch || (this._scratch = {}); if (!s[name] || s[name].length !== n) s[name] = new Float32Array(n); return s[name]; },
+  imageFor(x, W) { const s = this._imgs || (this._imgs = {}); if (!s[W]) s[W] = x.createImageData(W, W); return s[W]; },
   // The chunk cache had no bound, and did not need one while the camera never saw more than about
   // thirty chunks: a game would cache a few hundred over an hour of scrolling and that was that.
   // Zooming out to OVER_Z puts a hundred and forty in view AT ONCE, and panning a 256-tile map at
@@ -292,7 +300,7 @@ const Terrain = {
   // order, so re-inserting a chunk the moment it is drawn turns the eviction order into least
   // recently SEEN, which is what stops the strategic view from evicting the ground it is standing on.
   CHUNK_CAP: 160,
-  trim() { const c = this.chunks; while (c.size > this.CHUNK_CAP) { const k = c.keys().next().value; if (k === undefined) break; c.delete(k); } },
+  trim() { const c = this.chunks; while (c.size > this.CHUNK_CAP) { const k = c.keys().next().value; if (k === undefined) break; this.releaseChunk(c.get(k)); c.delete(k); } },
   // The ratio the chunk canvases are baked at. Terrain is most of the screen and it is the one cached
   // bitmap worth baking at the display's real resolution -- the sheets are not, because re-baking those
   // is a four-fold blow-up of the files and of the tinted-sheet ceiling with them.
@@ -316,7 +324,7 @@ const Terrain = {
     const look = this.look(), S = this.TEX_PX, out = {}; let ready = true;
     for (const part of Object.keys(spec)) {
       const url = spec[part]; let e = this._tex[url];
-      if (!e) { e = this._tex[url] = { img: new Image(), ok: false, data: {} }; e.img.onload = () => { e.ok = true; this.chunks.clear(); }; e.img.src = url; }
+      if (!e) { e = this._tex[url] = { img: new Image(), ok: false, data: {} }; e.img.onload = () => { e.ok = true; this.clearChunks(); }; e.img.src = url; }
       if (!e.ok) { ready = false; continue; }
       // kept per treatment: two sets may lay one texture down plain and healed
       const heal = (look.heal || []).includes(part), key = heal ? 'healed' : 'plain';
@@ -356,7 +364,7 @@ const Terrain = {
   renderChunkTex(cx, cy, T) {
     const m = G.map, CH = this.CH, W = CH * TILE, look = this.look(), S = this.TEX_PX, grade = TERRAIN_GRADE[this.setId] || {};
     const cv = document.createElement('canvas'); cv.width = W; cv.height = W; const x = cv.getContext('2d');
-    const img = x.createImageData(W, W), d = img.data, ox = cx * CH * TILE, oy = cy * CH * TILE;
+    const img = this.imageFor(x, W), d = img.data, ox = cx * CH * TILE, oy = cy * CH * TILE;   // reused: every pixel is written below
     // How HIGH each tile centre is -- low 0, a ramp or a cliff tile halfway, high 1 -- with where the rock zones and the ramps
     // are, softened by a 3x3 blur so a diagonal cliff is a slope and not a staircase of tile corners (the first pass traced
     // the grid exactly). It is read LINEARLY between centres and then pushed through a steep curve, so a cliff is one drop
@@ -369,11 +377,11 @@ const Terrain = {
     // the cliff it is -- the plateau's edge folding down both sides of the ramp -- rather than as a slab wider than where you can
     // walk. (Drawn as a lumpy rock zone first, RAMP_WALL_ROCK 0.6, the walls read as two boulders.)
     const M = 3, GW = CH + 2 * M + 1, raw = new Float32Array(GW * GW), rz = new Float32Array(GW * GW), rpz = new Float32Array(GW * GW), t0x = cx * CH - M, t0y = cy * CH - M;
-    const RL = this.rampLevels(), wal = new Uint8Array(GW * GW);
+    const RL = this.rampLevels(), wal = new Uint8Array(GW * GW), GH = this.groundGrids().height;
     for (let j = 0; j < GW; j++) for (let i = 0; i < GW; i++) {
       const tx = t0x + i, ty = t0y + j, o = j * GW + i;
       if (tx < 0 || ty < 0 || tx >= m.w || ty >= m.h) { raw[o] = 1.25; rz[o] = 1; continue; }
-      const q = ty * m.w + tx, cl = m.cliff[q], h = m.height[q];
+      const q = ty * m.w + tx, cl = m.cliff[q], h = GH[q];
       raw[o] = cl === 2 ? 1 : cl === 1 ? 0.5 : h === 2 ? 1 : h === 1 ? 0.5 : 0; rz[o] = cl === 2 ? 1 : 0; rpz[o] = !cl && h === 1 ? 1 : 0;
       if (RL[q] >= 0) { if (rpz[o]) raw[o] = RL[q]; else if (cl === 1) { raw[o] = RL[q]; rz[o] = this.RAMP_WALL_ROCK; wal[o] = 1; } }
       if (cl === 1) wal[o] |= 2;
@@ -388,9 +396,9 @@ const Terrain = {
     // dark kink across its top and its foot; walls and cliffs keep their one crisp drop.
     const gk = blur(rpz); for (let o = 0; o < GW * GW; o++) if (wal[o]) gk[o] = 0;
     const sm = t => t * t * (3 - 2 * t), PAD = 24, PW = W + 2 * PAD;
-    const hf = new Float32Array(PW * PW), rk = new Float32Array(PW * PW), rp = new Float32Array(PW * PW);
+    const hf = this.scratch('hf', PW * PW), rk = this.scratch('rk', PW * PW), rp = this.scratch('rp', PW * PW);   // reused: every cell is written below
     const celled = look.cells || [], cLow = celled.includes('low'), cHigh = celled.includes('high'), cRamp = celled.includes('ramp');
-    const wn1 = celled.length ? new Float32Array(PW * PW) : null, wn2 = celled.length ? new Float32Array(PW * PW) : null;
+    const wn1 = celled.length ? this.scratch('wn1', PW * PW) : null, wn2 = celled.length ? this.scratch('wn2', PW * PW) : null;
     for (let py = 0; py < PW; py++) for (let pxx = 0; pxx < PW; pxx++) {
       const wx = ox + pxx - PAD, wy = oy + py - PAD;
       // a gentle warp of where the grid is read, so an edge wanders by up to a third of a tile instead of running dead straight
@@ -499,12 +507,12 @@ const Terrain = {
   // Judged on screen at 0.5, 0.3 and 0.15 (.claude/review/terrain/shots/p1-tracks-*).
   RAMP_TRACKS: 0.15,
   rampLevels() {
-    const m = G.map, key = m.featureRev ? m.featureRev() : 0;
+    const m = G.map, GG = this.groundGrids(), MH = GG.height, MW = GG.walk, key = (m.featureRev ? m.featureRev() : 0) + '/' + GG.key;
     if (this._rampLv && this._rampLvMap === m && this._rampLvKey === key) return this._rampLv;
-    const W = m.w, N = W * m.h, lv = new Float32Array(N).fill(-1), isRamp = i => m.height[i] === 1 && m.cliff[i] === 0;
+    const W = m.w, N = W * m.h, lv = new Float32Array(N).fill(-1), isRamp = i => MH[i] === 1 && m.cliff[i] === 0;
     const dist = high => {
       const d = new Int32Array(N).fill(-1), q = [];
-      for (let i = 0; i < N; i++) if (m.cliff[i] === 0 && (high ? m.height[i] === 2 : m.height[i] === 0 && m.walk[i] === 1)) { d[i] = 0; }
+      for (let i = 0; i < N; i++) if (m.cliff[i] === 0 && (high ? MH[i] === 2 : MH[i] === 0 && MW[i] === 1)) { d[i] = 0; }
       for (let i = 0; i < N; i++) if (d[i] === 0) { const x = i % W; for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W]) if (j >= 0 && j < N && isRamp(j) && d[j] < 0) { d[j] = 1; q.push(j); } }
       for (let k = 0; k < q.length; k++) { const i = q[k], x = i % W; for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W]) if (j >= 0 && j < N && isRamp(j) && d[j] < 0) { d[j] = d[i] + 1; q.push(j); } }
       return d;
@@ -518,6 +526,20 @@ const Terrain = {
       if (top >= 0) lv[i] = Math.min(1, top + this.RAMP_WALL_RISE);
     }
     this._rampLvMap = m; this._rampLvKey = key; return this._rampLv = lv;
+  },
+  // The ground as the map made it, for drawing. A hulk (GameMap.addWreck) sets its tiles to height 2 and unwalkable so that it
+  // blocks and hides what stands behind it, and a chunk baked while one stood drew those tiles as a little plateau with cliff faces
+  // all round (.claude/review/terrain/shots/p4-hulk-check) -- then went on drawing it after the hulk had rotted away, because
+  // nothing tells the chunk cache a hulk came or went. FX draws the wreck; the ground under it is the ground it fell on. Height
+  // and walk with every hulk's tiles put back, cached until the hulks change; the map's own grids when there are none.
+  groundGrids() {
+    const m = G.map, wr = m.wrecks || [];
+    if (!wr.length) return { height: m.height, walk: m.walk, key: '' };
+    let key = ''; for (const wk of wr) key += wk.born + ':' + wk.tiles[0] + ',';
+    if (this._ground && this._groundMap === m && this._ground.key === key) return this._ground;
+    const height = m.height.slice(), walk = m.walk.slice();
+    for (const wk of wr) wk.tiles.forEach((i, k) => { if (m.blocked[i] === WRECK_BLOCKED) { height[i] = wk.baseH[k]; walk[i] = 1; } });
+    this._groundMap = m; return this._ground = { height, walk, key };
   },
   // ---- props (see TERRAIN_PROPS) ----------------------------------------
   // PROP_R: no prop, shadow included, reaches further than this from its centre (world px), so a chunk reads the props of the tiles
@@ -765,10 +787,10 @@ const Terrain = {
   },
   renderChunk(cx, cy) {
     const T = this.texSet(); if (T) return this.renderChunkTex(cx, cy, T);   // textured ground, when it is on and loaded
-    const m = G.map, CH = this.CH, px = CH * TILE, k = this.bakeDpr(), W = px * k;
+    const m = G.map, CH = this.CH, px = CH * TILE, k = this.bakeDpr(), W = px * k, GG = this.groundGrids(), MH = GG.height, MW = GG.walk;   // the ground under any hulk; see groundGrids
     const cv = document.createElement('canvas'); cv.width = W; cv.height = W; const x = cv.getContext('2d');
-    const img = x.createImageData(W, W); const d = img.data; const ox = cx * CH * TILE, oy = cy * CH * TILE;
-    const hAt = (tx, ty) => { if (!m.inb(tx, ty)) return 1; const i = m.idx(tx, ty); if (m.cliff[i] === 2) return -1; if (m.cliff[i] === 1) return 1; return m.height[i] === 2 ? 1 : m.height[i] === 1 ? 0.5 : 0; };
+    const img = this.imageFor(x, W); const d = img.data; const ox = cx * CH * TILE, oy = cy * CH * TILE;   // reused: every pixel is written below
+    const hAt = (tx, ty) => { if (!m.inb(tx, ty)) return 1; const i = m.idx(tx, ty); if (m.cliff[i] === 2) return -1; if (m.cliff[i] === 1) return 1; return MH[i] === 2 ? 1 : MH[i] === 1 ? 0.5 : 0; };
     for (let py = 0; py < W; py++) for (let pxx = 0; pxx < W; pxx++) {
       const wx = ox + pxx / k, wy = oy + py / k; const tx = Math.floor(wx / TILE), ty = Math.floor(wy / TILE);
       const i = m.inb(tx, ty) ? m.idx(tx, ty) : -1; const cl = i >= 0 ? m.cliff[i] : 2;
@@ -790,7 +812,7 @@ const Terrain = {
         const edge = w > 0.28 && w < 0.72;
         if (edge) { const pick = (w - 0.28) / 0.44 > this.bayerAt(wx, wy) + 0.5 ? hi : lo; col = [pick[0], pick[1], pick[2]]; }
         else col = [lo[0] + (hi[0] - lo[0]) * w, lo[1] + (hi[1] - lo[1]) * w, lo[2] + (hi[2] - lo[2]) * w];
-        if (i >= 0 && m.height[i] === 1) { const rc = this.rampCol(n); col = [(col[0] + rc[0]) / 2, (col[1] + rc[1]) / 2, (col[2] + rc[2]) / 2]; }
+        if (i >= 0 && MH[i] === 1) { const rc = this.rampCol(n); col = [(col[0] + rc[0]) / 2, (col[1] + rc[1]) / 2, (col[2] + rc[2]) / 2]; }
         // grain
         const g = (this.hash(wx, wy) - 0.5) * 14; col[0] += g; col[1] += g; col[2] += g;
       }
@@ -803,10 +825,10 @@ const Terrain = {
     const t0x = cx * CH, t0y = cy * CH;
     for (let ty = t0y - 1; ty < t0y + CH + 1; ty++) for (let tx = t0x - 1; tx < t0x + CH + 1; tx++) {
       if (!m.inb(tx, ty)) continue; const i = m.idx(tx, ty); const lx = tx * TILE - ox, ly = ty * TILE - oy;
-      const cl = m.cliff[i], h = m.height[i];
+      const cl = m.cliff[i], h = MH[i];
       if (cl === 1) {
-        const southLow = m.inb(tx, ty + 1) && m.cliff[m.idx(tx, ty + 1)] === 0 && m.height[m.idx(tx, ty + 1)] !== 2;
-        const northHigh = m.inb(tx, ty - 1) && m.cliff[m.idx(tx, ty - 1)] === 0 && m.height[m.idx(tx, ty - 1)] === 2;
+        const southLow = m.inb(tx, ty + 1) && m.cliff[m.idx(tx, ty + 1)] === 0 && MH[m.idx(tx, ty + 1)] !== 2;
+        const northHigh = m.inb(tx, ty - 1) && m.cliff[m.idx(tx, ty - 1)] === 0 && MH[m.idx(tx, ty - 1)] === 2;
         if (southLow) { // visible rock face: the banded strip, plus this tile's own cracks over it
           x.drawImage(this.faceStrip(), lx, ly);
           x.strokeStyle = this.pal.crack; x.lineWidth = 1; for (let k = 0; k < 4; k++) { const sx = lx + 4 + this.hash(tx * 7 + k, ty) * 24; x.beginPath(); x.moveTo(sx, ly + 6); x.lineTo(sx + (this.hash(tx, ty * 3 + k) - .5) * 8, ly + TILE); x.stroke(); }
@@ -818,12 +840,12 @@ const Terrain = {
         const nb = 2 + Math.floor(this.hash(tx, ty) * 3);
         for (let k = 0; k < nb; k++) { const bx = lx + 4 + this.hash(tx * 11 + k, ty) * 24, by = ly + 4 + this.hash(tx, ty * 11 + k) * 24, br = 6 + this.hash(tx * 3 + k, ty * 7) * 9; x.fillStyle = 'rgba(0,0,0,0.45)'; x.beginPath(); x.ellipse(bx + 3, by + 3, br, br * .75, 0, 0, 7); x.fill(); const g = x.createRadialGradient(bx - br * .4, by - br * .4, 1, bx, by, br); g.addColorStop(0, this.pal.boulder[0]); g.addColorStop(1, this.pal.boulder[1]); x.fillStyle = g; x.beginPath(); x.ellipse(bx, by, br, br * .75, 0, 0, 7); x.fill(); }
       } else if (h === 1) { // ramp shading: steps
-        const up = m.inb(tx, ty - 1) && m.height[m.idx(tx, ty - 1)] === 2, dn = m.inb(tx, ty + 1) && m.height[m.idx(tx, ty + 1)] === 2, lf = m.inb(tx - 1, ty) && m.height[m.idx(tx - 1, ty)] === 2 && !m.cliff[m.idx(tx - 1, ty)], rt = m.inb(tx + 1, ty) && m.height[m.idx(tx + 1, ty)] === 2 && !m.cliff[m.idx(tx + 1, ty)];
+        const up = m.inb(tx, ty - 1) && MH[m.idx(tx, ty - 1)] === 2, dn = m.inb(tx, ty + 1) && MH[m.idx(tx, ty + 1)] === 2, lf = m.inb(tx - 1, ty) && MH[m.idx(tx - 1, ty)] === 2 && !m.cliff[m.idx(tx - 1, ty)], rt = m.inb(tx + 1, ty) && MH[m.idx(tx + 1, ty)] === 2 && !m.cliff[m.idx(tx + 1, ty)];
         const vertical = !(lf || rt) || up || dn;
-        const ramp = (ax, ay) => m.inb(ax, ay) && m.height[m.idx(ax, ay)] === 1;
+        const ramp = (ax, ay) => m.inb(ax, ay) && MH[m.idx(ax, ay)] === 1;
         const w0 = vertical ? !ramp(tx - 1, ty) : !ramp(tx, ty - 1), w1 = vertical ? !ramp(tx + 1, ty) : !ramp(tx, ty + 1);
         x.drawImage(this.rampStrip(vertical, w0, w1), lx, ly);
-      } else if (h === 0 && m.walk[i]) { // low ground doodads
+      } else if (h === 0 && MW[i]) { // low ground doodads
         const r = this.hash(tx * 13, ty * 17);
         if (r < 0.025) { const cxp = lx + 16, cyp = ly + 16, cr = 8 + r * 200; x.strokeStyle = this.pal.crater[0]; x.lineWidth = 3; x.beginPath(); x.ellipse(cxp, cyp, cr, cr * .7, 0, 0, 7); x.stroke(); x.fillStyle = this.pal.crater[1]; x.beginPath(); x.ellipse(cxp, cyp, cr - 2, cr * .7 - 2, 0, 0, 7); x.fill(); x.strokeStyle = this.pal.crater[2]; x.lineWidth = 1.5; x.beginPath(); x.ellipse(cxp, cyp - 1, cr, cr * .7, 0, Math.PI, Math.PI * 2); x.stroke(); }
         else if (r < 0.07) { x.strokeStyle = this.pal.flora; x.lineWidth = 1.5; const gx = lx + 8 + this.hash(tx, ty + 99) * 16, gy = ly + 10 + this.hash(tx + 99, ty) * 16; for (let k = 0; k < 6; k++) { x.beginPath(); x.moveTo(gx, gy + 6); x.lineTo(gx + (k - 2.5) * 2.4, gy - 4 - this.hash(k, tx + ty) * 6); x.stroke(); } }
@@ -854,7 +876,7 @@ const Terrain = {
           const g = x.createRadialGradient(bx, by, 1, bx, by, br); g.addColorStop(0, this.pal.crack); g.addColorStop(1, 'rgba(0,0,0,0)');
           x.fillStyle = g; x.beginPath(); x.ellipse(bx, by, br, br * .7, 0, 0, 7); x.fill();
         }
-      } else if (h === 2 && !cl && m.walk[i]) { // plateau plate seams
+      } else if (h === 2 && !cl && MW[i]) { // plateau plate seams
         const r = this.hash(tx * 7, ty * 19); if (r < 0.06) { x.strokeStyle = 'rgba(0,0,0,0.18)'; x.lineWidth = 1; x.beginPath(); x.moveTo(lx + 2, ly + 30); x.lineTo(lx + 14, ly + 12); x.lineTo(lx + 30, ly + 6); x.stroke(); x.strokeStyle = 'rgba(255,255,255,0.08)'; x.beginPath(); x.moveTo(lx + 3, ly + 31); x.lineTo(lx + 15, ly + 13); x.lineTo(lx + 31, ly + 7); x.stroke(); }
       }
     }
@@ -885,21 +907,66 @@ const Terrain = {
   // The alternative is a stall of exactly the length of however many chunks the camera jumped over.
   // At zoom 1 none of this runs: the branch is skipped, the rounding is unchanged, and the pass is
   // byte for byte what it was.
-  OVER_Z: 0.45, OVER_PX: 4, CHUNK_BUDGET: 3,
-  clearOverview() { this._over = null; },
-  // The whole map at OVER_PX pixels a tile. Painted per TILE rather than per pixel -- one palette call
+  // DETAILED TERRAIN, FAR AND FAST (the terrain queue's phase 4). The overview above was the palette's, so the strategic view of a
+  // textured map was a different picture from the ground; it is now painted from the textures (paintOverviewTex) whenever they
+  // are loaded, and the minimap is that overview a tile a pixel. And the bake had no budget at zoom 1: a camera jump to unbaked
+  // ground on The Long March was a 694 ms frame, a diagonal scroll a 179 ms one, breaking a rock formation 512 ms (measured,
+  // PLAYTEST-M18 113). Now every zoom bakes the missing chunks nearest the middle of the view first, one a frame and more only while
+  // the frame is under BAKE_MS, with the overview drawn under whatever is not there yet; when nothing on screen is missing, one
+  // chunk of the ring round the view is baked ahead, so a scroll finds the next column ready; and a feature that changes drops
+  // only the chunks round it (invalidateTiles). A web worker baking chunks off the main thread was the next step (RESEARCH-TERRAIN
+  // 8.4) and was not needed: with the budget no frame measured over 50 ms.
+  OVER_Z: 0.45, OVER_PX: 4, CHUNK_BUDGET: 3, BAKE_MS: 8, OVER_STEP_MS: 6,
+  clearOverview() { this._over = null; this._overImg = null; this._overTex = null; this._overNext = null; },
+  // The whole map at OVER_PX pixels a tile, kept as its pixels too (the minimap and a partial repaint read them). Painted from the
+  // textures when they are loaded and from the palette until then. Made at once when there is none (a game's first frame); when
+  // the textures arrive after the palette's was made, the textured one is painted a few rows a frame (overviewStep) and the
+  // palette's serves until it is whole -- all at once, that was a 202 ms frame on The Long March.
+  overview() {
+    const m = G.map, K = this.OVER_PX, W = m.w * K, H = m.h * K, T = this.texSet();
+    const fits = this._over && this._over.width === W && this._over.height === H && this._overSet === this.setId && this._overMap === m;
+    if (fits && this.sameTex(this._overTex, T)) return this._over;
+    if (fits && T && this._overImg) return this._over;   // the textured one is on its way (overviewStep, from draw)
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d');
+    this._over = cv; this._overImg = null; this._overTex = T; this._overSet = this.setId; this._overMap = m; this._overNext = null;
+    if (!x) return cv;
+    this._overImg = x.createImageData(W, H);
+    this.paintOverview(0, 0, m.w, m.h);
+    this.overRev = (this.overRev || 0) + 1;
+    return cv;
+  },
+  // One frame's worth of the textured overview, OVER_STEP_MS of rows (at least four); swapped in, and overRev moved so the minimap
+  // follows, when the last row is painted. Rows join without a seam: every row reads the map's own grids round it.
+  overviewStep(T) {
+    const m = G.map, K = this.OVER_PX, W = m.w * K, H = m.h * K;
+    let nx = this._overNext;
+    if (!nx || !this.sameTex(nx.T, T)) { const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d'); if (!x) return false; nx = this._overNext = { cv, x, img: x.createImageData(W, H), T, row: 0 }; }
+    const t0 = performance.now();
+    do { const r1 = Math.min(m.h, nx.row + 4); this.paintOverviewTex(T, nx.img, 0, nx.row, m.w, r1); nx.row = r1; } while (nx.row < m.h && performance.now() - t0 < this.OVER_STEP_MS);
+    if (nx.row < m.h) return false;
+    nx.x.putImageData(nx.img, 0, 0);
+    this._over = nx.cv; this._overImg = nx.img; this._overTex = T; this._overNext = null; this.overRev = (this.overRev || 0) + 1;
+    return true;
+  },
+  // Two texture sets are the same when they are made of the same pixels (texSet builds a new object each call); none equals none.
+  sameTex(a, b) { return !a || !b ? !a === !b : a.low === b.low && a.high === b.high && a.ramp === b.ramp && a.rock === b.rock; },
+  // Repaints tiles [tx0, tx1) x [ty0, ty1) of the overview, if there is one, and puts that rectangle back on its canvas.
+  paintOverview(tx0, ty0, tx1, ty1) {
+    const m = G.map, K = this.OVER_PX, cv = this._over, img = this._overImg; if (!cv || !img) return;
+    tx0 = Math.max(0, tx0); ty0 = Math.max(0, ty0); tx1 = Math.min(m.w, tx1); ty1 = Math.min(m.h, ty1); if (tx1 <= tx0 || ty1 <= ty0) return;
+    if (this._overTex) this.paintOverviewTex(this._overTex, img, tx0, ty0, tx1, ty1); else this.paintOverviewPal(img, tx0, ty0, tx1, ty1);
+    cv.getContext('2d').putImageData(img, 0, 0, tx0 * K, ty0 * K, (tx1 - tx0) * K, (ty1 - ty0) * K);
+    if (this._overNext) this._overNext.row = Math.min(this._overNext.row, ty0);   // a textured overview on its way repaints from here
+  },
+  // The palette's overview. Painted per TILE rather than per pixel -- one palette call
   // and one noise sample for a 4x4 block instead of sixteen of each -- which is what makes it a
   // one-off of a few milliseconds rather than the second and a half a per-pixel version would cost on
   // a 256x256 map. It still goes through posterise(), so the strategic view is made of the same
   // palette as the ground it is standing in for.
-  overview() {
-    const m = G.map, K = this.OVER_PX, W = m.w * K, H = m.h * K;
-    if (this._over && this._overSet === this.setId && this._over.width === W && this._over.height === H) return this._over;
-    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d');
-    if (!x) return this._over = cv;
-    const img = x.createImageData(W, H), d = img.data, col = [0, 0, 0];
-    for (let ty = 0; ty < m.h; ty++) for (let tx = 0; tx < m.w; tx++) {
-      const i = m.idx(tx, ty), cl = m.cliff[i], hh = m.height[i];
+  paintOverviewPal(img, tx0, ty0, tx1, ty1) {
+    const m = G.map, K = this.OVER_PX, W = m.w * K, d = img.data, col = [0, 0, 0], MH = this.groundGrids().height;
+    for (let ty = ty0; ty < ty1; ty++) for (let tx = tx0; tx < tx1; tx++) {
+      const i = m.idx(tx, ty), cl = m.cliff[i], hh = MH[i];
       const n = this.fbm(tx * TILE / 40, ty * TILE / 40, 2);
       const base = cl === 2 ? this.pal.rock(0.45 + n * 0.35)
         : cl === 1 ? this.pal.slope(0.5 + n * 0.3)
@@ -914,8 +981,104 @@ const Terrain = {
         }
       }
     }
-    x.putImageData(img, 0, 0);
-    this._overSet = this.setId; return this._over = cv;
+  },
+  // A texture box-filtered to one texel for every D of it, once per texture: what a chunk's pixels average to at the overview's
+  // scale. Averaged in the display's own (sRGB) values, not in linear light: what the overview has to match is the chunks as the
+  // browser shrinks them just above OVER_Z, and a browser filters in sRGB.
+  texSmall(t, D) {
+    const c = this._small || (this._small = new WeakMap()); let v = c.get(t); if (v && v.D === D) return v;
+    const S = this.TEX_PX, s = S / D, px = new Float32Array(s * s * 3);
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { const p = (y * S + x) * 4, o = (((y / D) | 0) * s + ((x / D) | 0)) * 3; px[o] += t[p]; px[o + 1] += t[p + 1]; px[o + 2] += t[p + 2]; }
+    for (let i = 0; i < px.length; i++) px[i] /= D * D;
+    v = { D, s, px }; c.set(t, v); return v;
+  },
+  // The strategic view from the textures: tiles [tx0, tx1) x [ty0, ty1) at OVER_PX pixels a tile, from renderChunkTex's own grids,
+  // height curve, edge wander, cells, grades and sun, with each texture box-filtered to the overview's scale first -- the far view
+  // is the near view seen from further off (RESEARCH-TERRAIN.md 8.3: the average of the art, in the light the art is drawn in).
+  // Left out as finer than four pixels a tile: the rock zones' lumps, the seam's wobble, the rock's relief and the props (Supreme
+  // Commander drops props with distance, 8.3).
+  paintOverviewTex(T, img, tx0, ty0, tx1, ty1) {
+    const m = G.map, K = this.OVER_PX, D = TILE / K, W = m.w * K, d = img.data, look = this.look(), grade = TERRAIN_GRADE[this.setId] || {}, one = [1, 1, 1];
+    const SL = this.texSmall(T.low, D), SH = this.texSmall(T.high, D), SR = this.texSmall(T.ramp, D), SK = this.texSmall(T.rock, D), s = SL.s, S = this.TEX_PX;
+    // the tile grids over the rectangle and M tiles round it, exactly as a chunk builds them
+    const M = 3, gx0 = tx0 - M, gy0 = ty0 - M, GW = tx1 - tx0 + 2 * M, GHt = ty1 - ty0 + 2 * M, N = GW * GHt;
+    const raw = new Float32Array(N), rz = new Float32Array(N), rpz = new Float32Array(N), wal = new Uint8Array(N), RL = this.rampLevels(), GH = this.groundGrids().height;
+    for (let j = 0; j < GHt; j++) for (let i = 0; i < GW; i++) {
+      const tx = gx0 + i, ty = gy0 + j, o = j * GW + i;
+      if (tx < 0 || ty < 0 || tx >= m.w || ty >= m.h) { raw[o] = 1.25; rz[o] = 1; continue; }
+      const q = ty * m.w + tx, cl = m.cliff[q], h = GH[q];
+      raw[o] = cl === 2 ? 1 : cl === 1 ? 0.5 : h === 2 ? 1 : h === 1 ? 0.5 : 0; rz[o] = cl === 2 ? 1 : 0; rpz[o] = !cl && h === 1 ? 1 : 0;
+      if (RL[q] >= 0) { if (rpz[o]) raw[o] = RL[q]; else if (cl === 1) { raw[o] = RL[q]; rz[o] = this.RAMP_WALL_ROCK; wal[o] = 1; } }
+      if (cl === 1) wal[o] |= 2;
+    }
+    const blur = g => { const out = new Float32Array(N); for (let j = 0; j < GHt; j++) for (let i = 0; i < GW; i++) { let sum = 0, ws = 0; for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const ii = i + a, jj = j + b; if (ii < 0 || jj < 0 || ii >= GW || jj >= GHt) continue; const w = (a ? 1 : 2) * (b ? 1 : 2); sum += g[jj * GW + ii] * w; ws += w; } out[j * GW + i] = sum / ws; } return out; };
+    const gh = look.blur === 0 ? raw.slice() : blur(raw), gr = blur(rz);
+    for (let o = 0; o < N; o++) if (wal[o] & 1) { gh[o] = raw[o]; gr[o] = rz[o]; }
+    const gk = blur(rpz); for (let o = 0; o < N; o++) if (wal[o]) gk[o] = 0;
+    const bil = (g, fx, fy) => { let i0 = Math.floor(fx), j0 = Math.floor(fy), u = fx - i0, v = fy - j0; if (i0 < 0) { i0 = 0; u = 0; } else if (i0 > GW - 2) { i0 = GW - 2; u = 1; } if (j0 < 0) { j0 = 0; v = 0; } else if (j0 > GHt - 2) { j0 = GHt - 2; v = 1; } const a = j0 * GW + i0; return g[a] * (1 - u) * (1 - v) + g[a + 1] * u * (1 - v) + g[a + GW] * (1 - u) * v + g[a + GW + 1] * u * v; };
+    const sm = t => t * t * (3 - 2 * t);
+    // the height field, per overview pixel, over the rectangle and P pixels round it
+    const P = 2, px0 = tx0 * K - P, py0 = ty0 * K - P, PW = (tx1 - tx0) * K + 2 * P, PHt = (ty1 - ty0) * K + 2 * P, NP = PW * PHt;
+    const hf = new Float32Array(NP), rk = new Float32Array(NP), rp = new Float32Array(NP), wn1 = new Float32Array(NP), wn2 = new Float32Array(NP);
+    for (let py = 0; py < PHt; py++) for (let px = 0; px < PW; px++) {
+      const o = py * PW + px, wx = (px0 + px + 0.5) * D, wy = (py0 + py + 0.5) * D;
+      const n1 = this.vnoise(wx / 37, wy / 37) - 0.5, n2 = this.vnoise(wx / 37 + 17, wy / 37 + 29) - 0.5; wn1[o] = n1; wn2[o] = n2;
+      const fx = (wx + n1 * look.warp) / TILE - 0.5 - gx0, fy = (wy + n2 * look.warp) / TILE - 0.5 - gy0, ex = wx / TILE - 0.5 - gx0, ey = wy / TILE - 0.5 - gy0;
+      const lin = bil(gh, fx, fy), rock = bil(gr, fx, fy), pr = bil(rpz, ex, ey), kk = bil(gk, ex, ey);
+      const kRamp = sm(Math.min(1, Math.max(pr, kk) * 1.5)), cliffH = sm(Math.min(1, Math.max(0, (lin - 0.5) / 0.36 + 0.5)));
+      hf[o] = cliffH * (1 - kRamp) + lin * kRamp + (rock > 0.05 ? 0.22 * rock : 0); rk[o] = rock; rp[o] = pr;
+    }
+    const Ln = Math.hypot(0.5, 0.6, 0.62), lx = -0.5 / Ln, ly = -0.6 / Ln, lz = 0.62 / Ln, RISE = 22;
+    const gLow = grade.low || one, gHigh = grade.high || one, gRamp = grade.ramp || one, gRock = grade.rock || one, mix = look.mix || 0;
+    const celled = look.cells || [], cLow = celled.includes('low'), cHigh = celled.includes('high'), cRamp = celled.includes('ramp');
+    const CW = this.CELL_TILES * TILE, CB = this.CELL_BAND, cellU = [0, 0, 0, 0], cellV = [0, 0, 0, 0], cellW = [0, 0, 0, 0];
+    let cn = 0;
+    const cellPut = (jx, jy, w) => { cellU[cn] = this.hash(jx * 7 + 3, jy * 13 + 5) * S; cellV[cn] = this.hash(jy * 11 + 1, jx * 5 + 9) * S; cellW[cn++] = w; };
+    const at = (sm2, u, v) => ((((v / D) | 0) % s + s) % s * s + ((((u / D) | 0) % s + s) % s)) * 3;
+    const A = [0, 0, 0], col = [0, 0, 0], tmp = [0, 0, 0];
+    const mat = (sm2, g, inCells, wx, wy, q, o) => {
+      const t = sm2.px;
+      if (inCells) { let r = 0, gg = 0, b = 0; for (let k = 0; k < cn; k++) { const p = at(sm2, wx + cellU[k], wy + cellV[k]); r += t[p] * cellW[k]; gg += t[p + 1] * cellW[k]; b += t[p + 2] * cellW[k]; } o[0] = r * g[0]; o[1] = gg * g[1]; o[2] = b * g[2]; return; }
+      let p = at(sm2, wx, wy); A[0] = t[p]; A[1] = t[p + 1]; A[2] = t[p + 2];
+      if (mix) { const qq = q * mix; p = at(sm2, wy * 0.83 + 331, wx * 0.83 + 173); A[0] += (t[p] - A[0]) * qq; A[1] += (t[p + 1] - A[1]) * qq; A[2] += (t[p + 2] - A[2]) * qq; }
+      o[0] = A[0] * g[0]; o[1] = A[1] * g[1]; o[2] = A[2] * g[2];
+    };
+    for (let py = P; py < PHt - P; py++) for (let px = P; px < PW - P; px++) {
+      const o = py * PW + px, wx = (px0 + px + 0.5) * D, wy = (py0 + py + 0.5) * D, h = hf[o];
+      const q = mix ? sm(Math.min(1, Math.max(0, (this.vnoise(wx / 230, wy / 230) - 0.3) / 0.4))) : 0;
+      const dxh = (hf[o + 1] - hf[o - 1]) / (2 * D), dyh = (hf[o + PW] - hf[o - PW]) / (2 * D), steep = Math.sqrt(dxh * dxh + dyh * dyh);
+      if (celled.length) {
+        const gx = wx / CW + wn1[o] * 0.5, gy = wy / CW + wn2[o] * 0.5, ix = Math.floor(gx), iy = Math.floor(gy), fx = gx - ix, fy = gy - iy;
+        const nx = fx < CB ? -1 : fx > 1 - CB ? 1 : 0, ny = fy < CB ? -1 : fy > 1 - CB ? 1 : 0;
+        const wX = nx ? 0.5 * sm(1 - (nx < 0 ? fx : 1 - fx) / CB) : 0, wY = ny ? 0.5 * sm(1 - (ny < 0 ? fy : 1 - fy) / CB) : 0;
+        cn = 0; cellPut(ix, iy, (1 - wX) * (1 - wY)); if (nx) cellPut(ix + nx, iy, wX * (1 - wY)); if (ny) cellPut(ix, iy + ny, (1 - wX) * wY); if (nx && ny) cellPut(ix + nx, iy + ny, wX * wY);
+      }
+      const tH = sm(Math.min(1, Math.max(0, (h - 0.3) / 0.35)));
+      mat(SL, gLow, cLow, wx, wy, q, col);
+      if (tH > 0) { mat(SH, gHigh, cHigh, wx, wy, q, tmp); const gl = look.grit; for (let k = 0; k < 3; k++) col[k] += (tmp[k] * (1 - gl) + col[k] * gl * 1.3 - col[k]) * tH; }
+      const pr = rp[o]; if (pr > 0.02) { mat(SR, gRamp, cRamp, wx, wy, q, tmp); const kp = sm(Math.min(1, pr * 1.3)) * (look.tracks === undefined ? this.RAMP_TRACKS : look.tracks); for (let k = 0; k < 3; k++) col[k] += (tmp[k] - col[k]) * kp; }
+      const kr = Math.max(sm(Math.min(1, Math.max(0, (steep - 0.016) / 0.02))) * (pr > 0.35 ? 0 : 1), sm(Math.min(1, rk[o] * 1.3)));
+      if (kr > 0.02) { const p = at(SK, wx, wy * look.squeeze); for (let k = 0; k < 3; k++) col[k] += (SK.px[p + k] * gRock[k] - col[k]) * kr; }
+      const sx = dxh * RISE, sy = dyh * RISE;
+      let shade = (-sx * lx - sy * ly + lz) / Math.sqrt(sx * sx + sy * sy + 1) / lz; shade = shade < 0.5 ? 0.5 : shade > 1.35 ? 1.35 : shade;
+      // the cast shadow reads the height 9 px left and 11 px up of the pixel, as a chunk does
+      const sxp = px - 9 / D, syp = py - 11 / D, i0 = Math.floor(sxp), j0 = Math.floor(syp), u = sxp - i0, v = syp - j0, a0 = j0 * PW + i0;
+      const upH = hf[a0] * (1 - u) * (1 - v) + hf[a0 + 1] * u * (1 - v) + hf[a0 + PW] * (1 - u) * v + hf[a0 + PW + 1] * u * v, up = upH - h;
+      if (up > 0.08) shade *= 1 - Math.min(0.32, (up - 0.08) * 0.7);
+      shade *= 0.94 + (this.vnoise(wx / 150 + 40, wy / 150 + 40) - 0.5) * 0.18;
+      const oo = ((py0 + py) * W + px0 + px) * 4, r = col[0] * shade, g = col[1] * shade, b = col[2] * shade;
+      d[oo] = r > 255 ? 255 : r; d[oo + 1] = g > 255 ? 255 : g; d[oo + 2] = b > 255 ? 255 : b; d[oo + 3] = 255;
+    }
+  },
+  // A feature changed the ground under tiles (tx, ty, w, h). Drop the chunks that read them: a chunk reads three tiles past its
+  // own edge, and a ramp's levels (rampLevels) can move along the whole ramp, so a chunk's width of margin. Repaint that part of
+  // the overview. Everything else stays baked: clearing the whole cache here made breaking one rock formation on The Long March a
+  // 512 ms frame.
+  invalidateTiles(tx, ty, w, h) {
+    const CH = this.CH, R = CH, cx0 = Math.floor((tx - R) / CH), cx1 = Math.floor((tx + w - 1 + R) / CH), cy0 = Math.floor((ty - R) / CH), cy1 = Math.floor((ty + h - 1 + R) / CH);
+    let n = 0; for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) { const k = cx + ',' + cy, c = this.chunks.get(k); if (c) { this.releaseChunk(c); this.chunks.delete(k); n++; } }
+    this.paintOverview(tx - R, ty - R, tx + w + R, ty + h + R);
+    return n;
   },
   // Source and destination both clipped to the bitmap, because zooming out past the map fit leaves
   // void on one axis and drawImage with a source rectangle off the edge of its image draws nothing at
@@ -926,14 +1089,18 @@ const Terrain = {
     const sx0 = Math.max(0, camX * P), sy0 = Math.max(0, camY * P);
     const sx1 = Math.min(cv.width, (camX + vw) * P), sy1 = Math.min(cv.height, (camY + vh) * P);
     if (!(sx1 > sx0 && sy1 > sy0)) return;
-    ctx.save(); ctx.imageSmoothingEnabled = false;        // nearest neighbour: chunky and crisp beats soft and vague
+    // The palette's overview nearest neighbour: chunky and crisp beats soft and vague, and its dither is made of whole pixels. The
+    // textures' filtered: a photograph blown up in blocks read as a mosaic (judged at zoom 0.4 and under chunks still baking).
+    ctx.save(); ctx.imageSmoothingEnabled = this._overTex ? true : false;
     ctx.drawImage(cv, sx0, sy0, sx1 - sx0, sy1 - sy0, sx0 / P - camX, sy0 / P - camY, (sx1 - sx0) / P, (sy1 - sy0) / P);
     ctx.restore();
   },
   draw(ctx, camX, camY, vw, vh, zoom = 1) {
     const CH = this.CH * TILE; const x0 = Math.floor(camX / CH), y0 = Math.floor(camY / CH), x1 = Math.floor((camX + vw) / CH), y1 = Math.floor((camY + vh) / CH);
     const maxCx = Math.ceil(G.map.w / this.CH), maxCy = Math.ceil(G.map.h / this.CH);   // both axes: a 64x128 editor map lost its lower chunk rows to a clamp on the width (REVIEW-M17)
-    if (zoom < this.OVER_Z) { this.drawOverview(ctx, camX, camY, vw, vh); return; }
+    // the overview is a palette one and the textures are here: its textured successor is painted a step at a time
+    const T = this.texSet(), upgrade = !!(T && this._over && this._overImg && !this._overTex && this._overMap === G.map);
+    if (zoom < this.OVER_Z) { this.drawOverview(ctx, camX, camY, vw, vh); if (upgrade) this.overviewStep(T); return; }
     this.checkDpr();
     // Blit on whole pixels. A chunk landed at a fractional offset goes through the bilinear filter, and
     // what that filter removes first is exactly the 1 px ordered dither the posterise pass above put in
@@ -944,21 +1111,33 @@ const Terrain = {
     // world units would make the ground jitter by up to a whole pixel per scroll step instead.
     const ox = zoom === 1 ? Math.round(camX) : camX, oy = zoom === 1 ? Math.round(camY) : camY;
     const cx0 = Math.max(0, x0), cx1 = Math.min(maxCx - 1, x1), cy0 = Math.max(0, y0), cy1 = Math.min(maxCy - 1, y1);
-    let budget = Infinity;
-    if (zoom < 1) {
-      // Zoomed out: cap the bakes, and put the overview underneath if anything on screen is missing.
-      // The Map lookups are a hundred-odd hash hits and are free next to one bake, so once the view is
-      // fully cached the extra blit stops happening by itself.
-      budget = this.CHUNK_BUDGET;
-      let miss = false;
-      for (let cy = cy0; cy <= cy1 && !miss; cy++) for (let cx = cx0; cx <= cx1; cx++) if (!this.chunks.has(cx + ',' + cy)) { miss = true; break; }
-      if (miss) this.drawOverview(ctx, camX, camY, vw, vh);
+    // The budget (see OVER_Z above). Missing chunks nearest the middle of the view first; at least one a frame, at most CHUNK_BUDGET,
+    // and a second or third only while the frame has spent under BAKE_MS. The Map lookups are a hundred-odd hash hits and free next
+    // to one bake.
+    const t0 = performance.now(), mx = (camX + vw / 2) / CH - 0.5, my = (camY + vh / 2) / CH - 0.5, near = (a, b) => (a[0] - mx) * (a[0] - mx) + (a[1] - my) * (a[1] - my) - (b[0] - mx) * (b[0] - mx) - (b[1] - my) * (b[1] - my);
+    const missing = [];
+    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) if (!this.chunks.has(cx + ',' + cy)) missing.push([cx, cy]);
+    let baked = 0;
+    if (missing.length) {
+      missing.sort(near);
+      for (const [cx, cy] of missing) { if (baked >= this.CHUNK_BUDGET || (baked && performance.now() - t0 >= this.BAKE_MS)) break; this.chunks.set(cx + ',' + cy, this.renderChunk(cx, cy)); baked++; }
+      if (baked < missing.length) this.drawOverview(ctx, camX, camY, vw, vh);   // under whatever is still missing
+    } else if (upgrade) {
+      this.overviewStep(T);   // nothing on screen missing: a step of the textured overview before any chunk ahead
+    } else if ((cx1 - cx0 + 3) * (cy1 - cy0 + 3) <= this.CHUNK_CAP) {
+      // Everything on screen is baked: bake one chunk of the ring round the view, nearest first. Only while the view and its whole
+      // ring fit under CHUNK_CAP -- zoomed out on a big display they do not, and a ring chunk baked only to be evicted by trim()
+      // would be a bake every frame for ever.
+      let best = null;
+      for (let cy = cy0 - 1; cy <= cy1 + 1; cy++) for (let cx = cx0 - 1; cx <= cx1 + 1; cx++) {
+        if (cx < 0 || cy < 0 || cx >= maxCx || cy >= maxCy || (cx >= cx0 && cx <= cx1 && cy >= cy0 && cy <= cy1) || this.chunks.has(cx + ',' + cy)) continue;
+        if (!best || near([cx, cy], best) < 0) best = [cx, cy];
+      }
+      if (best) { this.chunks.set(best[0] + ',' + best[1], this.renderChunk(best[0], best[1])); this.ahead = (this.ahead || 0) + 1; }
     }
     for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
-      const key = cx + ',' + cy; let c = this.chunks.get(key);
-      if (!c) { if (budget <= 0) continue; budget--; c = this.renderChunk(cx, cy); }
-      else this.chunks.delete(key);
-      this.chunks.set(key, c);                                // to the back of the eviction order; see CHUNK_CAP
+      const key = cx + ',' + cy, c = this.chunks.get(key); if (!c) continue;
+      this.chunks.delete(key); this.chunks.set(key, c);        // to the back of the eviction order; see CHUNK_CAP
       ctx.drawImage(c, cx * CH - ox, cy * CH - oy, CH, CH);   // source is CH*dpr wide; destination stays in CSS pixels
     }
     this.trim();
@@ -1146,10 +1325,20 @@ const Terrain = {
   },
   buildMini() {
     const m = G.map; const cv = document.createElement('canvas'); cv.width = m.w; cv.height = m.h; const x = cv.getContext('2d'); const img = x.createImageData(m.w, m.h); const d = img.data;
+    // Detailed terrain: the textured overview, OVER_PX x OVER_PX pixels averaged to one a tile, so the minimap is the ground.
+    const ov = this.texSet() && this.overview() && this._overTex && this._overImg;
+    if (ov) {
+      const K = this.OVER_PX, W = m.w * K, s = ov.data, n = K * K;
+      for (let ty = 0; ty < m.h; ty++) for (let tx = 0; tx < m.w; tx++) {
+        let r = 0, g = 0, b = 0; for (let p = 0; p < K; p++) for (let q = 0; q < K; q++) { const o = ((ty * K + p) * W + tx * K + q) * 4; r += s[o]; g += s[o + 1]; b += s[o + 2]; }
+        const o = (ty * m.w + tx) * 4; d[o] = r / n; d[o + 1] = g / n; d[o + 2] = b / n; d[o + 3] = 255;
+      }
+      x.putImageData(img, 0, 0); this.mini = cv; return cv;
+    }
     // The tileset's own palette, the way overview() derives it -- these were five badlands browns, so the
     // minimap of an ice or jungle map was a brown map of a white one. (REVIEW-M17)
-    const P = this.pal, cols = { rock: P.rock(0.6), slope: P.slope(0.65), high: P.high(0.5, 0), ramp: P.ramp(0.5), low: P.low(0.5, 0) };
-    for (let ty = 0; ty < m.h; ty++) for (let tx = 0; tx < m.w; tx++) { const i = m.idx(tx, ty); let c; if (m.cliff[i] === 2) c = cols.rock; else if (m.cliff[i] === 1) c = cols.slope; else if (m.height[i] === 2) c = cols.high; else if (m.height[i] === 1) c = cols.ramp; else c = cols.low; const o = i * 4; d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = 255; }
+    const P = this.pal, cols = { rock: P.rock(0.6), slope: P.slope(0.65), high: P.high(0.5, 0), ramp: P.ramp(0.5), low: P.low(0.5, 0) }, MH = this.groundGrids().height;
+    for (let ty = 0; ty < m.h; ty++) for (let tx = 0; tx < m.w; tx++) { const i = m.idx(tx, ty); let c; if (m.cliff[i] === 2) c = cols.rock; else if (m.cliff[i] === 1) c = cols.slope; else if (MH[i] === 2) c = cols.high; else if (MH[i] === 1) c = cols.ramp; else c = cols.low; const o = i * 4; d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = 255; }
     x.putImageData(img, 0, 0); this.mini = cv; return cv;
   },
 };

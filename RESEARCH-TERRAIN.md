@@ -309,3 +309,13 @@ Licence: CC0, no credit needed ([polyhaven.com/license](https://polyhaven.com/li
   to be made of the floor -- small bright squares read as icons.
 - **Scale and density**: boulders 12-22 px, most props under a Marine's width; density 0.2 of the allowed ground on the natural sets
   (0.12 read as empty), 0.09 on Space Platform, whose props are larger.
+
+### 8.8 What phase 4 did for the far view, the minimap and speed, and why *(measured in the browser, 2026-09-13; PLAYTEST-M18 113)*
+
+- **The far view is a small render of the ground (8.3's third way), not the average colour per terrain type**: the overview is the
+  bake itself at 1/8 scale, from box-filtered textures -- the cheapest way for it to match, and it does (correlation 0.996 per tile).
+  Averaged in sRGB rather than linear light (8.3): what it must match at OVER_Z is the chunks as the browser shrinks them, in sRGB.
+- **The minimap is the far view averaged**, a pixel a tile. A colour a tileset's ground hides is not refused as OpenRA does (8.3)
+  -- the lobby colours are the players' -- but every dot gets a dark rim, which reads on any ground.
+- **The per-frame budget with the overview underneath was enough** (8.4's "first, cheapest fix"): no frame over 50 ms, so no worker.
+  Two things made it so: baking the chunk nearest the middle first, and baking the ring round the view ahead on idle frames.

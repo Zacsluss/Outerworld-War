@@ -342,11 +342,15 @@ ok('and it grows in WORLD units as it does, which is what stops the army vanishi
 // obvious first implementation and it is unaffordable: renderChunk is a per-pixel noise loop, the
 // viewport holds twenty times as many chunks fully zoomed out, and a wheel produces a new scale every
 // notch, so the cache would be thrashed rather than filled.
+// The bake is budgeted at every zoom since the terrain queue's phase 4 -- one chunk a frame, then one of the ring round the view --
+// so the view and its ring are drawn until the cache stops growing before anything is counted.
 const chunks = R(ctx, `
   Render.setZoom(1); Render.camX = G.map.w * TILE / 2 - Render.viewWorldW() / 2; Render.camY = G.map.h * TILE / 2 - Render.viewWorldH() / 2;
   Terrain.chunks.clear(); Terrain.clearOverview();
-  Render.frame(0); Render.frame(0);
-  const atOne = Terrain.chunks.size;
+  for (let i = 0; i < 80; i++) { const n = Terrain.chunks.size; Render.frame(0); if (i > 1 && Terrain.chunks.size === n) break; }
+  const atOne = Terrain.chunks.size, C = Terrain.CH * TILE;
+  const visible = (Math.min(Math.ceil(G.map.w / Terrain.CH) - 1, Math.floor((Render.camX + Render.viewWorldW()) / C)) - Math.max(0, Math.floor(Render.camX / C)) + 1)
+    * (Math.min(Math.ceil(G.map.h / Terrain.CH) - 1, Math.floor((Render.camY + Render.viewWorldH()) / C)) - Math.max(0, Math.floor(Render.camY / C)) + 1);
   // pull out past OVER_Z: the strategic view must bake nothing at all. Drawn twice and the SECOND one
   // measured, because the first bakes the overview bitmap and that putImageData is a draw call too.
   Render.setZoom(Render.zoomLimits().lo); Render.clampCam();
@@ -363,14 +367,14 @@ const chunks = R(ctx, `
   Terrain.draw(Render.ctx, Render.camX, Render.camY, Render.viewWorldW(), Render.viewWorldH(), 0.7);
   const partial = Terrain.chunks.size;
   Render.setZoom(1);
-  return { atOne, outCalls, outBaked, backCalls, backBaked, partial, ovW: ov.width, ovH: ov.height, mapW: G.map.w, over: Terrain.OVER_Z, px: Terrain.OVER_PX, budget: Terrain.CHUNK_BUDGET };
+  return { atOne, visible, outCalls, outBaked, backCalls, backBaked, partial, ovW: ov.width, ovH: ov.height, mapW: G.map.w, over: Terrain.OVER_Z, px: Terrain.OVER_PX, budget: Terrain.CHUNK_BUDGET };
 `);
 ok('the strategic view is ONE blit and bakes no chunks at all (' + chunks.outCalls + ' call, ' + chunks.atOne + ' chunks before and after)',
   chunks.outCalls === 1 && chunks.outBaked === chunks.atOne, JSON.stringify(chunks));
 ok('the overview is the whole map at ' + chunks.px + ' px a tile (' + chunks.ovW + 'x' + chunks.ovH + ')',
   chunks.ovW === chunks.mapW * chunks.px, JSON.stringify(chunks));
-ok('and zooming back in re-uses the chunks rather than re-baking them',
-  chunks.backBaked === chunks.atOne && chunks.backCalls === chunks.atOne, JSON.stringify(chunks));
+ok('and zooming back in re-uses the chunks rather than re-baking them (one blit for each of the ' + chunks.visible + ' in view, none baked)',
+  chunks.backBaked === chunks.atOne && chunks.backCalls === chunks.visible && chunks.visible > 0, JSON.stringify(chunks));
 ok('an intermediate zoom bakes at most ' + chunks.budget + ' new chunks a frame, so a camera jump cannot stall the pass',
   chunks.partial - chunks.backBaked <= chunks.budget, JSON.stringify(chunks));
 

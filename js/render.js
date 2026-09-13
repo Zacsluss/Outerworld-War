@@ -223,10 +223,23 @@ const Render = {
   // without changing anything the cache key knows about -- so a dropped bridge would go on being drawn
   // until the chunk happened to be evicted. map.featureRev() is derived from the grids rather than
   // counted, so it is still correct after a replay seek restores an older state.
+  // Only the chunks round a feature that changed are dropped (Terrain.invalidateTiles): clearing the whole cache made breaking one
+  // rock formation on The Long March a 512 ms frame (the terrain queue's phase 4). A new map, or a feature list of another length,
+  // still clears everything. A texture arriving rebuilds the minimap, which is painted from the textures once they are all in.
   syncFeatures() {
-    const m = G.map; if (!m.featureRev) return;
+    const m = G.map;
+    if (Terrain.overRev !== this._overRev) { this._overRev = Terrain.overRev; if (this.built) this.mini = Terrain.buildMini(); }
+    if (!m.featureRev) return;
     const rev = m.featureRev();
-    if (rev !== this._featRev) { this._featRev = rev; Terrain.chunks.clear(); Terrain.clearOverview(); this.mini = Terrain.buildMini(); }
+    if (this._featMap === m && rev === this._featRev) return;
+    const fs = m.features || [], state = fs.map(f => (f.broken ? 2 : 0) + (m.walk[f.t0] === 1 ? 1 : 0)), prev = this._featState;
+    this._featRev = rev; this._featState = state;
+    // A new map: UI.start has just reset the renderer (Render.reset), so there is nothing baked to drop -- only the state to record.
+    // Clearing here as well made the first feature change of every game repaint the whole overview.
+    if (this._featMap !== m) { this._featMap = m; return; }
+    if (!prev || prev.length !== state.length) { Terrain.clearChunks(); Terrain.clearOverview(); this.mini = Terrain.buildMini(); return; }
+    for (let k = 0; k < fs.length; k++) if (prev[k] !== state[k]) Terrain.invalidateTiles(fs[k].x, fs[k].y, fs[k].w, fs[k].h);
+    this.mini = Terrain.buildMini();
   },
   drawCreep(ctx) {
     if (this.creepFrame !== G.frame && (G.frame % 12 === 0 || this.creepOn === undefined)) { this.creepOn = Terrain.syncCreep(); this.creepFrame = G.frame; }

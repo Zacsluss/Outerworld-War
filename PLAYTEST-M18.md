@@ -1414,3 +1414,86 @@ a patch moves no prop. Fifteen negative controls turn it red (`.claude/review/te
   smooth clay eggs, snowball ice and lime-green stars; paw-print pebble rings, spider bushes and bone-shaped pipes; icon-like hatches on
   Space Platform. Density judged at 0.12, 0.2 and 0.3; 0.2 kept.
 - 400 units on Contested Ground (Badlands, Jungle) with and without props: every unit reads the same (`shots/p3-battle-*`).
+
+## 113. The zoomed-out view and the minimap show the detailed ground, and The Long March never stutters
+
+*(The user, 2026-09-13, the terrain queue's item 4: "A matching zoomed-out view and minimap, plus a speed check on the biggest map."
+TODO-M18, THE TERRAIN QUEUE, phase 4. Drawing only -- `js/terrain.js`, `js/render.js`, `js/hud.js`; the build stamp does not move.)*
+
+**Detailed terrain is still OFF by default** (phase 5 switches it on): add `?hd=1` to the game's address to see any of this.
+
+**What changed for a player:**
+1. **Zoomed out, the map looks like the ground you zoomed out from.** The strategic view (zoom far out, where units turn into icons)
+   was drawn in flat palette colours; it is now painted from the same textures, light and cliffs as the detailed ground, only
+   smaller. The rocks, debris and plants are left out that far out -- at four pixels a tile they would be specks.
+2. **The minimap is that same picture**, a pixel a tile -- snow, sand, plating and rock faces instead of flat blocks.
+3. **Unit dots on the minimap have a thin dark rim.** On the new minimaps a brown player's dots all but vanished into Desert's ground
+   (and the pale green-white player's into Ice's snow); with the rim every one of the eight lobby colours reads on every tileset.
+4. **No more freezes when the camera moves on big maps.** Jumping the camera across The Long March used to freeze the game for about
+   0.7 s, a diagonal scroll stuttered in 180 ms hitches, and breaking a rock formation froze it for half a second. Now the ground
+   is drawn a piece a frame, nearest the middle of the screen first, with the zoomed-out picture standing in for any piece not
+   drawn yet -- so for a moment after a big jump the edges of the screen look soft, then sharpen. Ground just off the edge of the
+   screen is drawn ahead while nothing else needs doing, so an ordinary scroll finds it ready.
+5. **Breaking a rock formation redraws only the ground round it.**
+6. **The ground under a destroyed building's hulk stays flat.** If the screen was redrawn while a hulk stood on low ground, the
+   detailed terrain drew a little plateau with cliff faces round the wreck (and kept drawing it after the hulk was gone).
+
+**How to see it by hand:**
+1. **The zoomed-out view.** Open the game with `?hd=1`, **Single Player -> Skirmish**, map **The Long March**, START. Zoom out with the
+   mouse wheel until units become icons. *Working:* the far view is snow, blue shadowed low ground and grey rock faces, the same
+   country as up close, not a flat blue and white map. Zoom in and out across the point where it switches: the picture does not
+   jump.
+2. **The minimap.** Look at the minimap on the same map. *Working:* it shows the textured ground. Then open **Skirmish** on **Dust
+   Bowl**, give one of the computer players the **brown** colour in the lobby, and play until you have seen their units. *Working:*
+   their dots are clearly visible on the orange minimap, with a dark edge.
+3. **A camera jump.** On The Long March click the far corner of the minimap. *Working:* no freeze; the ground there is soft for a
+   moment and sharp within about half a second.
+4. **Scrolling.** Hold the arrow keys (or push the mouse to the screen edge) and scroll across the map, then diagonally. *Working:*
+   smooth, with no hitches.
+5. **Breaking a rock formation.** **Skirmish** on **Open Basin** with **Seed 1** (or Chokepoint Valley), send a few units to attack a
+   rock formation or spire until it breaks. *Working:* no stutter when it breaks.
+6. **A hulk.** Destroy a building (an enemy Supply Depot or Pylon will do) or a large unit (a Siege Tank, an Ultralisk) standing on
+   low ground, scroll away and back while its wreck stands (a building's lasts a minute and a half). *Working:* the ground under the
+   wreck is flat; no raised block with cliff edges.
+7. **Textures arriving.** Reload the page (so nothing is cached in memory) and start a game. *Working:* in the first second the
+   minimap turns from flat colours into the textured picture, without a freeze.
+
+**Invisible from normal play, and where to look instead:**
+- The frame times, measured in the browser on The Long March (1600x900, detailed terrain, before and after the change):
+
+| What | Before: worst frame | Before: frames over 50 ms | After: worst frame | After: frames over 50 ms |
+|---|---|---|---|---|
+| Camera jump to ground never drawn | 694 ms | the jump | 23 ms (60 frames) | 0 |
+| Scroll right at the default speed, 240 frames | 124 ms | 7 | 30 ms (1,440 frames, 6 runs) | 0 * |
+| Scroll diagonally, 200 frames | 179 ms | 25 | 27 ms | 0 |
+| Zoom to 0.6 over ground never drawn | 72 ms | 20 of 40 | 33 ms (90 frames) | 0 |
+| Zoom all the way out | 39 ms | 0 | 2 ms | 0 |
+| A rock formation breaks | 512 ms ** | 1 | 42 ms (three, Open Basin) | 0 |
+| Scroll at zoom 0.45 | -- | -- | 24 ms | 0 |
+| The textures arrive mid-game | -- | -- | 44 ms | 0 |
+
+  \* Long runs turned up a few frames of 40-159 ms twice (2 in one 240-frame run, 3 in one 2,100-frame run) with no terrain, creep,
+  sprite, fog or interface work in them -- instrumented function by function -- so the browser's own work, most likely collecting
+  memory. The bake then stopped throwing away about 2 MB a chunk (its scratch grids and pixels are reused) and a chunk leaving the
+  cache frees its canvas at once; the next 4,500 frames scrolling back and forth across the whole map had none over 33 ms (worst 29).
+  \*\* Everything cleared at once, as every feature change did, forced on The Long March (it has no rock formations).
+- One-off costs, at a game's start: the textured overview of The Long March takes about 200 ms to paint (the old first frame baked
+  thirty chunks, about 600 ms); the minimap from it about 26 ms the first time.
+- `test/terrainview.js` (new, in the gate, 24 checks): the hulk (the chunk, ramp levels, overview and classic chunk byte-identical
+  with and without it), the overview against the chunks tile by tile (correlation 0.996; the palette's is off by ten times as much),
+  the overview painted in steps byte-identical to painted at once, the minimap as the overview's average, the budget (one chunk a
+  slow draw, three a fast one, nearest the middle first, the overview under what is missing, the ring and nothing beyond it, nothing
+  ahead over the cap), a feature change dropping only nearby chunks and repainting only nearby overview, a new map dropping nothing,
+  the textures' arrival stepping only on draws with nothing to bake, the minimap's rims. Sixteen negative controls turn it red
+  (`.claude/review/terrain/controls-terrainview.log`).
+
+**Deliberately different from what was asked, or not done:**
+- **No web worker.** Baking chunks off the main thread was the planned second step (RESEARCH-TERRAIN.md 8.4); with the per-frame
+  budget no frame measured over 50 ms, so it was not built.
+- **The minimap's dots have a rim** -- a small change to how the minimap has always looked, made because the textured minimap hid a
+  lobby colour.
+- **A big camera jump shows soft ground for a moment** instead of freezing until everything is drawn.
+- **Props are not drawn in the far view or on the minimap.**
+- **Three existing suites were changed** because they counted on the whole screen being drawn in one frame: `zoom` fills the view
+  before counting, `seldraw` lets the terrain settle before its before-and-after frame pair, `review17ui`'s source check looks further
+  into the minimap function. The reason is written in each.

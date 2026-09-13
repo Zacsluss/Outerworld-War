@@ -115,6 +115,7 @@ const TESTS = [
   { name: 'mapfeatures', args: ['mapfeatures.js'], what: 'destructibles move pathing and vision, and the archetypes are seeded and legal' },
   { name: 'verticality', args: ['verticality.js'], what: 'the height query the sim reads, and a ramp as the only way up' },
   { name: 'ramps', args: ['ramps.js'], what: 'ramps are entered at their two ends, never from a side, and nothing reachable before is out of reach now' },
+  { name: 'terrainview', args: ['terrainview.js'], what: 'detailed terrain far off and fast: the overview and minimap from the textures, the bake budget, a feature change, a hulk, the minimap rims' },
   { name: 'terraintex', args: ['terraintex.js'], what: 'detailed terrain: every tileset textured and recorded, flecks healed, no repeat, platform edges on the tiles, a pure bake' },
   { name: 'renderfeel', args: ['renderfeel.js'], what: 'the storm draws, weight settles, and 400 units stay legible' },
   { name: 'diegetic', args: ['diegetic.js'], what: 'the console is per-race, takes damage, and glitches reproducibly' },

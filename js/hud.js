@@ -868,7 +868,12 @@ Object.assign(UI, {
     // colour outright, and seen-before ground keeps its dim, so the map reveals as units uncover it.
     if (Render.fogCanvas) { ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = false; ctx.drawImage(Render.fogCanvas, mr.x, mr.y, mr.s, mr.s); ctx.imageSmoothingEnabled = true; }
     for (const r of m.resources) { if (vis[r.y * m.w + r.x] === 0) continue; ctx.fillStyle = r.type === 'mineral' ? '#6fe0ff' : '#7ee07a'; ctx.fillRect(mr.x + r.x * sc * TILE, mr.y + r.y * sc * TILE, Math.max(2, r.w * sc * TILE), Math.max(1.5, r.h * sc * TILE)); }
-    for (const u of G.units) { if (!u.alive || u.inside || u.def.larva || u.def.notUnit) continue; if (u.owner !== G.human && !G.canSee(G.human, u) && !(u.isBuilding && G.explored(G.human, Math.floor(u.x / TILE), Math.floor(u.y / TILE)))) continue; ctx.fillStyle = u.owner === G.human ? '#3fe83f' : G.players[u.owner].color; const s = u.isBuilding ? Math.max(3, u.def.w * TILE * sc) : 2.5; ctx.fillRect(mr.x + u.x * sc - s / 2, mr.y + u.y * sc - s / 2, s, s); }
+    // A dark rim under every dot, all rims first: on the textured minimaps brown #703014 all but vanished into Desert's ground (83.5% of
+    // its tiles within dE 25 of it, against 7.6% on the palette's) and #cce0d0 into Ice's snow (terrain queue, phase 4).
+    const dots = [];
+    for (const u of G.units) { if (!u.alive || u.inside || u.def.larva || u.def.notUnit) continue; if (u.owner !== G.human && !G.canSee(G.human, u) && !(u.isBuilding && G.explored(G.human, Math.floor(u.x / TILE), Math.floor(u.y / TILE)))) continue; const s = u.isBuilding ? Math.max(3, u.def.w * TILE * sc) : 2.5; dots.push(u, s); }
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'; for (let k = 0; k < dots.length; k += 2) { const u = dots[k], s = dots[k + 1]; ctx.fillRect(mr.x + u.x * sc - s / 2 - 1, mr.y + u.y * sc - s / 2 - 1, s + 2, s + 2); }
+    for (let k = 0; k < dots.length; k += 2) { const u = dots[k], s = dots[k + 1]; ctx.fillStyle = u.owner === G.human ? '#3fe83f' : G.players[u.owner].color; ctx.fillRect(mr.x + u.x * sc - s / 2, mr.y + u.y * sc - s / 2, s, s); }
     // Sensor Tower contacts (FIXLIST-M14 C2), AFTER the fog and after the units. A blip is something
     // you know about ground you cannot see, so painting it under the fog would hide the one thing it
     // exists to tell you. Drawn as a hollow amber ring and never in a player's colour: a contact has no

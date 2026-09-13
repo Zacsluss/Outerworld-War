@@ -211,7 +211,8 @@ R(ctx, `G.init({ players: [{ race: 'T', human: true, name: 'H' }, { race: 'Z', h
 {
   const terrain = src('terrain'), hud = src('hud'), ui = src('ui'), render = src('render'), sb = src('sprites_buildings');
   ok('the chunk clamp uses the map height for the y axis (was the width on both)', /maxCy = Math\.ceil\(G\.map\.h/.test(terrain) && /Math\.min\(maxCy - 1, y1\)/.test(terrain));
-  ok('buildMini reads the tileset palette rather than five badlands browns', /buildMini\(\) \{[\s\S]{0,600}this\.pal/.test(terrain) && !/\[118, 96, 62\]/.test(terrain));
+  // 2000 characters, not 600: since the terrain queue's phase 4 buildMini paints from the textured overview first and the palette after
+  ok('buildMini reads the tileset palette rather than five badlands browns', /buildMini\(\) \{[\s\S]{0,2000}this\.pal/.test(terrain) && !/\[118, 96, 62\]/.test(terrain));
   ok('the help text no longer promises F2-F8 as camera slots', !/F2-F8/.test(hud) && /F8 load autosave/.test(hud));
   ok('dead: the \'waiting\' menu nothing set, the interceptor projectile colour nothing pushed, a stray path before a save()', !/menu === 'waiting'/.test(ui) && !/p\.kind === 'interceptor'/.test(render) && !/roundRect\(-6, -7, 20, 14, 2\); ctx\.save/.test(sb));
 }

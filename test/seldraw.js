@@ -319,6 +319,9 @@ frame();   // warm: terrain chunks and sprite canvases bake on the first frame
   // The corpse is the half that must NOT stop, and "there is a decal in the array" does not prove it
   // reaches the canvas. So it is an A/B on the same frame: the blits with the corpse in the decal
   // list, and the blits with the list emptied. The difference is the corpse.
+  // Every drawImage in the frame is counted, a chunk's own bake included, and the terrain bakes a chunk of the ring round the view on a
+  // frame with nothing else to do (the terrain queue's phase 4): settle it first, or one frame of the pair carries a bake the other does not.
+  R(ctx, 'for (let i = 0; i < 80; i++) { const n = Terrain.chunks.size; Render.frame(1); if (Terrain.chunks.size === n) break; } return 1;');
   const withIt = (frame(), rec.ops.filter(o => o.op === 'drawImage').length);
   R(ctx, 'FX._stash = FX.decals.slice(); FX.decals.length = 0; return 1;');
   const without = (frame(), rec.ops.filter(o => o.op === 'drawImage').length);
