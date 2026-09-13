@@ -12,14 +12,15 @@ requests, no other branches, no extra worktrees.** Trust `git log -1` for HEAD, 
 
 ## The state
 
-- **THE TERRAIN QUEUE, phase 1 (item 2, walled ramps) is DONE and committed** (PLAYTEST-M18 110; TODO-M18, THE TERRAIN QUEUE, has
-  the whole account). **The next action is phase 2: the other four tilesets' textures.** Phases 3-5 follow in the queue's order.
-- **The gate is 98 suites, ALL GREEN** (about two minutes; `ramps` is new). **Build stamp `eff84c60f4bc9cf2`** -- phase 1 moved it
+- **THE TERRAIN QUEUE, phases 1 and 2 are DONE and committed**: walled ramps (PLAYTEST-M18 110) and detailed terrain on all five
+  tilesets (PLAYTEST-M18 111); TODO-M18, THE TERRAIN QUEUE, has the whole account of each. **The next action is phase 3: props on
+  open ground.** Phases 4 and 5 follow in the queue's order.
+- **The gate is 99 suites, ALL GREEN** (about two minutes; `ramps` and `terraintex` are new). **Build stamp `eff84c60f4bc9cf2`** -- phase 1 moved it
   (`js/map.js`, `js/build.js`); phases 2-5 are drawing only and must not move it again. No known reds in the gate. By hand,
   `aistyles` seed 5 fails its weakest check (7 vs 10; recorded in PLAYTEST-M18 110; not a gate suite).
-- **The Badlands test run is committed and OFF unless `?hd=1` is in the address** (`7f8cf40`; PLAYTEST-M18 109). Badlands is painted
-  from four Poly Haven CC0 textures, lit from the upper left like the sprites; every other tileset, the strategic zoom and the
-  minimap are unchanged. The user: **"this looks amazing so far - exactly the direction i want."**
+- **Detailed terrain is committed and OFF unless `?hd=1` is in the address** (`7f8cf40` and phase 2; PLAYTEST-M18 109, 111). Every
+  tileset is painted from Poly Haven CC0 textures, lit from the upper left like the sprites; the strategic zoom and the minimap are
+  unchanged. The user, of the Badlands test run: **"this looks amazing so far - exactly the direction i want."**
 - **Measured baselines for the queue:** 132 of 158 ramps are walkable from a side (`.claude/review/terrain/ramp-probe.js`); a textured
   chunk bakes in a median 18.5 ms against the palette's 21.7 ms (V8, outside any vm harness); at zoom 1 there is no bake budget, so a
   camera jump to unbaked ground stalls about 0.6-0.85 s and crossing a chunk boundary 75-165 ms; `overview()` 17.4 ms and
@@ -70,6 +71,16 @@ and minimap, the speed work on The Long March, and switching it on for everyone.
 8. **`GameMap.generate` stamps ramp rectangles through a one-tile cliff ring**; `sealElevations` guarantees high never touches low and
    says nothing about a ramp's sides; `repairConnectivity` carves ramps of its own on archetypes and the seal demotes one-tile slopes.
    A wall rule has to run after all of them.
+9. **Look at the middle of the map, not only the bases.** Phase 2's first screenshots were of mains and looked right; the open ground
+   in the middle showed every texture repeating in a sixteen-tile grid. And a texture's own brightness decides a cliff: measure the
+   graded rock against the high ground (Badlands 0.45) before judging an outline.
+10. **The browser drops a canvas's 2D context under canvas churn.** Baking ~1,500 chunks in a few minutes in one page (a measuring
+    loop) lost the game canvas: everything drew transparent with no error, and `getContext('2d').isContextLost()` said so. Reload.
+11. **A negative control can be hidden by a second mechanism.** `terraintex`'s "cells never used" control first stayed GREEN: without
+    cells the texture fell back to the transposed second sample, which also defeats a repeat on the probe's chunks. The check now
+    turns the second sample off for both of its bakes.
+12. **`tools/terrain-shot.js` refuses `.claude` paths (403)**, so a helper cannot be fetched into the page: keep it in
+    `localStorage` and `eval` it after each reload (`.claude/review/terrain/helper-T.js` is the source).
 
 ## Diagnostics added this session
 
@@ -90,7 +101,7 @@ Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
 Branch: m10-overnight, which IS origin/main (https://github.com/Zacsluss/Outerworld-War -- PUBLIC: git push publishes).
 HEAD: <run git log -1 --format=%h>. Working tree clean, nothing unpushed, no open PRs, no other branches, no extra worktrees.
 Machine: Windows 11; PowerShell 5.1 and Git Bash; Node 24; Rust + the Tauri CLI under desktop/; no gh CLI, no Blender.
-The gate (node test/all.js) is 98 suites, about two minutes, ALL GREEN; no known reds. test/balance.js and test/proxy.js are
+The gate (node test/all.js) is 99 suites, about two minutes, ALL GREEN; no known reds. test/balance.js and test/proxy.js are
 GATED: never start them without an explicit, double-checked instruction.
 
 THE JOB -- make every map look great. The user: "i do not need an editor. i just want great looking maps." Of the Badlands test
@@ -101,8 +112,9 @@ run (docs/terrain/*.jpg, PLAYTEST-M18 109, on with ?hd=1): "this looks amazing s
   4. A matching zoomed-out view and minimap, plus a speed check on the biggest map (The Long March, 256x256).
   5. Switch it on by default and commit.
 BUILD ORDER: 2 (ramps -- the only SIMULATION change, so props and art land on final geometry and the stamp moves once), then 3,
-then 1, then 4, then 5. TODO-M18.md, THE TERRAIN QUEUE, gives the reasons and each phase's acceptance. PHASE 1 (item 2, ramps) IS
-DONE (PLAYTEST-M18 110, build stamp eff84c60f4bc9cf2): start at phase 2, and do not move the build stamp again.
+then 1, then 4, then 5. TODO-M18.md, THE TERRAIN QUEUE, gives the reasons and each phase's acceptance. PHASE 1 (item 2, ramps)
+AND PHASE 2 (item 3, the four tilesets) ARE DONE (PLAYTEST-M18 110 and 111, build stamp eff84c60f4bc9cf2): start at phase 3 (item
+1, props), and do not move the build stamp again.
 
 READ, in this order, before touching anything:
   1. CLAUDE.md                -- the working agreement; every rule in it is non-negotiable.
@@ -127,8 +139,10 @@ ALREADY MEASURED (re-measure only to compare):
     Terrain.draw has no bake budget: a jump to unbaked ground stalls ~0.6-0.85 s, a chunk-boundary crossing 75-165 ms.
     overview() 17.4 ms, buildMini() 1.2 ms on 128x128. Render.syncFeatures clears every chunk when any feature changes.
     OffscreenCanvas 2D: WebView2 yes, WKWebView from macOS 13.3 (Safari 16.4); requestIdleCallback is not in Safari.
-  - Textures: Poly Haven has no ice texture and only 30 aerial scans; RESEARCH-TERRAIN.md 8.5 lists two candidates per slot with
-    real and file sizes. Big aerial scans suit TEX_PX 512; metal plating repeats by plate size.
+  - Textures (DONE in phase 2): every tileset's set, grade and look are in js/terrain.js (TERRAIN_TEX, TERRAIN_GRADE, TERRAIN_LOOK;
+    RESEARCH-TERRAIN.md 8.6 says what was chosen and why). Open ground is laid in six-tile squares (look.cells): the textured bake is
+    10.1-10.6 ms a chunk plain and 11.6-12.3 ms in squares, median, in the browser on Contested Ground. test/terraintex.js hands
+    renderChunkTex texture data (the headless suites have no images) -- extend it for props rather than starting another.
 
 HOW TO WORK, every phase:
   - Research with sources first (section 8 is a start) and tell the user what you found. Tell every research subagent never to put

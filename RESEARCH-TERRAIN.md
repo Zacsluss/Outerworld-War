@@ -268,3 +268,28 @@ repeats by plate size (a plate about 1-2 tiles), not by metres.
 
 Licence: CC0, no credit needed ([polyhaven.com/license](https://polyhaven.com/license)); textures are "seamless on all axes"
 ([standards](https://docs.polyhaven.com/en/technical-standards/textures), *excerpt*).
+
+### 8.6 What phase 2 chose, and why *(measured and judged on screenshots, 2026-09-13; PLAYTEST-M18 111)*
+
+| Tileset | low | high | ramp | cliff/rock | laid |
+|---|---|---|---|---|---|
+| Jungle | `rocky_terrain_02` | `aerial_grass_rock` | its high | `aerial_rocks_04` | squares |
+| Ice | `snow_field_aerial` | `snow_02`, healed | its high, healed | `dark_rock` x5 | squares |
+| Desert | `dry_ground_rocks` | `aerial_beach_01` | its high | `marble_cliff_03` | squares |
+| Space Platform | `rusty_metal_sheet` | `metal_plate_02` | `metal_plate` | `corrugated_iron_02` | deck in squares, tiles unblurred |
+
+- **A ramp may reuse its high ground's texture** -- a ramp's own texture shows at only `RAMP_TRACKS` 0.15 -- so thirteen files cover
+  sixteen slots. `aerial_beach_03` was fetched and rejected: tyre tracks across it.
+- **Brightness, graded texture means in linear light:** high over low Badlands 2.2, Jungle 3.5, Ice 3.5, Desert 3.9, Space Platform
+  5.7; cliff rock over high ground 0.45, 0.43, 0.45, 0.29, 1.0. Ice's rock was 0.06 at first and read as a black stroke round each
+  plateau; Space Platform's was 0.2 and read the same way, and at 2 its rock zones glared brighter than the plateaus.
+- **Snow is a two-metre scan laid over sixteen tiles**, so each twig in `snow_02` was a tile-long black squiggle: `Terrain.healFlecks`
+  blends every texel darker than 0.97 of its 24-texel neighbourhood to that neighbourhood's mean, once, at load.
+- **Space Platform**: laid as the shortlist had it (plates below, the stained sheet above, 256 texels a repeat, one sample), the
+  sheet's rust blotches marched across every plateau in rows and the blurred height field made every plateau a melted blob. Swapped,
+  at 512, with the height field read straight from the tiles: a plated platform with square steps and a steel lip.
+- **Repeats**: with two samples mixed by broad noise (the test run's way), every texture's recognisable features -- Badlands' pale
+  patches included -- repeated in a sixteen-tile grid across open ground, and high-pass flattening at 32 and 64 texels did not
+  help (the features are one to three tiles across). Laying the texture in squares with hashed offsets did: judged at 4, 6 and 9
+  tiles; 6 kept. Hex-tiling (Mikkelsen, "Practical Real-Time Hex-Tiling", 2022) is the better-known answer and blends three samples
+  at every pixel; squares need one sample in most of a square, which matters on a CPU bake.

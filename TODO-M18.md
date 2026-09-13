@@ -75,6 +75,33 @@ controls in `.claude/review/terrain/controls-ramps.log`) is in the gate, now 98 
   weakest check, 7 vs 10 (PLAYTEST 110 has the numbers). `test/editor.js` (not in the gate) times out in its LAN half -- at HEAD
   before this change too.
 
+**PHASE 2 (item 3, the four tilesets) -- DONE** (PLAYTEST-M18 111; drawing only, the stamp stays `eff84c60f4bc9cf2`). Every tileset
+has a set in `js/terrain.js` (`TERRAIN_TEX`, `TERRAIN_GRADE`, and `TERRAIN_LOOK` for how each is laid); thirteen Poly Haven CC0
+textures, 8.3 MB, in `assets/terrain/SOURCES.md`; `test/terraintex.js` (40 checks, twelve negative controls in
+`.claude/review/terrain/controls-terraintex.log`) is in the gate, now 99 suites. What it took, judged on screenshots at each step
+(`.claude/review/terrain/shots/p2*`) and measured where a number could say it:
+- **First pass** (graded toward each palette's hue, high ground at least as much lighter than low as Badlands'): Jungle and Desert
+  right away; Ice had a black outline round every plateau and tile-long dark squiggles on its snow; Space Platform had a grid of
+  orange rust blotches across its plateaus, black cliff edges and plateaus like melted blobs.
+- **Cliff rock measured against the approved look:** Badlands' rock is 0.45 of its high ground's brightness (graded texture means,
+  linear light); Ice's was 0.06 (`dark_rock` is near-black basalt: graded x5 now, 0.45), Space Platform's 0.2 (now 1.0; brighter made
+  its rock zones glare), Desert's 0.17 (now 0.29). Jungle 0.43 untouched.
+- **`Terrain.healFlecks`** (`look.heal`): a texel darker than 0.97 of the 24-texel box round it is blended to that box's mean -- snow_02's
+  twigs gone at load, judged at radius 12, 16 and 24 (the smaller left grey ghosts).
+- **Space Platform**: plates moved to the high ground and the stained sheet to the low; `look.blur` 0 reads the height field straight
+  from the tiles (square steps and a steel lip); tried and dropped: the hull at 256 texels, a per-material mix.
+- **`look.cells`**: the centre of every map showed each texture's features repeating in a sixteen-tile grid -- Badlands' too. Open
+  ground is laid in six-tile squares, each from its own hashed offset, borders wandering and blended over a fifth of a square;
+  judged at 4, 6 and 9 tiles. Cost in the browser, 256 chunks of Contested Ground, median a chunk: 10.1-10.6 ms plain, 11.6-12.3 ms
+  in squares -- once the square is picked once a pixel from the height pass's own warp noise (the first version, two noise calls a
+  sample, cost 14.7).
+- **Overlays checked on all five tilesets** (`shots/p2-overlays-*`): creep, fog and explored ground, night, the sandstorm, scorch and
+  wreck decals, a placement ghost, units and minerals at full size. The strategic icons and the minimap colours belong to phase 4.
+- **Not done / open:** the high-to-low ratio is measured in the browser from the JPEGs and is not in a suite (no decoder headless;
+  phase 4's mean colours per material will make it assertable). Found for phase 4: baking ~1,500 chunks in a few minutes in one page
+  made Chrome drop the game canvas's 2D context (a measuring loop, not play; the game caps chunks at 160 -- but The Long March has
+  1,024).
+
 ### The build path -- in this order, and why
 
 - **Phase 1 -- item 2, ramps (SIMULATION; stamped `js/map.js`; the build stamp moves once). DONE -- see above.** First, because it is the only item
@@ -86,7 +113,7 @@ controls in `.claude/review/terrain/controls-ramps.log`) is in the gate, now 98 
   start still reachable from every other (flood fill, all layouts, archetypes on many seeds); `verticality`, `highground`,
   `mapmodes`, `mapfeatures`, `starts`, `craters` green; a new suite with negative controls; `aistyles` seeds 1/5/11,
   `eightplayer`, `queens`, `net_many` recorded; the new stamp in the PLAYTEST entry.
-- **Phase 2 -- item 3, the four tilesets (drawing only).** Download the chosen textures (`RESEARCH-TERRAIN.md` 8.5 has two
+- **Phase 2 -- item 3, the four tilesets (drawing only). DONE -- see above.** Download the chosen textures (`RESEARCH-TERRAIN.md` 8.5 has two
   candidates per slot; Poly Haven has no ice, so Ice is snow over rock graded cold; Space Platform is metal plating repeated by
   plate size), look at each before using it, and grade each set. Acceptance: on every tileset the high ground reads lighter than
   the low at least as clearly as Badlands (compare the graded materials' mean luminance), one crisp drop per cliff, no visible

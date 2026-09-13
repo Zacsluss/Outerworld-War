@@ -107,13 +107,51 @@ const TILESETS = {
 // palette: low ground, high ground, ramps, cliffs and rock, blended along the height steps and lit from the upper left like
 // every sprite, with the high ground's shadow thrown down its cliff. The map, the pathing and the simulation are untouched --
 // this is drawing only, so no replay or network game can tell the difference.
+//
+// Every tileset has a set since the terrain queue's phase 2. The four new ones were chosen from Poly Haven's catalogue (read through
+// its API, 859 textures, 16 of them true aerial scans and none of ice) by their previews and then by the files themselves; a ramp
+// slot may name its set's high ground, because a ramp's own texture shows at only RAMP_TRACKS.
 const TERRAIN_TEX = {
   badlands: { low: 'assets/terrain/aerial_ground_rock_diff_1k.jpg', high: 'assets/terrain/dirt_aerial_03_diff_1k.jpg', ramp: 'assets/terrain/dirt_aerial_02_diff_1k.jpg', rock: 'assets/terrain/cliff_side_diff_1k.jpg' },
+  // wet mossy ground under a drier olive plateau, mossy rock on the faces
+  jungle: { low: 'assets/terrain/rocky_terrain_02_diff_1k.jpg', high: 'assets/terrain/aerial_grass_rock_diff_1k.jpg', ramp: 'assets/terrain/aerial_grass_rock_diff_1k.jpg', rock: 'assets/terrain/aerial_rocks_04_diff_1k.jpg' },
+  // a trodden snowfield graded to shadowed blue below, smooth wind-packed snow above (its twigs healed away), veined slate on the faces
+  ice: { low: 'assets/terrain/snow_field_aerial_col_1k.jpg', high: 'assets/terrain/snow_02_diff_1k.jpg', ramp: 'assets/terrain/snow_02_diff_1k.jpg', rock: 'assets/terrain/dark_rock_diff_1k.jpg' },
+  // a cracked orange canyon floor under bleached rippled sand, bedded sandstone on the faces
+  desert: { low: 'assets/terrain/dry_ground_rocks_diff_1k.jpg', high: 'assets/terrain/aerial_beach_01_diff_1k.jpg', ramp: 'assets/terrain/aerial_beach_01_diff_1k.jpg', rock: 'assets/terrain/marble_cliff_03_diff_1k.jpg' },
+  // a dark rust-stained deck below, light riveted plates above, tread plate on the ramps, corrugated steel on the faces. The other
+  // way round first (plates below, the stained sheet above): the sheet's rust blotches lined up in a grid across the high ground.
+  space: { low: 'assets/terrain/rusty_metal_sheet_diff_1k.jpg', high: 'assets/terrain/metal_plate_02_diff_1k.jpg', ramp: 'assets/terrain/metal_plate_diff_1k.jpg', rock: 'assets/terrain/corrugated_iron_02_diff_1k.jpg' },
 };
-// A colour grade per material, multiplied in: the high ground warmer and lighter than the low, so which is which reads at a
-// glance the way the palette tilesets make it read.
+// A colour grade per material, multiplied in: the high ground lighter than the low, so which is which reads at a glance the way
+// the palette tilesets make it read. The new sets were graded toward their palettes' hues (the TILESETS entries above) with the
+// high ground at least as much brighter than the low as Badlands', and their cliff rock not much darker against the high ground
+// than Badlands' -- the approved look. Measured as each graded texture's mean luminance in linear light: high ground over low
+// Badlands 2.2, Jungle 3.5, Ice 3.5, Desert 3.9, Space Platform 5.7; cliff rock over high ground Badlands 0.45, Jungle 0.43,
+// Ice 0.45, Desert 0.29, Space Platform 1.0. Ice's rock was 0.06 at first, and its cliffs a black stroke round every plateau --
+// dark_rock is near-black basalt, hence a grade of five; Space Platform's lip was black at 0.2 and its bulkheads glared at 2.
 const TERRAIN_GRADE = {
   badlands: { low: [0.74, 0.72, 0.7], high: [1.2, 1.11, 0.98], ramp: [1.04, 0.98, 0.9], rock: [0.92, 0.8, 0.7] },
+  jungle: { low: [0.75, 0.88, 1.2], high: [1.1, 1.25, 1.35], ramp: [1.0, 1.1, 1.15], rock: [0.9, 0.95, 1.0] },
+  ice: { low: [0.74, 0.93, 1.08], high: [1.3, 1.36, 1.43], ramp: [1.15, 1.2, 1.28], rock: [4.4, 5.5, 7.2] },
+  desert: { low: [1.0, 0.85, 0.77], high: [1.57, 1.53, 1.3], ramp: [1.4, 1.32, 1.12], rock: [1.0, 0.83, 0.71] },
+  space: { low: [0.5, 0.58, 0.8], high: [1.6, 2.0, 2.75], ramp: [1.4, 1.6, 2.3], rock: [1.5, 1.7, 2.2] },
+};
+// How a set is laid down, where it is not Badlands' way. mix: how much of the second, transposed sample is blended in to hide the
+// repeat, where a material is not laid in cells. grit: how much of the low ground's texture the high ground carries. warp: how far, in world px, cliff and height edges wander. squeeze: how flat the rock
+// texture's strata are drawn. tracks: the ramp texture's strength (RAMP_TRACKS when absent). blur: 0 reads the height field
+// straight from the tiles, without the 3x3 blur. heal: the materials whose dark flecks are lifted at load (Terrain.healFlecks).
+// cells: the materials laid in squares, each from its own place in the texture, instead of mixed (renderChunkTex, CELL_TILES).
+//   Metal plating is a grid, and squares or a transposed second sample would break its seams, so only the seamless deck is laid
+//   in squares; a platform's edges are straight and follow the tiles -- blurred and warped, every plateau was a melted blob with
+//   plating on it (.claude/review/terrain/shots/p2v-space-2). Snow and bleached sand carry less of the floor's grit so they stay
+//   clean, and snow_02 is a two-metre scan whose twigs would each be a tile-long black squiggle across a plateau.
+const TERRAIN_LOOK = {
+  badlands: { mix: 1, grit: 0.38, warp: 22, squeeze: 1.35, cells: ['low', 'high'] },
+  jungle: { mix: 1, grit: 0.38, warp: 22, squeeze: 1.35, cells: ['low', 'high'] },
+  ice: { mix: 1, grit: 0.2, warp: 22, squeeze: 1.35, heal: ['high', 'ramp'], cells: ['low', 'high'] },
+  desert: { mix: 1, grit: 0.25, warp: 22, squeeze: 1.35, cells: ['low', 'high'] },
+  space: { mix: 0, grit: 0, warp: 0, squeeze: 1, tracks: 0.6, blur: 0, cells: ['low'] },
 };
 const CREEP_LO = 0.37, CREEP_BAND = 0.26;
 const Terrain = {
@@ -254,24 +292,52 @@ const Terrain = {
   _tex: {},
   // The set's textures, each drawn once into a TEX_PX canvas and kept as pixels; null until every one has loaded (the palette
   // paints until then), and the chunk cache is dropped as each arrives so the ground bakes again with it.
+  look() { return TERRAIN_LOOK[this.setId] || TERRAIN_LOOK.badlands; },
   texSet() {
     const spec = this.textured && TERRAIN_TEX[this.setId];
     if (!spec || typeof Image === 'undefined' || typeof document === 'undefined') return null;
-    const S = this.TEX_PX, out = {}; let ready = true;
+    const look = this.look(), S = this.TEX_PX, out = {}; let ready = true;
     for (const part of Object.keys(spec)) {
       const url = spec[part]; let e = this._tex[url];
-      if (!e) { e = this._tex[url] = { img: new Image(), ok: false, data: null }; e.img.onload = () => { e.ok = true; this.chunks.clear(); }; e.img.src = url; }
+      if (!e) { e = this._tex[url] = { img: new Image(), ok: false, data: {} }; e.img.onload = () => { e.ok = true; this.chunks.clear(); }; e.img.src = url; }
       if (!e.ok) { ready = false; continue; }
-      if (!e.data) { const cv = document.createElement('canvas'); cv.width = cv.height = S; const x = cv.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(e.img, 0, 0, S, S); e.data = x.getImageData(0, 0, S, S).data; }
-      out[part] = e.data;
+      // kept per treatment: two sets may lay one texture down plain and healed
+      const heal = (look.heal || []).includes(part), key = heal ? 'healed' : 'plain';
+      if (!e.data[key]) { const cv = document.createElement('canvas'); cv.width = cv.height = S; const x = cv.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(e.img, 0, 0, S, S); const px = x.getImageData(0, 0, S, S).data; e.data[key] = heal ? this.healFlecks(px, S) : px; }
+      out[part] = e.data[key];
     }
     return ready ? out : null;
+  },
+  // Lifts a texture's dark flecks to the colour round them, in place: a texel darker than HEAL_K of the mean of the box HEAL_R
+  // texels each way round it (at 512; wrapped, because the texture tiles) is blended toward that mean, all the way by HEAL_SOFT
+  // darker. For snow: a two-metre scan laid over sixteen tiles makes each twig in it a black squiggle a tile long, and what is
+  // left once they go is the snow's own soft drifts. Judged at radius 12, 16 and 24 (.claude/review/terrain/shots/p2v-ice-heal):
+  // at 12 and 16 each twig left a grey ghost of its shape.
+  HEAL_R: 24, HEAL_K: 0.97, HEAL_SOFT: 0.1,
+  CELL_TILES: 6, CELL_BAND: 0.2,   // look.cells: a square's side in tiles, and how far either side of its border, in squares, two are blended
+  healFlecks(d, S) {
+    const R = Math.max(1, Math.round(S * this.HEAL_R / 512)), n = (2 * R + 1) * (2 * R + 1), N = S * S, W = S + 1;
+    const mean = ch => {
+      const sat = new Float64Array(W * W);
+      for (let j = 0; j < S; j++) { let row = 0; for (let i = 0; i < S; i++) { row += d[(j * S + i) * 4 + ch]; sat[(j + 1) * W + i + 1] = sat[j * W + i + 1] + row; } }
+      // the sum over columns [0, i) and rows [0, j) of the texture tiled without end, so a box may run off any edge
+      const at = (i, j) => { const qi = Math.floor(i / S), qj = Math.floor(j / S), ri = i - qi * S, rj = j - qj * S; return sat[S * W + S] * qi * qj + sat[rj * W + S] * qi + sat[S * W + ri] * qj + sat[rj * W + ri]; };
+      const out = new Float32Array(N);
+      for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) out[j * S + i] = (at(i + R + 1, j + R + 1) - at(i - R, j + R + 1) - at(i + R + 1, j - R) + at(i - R, j - R)) / n;
+      return out;
+    };
+    const mr = mean(0), mg = mean(1), mb = mean(2), K = this.HEAL_K, soft = this.HEAL_SOFT;
+    for (let p = 0; p < N; p++) {
+      const o = p * 4, L = d[o] + d[o + 1] + d[o + 2], M = mr[p] + mg[p] + mb[p], w = M > 0 ? Math.min(1, Math.max(0, (K * M - L) / (M * soft))) : 0;
+      if (w > 0) { d[o] += (mr[p] - d[o]) * w; d[o + 1] += (mg[p] - d[o + 1]) * w; d[o + 2] += (mb[p] - d[o + 2]) * w; }
+    }
+    return d;
   },
   // A textured chunk. Baked at ratio 1 whatever the display: a photograph survives the upscale where the dither did not. Per
   // chunk it costs about what the palette's does -- a median 18.5 ms against 21.7, measured in plain V8 over 256 chunks of Lost
   // Ruins (RESEARCH-TERRAIN.md 8.4; inside a vm harness both run ten times slower) -- so on a dpr-2 display it is far cheaper.
   renderChunkTex(cx, cy, T) {
-    const m = G.map, CH = this.CH, W = CH * TILE, S = this.TEX_PX, grade = TERRAIN_GRADE[this.setId] || {};
+    const m = G.map, CH = this.CH, W = CH * TILE, look = this.look(), S = this.TEX_PX, grade = TERRAIN_GRADE[this.setId] || {};
     const cv = document.createElement('canvas'); cv.width = W; cv.height = W; const x = cv.getContext('2d');
     const img = x.createImageData(W, W), d = img.data, ox = cx * CH * TILE, oy = cy * CH * TILE;
     // How HIGH each tile centre is -- low 0, a ramp or a cliff tile halfway, high 1 -- with where the rock zones and the ramps
@@ -296,7 +362,7 @@ const Terrain = {
       if (cl === 1) wal[o] |= 2;
     }
     const blur = src => { const out = new Float32Array(GW * GW); for (let j = 0; j < GW; j++) for (let i = 0; i < GW; i++) { let s = 0, wsum = 0; for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const ii = i + a, jj = j + b; if (ii < 0 || jj < 0 || ii >= GW || jj >= GW) continue; const w = (a ? 1 : 2) * (b ? 1 : 2); s += src[jj * GW + ii] * w; wsum += w; } out[j * GW + i] = s / wsum; } return out; };
-    const gh = blur(raw), gr = blur(rz), gp = rpz;   // the ramp mask stays sharp: a ramp is a passage and has to read as one
+    const gh = look.blur === 0 ? raw.slice() : blur(raw), gr = blur(rz), gp = rpz;   // the ramp mask stays sharp: a ramp is a passage and has to read as one
     // ...and so does a ramp wall: blurred with the floor on one side and the ramp on the other, a one-tile parapet averages down
     // to a soft bump no one reads as a wall (tried first). Its own cell keeps its height and its rock; its neighbours still blur.
     for (let o = 0; o < GW * GW; o++) if (wal[o] & 1) { gh[o] = raw[o]; gr[o] = rz[o]; }
@@ -306,10 +372,13 @@ const Terrain = {
     const gk = blur(rpz); for (let o = 0; o < GW * GW; o++) if (wal[o]) gk[o] = 0;
     const sm = t => t * t * (3 - 2 * t), PAD = 24, PW = W + 2 * PAD;
     const hf = new Float32Array(PW * PW), rk = new Float32Array(PW * PW), rp = new Float32Array(PW * PW);
+    const celled = look.cells || [], cLow = celled.includes('low'), cHigh = celled.includes('high'), cRamp = celled.includes('ramp');
+    const wn1 = celled.length ? new Float32Array(PW * PW) : null, wn2 = celled.length ? new Float32Array(PW * PW) : null;
     for (let py = 0; py < PW; py++) for (let pxx = 0; pxx < PW; pxx++) {
       const wx = ox + pxx - PAD, wy = oy + py - PAD;
       // a gentle warp of where the grid is read, so an edge wanders by up to a third of a tile instead of running dead straight
-      const qx = wx + (this.vnoise(wx / 37, wy / 37) - 0.5) * 22, qy = wy + (this.vnoise(wx / 37 + 17, wy / 37 + 29) - 0.5) * 22;
+      const n1 = this.vnoise(wx / 37, wy / 37) - 0.5, n2 = this.vnoise(wx / 37 + 17, wy / 37 + 29) - 0.5, qx = wx + n1 * look.warp, qy = wy + n2 * look.warp;
+      if (wn1) { wn1[py * PW + pxx] = n1; wn2[py * PW + pxx] = n2; }
       const fx = qx / TILE - 0.5 - t0x, fy = qy / TILE - 0.5 - t0y;
       let i0 = Math.floor(fx), u = fx - i0, j0 = Math.floor(fy), v = fy - j0;
       if (i0 < 0) { i0 = 0; u = 0; } else if (i0 > GW - 2) { i0 = GW - 2; u = 1; } if (j0 < 0) { j0 = 0; v = 0; } else if (j0 > GW - 2) { j0 = GW - 2; v = 1; }
@@ -331,7 +400,26 @@ const Terrain = {
     const tex = (t, u, v, o) => { const p = ((((v | 0) % S) + S) % S * S + ((((u | 0) % S) + S) % S)) * 4; o[0] = t[p]; o[1] = t[p + 1]; o[2] = t[p + 2]; };
     // A material is two samples of its texture -- the second transposed and rescaled -- mixed by broad noise, so the
     // sixteen-tile repeat does not line up into a visible grid across a map.
-    const mat = (t, g, wx, wy, q, o) => { tex(t, wx, wy, A); tex(t, wy * 0.83 + 331, wx * 0.83 + 173, B); o[0] = (A[0] + (B[0] - A[0]) * q) * g[0]; o[1] = (A[1] + (B[1] - A[1]) * q) * g[1]; o[2] = (A[2] + (B[2] - A[2]) * q) * g[2]; };
+    const mix = look.mix || 0;
+    // ...or laid in cells (look.cells, the materials so laid): the ground cut into squares CELL_TILES across, their borders wandering
+    // by a quarter of a square, each square showing the texture from its own hashed offset and blended with its neighbour over
+    // CELL_BAND of a square either side of a border (four squares at a corner, one in most of a square). The two samples still
+    // repeat, and a scan with features a player can pick out -- a snow patch, a rust bloom, a cluster of stones -- showed them in a
+    // sixteen-tile grid across open ground (.claude/review/terrain/shots/p2-ice-centre); squares leave no grid to line up along.
+    // Judged at 4, 6 and 9 tiles (p2v-ice-cells). The square is found once a pixel, for every material laid in them.
+    const CW = this.CELL_TILES * TILE, CB = this.CELL_BAND, C = [0, 0, 0], cellU = [0, 0, 0, 0], cellV = [0, 0, 0, 0], cellW = [0, 0, 0, 0];
+    let cn = 0;
+    const cellPut = (jx, jy, w) => { cellU[cn] = this.hash(jx * 7 + 3, jy * 13 + 5) * S; cellV[cn] = this.hash(jy * 11 + 1, jx * 5 + 9) * S; cellW[cn++] = w; };
+    const cellAt = (wx, wy, o) => {
+      const gx = wx / CW + wn1[o] * 0.5, gy = wy / CW + wn2[o] * 0.5, ix = Math.floor(gx), iy = Math.floor(gy), fx = gx - ix, fy = gy - iy;
+      const nx = fx < CB ? -1 : fx > 1 - CB ? 1 : 0, ny = fy < CB ? -1 : fy > 1 - CB ? 1 : 0;
+      const wX = nx ? 0.5 * sm(1 - (nx < 0 ? fx : 1 - fx) / CB) : 0, wY = ny ? 0.5 * sm(1 - (ny < 0 ? fy : 1 - fy) / CB) : 0;
+      cn = 0; cellPut(ix, iy, (1 - wX) * (1 - wY)); if (nx) cellPut(ix + nx, iy, wX * (1 - wY)); if (ny) cellPut(ix, iy + ny, (1 - wX) * wY); if (nx && ny) cellPut(ix + nx, iy + ny, wX * wY);
+    };
+    const mat = (t, g, mix, inCells, wx, wy, q, o) => {
+      if (inCells) { let r = 0, gg = 0, b = 0; for (let k = 0; k < cn; k++) { tex(t, wx + cellU[k], wy + cellV[k], C); r += C[0] * cellW[k]; gg += C[1] * cellW[k]; b += C[2] * cellW[k]; } o[0] = r * g[0]; o[1] = gg * g[1]; o[2] = b * g[2]; return; }
+      tex(t, wx, wy, A); if (!mix) { o[0] = A[0] * g[0]; o[1] = A[1] * g[1]; o[2] = A[2] * g[2]; return; } q *= mix; tex(t, wy * 0.83 + 331, wx * 0.83 + 173, B); o[0] = (A[0] + (B[0] - A[0]) * q) * g[0]; o[1] = (A[1] + (B[1] - A[1]) * q) * g[1]; o[2] = (A[2] + (B[2] - A[2]) * q) * g[2];
+    };
     const gLow = grade.low || one, gHigh = grade.high || one, gRamp = grade.ramp || one, gRock = grade.rock || one;
     for (let py = 0; py < W; py++) for (let pxx = 0; pxx < W; pxx++) {
       const wx = ox + pxx, wy = oy + py, o = (py + PAD) * PW + pxx + PAD, h = hf[o];
@@ -340,18 +428,19 @@ const Terrain = {
       // low ground under high, the seam pushed about by noise; the high ground carries some of the low ground's grit, so it is
       // the same country raised up rather than a different floor
       const tH = sm(Math.min(1, Math.max(0, (h + (this.vnoise(wx / 19, wy / 19) - 0.5) * 0.3 - 0.3) / 0.35)));
-      mat(T.low, gLow, wx, wy, q, col);
+      if (wn1) cellAt(wx, wy, o);
+      mat(T.low, gLow, mix, cLow, wx, wy, q, col);
       if (tH > 0) {
-        mat(T.high, gHigh, wx, wy, q, tmp); const gl = 0.38;
+        mat(T.high, gHigh, mix, cHigh, wx, wy, q, tmp); const gl = look.grit;
         const hr = tmp[0] * (1 - gl) + col[0] * gl * 1.3, hg = tmp[1] * (1 - gl) + col[1] * gl * 1.3, hb = tmp[2] * (1 - gl) + col[2] * gl * 1.3;
         col[0] += (hr - col[0]) * tH; col[1] += (hg - col[1]) * tH; col[2] += (hb - col[2]) * tH;
       }
-      const pr = rp[o]; if (pr > 0.02) { mat(T.ramp, gRamp, wx, wy, q, tmp); const kp = sm(Math.min(1, pr * 1.3)) * this.RAMP_TRACKS; col[0] += (tmp[0] - col[0]) * kp; col[1] += (tmp[1] - col[1]) * kp; col[2] += (tmp[2] - col[2]) * kp; }   // worn tracks on the ground, not a new floor
+      const pr = rp[o]; if (pr > 0.02) { mat(T.ramp, gRamp, mix, cRamp, wx, wy, q, tmp); const kp = sm(Math.min(1, pr * 1.3)) * (look.tracks === undefined ? this.RAMP_TRACKS : look.tracks); col[0] += (tmp[0] - col[0]) * kp; col[1] += (tmp[1] - col[1]) * kp; col[2] += (tmp[2] - col[2]) * kp; }   // worn tracks on the ground, not a new floor
       // rock where the ground is steep -- the cliff's own face, not the whole tile around it -- and in the rock zones
       const kr = Math.max(sm(Math.min(1, Math.max(0, (steep - 0.016) / 0.02))) * (pr > 0.35 ? 0 : 1), sm(Math.min(1, rk[o] * 1.3)));
       let bx = 0, by = 0;
       if (kr > 0.02) {   // the canyon texture, its strata squeezed flat, and its own brightness read as relief
-        const ry = wy * 1.35;
+        const ry = wy * look.squeeze;
         tex(T.rock, wx, ry, tmp);
         tex(T.rock, wx + 1, ry, A); tex(T.rock, wx - 1, ry, B); bx = (A[0] + A[1] - B[0] - B[1]) / 510 * kr;
         tex(T.rock, wx, ry + 1, A); tex(T.rock, wx, ry - 1, B); by = (A[0] + A[1] - B[0] - B[1]) / 510 * kr;

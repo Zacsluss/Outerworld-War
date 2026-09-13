@@ -1288,3 +1288,70 @@ with them, so the seed, not the walls, decided it; at twelve all 24 games have e
 - `queens` 25/25 (with the twelve-minute check above); `eightplayer` 19/19 -- every player alive at 10:00, 16 of 16 bases claimed
   (14 before), 634 units (523), tick 2.48 ms/frame mean (2.61), worst segment 4.74 ms (5.62).
 - `net_many` 51/51, no desync; phase 1's four hashes agree at frame 3552 (820315027; 995386952 before -- the ground changed).
+
+## 111. Detailed terrain on Jungle, Ice, Desert and Space Platform, and no repeating pattern on any of them
+
+*(The user, 2026-09-13, the terrain queue's item 3: "The other four biomes: about 12 more free textures, a few MB." TODO-M18, THE
+TERRAIN QUEUE, phase 2. Drawing only -- `js/terrain.js` and `assets/terrain/`; the build stamp does not move, and no save, replay
+or network game can tell the difference.)*
+
+**Detailed terrain is still OFF by default** (phase 5 switches it on): add `?hd=1` to the game's address to see any of this.
+
+**What changed for a player:**
+1. **Jungle** is drawn from photographs: wet mossy ground below, a drier olive plateau above, mossy rock on the cliff faces.
+2. **Ice**: a trodden snowfield in shadowed blue below, clean wind-packed snow above, veined grey rock on the cliff faces.
+3. **Desert**: a cracked orange canyon floor below, bleached rippled sand above, bedded sandstone on the cliff faces.
+4. **Space Platform**: a dark rust-stained deck below, light riveted plating above whose edges follow the tiles -- straight, with
+   square steps and a steel lip -- and tread plate on the ramps.
+5. **Every tileset, Badlands included: open ground no longer repeats.** Each texture used to tile every sixteen tiles, and on
+   open ground the same snow patch, rust bloom or pale patch showed up again and again in a grid. The ground is now laid in
+   squares six tiles across, each taken from its own place in the photograph, with their borders blended and wandering.
+   Badlands keeps the textures and colours you approved.
+6. **Cliffs read as one crisp drop on every set**, as on Badlands: each set's cliff rock is about as bright against its high ground
+   as Badlands' (Ice's was black at first -- a dark outline round every plateau).
+
+The files: thirteen Poly Haven CC0 textures, 8.3 MB (`assets/terrain/SOURCES.md` has every name, source address, real size and use).
+
+**How to see it by hand:**
+1. **Jungle.** Open the game with `?hd=1`, **Single Player -> Skirmish**, map **Contested Ground** (a Jungle map), START. *Working:* a
+   green-olive plateau clearly lighter than the dark mossy ground below, a dark rocky drop at its edge, and the ramp a smooth slope.
+2. **Ice.** Same, map **Nightfall** or **The Long March** (both Ice). *Working:* white snow on the plateau with no dark squiggles on
+   it, blue-shadowed snow below, grey rock faces rather than black outlines. On Nightfall play on to about six minutes, the bottom
+   of its twelve-minute day: the blue dark lies over the snow and the ground still reads.
+3. **Desert.** Map **Dust Bowl**. *Working:* pale sand on the plateaus over an orange cracked floor. Ten seconds in, "A sandstorm is
+   closing in.": the dust band that crosses the map reads over the sand.
+4. **Space Platform.** Map **Open Basin** (a generated map), and in the lobby set **Seed** to **1**, START. (Other seeds that give Space
+   Platform: Chokepoint Valley 3, Island Chain 10, Vertical Cliffs 16.) *Working:* light metal plating on the plateaus with straight
+   stepped edges and a steel lip, dark stained metal below, no orange blotches in rows.
+5. **No repeats.** On any of them, scroll across a wide stretch of open low ground (the middle of Contested Ground). *Working:* you
+   cannot find the same patch twice in a row across the screen.
+6. **What draws over the ground.** Play a Zerg game on any tileset (creep round the Hatchery), place a building (the green or red
+   ghost), fight until something explodes (the scorch mark and the wreck), and play without Reveal Map (fog: black unexplored,
+   dimmed explored ground). *Working:* each reads on every tileset.
+
+**Invisible from normal play, and where to look instead:**
+- `test/terraintex.js` (new, in the gate, 40 checks): every tileset has four textures in the repository and in SOURCES.md and a
+  complete grade; healing lifts a texture's dark flecks and nothing else; two stretches of ground a texture repeat apart come out
+  alike laid plainly (correlation over 0.97) and unalike laid in squares (under 0.2); Space Platform's edge follows the tiles (0
+  pixels on the wrong side; 387 with the blur); every bake is a pure function of the map and writes nothing to it. Twelve negative
+  controls turn it red (`.claude/review/terrain/controls-terraintex.log`).
+- The screenshots: `.claude/review/terrain/shots/p2-*` (the before/afters sent, the open ground, and `p2-overlays-*`: creep, decals,
+  a placement ghost, fog, night, the sandstorm and units at full size on all five tilesets).
+
+**Deliberately different from what was asked:**
+- **Thirteen textures, 8.3 MB**, where "about 12, a few MB" was asked: three sets use their high-ground texture for their ramps too
+  (a ramp's own texture shows at only 15%), so thirteen files cover sixteen slots; the megabytes are the 1k scans' own size.
+- **Badlands changed slightly** although it was approved: the same textures and colours, laid in squares so its pale patches stop
+  repeating. The before/after was sent.
+- **Space Platform's plating is on the high ground and the stained sheet on the low**, the other way round from the research
+  shortlist: laid that way first, the sheet's rust blotches marched across every plateau in rows. Desert's floor
+  (`dry_ground_rocks`) was not on the shortlist, and its plateau sand (`aerial_beach_01`) was shortlisted for the floor.
+
+**Numbers recorded:**
+- High ground against low (each graded texture's mean luminance in linear light): Badlands 2.2, Jungle 3.5, Ice 3.5, Desert 3.9, Space
+  Platform 5.7. Cliff rock against high ground: 0.45, 0.43, 0.45, 0.29, 1.0.
+- The bake, in the browser, 256 chunks of Contested Ground (Ice), median a chunk: 10.1-10.6 ms laid plainly, 11.6-12.3 ms in
+  squares (about 15% more). Healing a texture costs once, at load.
+- Found while measuring, for phase 4: baking some 1,500 chunks in a few minutes in one page lost the game canvas (Chrome dropped
+  its 2D context). That was a measuring loop, not play -- the game keeps at most 160 chunks -- but The Long March is 1,024 chunks
+  and phase 4's speed work must not create canvases faster than they are freed.
