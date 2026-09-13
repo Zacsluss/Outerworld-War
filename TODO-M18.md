@@ -1,15 +1,130 @@
 # TODO-M18 — the user's thirteen-item list from the first internet game
 
-Written when the fifth session paused for the night (2026-09-12). `HANDOFF-M17.md` has the state, the traps
-and the kickoff prompt; this file is the open list and nothing else. Four items are closed and struck through
-at the bottom with their commits. **Two are open** (4 — not reproduced; 11 — fixed and waiting on the user's decision about the gate, plus the gated economy pair 7a/7b), and
-each has partial, **ungated, unverified** work sitting in the locked worktrees — see "The three worktrees"
-below before you start any of them.
+Started when the fifth session paused for the night (2026-09-12) and kept since. `HANDOFF-M18.md` has the state, the
+traps and the kickoff prompt; this file is the open list. **Its first section, THE WORK QUEUE, is what to do next**: the
+user's decision on every open item after the eighth session, in order. The sessions' lists follow it (what each did,
+with commits), then the older open items with their measurements, then what is closed. There are no worktrees.
 
 The gate is **85 suites** (`node test/all.js`, ~5 min); at the end of the eighth session it is 2 red, `aistyles` and
 `queens`, both the AI pacing that waits on 7b (see `HANDOFF-M18.md`). It was last all green at `136b1b0`. Every rule in `CLAUDE.md`
 applies to every item here: measure before fixing, a negative control that goes cleanly RED, `tools/patch.js`
 for edits, and the gate green before the commit.
+
+---
+
+## THE WORK QUEUE -- the user's decisions after the eighth session (2026-09-12)
+
+The user answered the ten-item open list item by item. Their words, against that list: **1** research gets stuck -- "Fix."
+**2** AI rebalance -- "Defer until I say." **3** the two red suites -- "Fix now." **4** terrain art -- "Defer until I say."
+**5** their playtest of 88-93 -- "I will do this in a moment." **6** rematch, **7** ratings and balanced teams, **8** choosing a
+start position -- "Build this now." **9** internet-play security -- "If there's something simple and basic we can implement,
+let's do it." **10** Mac build and code signing -- "Do this now."
+
+This section is the queue a new chat works from; everything below it is history and measurement. **Work it in the order given, one item per commit (or a few), the gate before
+each, a PLAYTEST entry for each, and TODO/HANDOFF updated as items close.** If the chat gets long, write the handoff
+and a kickoff prompt before starting the next item rather than half-finishing one.
+
+### Ask the user first (in the opening message), then start item A without waiting
+
+1. **Items 2 and 3 conflict.** The user deferred the AI rebalance (2) and asked for the two red suites to be fixed now
+   (3). Both reds are the rebalance: `aistyles` fails because NO computer style attacks inside its ten-minute window
+   under the slower economy ("rusher attacks earlier in the game than standard -- 43200 vs 43200" is the never-attacked
+   sentinel on every style), and `queens` because the Zerg AI's Queens come about a minute late. Passing them honestly
+   means changing the AI's wave threshold and build timings in `js/ai.js` -- 7b's knobs. Ask: **may the AI's attack
+   timing and Queen timing be changed narrowly now, measured by those two suites and
+   `tools/attack-clock.js`, with `test/balance.js` / `test/proxy.js` still untouched?** Loosening the suites'
+   expectations to match an AI that never attacks is NOT an acceptable fix: a skirmish computer that never attacks is
+   a real bug a player meets.
+2. **Item 10 needs the user's accounts, and only the user can create them** (entering credentials is not something
+   an assistant may do): an Apple Developer Program membership and a "Developer ID Application" certificate plus
+   notarization credentials for the Mac build, and a Windows code-signing route (an OV/EV certificate or Azure
+   Trusted Signing). Say exactly which GitHub repository secrets the workflow will read, so the user can add them while
+   the other items are built.
+3. **Item 5 is the user's**: their playtest of `PLAYTEST-M18.md` items 88-93. Take the results whenever they come.
+
+### The queue
+
+**A. Choose a start position in the lobby (item 8, "build this now").**
+- Today: seat i starts at `map.starts[i % starts.length]` (the layout's `startOrder`), so a seat IS its start and its
+  colour (`Net.slotColor`). The lobby's map preview already draws each start with the seat number on it.
+- Build: a per-player `start` (an index into the map's starts, or automatic) in the `G.init` options, placed by
+  `js/game.js` -- a STAMPED file, so the build stamp moves and saves and replays from before are refused (say so in the
+  PLAYTEST entry). Carried by `Net.gameOptions` and by the skirmish lobby's `UI.Skirmish.setup` / `UI.skirmishOptions`,
+  saved by `Replay.data` (it saves `G.setup.players` verbatim, so a player field rides along). The relay validates it
+  (in range, no two players on one start). In the lobby: click a start on the preview to take it, the host places
+  computers, and automatic stays the default. Procedural maps have no preview until the seed exists: offer the start
+  numbers without a picture there.
+- Research first how StarCraft II, Age of Empires II and Beyond All Reason let a player choose a start, and say what
+  was researched. Determinism: "automatic" must be derived from the seat order and the seed, never `Math.random`.
+- Checks: `test/cmdlog.js`, `test/skirmish.js`, `test/rooms.js` (its sections 12 and 15 pin lobby markup names),
+  `test/lobby.js`, `test/menus.js`; by hand `node test/net_many.js` (relay change) and the AI suites after a stamp move.
+
+**B. Rematch / back to the same lobby after a game (item 6, "build this now").**
+- `RESEARCH-LOBBY.md` section 4 says why it was left: the relay would have to hand a finished room back to its lobby
+  while a player may still be watching the end. Design that case BEFORE code: who is host, what happens to players who
+  left, to spectators, to a player still on the end screen, and to the room code.
+- Online: GAME OVER offers REMATCH / BACK TO LOBBY; the room returns to its lobby with the same settings and players,
+  ready withdrawn, and a player who has not come back yet shows as away. Skirmish: REMATCH restarts the same room with a
+  new seed; BACK TO LOBBY opens the skirmish lobby as it was (`UI.Skirmish.L`).
+- Relay suites (`test/lobby.js` pattern, its own ports -- the CLAUDE.md port list), negative controls, PLAYTEST.
+
+**C. Ratings and skill-balanced teams (item 7, "build this now").**
+- Today nothing records a result, and a name is not an identity (anyone can type any name).
+- Build, smallest honest version: (1) an identity token -- a random secret each browser generates and keeps with
+  `bw_net`, sent on join; the name stays display-only. (2) Results: at game end every human client reports the outcome
+  it computed; the relay records it only when the connected humans agree (lockstep makes them identical); a player who
+  leaves a rated game loses it. (3) Ratings: Weng-Lin / OpenSkill, as Beyond All Reason uses (skill and uncertainty,
+  separate ratings for 1v1, teams and free-for-all). **The relay must stay dependency-free**: `test/serve.js` requires
+  only Node built-ins because the desktop sidecar is built from it as a single executable (`desktop/relay/build.js`), so
+  the formulas are written inline, not pulled from npm. (4) Persistence: a JSON file the relay writes, its path from an
+  environment variable, with a sensible default for PLAY.bat and for the desktop app. (5) In the lobby: each human's
+  rating on their slot and in the browser, and a BALANCE TEAMS button for the host that splits the players to minimise
+  the rating gap (at most 8 players, so every split can be tried), with a little randomness so the same split does not
+  repeat, as BAR does. Games with computers or cheats unrated (say so).
+- Research BAR's rating and balance guide first. Negative controls on the rating update, the agreement rule, and the
+  balancer.
+
+**D. Desktop Mac build and code signing (item 10, "do this now"; blocked on the user's accounts for signing).**
+- Today: a Tauri 2 app in `desktop/`, built by hand on Windows (bundle targets nsis, app, dmg); the relay sidecar is a
+  Node single-executable build that CANNOT cross-build -- the Mac binary must be built on a Mac, the Apple-silicon one on
+  Apple silicon. There is no CI (`.github/workflows` does not exist) and no `gh` CLI on this machine.
+- Build: a GitHub Actions workflow (free for a public repository) with a Windows job and macOS jobs (Apple silicon and
+  Intel, or a universal build) that runs `npm ci`, `node relay/build.js` and `tauri build`, and uploads the installers.
+  Unsigned builds first, so it works before any account exists. Then signing: macOS via Tauri's documented variables
+  (`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, and notarization through an App Store
+  Connect API key or an Apple ID); the Node sidecar needs the hardened-runtime entitlements Node's JIT requires.
+  Windows via `bundle.windows.signCommand` (a certificate, or Azure Trusted Signing).
+- The assistant never handles the certificates, passwords or keys: the user adds them as repository secrets.
+  Sources: v2.tauri.app/distribute/sign/macos/ and v2.tauri.app/distribute/sign/windows/.
+
+**E. Basic internet-play safety (item 9, "if there's something simple and basic, do it").**
+- Today the relay has a per-IP join rate limit, room codes, a 16 MB frame cap, fragmented frames refused and a
+  keepalive. It has no TLS (a tunnel such as the one PLAY-ONLINE.bat describes provides https/wss), no password, no
+  per-IP connection cap, no message rate limit and no Origin check.
+- Simple and basic, measured with a flood probe first: an optional server password (an environment variable; the
+  client asks for it once and remembers it), a per-IP connection cap, a per-connection message rate cap, a much smaller
+  frame cap for everything except snapshots, and the tunnel advice written where a host will read it. Nothing that
+  needs accounts or certificates.
+
+**F. Research sometimes gets stuck (item 1, "fix").**
+- Status and everything ruled out: "4. Some tech gets stuck during research" below. Not reproduced in 75 minutes of
+  six-player hard-AI games. The probes are `tools/stall-probe.js` and `tools/stall-scenes.js`.
+- Re-run both on today's code (units now keep bodies apart and the economy is slower -- the conditions changed).
+  If it still does not reproduce, do not guess: add a detector to the game that notices a production slot that stops
+  advancing for no rule-backed reason and writes one line the player can copy (PLAYTEST item 68 asks for exactly that
+  line), so the user's next game names the cause.
+
+**G. The two red suites (item 3, "fix now") -- only as the user answers question 1.**
+- If yes: change the AI's wave threshold and build timings narrowly (`js/ai.js`: the threshold that commits a wave, the
+  build-order step timings, the Queen's Nest and Queen timing), measured by `test/aistyles.js` (seeds 1, 5, 11 by
+  hand), `test/queens.js` and `tools/attack-clock.js`. The claim order in `AI.budget()` and any run of
+  `test/balance.js` / `test/proxy.js` stay gated. It must also absorb what bodies changed: fewer melee attackers fit
+  round one target.
+- If no: leave both red and say so in the handoff.
+
+**Deferred until the user says:** the AI rebalance (item 2, TODO 7b below) and the terrain art path (item 4: a 3D pack
+rendered to 2D, the Daniel Thomas painted packs, or both; the repo is public, so bought art stays out of git or the
+repo goes private).
 
 ---
 
@@ -87,7 +202,7 @@ is the suite that catches that class of mistake and `REVIEW-M17.md` entry 6 is t
 Decide and record whether this applies to every targeted ability or only the tumour.
 
 ### 4. Some tech gets stuck during research — STILL NOT REPRODUCED, and here is what is ruled out
-**The probes are written and committed** (`.claude/review/stall-probe.js`, `.claude/review/stall-scenes.js`)
+**The probes are written and committed** (`tools/stall-probe.js`, `tools/stall-scenes.js`)
 and 75 minutes of six-player hard-AI games across three seeds did not produce it. 25 stalls over ten
 seconds, every one of them the rules working (supply, an add-on still building, a Protoss blackout) except
 two, and those two were a different fault — now fixed, see Closed. **Do not start guessing from here; run
@@ -217,7 +332,7 @@ inside ten minutes. The knobs: `AI.budget()`'s claim order, the threshold that d
 the build-order step timings in `js/ai.js`. `test/balance.js` and `test/proxy.js` are the runs for it and
 **both are gated** — do not start them without being told, and double-check when told.
 
-Finish `.claude/review/attack-clock.js` first. It measures the frame of the first wave using `ai.waves`, the
+Use `tools/attack-clock.js` first (moved out of the ignored scratch folder, and its stale MINE_TIME anchor fixed, when the queue was written). It measures the frame of the first wave using `ai.waves`, the
 counter `aistyles` itself reads, and it is the instrument that says whether a rebalance worked. (A first version
 counted army units near the enemy start and reported "never" for Zerg even at today's settings: a probe that
 disagrees with a known-good instrument is a broken probe, not a finding.)

@@ -4,8 +4,9 @@ Written at the end of the eighth session (2026-09-12). Branch `m10-overnight`, w
 committed and pushed; there are no open pull requests, no other branches and no extra worktrees.** Trust `git log -1`
 for HEAD, not a hash written here.
 
-> **READ `TODO-M18.md` FOR THE OPEN LIST** (its first section is this session's five items, with commits).
-> `PLAYTEST-M18.md` items 88–92 are how to see this session's work by hand. `RESEARCH-LOBBY.md` sections 5 and 6 are its
+> **READ `TODO-M18.md` FIRST: its first section, THE WORK QUEUE, holds the user's decision on every open item and the
+> order to do them in.** The eighth session's own list follows it. `PLAYTEST-M18.md` items 88–93 are how to see this
+> session's work by hand. `RESEARCH-LOBBY.md` sections 5 and 6 are its
 > research. The seventh session's handoff follows this one and its traps are all still true.
 
 ---
@@ -20,8 +21,13 @@ for HEAD, not a hash written here.
   lobby to a started game, MULTIPLAYER to the list and to TRY AGAIN, and a rebound SCV key trained on its new letter.
 - **Negative controls:** 40 for the menus (`.claude/review/menus/controls-menus.js`) and 26 for the command-card keys
   (`controls-hotkeys.js`); every one goes cleanly red.
-- **The decision still waiting on the user:** the AI rebalance (TODO-M18 7b) is gated -- "no rebalance yet, still more
-  bugs to fix". `test/balance.js` and `test/proxy.js` stay untouched until an explicit go, double-checked.
+- **The user has decided every open item** (TODO-M18, THE WORK QUEUE): build start positions, a rematch, ratings and
+  balanced teams, the Mac build with signing, basic relay safety; fix the stuck research and the two red suites; DEFER
+  the AI rebalance and the terrain art. Items 2 and 3 conflict (the reds ARE the rebalance), so the queue's first step is
+  to ask. `test/balance.js` and `test/proxy.js` stay untouched until an explicit go, double-checked.
+- **`.claude/review/` is local scratch** (gitignored): the negative-control runners and logs there exist on this
+  machine only. The probes open work needs are tracked in `tools/` (`stall-probe.js`, `stall-scenes.js`,
+  `attack-clock.js`).
 
 ---
 
@@ -92,54 +98,68 @@ a start position, the research stall (TODO-M18 item 4, not reproduced).
 
 ## Kickoff prompt for a fresh chat
 
-Paste everything inside the fence into an empty chat. **Replace the HEAD hash with `git log -1 --format=%h` first** --
-committing this file moves it.
+Paste everything inside the fence into an empty chat. **Replace the HEAD placeholder with `git log -1 --format=%h`
+first** -- committing this file moves it.
 
 ```
 Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
-Branch: m10-overnight. HEAD: <run git log -1 --format=%h>. Working tree clean.
-origin = https://github.com/Zacsluss/Outerworld-War, whose main IS this branch (git push publishes).
-Everything is pushed; there are no open PRs, no other branches, no extra worktrees. Keep it that way.
+Branch: m10-overnight, which IS origin/main (https://github.com/Zacsluss/Outerworld-War -- a PUBLIC repo; git push
+publishes). HEAD: <run git log -1 --format=%h>. Working tree clean, nothing unpushed, no open PRs, no other branches,
+no extra worktrees. Keep it that way.
+Machine: Windows 11; PowerShell and Git Bash; Node 24. There is no gh CLI and no Blender. No game servers are running.
 
 READ IN THIS ORDER, then start:
-  1. CLAUDE.md          -- the working agreement. Every line was earned; none is optional.
-  2. HANDOFF-M18.md     -- state, what changed for a player, the traps (the eighth session's first).
-  3. TODO-M18.md        -- the open list; its first section is the eighth session's five items with commits.
-  4. PLAYTEST-M18.md    -- items 88-92, the menus and the command-card keys, by hand.
-  5. RESEARCH-LOBBY.md  -- sections 5 and 6: what OpenRA and StarCraft II do, and what was built from it.
+  1. CLAUDE.md          -- the working agreement. Every rule in it is non-negotiable.
+  2. TODO-M18.md        -- its FIRST section, "THE WORK QUEUE", is your job: the user's decision on every open item,
+                           the order to do them in, and what each needs.
+  3. HANDOFF-M18.md     -- the state and the traps, newest session first.
+  4. PLAYTEST-M18.md (items 64 on) and RESEARCH-LOBBY.md -- as each item needs them.
 
-THE STATE: the gate (node test/all.js, 85 suites, ~5 min) is 2 RED, both known and accepted by the user as waiting
-on the AI rebalance: aistyles and queens. Build stamp 71053b300e9bf18a (unchanged: no simulation change this session).
+THE STATE: node test/all.js is 85 suites, ~5 minutes, and 2 are RED: aistyles and queens. Both are the computer AI's
+pacing under the slower economy -- no computer attacks inside ten minutes, and Zerg Queens come a minute late. They
+are queue item G and do not block the other items. Build stamp 71053b300e9bf18a.
 
-THE SINGLE NEXT ACTION: ask the user for their playtest of PLAYTEST-M18 items 88-92 and their next list. The user's
-last word on the rebalance was "no rebalance yet - still more bugs to fix". Do NOT start TODO-M18 7b, test/balance.js
-or test/proxy.js without an explicit go, and double-check when it comes.
+THE SINGLE NEXT ACTION: send the user the three questions in the queue's "Ask the user first" section --
+  (1) items 2 and 3 conflict: may the AI's wave threshold and Queen timing be changed narrowly now to fix the two red
+      suites, with test/balance.js and test/proxy.js still untouched?
+  (2) the Mac build and code signing need accounts and GitHub repository secrets only the user can create: list them;
+  (3) their playtest of PLAYTEST-M18 items 88-93, whenever they are ready --
+then start queue item A (choose a start position in the lobby) without waiting for the answers.
 
-IF ASKED TO CHANGE A MENU OR THE LOBBY: research first and say what was researched (the user asked for exactly that).
-The skirmish lobby is Net.roomHtml / Net.bindRoom with `local`, driven by UI.Skirmish; test/menus.js runs the real
-boot against a page built from index.html. IF ASKED TO ADD A COMMAND-CARD BUTTON: give it a `cmd` and update
-UI.cardCatalog; test/hotkeys.js holds the two together.
+THE QUEUE, in order: A start positions in the lobby -> B rematch / back to the lobby -> C ratings and skill-balanced
+teams -> D desktop Mac build and code signing (an unsigned CI build first) -> E basic internet-play safety for the
+relay -> F research that gets stuck (reproduce first) -> G the two red suites, only as the user answers question 1.
+DEFERRED until the user says so: the AI rebalance (TODO-M18 7b) and the terrain art path.
 
-HOW THIS PROJECT WORKS, none of it negotiable:
-  - node test/all.js is the gate before EVERY commit. Relay ports: 8793-8800 rooms, 8810-8813 lobby, 8840 spectate.
-    A red rooms/lobby with EADDRINUSE is a stray server: re-run that suite alone, then the gate. Touch nothing in
-    js/ or test/ while the gate runs.
-  - MEASURE BEFORE FIXING. Build the probe first; make it assert its own setup.
-  - EVERY new behaviour gets a negative control that goes cleanly RED.
-  - tools/patch.js <spec.js> for every text-anchored edit. Write specs and probes with the Write tool: bash mangles
-    backslashes AND backticks here, heredocs included. Never sed -i a CRLF file.
-  - Determinism: never Math.random() in sim code (G.rand()), never a native transcendental in a stamped file (DMath).
-    Anything a replay must reproduce goes through the command log (test/cmdlog.js).
-  - The comments are load-bearing. Do not delete reasoning.
+FOR EVERY ITEM:
+  - Research how established games do it first (OpenRA, StarCraft II, Age of Empires II, Beyond All Reason) and tell
+    the user what you found, with sources -- the user asked for this explicitly after a menu redesign that skipped it.
+  - MEASURE BEFORE FIXING: build the probe first and make it assert its own setup.
+  - Every new behaviour gets a negative control that goes cleanly RED (tools/control.js, or a runner like
+    .claude/review/menus/controls-menus.js).
+  - node test/all.js before every commit; touch nothing in js/ or test/ while it runs. A red rooms/lobby with
+    EADDRINUSE is a stray server on the relay ports (CLAUDE.md lists them): re-run that suite alone, then the gate.
+  - After any relay or net change run node test/net_many.js by hand; after any AI or simulation change run
+    node test/aistyles.js --seed=1 / --seed=5 / --seed=11 and node test/eightplayer.js, and record ALL the numbers.
+  - Write a PLAYTEST-M18.md entry saying how to try it by hand; update TODO-M18.md and HANDOFF-M18.md; commit and push.
+  - If the chat grows long, write the handoff and a new kickoff prompt before starting the next item.
 
-AFTER ANY AI OR SIMULATION CHANGE, by hand, recording ALL the numbers:
-  node test/aistyles.js --seed=1 / --seed=5 / --seed=11
-  node test/eightplayer.js
-  node test/net_many.js     (after any relay or net change)
-Expect the samples to RE-DEAL. A different deal is not a failure; a new KIND of failure is.
+HARD RULES:
+  - Never Math.random() in simulation code (G.rand()). Anything a replay or a rejoin must reproduce goes through the
+    G.init options or the command log (test/cmdlog.js).
+  - A change to a stamped file (js/data, map, sim, game, combat, abilities, commands, ai, missions, build) moves the
+    build stamp: old saves and replays are refused. Say so in the PLAYTEST entry.
+  - The relay (test/serve.js) must stay dependency-free: the desktop app's relay is built from it as one executable.
+  - Detect line endings per file. Edit with tools/patch.js and write every spec and probe with the Write tool (bash
+    mangles backslashes and backticks, heredocs included). Never sed -i.
+  - Never start test/balance.js or test/proxy.js without an explicit, double-checked instruction.
+  - Never type, store or handle the user's passwords, certificates or API keys: the user adds secrets themselves.
+    Art or assets someone bought stay out of this public repository.
+  - The comments in js/ are load-bearing: they record why the obvious thing was not done. Do not delete reasoning.
 
-CLOSE every piece of work the way CLAUDE.md says: a kickoff prompt, a numbered list of what changed FOR A PLAYER, and
-how to playtest each item by hand, written into the repo. Commit and push; leave nothing unmerged.
+CLOSE THE SESSION the CLAUDE.md way: a numbered list of what changed FOR A PLAYER (including anything deliberately
+different from what was asked, and anything unfinished), how to playtest each item by hand (written into
+PLAYTEST-M18.md), a new kickoff prompt at the top of HANDOFF-M18.md, and everything committed and pushed.
 ```
 
 ---
