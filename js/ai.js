@@ -201,7 +201,15 @@ class AI {
     const want = style || opt.style;
     this.style = Object.prototype.hasOwnProperty.call(this.styleDeltas(), want) ? want : 'standard';   // own keys only: 'constructor' is not a style
     this.p = p; const st = this.sty();       // p first: sty() is per race as well as per style
-    this.diff = diff; this.step = 0; this.pending = {}; this.lastThink = 0; this.lastArmy = 0; this.state = 'gather'; this.target = null; this.attackN = 0; this.attackThreshold = Math.max(10, (diff === 'easy' ? 40 : diff === 'hard' ? 24 : 30) + 4 + (st.atk || 0)); this.waves = 0; this.scouted = false; this.dropOp = null; this.lastDrop = 0;
+    // THE WAVE THRESHOLD IS 0.7 OF THE M9 NUMBERS (TODO-M18 queue item G). All of it -- 40/30/24, the 4 and each style's
+    // atk -- is army supply, set when a worker mined 100 minerals a minute. Since TODO 7a a worker mines 50, so a 34-supply
+    // first wave came about twice as late, and test/aistyles.js measured no style of any race attacking inside its ten
+    // minutes on any seed. The whole sum is scaled, so the style ladder and the difficulty ladder keep their order; a
+    // standard normal wave is 24 supply, the size of Brood War's own first melee waves for Protoss (12 Zealots) and Zerg
+    // (20 Hydralisks and 2 Lurkers) in Blizzard's AI script FAQ (classic.battle.net/scc/faq/aiscripts.shtml). Measured:
+    // 0.65, 0.7 and 0.75 each turn aistyles green on seeds 1, 5 and 11 together with the worker floor in economy() and
+    // the expansion clock in macro(); 0.7 alone leaves it red (the AI had no army to send), and so do those two alone.
+    this.diff = diff; this.step = 0; this.pending = {}; this.lastThink = 0; this.lastArmy = 0; this.state = 'gather'; this.target = null; this.attackN = 0; this.attackThreshold = Math.max(10, Math.round(((diff === 'easy' ? 40 : diff === 'hard' ? 24 : 30) + 4 + (st.atk || 0)) * 0.7)); this.waves = 0; this.scouted = false; this.dropOp = null; this.lastDrop = 0;
     this.thinkEvery = diff === 'easy' ? 72 : diff === 'hard' ? 20 : 32; this.scriptIdx = 0; this.lastExpand = 0; this.rally = null; this.startedAttack = 0; this.commitMin = 0; this.commitGas = 0; this.claims = []; this.researchDef = null; this.topDef = null; this.headDef = null; this.workerDef = null; this.expandDef = null; this.queenDef = null;
   }
   // ---------------- play styles ----------------
@@ -596,7 +604,15 @@ class AI {
     // Protoss: saving 400 for a nexus stops zealot production, a small army fails the gate written here,
     // failing it stops probe production, and fewer probes mean the nexus is saved for even longer. The
     // "expander" ended a lab game with 46 workers and four bases where plain standard had 66 and five.
-    const wkFloor = (p.race !== 'Z' ? 12 : 16) + (st.wkFloor || 0), wkGate = st.wkGate || 1;
+    // THE FLOOR IS 24 FOR EVERY RACE, ABOUT ONE BASE (TODO-M18 queue item G; it was 12, and 16 for Zerg). Those were set when a
+    // worker mined 100 a minute; at 50 (TODO 7a) twelve workers pay for too little army to open the gate below, and the army
+    // it waits for is starved by the claims budget() holds above it -- a standard Terran sat on 13 SCVs from 2:30 to 10:00
+    // with three Marines, a Protoss on 13 Probes from 2:30 to 8:00 (.claude/review/aipace/timeline.js, seed 1). StarCraft
+    // II's openings build workers without a pause until a base is full; `want` below is 21 for a Lost Ruins main (eight
+    // patches, one geyser) and 24 with two geysers. Measured: 20 and 28 each left aistyles' harasser comparison red on a
+    // seed where 24 did not, and without this floor for Zerg test/queens.js stays red (its Zerg sat on 16-19 drones from
+    // 3:30 to 6:00). The Zerg ramp still starts at 16, so a Zerg past the floor wants the army it always did.
+    const wkFloor = 24 + (st.wkFloor || 0), wkGate = st.wkGate || 1;
     // The decision is recorded as well as acted on, so budget() can hold a worker's cost next think
      // without re-deriving this condition out here -- a probe that copies a guard goes stale the
      // moment the guard is edited, and two of them did exactly that last milestone.
@@ -736,6 +752,12 @@ class AI {
     // floor that grows with the clock so every race keeps taking ground.
     const st = this.sty(), exT = st.expandT || 1; // an expander runs the same clock faster and starts a base ahead of it; a turtle runs it slower and stays a base behind
     const wantHalls = Math.min(G.map.bases.length, 2 + (st.halls || 0) + Math.floor(G.frame / (24 * 60 * 3 * exT)));
+    // ...BUT A TERRAN OR PROTOSS BASE ON THE CLOCK NEEDS SIXTEEN WORKERS PER HALL TO USE IT (TODO-M18 queue item G). On the
+    // slower economy the clock alone had a standard Terran put down five Command Centers by ten minutes with thirteen SCVs
+    // -- 1,600 of the 3,480 minerals it mined -- saving for the next one from 1:30; StarCraft II's openings take the natural
+    // at 16-20 supply. That makes the clock for these two nearly the `workers > halls.length * 16` trigger beside it, and it
+    // was measured in exactly this form (12 per hall is not enough). Zerg keeps the bare clock: a hatchery is its production
+    // as well as its base, as styleFor says, and gating it too turned test/queens.js red (two halls settled by 8:30).
     // LARVA-STARVED. Every Zerg unit comes off a larva, so once income outruns what the hatcheries can
     // hatch the bank grows and nothing spends it: test/eightplayer.js measured three Zerg AIs at 2,000-
     // 2,600 minerals with ZERO larvae and six eggs each, on a map with no base left to take. The floor
@@ -743,7 +765,7 @@ class AI {
     // on a new hatchery. A Zerg with over a thousand minerals and no larva in hand may add one every
     // fifteen seconds instead -- what a human does. Still one at a time (the count() guard). (REVIEW-M17, q2)
     const larvaStarved = r === 'Z' && p.minerals > 1000 && !this.mine(u => u.def.larva).length;
-    if ((G.frame - this.lastExpand > 24 * 45 * exT || (larvaStarved && G.frame - this.lastExpand > 24 * 15)) && (p.minerals > 500 || workers > halls.length * 16 || halls.length < wantHalls || ((this.armySup || 0) >= 30 && halls.length < 3)) && this.count(RACE_INFO[r].hall) <= halls.length) { const hd = DATA.buildings[RACE_INFO[r].hall]; if (this.build(RACE_INFO[r].hall, (st.halls || 0) > 0)) { this.lastExpand = G.frame; this.expandDef = null; } else this.expandDef = this.pickExpansion() ? hd : null; } else this.expandDef = null; // released the moment the rule stops asking, so an AI that is done expanding does not sit on a hall's worth of minerals -- but NOT cleared before the attempt above, or claimed() would not recognise the very claim budget() is holding and the expansion would be refused by its own reserved money // ...but an EXPANDER keeps its forced expansion: taking ground before teching is the whole style, and yielding it cost a base against standard // start saving as soon as a free base exists, or the army eats the money forever
+    if ((G.frame - this.lastExpand > 24 * 45 * exT || (larvaStarved && G.frame - this.lastExpand > 24 * 15)) && (p.minerals > 500 || workers > halls.length * 16 || (halls.length < wantHalls && (r === 'Z' || workers >= halls.length * 16)) || ((this.armySup || 0) >= 30 && halls.length < 3)) && this.count(RACE_INFO[r].hall) <= halls.length) { const hd = DATA.buildings[RACE_INFO[r].hall]; if (this.build(RACE_INFO[r].hall, (st.halls || 0) > 0)) { this.lastExpand = G.frame; this.expandDef = null; } else this.expandDef = this.pickExpansion() ? hd : null; } else this.expandDef = null; // released the moment the rule stops asking, so an AI that is done expanding does not sit on a hall's worth of minerals -- but NOT cleared before the attempt above, or claimed() would not recognise the very claim budget() is holding and the expansion would be refused by its own reserved money // ...but an EXPANDER keeps its forced expansion: taking ground before teching is the whole style, and yielding it cost a base against standard // start saving as soon as a free base exists, or the army eats the money forever
     // more production when floating
     // production capacity should track income: roughly one production building per 4 workers
     const prodWant = Math.min(10, Math.max(2, Math.floor(workers / 4)));

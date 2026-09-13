@@ -1,23 +1,28 @@
-# HANDOFF — M18 (the ninth session: the user's answers, the playtest recorder, start positions)
+# HANDOFF — M18 (the ninth session: the whole work queue, A to G)
 
-Written during the ninth session (2026-09-12), after queue items A to F. Branch `m10-overnight`, which is `origin/main`.
+Written at the end of the ninth session (2026-09-12/13), after queue items A to G. Branch `m10-overnight`, which is `origin/main`.
 **Everything is committed and pushed; there are no open pull requests, no other branches and no extra worktrees.**
 Trust `git log -1` for HEAD, not a hash written here.
 
 > **READ `TODO-M18.md` FIRST.** Its first section, THE WORK QUEUE, now holds the user's answers to the three questions
-> as well as their decision on every item. `PLAYTEST-M18.md` item 94 is this session's work by hand, and its head says
-> how to record a playtest. `RESEARCH-LOBBY.md` section 7 is the start-position research.
+> as well as their decision on every item. `PLAYTEST-M18.md` items 94-100 are this session's work by hand, and its head
+> says how to record a playtest. `RESEARCH-LOBBY.md` sections 7-10 are this session's lobby research.
 
 ---
 
 ## The state
 
-- **The gate is 90 suites (new: `starts`, 58 checks; `rematch`, 39; `safety`, 25; `ratings`, 37; `stallwatch`, 17) and 2 are red: `aistyles` and `queens`**,
-  and every failing line is byte-identical to the eighth session's gate log -- no item moved an AI measurement.
+- **The gate is 90 suites (new: `starts`, 58 checks; `rematch`, 39; `safety`, 25; `ratings`, 37; `stallwatch`, 17) and ALL
+  GREEN** since queue item G -- the first time since `136b1b0`. (Through items A-F the only reds were `aistyles` and `queens`,
+  every failing line byte-identical to the eighth session's log.)
 - **The desktop builds run in GitHub Actions** (`.github/workflows/desktop.yml`); the first run, on 3eeeab6, succeeded on
   Windows, macOS Apple silicon and macOS Intel. Check a run with the public API
   (`https://api.github.com/repos/Zacsluss/Outerworld-War/actions/runs`) -- there is no gh CLI here. **Build stamp
-  `506fb0d48d1e1d36`** (moved: `js/game.js` and `js/map.js` place players by `GameMap.assignStarts`).
+  `70eec21987ffeaf7`** (moved twice this session: item A's `GameMap.assignStarts` made it `506fb0d48d1e1d36`, item G's
+  `js/ai.js` made it this).
+- **After item G, by hand:** `aistyles` 132/0 on seeds 1, 5 and 11; `queens` 25/0; `eightplayer` 19/19 (was 18/19);
+  `tools/attack-clock.js` at today's economy, hard 1v1: TvZ first waves never / 14:57 -> 8:36 / never, PvT 14:27 / never
+  -> 8:05 / 8:08. Twelve negative controls cleanly red (`.claude/review/aipace/controls.js`, `controls2.js`).
 - **By hand:** `net_many` 51/51; `desktop/page-check.js` 22/22 (`desktop/dist` refreshed); `aistyles` seed 1 125/7, seed 5
   125/7 (the same seven wave-and-attack-timing lines), seed 11 124/8 (the seven plus the long-standing flaky "harasser
   fields more fast units than turtle", 3 vs 5); `eightplayer` 18/19 (the economy-floor line). All as before.
@@ -61,17 +66,26 @@ Trust `git log -1` for HEAD, not a hash written here.
    nobody finishes goes to the side that stayed, and every team is updated at once rather than BAR's per-team scheme its
    own issue tracker flagged.
 
-**Saves and replays from before this session are refused** (the build stamp moved with item A; item B changed no stamped
-file).
-
 9. **Research that stops now says why** (PLAYTEST 99): a research or upgrade kept waiting 20 seconds -- most likely a
    Forge whose Pylon died out of sight -- puts "Forge has stopped researching Ground Weapons: it has no power" in the
    message area, once. And anything that stops for ten seconds for no reason the rules know says so on screen and writes
    one `[stall]` line to the console and to `bw_stall`, to send in. **Deliberately not a fix:** the stuck research was
    still not reproduced on today's code (75 minutes of computer games, the eleven scenes, and the user's own game
    replayed), so the game watches rather than a guess being changed.
+10. **Terran and Protoss computers attack again** (PLAYTEST 100): they keep making workers to about 24, only take a base
+    they have the workers for, and send waves 0.7 the old size -- a normal standard computer's first wave is about 24
+    supply, leaving around 8:45-9:25 against an opponent that does nothing (it never came in ten minutes before).
+    **Deliberately not done:** the Zerg computer is still passive for ten minutes and loses computer-vs-computer games to
+    a Terran at about 13 minutes -- that is the AI rebalance (7b) the user is holding. Two gate checks the change turned
+    red were re-measured rather than loosened, and TODO-M18 item G says exactly how: `qol`'s computer re-task check now
+    counts a worker building a Supply Depot as busy, and `zerg12`'s end-to-end Zerg game plays a passive opponent for
+    20000 frames (the Terran AI had started winning it).
 
-**Not done yet:** queue item G.
+**Saves and replays from before this session are refused** (the build stamp moved with item A and again with item G;
+items B-F changed no stamped file).
+
+**Not done:** nothing in the work queue. Held by the user until they say: the AI rebalance (TODO-M18 7b -- the Zerg
+computer first) and the terrain art path. Their playtest of PLAYTEST-M18 items 94-100 has not happened yet.
 
 ## Traps found this session
 
@@ -126,6 +140,23 @@ file).
     same Academy id at the same progress in game two.
 23. **A lifted building never has a queue** (`G.liftBuilding` refuses): a by-hand step that lifts one to show "no
     report" proves nothing. The stall watcher's lifted excuse exists for queue items pushed by hand in tests and scenes.
+24. **An AI starved by the slower economy shows no error, only a flat line**: 13 workers for seven minutes, every refusal a
+    quiet ledger entry. `.claude/review/aipace/timeline.js` prints workers, army, halls, the head of the order and every
+    funded claim each half-minute, and found both starvation loops (the worker floor, the expansion claim) in one run.
+25. **Measure AI arms on copies, with the suites as the instrument**: `.claude/review/aipace/arms.js` copies `js/` and the
+    suites into `arms/<name>/`, patches the copy and runs them side by side (the harness's root is the folder above
+    `test/`). Once a patch is in the working tree, arms written against the old code need `--rev=HEAD`.
+26. **`script()` returns before re-deriving `headDef` while the head step's supply is not reached**, so budget() keeps
+    holding a step the order has passed (a Factory's 200/100 from 7:30 to 10:00 in one game). Found in item G and NOT
+    fixed -- neither suite needed it, so it was not narrow. Likewise the Queen's Nest's head claim waits on the gas-tech
+    gate (funded 7:30, built 9:42). Both belong to 7b.
+27. **A suite that plays two computers against each other measures the matchup, not the AI**: zerg12 section 8's "fields
+    Roaches" was green only while its Terran opponent never attacked. Reachability is measured against a passive
+    opponent (the rig `aistyles` and `queens` already use).
+28. **`test/aistyles.js` pins the two-argument wave thresholds** (31/24/20 since item G). Any change to the threshold moves
+    that pin; control c7 shows it is still exact.
+29. **PowerShell `Start-Job -ArgumentList` flattens an array argument** into separate ones: run parallel node jobs from a
+    small node runner instead (`.claude/review/aipace/run-after.js`).
 
 ## Diagnostics added this session
 
@@ -135,7 +166,10 @@ file).
 `tools/stall-replay.js` (tracked): a recorded game re-simulated from its replay, every pause over ten seconds named with its
 reason. `.claude/review/stall/` -- `probe-25min.log` and `scenes.log` (today's code), `replay-probe.log`, `controls.js` (15),
 `handcheck.js` (PLAYTEST 99's by-hand steps walked headlessly: the explanation 21 game seconds after the Pylon dies, the
-report at 10), the patch specs and the gate logs.
+report at 10), the patch specs and the gate logs. `.claude/review/aipace/` (item G) -- `arms.js` and `arms-v1..v8.js`
+(every arm and its suite logs under `arms/`, including `old75`, today's AI on the old economy), `timeline.js`,
+`basecount.js`, `qol-probe.js`, `zerg12-probe.js`, `zerg12-when.js`, `run-after.js`, `stamp.js`, `controls.js` +
+`check-controls.js` (8) and `controls2.js` (4), both attack-clock logs, the ledger log, the patch specs and the gate logs.
 
 ---
 
@@ -158,24 +192,24 @@ READ IN THIS ORDER, then start:
   3. HANDOFF-M18.md     -- the state and the traps, newest session first.
   4. PLAYTEST-M18.md (items 64 on) and RESEARCH-LOBBY.md -- as each item needs them.
 
-THE STATE: node test/all.js is 90 suites, ~5 minutes, and 2 are RED: aistyles and queens (the computer AI's pacing under
-the slower economy). Build stamp 506fb0d48d1e1d36. Queue items A (start positions), B (rematch), C (ratings and balanced
-teams), D (unsigned desktop builds in GitHub Actions, first run green), E (relay safety) and F (research that gets stuck:
-still not reproduced, so the game now explains a rule pause and reports an unexplained one in one line) are DONE.
+THE STATE: node test/all.js is 90 suites, ~5 minutes, ALL GREEN. Build stamp 70eec21987ffeaf7. The whole work queue is
+DONE: A (start positions), B (rematch), C (ratings and balanced teams), D (unsigned desktop builds in GitHub Actions),
+E (relay safety), F (research that gets stuck: still not reproduced, so the game explains a rule pause and reports an
+unexplained one in one line) and G (the two red suites: the AI's worker floor, Terran/Protoss expansion clock and wave
+threshold, narrowly -- Terran and Protoss computers attack again; the Zerg computer is still passive).
 
 THE USER'S ANSWERS (do not ask again): G is AUTHORIZED ("you can fix now") -- narrowly, with test/balance.js and
 test/proxy.js untouched; D is UNSIGNED BUILDS ONLY (no Apple Developer Program, no paid Windows signing); their playtest
 of 88-93 is done and written up in TODO-M18 ("The ninth session"). The user wants EVERY queue item finished: do not
 stop between items, and resume anything a message interrupts.
 
-THE SINGLE NEXT ACTION: queue item G -- make aistyles and queens honestly green. Measure first: run node test/aistyles.js
-and node test/queens.js alone, and node tools/attack-clock.js, and write down every failing line and number. Then change
-js/ai.js NARROWLY (the threshold that commits a wave, the build-order step timings, the Queen's Nest and Queen timing),
-absorbing that bodies are kept apart (fewer melee attackers fit round one target). Never loosen a suite's expectation
-to match an AI that never attacks. The claim order in AI.budget() stays as it is.
+THE SINGLE NEXT ACTION: ask the user two things in one message, then wait for the answers. (1) Their playtest of
+PLAYTEST-M18 items 94-100: start the recorder first (node tools/playtest-listen.js, or the `playtest` entry in
+.claude/launch.json; they play at http://127.0.0.1:8870) and read it with node tools/playtest-report.js when they say done.
+(2) Whether to start one of the two items they are holding: the AI rebalance (TODO-M18 7b -- the Zerg computer first, and
+the two budget faults item G found and left) or the terrain art path. Start neither without their word.
 
-THE QUEUE: G the two red suites (authorized) is the last item. DEFERRED until the user says so: the AI rebalance
-(TODO-M18 7b) and the terrain art path.
+THE QUEUE: empty. HELD until the user says so: the AI rebalance (TODO-M18 7b) and the terrain art path.
 
 FOR EVERY ITEM:
   - Research how established games do it first and tell the user what you found, with sources. A research subagent

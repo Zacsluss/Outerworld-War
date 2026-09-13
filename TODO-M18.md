@@ -5,8 +5,8 @@ traps and the kickoff prompt; this file is the open list. **Its first section, T
 user's decision on every open item after the eighth session, in order. The sessions' lists follow it (what each did,
 with commits), then the older open items with their measurements, then what is closed. There are no worktrees.
 
-The gate is **90 suites** (`node test/all.js`, ~5 min); in the ninth session it is 2 red, `aistyles` and
-`queens`, both the AI pacing -- queue item G, which the user has now authorized (see below). It was last all green at `136b1b0`. Every rule in `CLAUDE.md`
+The gate is **90 suites** (`node test/all.js`, ~5 min) and **ALL GREEN** since queue item G (ninth session) -- the first
+time since `136b1b0`. Every rule in `CLAUDE.md`
 applies to every item here: measure before fixing, a negative control that goes cleanly RED, `tools/patch.js`
 for edits, and the gate green before the commit.
 
@@ -156,7 +156,37 @@ Pylon); anything that stops 10 s for no rule reason is reported once, in one lin
   advancing for no rule-backed reason and writes one line the player can copy (PLAYTEST item 68 asks for exactly that
   line), so the user's next game names the cause.
 
-**G. The two red suites (item 3, "fix now") -- AUTHORIZED (the user, ninth session: "you can fix now").**
+**G. The two red suites (item 3, "fix now") -- AUTHORIZED (the user, ninth session: "you can fix now").** **DONE (ninth
+session)** -- three narrow changes in `js/ai.js`, each needed by a leave-one-out arm and nothing else kept:
+  1. **The worker floor is 24 for every race** (was 12, and 16 for Zerg): a standard Terran sat on 13 SCVs from 2:30 to
+     10:00 with three Marines, a Protoss on 13 Probes to 8:00, because twelve workers on the slower economy pay for too
+     little army to open the army gate. Without it for Terran/Protoss aistyles stays red; without it for Zerg, queens.
+  2. **A Terran or Protoss base taken on the clock needs 16 workers per hall standing**: the clock alone put down five
+     Command Centers by ten minutes with thirteen SCVs (1,600 of 3,480 minerals mined). Zerg keeps the bare clock (gating
+     it too turns queens red; a hatchery is Zerg production). 12 per hall is not enough.
+  3. **The wave threshold is 0.7 of the M9 numbers** (standard normal 34 -> 24, easy 44 -> 31, hard 28 -> 20; the style
+     deltas scale with it). 24 supply is the size of Brood War's own first melee waves for Protoss and Zerg. 0.65 and 0.75
+     pass as well; 0.7 alone (without 1 and 2) does not, and 1 and 2 without it do not.
+  Research (with sources, in the session report): StarCraft II openings build workers continuously and take the natural at
+  16-20 supply; Blizzard's Brood War AI script FAQ gives first melee waves of 12 Marines + 3 Medics, 12 Zealots, and 20
+  Hydralisks + 2 Lurkers; SC2's 2010 beta AI attacked at 30 units. Measured on `.claude/review/aipace/` (arms on copies of
+  `js/`, the suites themselves as the instrument): the old-economy reference (MINE_TIME 75) passes 132/0; today's code
+  was 125/7, 125/7, 124/8 and queens 21/4. **After: aistyles 132/0 on seeds 1, 5 and 11, queens 25/0, eightplayer 19/19**
+  (was 18/19), eight negative controls cleanly red. `tools/attack-clock.js` (hard 1v1, 20 min, today's economy): TvZ
+  first waves never / 14:57 -> **8:36 / never**; PvT 14:27 / never -> **8:05 / 8:08**. In aistyles (normal, a passive
+  opponent) the standard Protoss leaves at 8:44-9:24 with 22 supply, rushers at 7:32-9:13, harassers at 7:53-9:48.
+  The one pin naming the old thresholds (aistyles: "a two-argument AI has exactly the thresholds...") now pins 31/24/20
+  exactly. **Two gate checks the change turned red were re-measured, not loosened:** qol's "the COMPUTER still moves
+  its own idle workers" counted a Supply Depot's constructing SCV as not re-tasked (it now requires none idle and every
+  worker mining or building); zerg12 section 8 had come down to one seed per check against a Terran AI that never
+  attacked -- once the Terran attacked it WON (13:17, 13:48), so the section now plays a passive opponent for 20000 frames
+  (the AI from before item G passes that rig too). Build stamp moved to `70eec21987ffeaf7`. `PLAYTEST-M18.md` item 100.
+  **NOT fixed, and now 7b's first item: the Zerg computer.** No Zerg style attacks inside ten minutes in aistyles (army
+  1-14 supply at 10:00 against 22-38 drones); in Zerg-vs-Terran computer games the Terran wins at about 13-14 minutes.
+  Found and deliberately NOT applied (not needed by either suite, so not narrow): budget() keeps holding the head claim
+  of a step the order has already passed while the next step's supply is not reached (a Factory's 200/100 held 7:30-10:00
+  in one timeline), and the Queen's Nest's head claim waits on the gas-tech gate (funded 7:30, built 9:42) -- both for 7b.
+The plan as it was written:
 - If yes: change the AI's wave threshold and build timings narrowly (`js/ai.js`: the threshold that commits a wave, the
   build-order step timings, the Queen's Nest and Queen timing), measured by `test/aistyles.js` (seeds 1, 5, 11 by
   hand), `test/queens.js` and `tools/attack-clock.js`. The claim order in `AI.budget()` and any run of
@@ -192,6 +222,7 @@ repo goes private).
 - **Queue item C, ratings and balanced teams: DONE** (above).
 - **Queue item F, research that gets stuck: still not reproduced, now watched and explained in the game** (above, and item 4
   below). Two guards the negative controls showed did nothing (a pause check, a per-game reset) were removed rather than kept.
+- **Queue item G, the two red suites: DONE** (above) -- the gate is all green. The Zerg computer is still weak (7b).
 
 ## The eighth session's list (the user's third message, 2026-09-12)
 
@@ -400,6 +431,12 @@ two together, or ship 7a knowing the computer opponents are passive for the firs
 - The build stamp moves, so saves and replays from before are refused.
 
 ### 7b. Rebalance the AI for the slower economy — GATED, needs an explicit instruction
+**Queue item G (ninth session) did the narrow part** -- the worker floor, the Terran/Protoss expansion clock and the wave
+threshold (above) -- so every style of Terran and Protoss computer attacks again. **What is left, first:** the Zerg
+computer (no Zerg style attacks inside ten minutes; a normal Zerg computer loses to a normal Terran one at 13-14
+minutes), the stale head claim and the Queen's Nest claim item G found and left, and the cheap-unit ratchet zerg12's
+comment records. The old text:
+
 This is what 7a breaks, and it is the balance work this project has kept gated throughout. The AI's build orders
 and its attack threshold are tuned for 100 minerals per worker per minute; at 50 it never fields a first wave
 inside ten minutes. The knobs: `AI.budget()`'s claim order, the threshold that decides when a wave commits, and

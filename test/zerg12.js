@@ -631,18 +631,27 @@ run(`(() => {
   // cheap-unit ratchet the long comment in production() says it was written to stop; it still bites
   // Zerg, because zerglings are always affordable. Fixing it changes what every Zerg army is made of,
   // so it belongs to the balance run and is logged in DESIGN-M12.md, not patched here.
+  //
+  // THE TERRAN IS PASSIVE AND THE GAME IS 20000 FRAMES (TODO-M18 queue item G; it was an AI Terran and 14000). On the slower
+  // economy both checks below had come down to one seed each -- a Roach on seed 5 at 7:52, Volatile Bile on seed 6 at
+  // 8:46 -- because the Terran AI never attacked. Once item G made it attack, it wins these games at 13:17 and 13:48 on
+  // seeds 5 and 6, and in 9.7 minutes no seed fielded a Roach or finished an M12 tech: the question had become whether
+  // this Zerg survives that Terran, which is the balance run's (TODO-M18 7b). Against a passive opponent for 13.9 minutes
+  // the Zerg fields Roaches on all three seeds and Volatile Bile on one, and the AI from before item G passes as well
+  // (Roaches on two, Volatile Bile on one), so the rig was not chosen to fit the change (.claude/review/aipace/zerg12-when.js).
   const SEEDS = [5, 6, 7];
   const games = SEEDS.map(seed => json(`(() => {
     G.init({ players: [{ race: 'Z', human: false, difficulty: 'normal', name: 'A', team: 1 }, { race: 'T', human: false, difficulty: 'normal', name: 'B', team: 2 }], seed: ${seed}, layout: 'temple' });
     G.recording = false;
+    G.players[1].ai = null; G.freePlay = true;   // passive, and the game does not end if the Zerg razes it -- see above
     // Two separate records, because they answer two different questions and one cannot do both.
     // seen is the end-of-game census and the count check below needs real quantities from it.
     // ever is the right probe for "was this def REACHED at all": counting only survivors at frame
-    // 14000 asks whether one happened to be alive in that minute, so a Roach Warren plus five
+    // the last frame asks whether one happened to be alive in that minute, so a Roach Warren plus five
     // roaches all dead in the last fight would read as "the AI never fields roaches".
     const ever = {};
     const sample = () => { for (const u of G.units) if (u.owner === 0) ever[u.def.id] = 1; };
-    for (let i = 0; i < 14000; i++) { G.tick(); if ((i & 15) === 0) sample(); }
+    for (let i = 0; i < 20000; i++) { G.tick(); if ((i & 15) === 0) sample(); }
     sample();
     const seen = {};
     for (const u of G.units) if (u.alive && u.owner === 0) seen[u.def.id] = (seen[u.def.id] || 0) + 1;

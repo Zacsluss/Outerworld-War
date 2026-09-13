@@ -145,10 +145,12 @@ for (const d of DIFFS) {
 }
 
 // The constructor other code already calls. game.js, test/alerts.js, test/missions.js, test/smoke.js and
-// test/diag.js all pass two arguments, and 34/44/28 are the thresholds this AI has had since M9.
+// test/diag.js all pass two arguments. 44/34/28 were the thresholds this AI had from M9; TODO-M18 queue item G scaled the
+// whole threshold by 0.7 for the slower economy (the comment in AI's constructor has the measurement), so the pin is
+// 31/24/20 -- still exact, and still what a standard AI of each difficulty gets.
 const two = DIFFS.map(d => build('T', d, undefined));
 ok(two.every(r => r.style === 'standard'), 'a two-argument AI still constructs, and is standard', JSON.stringify(two.map(r => r.style)));
-ok(two[0].atk === 44 && two[1].atk === 34 && two[2].atk === 28, 'a two-argument AI has exactly the thresholds it had before styles existed', JSON.stringify(two.map(r => r.atk)));
+ok(two[0].atk === 31 && two[1].atk === 24 && two[2].atk === 20 && two.every((r, i) => r.atk === build('T', DIFFS[i], 'standard').atk), 'a two-argument AI has exactly the standard thresholds: 31/24/20, M9\'s 44/34/28 scaled for the slower economy', JSON.stringify(two.map(r => r.atk)));
 ok(build('T', 'normal', 'nonsense').style === 'standard' && build('T', 'normal', '').style === 'standard', 'an unknown or empty style falls back to standard');
 
 // The other way a style can arrive, which is the one that survives a save: the player options G.init was

@@ -308,7 +308,8 @@ area" needed no new idea: the map already records which patches belong to which 
 ## 72. The economy runs at StarCraft II's pace — and the computer is passive until it is rebalanced
 
 *(TODO-M18 7a, approved by the user: "I understand it broke AI but we can rebalance later when I
-confirm." **7b, the rebalance, is gated and has not started.**)*
+confirm." **7b, the rebalance, is gated and has not started.** Ninth session: queue item G made Terran and Protoss
+computers attack again -- item 100. The Zerg computer is still passive.)*
 
 **What changed.** A worker spends 190 frames inside a mineral patch instead of 75, and 94 inside a geyser
 instead of 37. Gas moved by the same factor, so the ratio of gas to minerals is exactly what it was.
@@ -991,3 +992,37 @@ nothing said so.
 4. **If research ever sticks for real**, send the `[stall]` line (from the console, or `localStorage.bw_stall` in the same
    browser later). If you played through the playtest recorder, `node tools/stall-replay.js` re-runs your saved replay and
    lists every pause over ten seconds with its reason.
+
+---
+
+## 100. Terran and Protoss computers attack again
+
+*(Ninth session, queue item G: "the two red suites", authorized narrowly. TODO-M18 item G has every number. The build stamp
+moved: saves and replays from before this change are refused.)*
+
+**What changed for a computer opponent.** Three things, all in how it paces itself on the slower economy of item 72:
+- **It keeps making workers until it has about 24**, instead of stopping at 12 and waiting for an army it could not afford.
+  A normal computer had 13 workers from minute 2:30 to minute 10; it now has about 21 at five minutes and 40-50 at ten.
+- **A Terran or Protoss computer only takes a new base when it has the workers for it** -- about 16 per base it already
+  holds. It used to lay down a Command Center every three minutes whatever it had: five by ten minutes, with 13 SCVs.
+- **Its attack waves are smaller: 0.7 of the old sizes.** A normal, standard computer attacks with about 24 supply (easy 31,
+  hard 20), which is the size of Brood War's own computer's first wave (12 Zealots). Every style keeps its place: a rusher
+  still attacks first and smallest, a turtle last and biggest.
+
+**Deliberately not done, and you will see it:** the **Zerg** computer is still passive for the first ten minutes (it drones
+and builds hatcheries, with an army of 1-14 supply at ten minutes), and in computer-against-computer games a Terran now
+beats a Zerg at about thirteen minutes. Fixing Zerg is the AI rebalance (TODO-M18 7b) that you asked to hold until you say.
+
+**How to see it by hand** (Single Player → Skirmish, Lost Ruins; cheats are typed into chat with **Enter**):
+1. **A Protoss computer attacks.** Set the computer's slot to **Protoss, Normal, Standard** and start. Keep your own army
+   small and do not attack (a computer that sees a bigger army than its wave waits for more). **Its first wave leaves home
+   at about 8:45-9:25 of the game clock** with about 22 supply (roughly eleven Zealots and Dragoons) and reaches you a
+   little after -- those times were measured against an opponent that does nothing. Before this change nothing came in
+   the first ten minutes (a hard computer's first wave was at 14:27).
+2. **A rusher comes sooner.** Same, with **Terran or Protoss, Normal, Rusher**: a wave of about 14 supply at about 7:30-9:15.
+3. **Its workers and bases** (invisible without looking at its base): type `black sheep wall` to see the map. At **5:00** a
+   normal Terran or Protoss computer has about 21 workers (was 13) and one or two bases; at **10:00**, 40-50 workers and three
+   or four bases (was five bases and 13 SCVs).
+4. **A Zerg computer's Queens.** Set it to **Zerg, Normal**, `black sheep wall`, and look at its hatcheries around **10:00**:
+   a Queen beside each one (it had only its starting Queen). It will not have attacked you -- that is the unfinished part.
+5. **Easy and hard still differ**: an easy computer waits for a bigger wave (31) and a hard one for a smaller (20).

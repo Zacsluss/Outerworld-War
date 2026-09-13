@@ -282,7 +282,11 @@ const r = vm.runInContext(`(() => {
     for (const r of m.bases[home].minerals) r.amount = 0;
     for (let f = 0; f < 24 * 60; f++) G.tick();
     const aiw = G.units.filter(u => u.alive && u.owner === 1 && u.def.worker);
-    out.aiRetasks = { workers: aiw.length, mining: aiw.filter(w => w.order.type === 'gather' || w.order.type === 'return').length };
+    // Counted as re-tasked: mining, or building. TODO-M18 queue item G stopped a four-SCV computer saving for a Command
+    // Center it had no workers for, so the bank that claim used to hold now buys a Supply Depot inside this minute and one
+    // SCV is CONSTRUCTING when the check looks -- which is not idle, and not what the check is about.
+    out.aiRetasks = { workers: aiw.length, mining: aiw.filter(w => w.order.type === 'gather' || w.order.type === 'return').length,
+      building: aiw.filter(w => w.order.type === 'build' || w.order.type === 'construct').length, idle: aiw.filter(w => w.order.type === 'idle').length };
   }
 
   // ---- 4c. A BUILDER THAT FINISHES STAYS WHERE IT IS (seventh session) ----
@@ -482,7 +486,7 @@ ok(r.dryLine.maxWalk <= 3,
   '...and they do not wander while they wait -- at most 3 tiles in ninety seconds, against about 280 each before', JSON.stringify(r.dryLine.maxWalk));
 ok(r.dryLine.orderedAway && r.dryLine.orderedAway.base !== r.dryLine.homeBase && r.dryLine.orderedAway.order !== 'idle',
   '...but an explicit order to another base IS obeyed, which is the whole of "they stop unless you command them"', JSON.stringify(r.dryLine.orderedAway));
-ok(r.aiRetasks.workers > 0 && r.aiRetasks.mining === r.aiRetasks.workers,
+ok(r.aiRetasks.workers > 0 && r.aiRetasks.mining > 0 && r.aiRetasks.idle === 0 && r.aiRetasks.mining + r.aiRetasks.building === r.aiRetasks.workers,
   'and the COMPUTER still moves its own idle workers to a new base -- AI.economy re-tasks them, and taking that away would have stalled every AI whose main ran dry', JSON.stringify(r.aiRetasks));
 ok(r.rallyWins.made && r.rallyWins.newestOrder !== 'gather', 'but an explicit rally still wins -- an instruction beats a convenience', JSON.stringify(r.rallyWins));
 
