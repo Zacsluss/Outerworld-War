@@ -13,6 +13,76 @@ for edits, and the gate green before the commit.
 
 ---
 
+## THE TERRAIN QUEUE -- detailed terrain everywhere (the user, 2026-09-13)
+
+**The user's words:** "i do not need an editor. i just want great looking maps." Then, of the Badlands test run (PLAYTEST-M18
+109, `docs/terrain/`): **"this looks amazing so far - exactly the direction i want. make a new handoff prompt for a new chat to
+do all of this:**
+1. **add Scattered rocks, debris and dry plants on open ground, lit like the units.**
+2. **add Better-shaped ramps - can only go up them from base, NOT from sides of ramp**
+3. **add The other four biomes: about 12 more free textures, a few MB.**
+4. **add A matching zoomed-out view and minimap, plus a speed check on the biggest map.**
+5. **Switch it on by default and commit."**
+
+**Approved, so do not ask again:** the look (the test run's direction); downloading about twelve more Poly Haven CC0 textures, a
+few MB (1k JPG diffuse maps; state each file's name and size in the chat as it is fetched); no map editor work. **Not approved:**
+anything paid, anything not CC0, any change to the balance runs (`test/balance.js`, `test/proxy.js` stay gated).
+
+**State at the start:** `7f8cf40` -- `js/terrain.js` paints Badlands from four textures when `?hd=1` is in the address, and
+everything else exactly as before. `RESEARCH-TERRAIN.md` section 7 holds every parameter the test run landed on and the two
+failed passes; section 8 the research for this queue.
+
+**Measured for item 2 before anything was designed** (`.claude/review/terrain/ramp-probe.js`, 2026-09-13): **132 of 158 ramps
+are walkable from a side** -- 1,604 walkable side contacts over every built-in layout, the four size modes, Dust Bowl,
+Nightfall and the four archetypes on seeds 1, 7 and 42. Every ramp on Lost Ruins, Blood Pit, Contested Ground, Broken Expanse,
+The Long March, Dust Bowl, Nightfall and every archetype is side-open; the only clean ones are two in Twilight Valley and twenty
+one-tile slopes on `arch:cliffs:42`. Why: `GameMap.generate` paints high ground, rings every high tile that touches low ground
+with unwalkable cliff (`cliff 1`), then stamps each ramp RECTANGLE (`L.ramps`, walk 1, height 1) through the ring -- and the
+rectangles reach out past the cliff line into open low ground, so the part outside has low ground on both sides (Lost Ruins'
+4x5 ramp at 31,28, up to the north: 6 low and 1 high side contacts). `sealElevations` (map.js, "a ramp is the only way up")
+guarantees high never touches low directly, and says nothing about a ramp's sides; `repairConnectivity` carves ramps of its
+own on archetypes, and `sealElevations` demotes one-tile slopes. The pathfinder already refuses to cut a corner diagonally
+past two blocked tiles (map.js ~1800), which a wall needs.
+
+### The build path -- in this order, and why
+
+- **Phase 1 -- item 2, ramps (SIMULATION; stamped `js/map.js`; the build stamp moves once).** First, because it is the only item
+  that changes the game rather than the picture: props must keep clear of the final ramp walls, the ramp art is drawn on the
+  final geometry, and every later screenshot shows the real map. Measure again, design the rule (which side of each ramp is
+  its low end and its high end; walls of cliff on both sides the whole length; the ends open), apply it in ONE place every
+  generator passes through (after `sealElevations`, before `placeNeutrals`, so layouts, sizes, archetypes and editor maps all
+  get it), and prove nothing is cut off. Acceptance: the probe reports 0 side-open ramps everywhere; every base, resource and
+  start still reachable from every other (flood fill, all layouts, archetypes on many seeds); `verticality`, `highground`,
+  `mapmodes`, `mapfeatures`, `starts`, `craters` green; a new suite with negative controls; `aistyles` seeds 1/5/11,
+  `eightplayer`, `queens`, `net_many` recorded; the new stamp in the PLAYTEST entry.
+- **Phase 2 -- item 3, the four tilesets (drawing only).** Download the chosen textures (`RESEARCH-TERRAIN.md` 8.5 has two
+  candidates per slot; Poly Haven has no ice, so Ice is snow over rock graded cold; Space Platform is metal plating repeated by
+  plate size), look at each before using it, and grade each set. Acceptance: on every tileset the high ground reads lighter than
+  the low at least as clearly as Badlands (compare the graded materials' mean luminance), one crisp drop per cliff, no visible
+  repeat at zoom 1, units and minerals stand out; a before/after of every tileset from `tools/terrain-shot.js`, sent to the user.
+- **Phase 3 -- item 1, props (drawing only).** Rocks, debris and dry plants per tileset (Jungle: roots and ferns; Ice: ice chunks
+  and snow tufts; Desert: stones and dry scrub; Space Platform: bolts, panels, cable runs), shaded by the terrain's sun with a
+  darkening shadow down-right, drawn from sprites baked with `tools/bake.js`'s own renderer or drawn procedurally, and placed by a
+  seam-free hashed blue-noise rule per chunk (8.1). Acceptance: purely cosmetic and small on walkable ground; none on a resource or
+  within two tiles of one, in a base's hall clearing, on a ramp or its walls, or within a tile of a cliff edge; a pure function of
+  map, seed and tile; the chunk bake's cost measured before and after; a busy-battle shot where 400 units stay legible.
+- **Phase 4 -- item 4, the strategic zoom, the minimap, speed (drawing only).** `overview()` and `buildMini()` from each material's
+  mean colour in linear light times its grade, blended by the tile's weights and slope shade (8.3); then The Long March (256x256)
+  measured at zoom 1 (camera jump, scroll), zoomed out, and on a feature change. Acceptance: the far view and the minimap match the
+  ground; no hitch over about 50 ms, measured before and after -- a per-frame bake budget with the overview underneath is the first
+  fix, a worker with OffscreenCanvas (feature-detected, 8.4) the second; `syncFeatures` invalidates only the chunks a feature
+  touches.
+- **Phase 5 -- item 5, on by default.** Detailed terrain becomes the default, the classic look one click away in Settings
+  (`UI.readPref`/`savePref`, like edge scroll -- a slow machine, and the headless suites, which have no images). Acceptance: a
+  suite covering the textured path with texture data handed to it, and its negative controls; `desktop/window-check.js` on a debug
+  build so the textures are known to load in the desktop app; PLAYTEST, TODO and HANDOFF updated; committed and pushed; the user
+  told that the installers need Actions -> Desktop builds -> Run workflow to pick it up.
+
+Each phase: research with sources first; measure before changing; negative controls; `node test/all.js` before every commit; a
+before/after screenshot sent to the user for every visible change (they judge the look by eye); commit and push per phase.
+
+---
+
 ## THE USER'S DECISIONS AFTER THE TENTH SESSION (2026-09-13)
 
 - **The research stall is CLOSED** (Open, item 4) -- the user: "this bug is fixed - remove from tasks/todos list". The stall
@@ -21,8 +91,8 @@ for edits, and the gate green before the commit.
 - **OPTIONAL, whenever the user likes:** a look-and-feel pass of PLAYTEST-M18 101-108. Every item in them is tested
   automatically (their suites, 46 negative controls, and 103-106 clicked through in two browser tabs); what no test judges is
   how they look and feel on screen.
-- **BEING DISCUSSED:** the terrain art path. The user asked how OpenRA does its map editor and what its stack is:
-  `RESEARCH-TERRAIN.md`.
+- **DECIDED:** the terrain art path is THE TERRAIN QUEUE above -- the user wants great-looking maps and no editor, and approved
+  the Badlands test run's direction.
 - **DONE without the user** (the user: "test this yourself ... then clear from list"): the Desktop builds -- Actions built
   all three installers green from `f68e8f3`, today's whole game (Windows 4.9 min, Apple silicon 2.5, Intel 5.0) -- and the
   Windows installer: built locally with the CI's own command, installed silently, `desktop/window-check.js` 23/23 on the

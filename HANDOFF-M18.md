@@ -1,4 +1,177 @@
-# HANDOFF — M18 (the tenth session: the user's playtest of 94-100, every finding fixed)
+# HANDOFF — M18 (the terrain queue: from the Badlands test run to detailed terrain on every map)
+
+Written 2026-09-13, at the end of the session that closed the tenth session's list, tested the desktop app, researched OpenRA and
+ran the terrain test run. Branch `m10-overnight`, which is `origin/main`. **Everything is committed and pushed; no open pull
+requests, no other branches, no extra worktrees.** Trust `git log -1` for HEAD, not a hash written here.
+
+> **READ `TODO-M18.md` FIRST -- its first section, THE TERRAIN QUEUE**: the user's five items in their words, what is approved,
+> the measured ramp baseline and the build path. `RESEARCH-TERRAIN.md` sections 7-8 are the test run and this queue's research;
+> `docs/terrain/` is the approved look.
+
+---
+
+## The state
+
+- **The gate is 97 suites, ALL GREEN** (about two minutes). **Build stamp `56406f9d777368ac`** -- nothing since has touched a
+  stamped file. No known reds.
+- **The Badlands test run is committed and OFF unless `?hd=1` is in the address** (`7f8cf40`; PLAYTEST-M18 109). Badlands is painted
+  from four Poly Haven CC0 textures, lit from the upper left like the sprites; every other tileset, the strategic zoom and the
+  minimap are unchanged. The user: **"this looks amazing so far - exactly the direction i want."**
+- **Measured baselines for the queue:** 132 of 158 ramps are walkable from a side (`.claude/review/terrain/ramp-probe.js`); a textured
+  chunk bakes in a median 18.5 ms against the palette's 21.7 ms (V8, outside any vm harness); at zoom 1 there is no bake budget, so a
+  camera jump to unbaked ground stalls about 0.6-0.85 s and crossing a chunk boundary 75-165 ms; `overview()` 17.4 ms and
+  `buildMini()` 1.2 ms on 128x128.
+- **The desktop app** (this session, the user: "test this yourself"): Actions built all three installers green from `f68e8f3`; the
+  Windows installer, built locally with the CI's command, installed silently, passed `desktop/window-check.js` 23/23 as installed,
+  and uninstalled clean. **The Desktop builds workflow does not rebuild for changes to `js/` or `assets/`** -- a terrain change reaches
+  the installers only through Actions -> Desktop builds -> Run workflow (or a change under `desktop/` or to `test/serve.js`).
+- **The repository is PUBLIC** (the user made it private briefly on 2026-09-13 and public again). Bought art stays out of it.
+- **Deferred by the user until they say:** the AI rebalance (TODO-M18 7b). **Optional:** a look-and-feel pass of PLAYTEST-M18 101-108.
+  **Closed:** the research stall (the user: fixed).
+- **Nothing is left running** (the `terrain-shot` preview server was stopped at the close).
+
+## What changed this session, in a player's language
+
+1. **Desktop builds and the Windows installer were checked end to end without the user** -- installed, hosted a game, a second
+   player joined, uninstalled clean. (Not a Mac: there is none here.)
+2. **`RESEARCH-TERRAIN.md`**: how OpenRA does its map editor and terrain, what this game already had, and -- once the user said
+   "i do not need an editor. i just want great looking maps" -- the terrain queue's research.
+3. **Detailed terrain, the Badlands test run** (PLAYTEST-M18 109): add `?hd=1` to the address and play Lost Ruins. Photographic
+   ground, a lighter plateau with one natural cliff edge -- sunlit orange rock on its upper and left faces, shadow on its lower and
+   right -- calm ramps, lumpy rock. The game is unchanged without `?hd=1`.
+
+**Not done -- it is the queue:** props on open ground, ramps walled on both sides, the other four tilesets, a matching strategic zoom
+and minimap, the speed work on The Long March, and switching it on for everyone.
+
+## Traps found this session
+
+1. **Judge terrain only on real in-game screenshots.** Two passes that looked right in the code were wrong on screen: smoothstepped
+   heights between tile centres traced the 32 px grid as staircases, and a cliff tile at mid height smoothstepped between centres
+   made a double step that read as a trench; a ramp grade of 1.24 at full weight made glaring squares. `RESEARCH-TERRAIN.md`
+   section 7 has what fixed each.
+2. **Never time a chunk bake inside a `vm.createContext` harness** -- it runs about ten times slower than the browser or plain V8
+   (190-230 ms against 18.5 ms a chunk).
+3. **Textures load asynchronously.** `Terrain.texSet()` returns null until every texture of the set has loaded (the palette paints
+   meanwhile) and drops the chunk cache as each arrives. The headless suites have no `Image`, so they only ever run the palette
+   path: a test of the textured path must hand `renderChunkTex` its texture data directly.
+4. **A textured chunk is baked at ratio 1**, a palette chunk at the display ratio (`bakeDpr`): on a dpr-2 display the textured bake is
+   the cheaper of the two by far.
+5. **`Render.syncFeatures` clears EVERY terrain chunk** when any map feature changes (a destructible broken, a gate opened) -- a
+   re-bake of the whole view, textured or not.
+6. **`tools/terrain-shot.js`** serves the working tree (never `.git` or `.claude`) and writes what is posted to
+   `/save?name=` into `.claude/review/terrain/shots/<name>.png` -- a JPEG data URL is written with a `.png` name; rename it. In the page:
+   `UI.start(...)` starts the real loop, so set `G.paused = true` and draw with `Render.frame(1)` yourself; `UI.viewAll = true` to see
+   through fog; `resize_window` 1600x900 for comparable shots; a hidden Browser pane still renders when you call the frame.
+7. **Poly Haven has no ice texture and only 30 aerial scans**; its metal textures are 0.5-2.7 m, so Space Platform must repeat by
+   plate size, not by real metres (`RESEARCH-TERRAIN.md` 8.5).
+8. **`GameMap.generate` stamps ramp rectangles through a one-tile cliff ring**; `sealElevations` guarantees high never touches low and
+   says nothing about a ramp's sides; `repairConnectivity` carves ramps of its own on archetypes and the seal demotes one-tile slopes.
+   A wall rule has to run after all of them.
+
+## Diagnostics added this session
+
+`tools/terrain-shot.js` (tracked; launch entry `terrain-shot`, port 8897). `docs/terrain/` (tracked): the approved before/after.
+`.claude/review/terrain/` (gitignored): `ramp-probe.js` and its log (the side-open baseline), `spec-tex1..3.js` (the three passes),
+`shots/` (every screenshot), the gate logs. `.claude/review/tenth/install-test.js` (the installer cycle) and `wait-ci.js` (a Desktop
+builds run, read from the public API).
+
+---
+
+## Kickoff prompt for a fresh chat
+
+Open the new chat with the repository folder as its working directory, so `CLAUDE.md` loads by itself. Paste everything inside the
+fence. **Replace the HEAD placeholder with `git log -1 --format=%h` first** -- committing this file moves it.
+
+```
+Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
+Branch: m10-overnight, which IS origin/main (https://github.com/Zacsluss/Outerworld-War -- PUBLIC: git push publishes).
+HEAD: <run git log -1 --format=%h>. Working tree clean, nothing unpushed, no open PRs, no other branches, no extra worktrees.
+Machine: Windows 11; PowerShell 5.1 and Git Bash; Node 24; Rust + the Tauri CLI under desktop/; no gh CLI, no Blender.
+The gate (node test/all.js) is 97 suites, about two minutes, ALL GREEN; no known reds. test/balance.js and test/proxy.js are
+GATED: never start them without an explicit, double-checked instruction.
+
+THE JOB -- make every map look great. The user: "i do not need an editor. i just want great looking maps." Of the Badlands test
+run (docs/terrain/*.jpg, PLAYTEST-M18 109, on with ?hd=1): "this looks amazing so far - exactly the direction i want." Their list:
+  1. Scattered rocks, debris and dry plants on open ground, lit like the units.
+  2. Better-shaped ramps -- "can only go up them from base, NOT from sides of ramp".
+  3. The other four tilesets (Jungle, Ice, Desert, Space Platform): about 12 more free textures, a few MB.
+  4. A matching zoomed-out view and minimap, plus a speed check on the biggest map (The Long March, 256x256).
+  5. Switch it on by default and commit.
+BUILD ORDER: 2 (ramps -- the only SIMULATION change, so props and art land on final geometry and the stamp moves once), then 3,
+then 1, then 4, then 5. TODO-M18.md, THE TERRAIN QUEUE, gives the reasons and each phase's acceptance.
+
+READ, in this order, before touching anything:
+  1. CLAUDE.md                -- the working agreement; every rule in it is non-negotiable.
+  2. HANDOFF-M18.md           -- the top section: state, measured baselines, traps.
+  3. TODO-M18.md              -- THE TERRAIN QUEUE.
+  4. RESEARCH-TERRAIN.md      -- section 7 (the test run: every parameter, the two failed passes and why) and section 8 (this
+                                 queue's research, sourced: props, ramps, minimap, speed, and a texture table for the four tilesets).
+  5. docs/terrain/*.jpg       -- the approved look. That is the bar for every tileset.
+  6. Code: js/terrain.js (TERRAIN_TEX, TERRAIN_GRADE, texSet, renderChunkTex, overview, buildMini, draw), js/map.js (generate
+     ~657-730, sealElevations ~1262-), js/render.js (frame, syncFeatures), tools/terrain-shot.js, tools/bake.js + tools/models.js +
+     tools/raster.js (the sprite baker and its sun).
+
+APPROVED -- do not ask again: the direction; downloading about twelve more Poly Haven CC0 textures, a few MB (1k JPG diffuse;
+name each file and its size in the chat as you fetch it, look at it before using it, record it in assets/terrain/SOURCES.md);
+no editor work. NOT approved: anything paid, anything not CC0.
+
+ALREADY MEASURED (re-measure only to compare):
+  - Ramps: 132 of 158 walkable from a side (1,604 side contacts) over every layout, size mode and archetype
+    (.claude/review/terrain/ramp-probe.js). Cause: a ONE-tile cliff ring with ramp rectangles stamped through and past it. Every RTS
+    researched walls ramp sides with unwalkable CELLS, not blocked edges: use wall tiles, 4-connected (the pathfinder already
+    refuses diagonal corner cuts), in one pass every generator runs through (after sealElevations, before placeNeutrals), and prove
+    with flood fills on every layout and many archetype seeds that no base, resource or start is cut off.
+  - Speed (V8, never inside a vm harness -- that is ten times slower): textured chunk bake median 18.5 ms, palette 21.7 ms. At zoom 1
+    Terrain.draw has no bake budget: a jump to unbaked ground stalls ~0.6-0.85 s, a chunk-boundary crossing 75-165 ms.
+    overview() 17.4 ms, buildMini() 1.2 ms on 128x128. Render.syncFeatures clears every chunk when any feature changes.
+    OffscreenCanvas 2D: WebView2 yes, WKWebView from macOS 13.3 (Safari 16.4); requestIdleCallback is not in Safari.
+  - Textures: Poly Haven has no ice texture and only 30 aerial scans; RESEARCH-TERRAIN.md 8.5 lists two candidates per slot with
+    real and file sizes. Big aerial scans suit TEX_PX 512; metal plating repeats by plate size.
+
+HOW TO WORK, every phase:
+  - Research with sources first (section 8 is a start) and tell the user what you found. Tell every research subagent never to put
+    an email address or any personal detail in a request, URL or header.
+  - MEASURE BEFORE CHANGING: build the probe first and make it assert its own setup.
+  - Every new behaviour gets a negative control that goes cleanly RED (.claude/review/aipace/arms.js runs controls on copies of the
+    tree; relay suites must be in its PORTED set). A check no control turns red is a weak check: strengthen it.
+  - JUDGE THE LOOK ON REAL SCREENSHOTS, NEVER MOCKUPS: preview_start "terrain-shot" (tools/terrain-shot.js, port 8897); in the page
+    UI.start(...), G.paused = true, UI.viewAll = true, UI.centerOn(x, y), Render.frame(1), then POST the canvas's data URL to
+    /save?name=...; shots land in .claude/review/terrain/shots/. Send the user a before/after for every visible change (SendUserFile)
+    -- they judge by eye. Keep what the approved images have: high ground clearly lighter than low, ONE crisp drop per cliff, calm
+    ramps, units and minerals standing out, no cartoon strokes.
+  - node test/all.js before every commit; touch nothing in js/ or test/ while it runs.
+  - The ramp change moves the build stamp (js/map.js is stamped): say so in its PLAYTEST entry, and run node test/net_many.js and
+    node .claude/review/aipace/run-after.js <tag> (aistyles seeds 1/5/11, queens, eightplayer), recording every number.
+  - Check what draws over the ground still reads on textured terrain: creep, fog and explored ground, night, the sandstorm, craters
+    and wreck decals, building placement ghosts, the strategic icons, and the eight lobby colours on each tileset's minimap.
+  - For item 5: keep the classic look one click away in Settings (UI.readPref/savePref, like edge scroll), make the headless suites
+    cover the textured path by handing it texture data, run desktop/window-check.js on a debug build so the textures are known to
+    load inside the desktop app, and tell the user the installers need Actions -> Desktop builds -> Run workflow to pick it up
+    (the workflow ignores js/ and assets/).
+  - A PLAYTEST-M18.md entry per item saying how to see it by hand; update TODO-M18.md and HANDOFF-M18.md; commit and push per phase.
+
+HARD RULES:
+  - Never Math.random() in simulation code (G.rand()); no native Math.sin/cos/atan2/hypot in stamped files (DMath). Anything a replay
+    or a rejoin must reproduce goes through G.init or the command log. Drawing is not simulation, but props must be a pure function
+    of the map, its seed and the tile (Terrain.hash) so every redraw is identical.
+  - A change to a stamped file (js/data, map, sim, game, combat, abilities, commands, ai, missions, build) moves the build stamp.
+  - The relay (test/serve.js) stays dependency-free.
+  - Detect line endings per file. Edit with tools/patch.js; write every spec and probe with the Write tool; never sed -i.
+  - Never type, store or handle the user's passwords, certificates or API keys. Art or assets someone bought stay out of this
+    public repository. Nothing that costs money.
+  - The comments in js/ are load-bearing: they record why the obvious thing was not done. Do not delete reasoning.
+
+DONE MEANS: every tileset looks as good as the approved Badlands -- textured, lit, with props -- on every map; no ramp can be
+entered from its side; the strategic zoom and the minimap match the ground; The Long March has no camera or scroll hitch over about
+50 ms (measured before and after); detailed terrain is on by default with Classic in Settings; the gate is green; PLAYTEST entries
+are written; everything is committed and pushed. Then close the CLAUDE.md way: a numbered list of what changed FOR A PLAYER
+(including what is deliberately different from what was asked, and anything unfinished), how to playtest each item by hand, and a
+new kickoff prompt at the top of HANDOFF-M18.md.
+```
+
+---
+
+# The tenth session (the user's playtest of 94-100, every finding fixed), kept for the record
 
 Written at the end of the tenth session (2026-09-13). Branch `m10-overnight`, which is `origin/main`. **Everything is
 committed and pushed; there are no open pull requests, no other branches and no extra worktrees.** Trust `git log -1` for
@@ -114,7 +287,7 @@ tables before and after items 4 and 8.
 
 ---
 
-## Kickoff prompt for a fresh chat
+## The tenth session's kickoff prompt (SUPERSEDED by the one at the top of this file)
 
 Open the new chat with the repository folder as its working directory, so `CLAUDE.md` loads by itself. Paste everything
 inside the fence. **Replace the HEAD placeholder with `git log -1 --format=%h` first** -- committing this file moves it.

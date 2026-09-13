@@ -267,8 +267,9 @@ const Terrain = {
     }
     return ready ? out : null;
   },
-  // A textured chunk. Baked at ratio 1 whatever the display: a photograph survives the upscale where the dither did not, and
-  // this bake is several times the palette's per pixel.
+  // A textured chunk. Baked at ratio 1 whatever the display: a photograph survives the upscale where the dither did not. Per
+  // chunk it costs about what the palette's does -- a median 18.5 ms against 21.7, measured in plain V8 over 256 chunks of Lost
+  // Ruins (RESEARCH-TERRAIN.md 8.4; inside a vm harness both run ten times slower) -- so on a dpr-2 display it is far cheaper.
   renderChunkTex(cx, cy, T) {
     const m = G.map, CH = this.CH, W = CH * TILE, S = this.TEX_PX, grade = TERRAIN_GRADE[this.setId] || {};
     const cv = document.createElement('canvas'); cv.width = W; cv.height = W; const x = cv.getContext('2d');
