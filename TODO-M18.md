@@ -5,7 +5,7 @@ traps and the kickoff prompt; this file is the open list. **Its first section, T
 user's decision on every open item after the eighth session, in order. The sessions' lists follow it (what each did,
 with commits), then the older open items with their measurements, then what is closed. There are no worktrees.
 
-The gate is **86 suites** (`node test/all.js`, ~5 min); in the ninth session it is 2 red, `aistyles` and
+The gate is **87 suites** (`node test/all.js`, ~5 min); in the ninth session it is 2 red, `aistyles` and
 `queens`, both the AI pacing -- queue item G, which the user has now authorized (see below). It was last all green at `136b1b0`. Every rule in `CLAUDE.md`
 applies to every item here: measure before fixing, a negative control that goes cleanly RED, `tools/patch.js`
 for edits, and the gate green before the commit.
@@ -75,7 +75,13 @@ deliberately not random (`GameMap.assignStarts`), so a game with no choices is u
 - Checks: `test/cmdlog.js`, `test/skirmish.js`, `test/rooms.js` (its sections 12 and 15 pin lobby markup names),
   `test/lobby.js`, `test/menus.js`; by hand `node test/net_many.js` (relay change) and the AI suites after a stamp move.
 
-**B. Rematch / back to the same lobby after a game (item 6, "build this now").**
+**B. Rematch / back to the same lobby after a game (item 6, "build this now").** **DONE (ninth session)** -- the room outlives
+the game (Beyond All Reason's model, researched with OpenRA, StarCraft II, Age of Empires II and FAF: `RESEARCH-LOBBY.md`
+section 8). The end screen of a game from a lobby leads with REMATCH (back, ready) and BACK TO LOBBY (back, unready); the
+relay calls a game over only when every player still in it reports the same frame; a player still on the end screen is
+`away`; going back early is a drop to the game and a seat in the lobby; the skirmish lobby's REMATCH is a new seed. Found
+and fixed on the way: F10 in an online game offered Restart and Save game. `PLAYTEST-M18.md` item 95, `test/rematch.js`
+(39), 29 negative controls. No stamped file changed. The plan as it was written:
 - `RESEARCH-LOBBY.md` section 4 says why it was left: the relay would have to hand a finished room back to its lobby
   while a player may still be watching the end. Design that case BEFORE code: who is host, what happens to players who
   left, to spectators, to a player still on the end screen, and to the room code.
@@ -161,6 +167,7 @@ repo goes private).
   px of the point), lines still spread. No errors, warnings or desyncs; median 60 fps (min 49), a steady 24 game frames a
   second. The three "stalls" were supply blocks, which the recorder now ignores.
 - **Queue item A, start positions: DONE** (above).
+- **Queue item B, rematch and back to the lobby: DONE** (above), with the online F10 menu's Restart and Save game removed.
 
 ## The eighth session's list (the user's third message, 2026-09-12)
 

@@ -269,3 +269,53 @@ pre-game placement.
 
 Tests: `test/starts.js` (the engine, the options, the preview, the skirmish lobby clicked, the relay over real sockets),
 with 30 negative controls in `.claude/review/starts/controls.js`.
+
+---
+
+## 8. After the game: rematch, and back to the same lobby
+
+*Ninth session, queue item B (the user: "build this now"). Section 4 left it because the relay would have to hand a finished
+room back to its lobby while a player may still be watching the end. Before it, the room was emptied and deleted once its
+last socket closed: nothing -- code, title, map, rules, the computers -- was left to play again in (measured first,
+`.claude/review/rematch/probe.js`).*
+
+Researched from source where the game is open (**[src]**), official notes (**[doc]**), secondhand only where nothing better
+exists (**[2nd]**).
+
+- **Beyond All Reason** [src] -- **the room outlives the match.** When a match stops, the lobby server puts the room back in
+  its lobby state with the same id and settings (only the match id is new), sets **every member unready**, re-checks who
+  may stay and who may play, and keeps spectators. The autohost stops the game five seconds after it is over by default, so
+  nobody plays on. ([teiserver consul_server.ex](https://github.com/beyond-all-reason/teiserver/blob/main/lib/teiserver/coordinator/consul_server.ex),
+  [SPADS settings](https://github.com/Yaribz/SPADS/blob/master/var/helpSettings.dat))
+- **Zero-K** [src] -- the room survives the game too, and moves on to a vote on the next map after a few seconds
+  ([ServerBattle.cs](https://github.com/ZeroK-RTS/Zero-K-Infrastructure/blob/master/ZkLobbyServer/ServerBattle.cs)).
+- **OpenRA** [src] -- **no**: after a multiplayer game "Leave" disconnects to the server browser; a dedicated server rebuilds
+  itself from its launch settings once the last connection goes, and a player-hosted one closes when its host leaves.
+  "Restart into the same lobby" has been an open request since 2018
+  ([IngameMenuLogic.cs](https://github.com/OpenRA/OpenRA/blob/bleed/OpenRA.Mods.Common/Widgets/Logic/Ingame/IngameMenuLogic.cs),
+  [issue 15181](https://github.com/OpenRA/OpenRA/issues/15181)).
+- **StarCraft II** [doc] -- patch 3.19 removed the score screen's "Play Again"; the lobby is gone and whoever hosts next
+  makes a new one ([patch 3.19](https://news.blizzard.com/en-gb/starcraft2/21048080)).
+- **Age of Empires II: DE** [doc] -- since update 66692 (2022) every player can opt in to a **Rematch**, which makes a NEW lobby
+  "with the same match settings"; players have since asked for the lobby simply to stay alive instead
+  ([update 66692](https://www.ageofempires.com/news/age-of-empires-ii-definitive-edition-update-66692/)).
+- **Forged Alliance Forever** [src] -- a "Rehost" made a new game with the old title, map and mods for others to find; it was
+  switched off in 2023 because rehosted games came up wrong ([PR 5159](https://github.com/FAForever/fa/pull/5159)).
+
+**What was built -- BAR's persistent room, with AoE II's opt-in:**
+
+| | Here |
+|---|---|
+| The room | **Persists**, like BAR's and Zero-K's: same code, title, privacy, map, speed, rules, computers, teams and starts, back in the game list as open. |
+| The buttons | The end screen of a game from a lobby leads with **REMATCH** and **BACK TO LOBBY**. BACK TO LOBBY lands you unready (BAR resets everyone). REMATCH lands you **ready** -- AoE II's opt-in: the one click says "the same again". A spectator gets BACK TO LOBBY only. |
+| When | The relay only calls a game over when **every player still in it reports the same end frame** (lockstep makes honest clients agree; one client cannot end a game for the rest). The room returns the moment someone goes back after that -- or when nobody is left in the game. BAR stops the game for everyone five seconds after it ends; here nobody is pulled out of a game still being played. |
+| Going back early | Out of the game, not the room: to the others it is a drop (their units stop), and you wait in the lobby while they finish. |
+| Still on the end screen | **Away**: the seat is kept, not ready, START waits for them by name, the host can remove them, and their own button brings them in. An away host hands the room to the first player back, and has it again on return. |
+| Left | A player who closed the socket loses the seat. A player back in the lobby can still walk out while the game runs. |
+| Spectators | Stay spectators. |
+| Single player | REMATCH restarts the skirmish lobby's room at once on a new seed (Restart this game is still the same seed); BACK TO LOBBY opens that lobby as it was left. |
+
+Not built: BAR's automatic stop after the end (nobody is forced out of a game), AoE II's separate new lobby, a vote on the next map.
+
+Tests: `test/rematch.js` (the relay over real sockets; the page with the real `UI.start`), with 27 negative controls in
+`.claude/review/rematch/controls.js`.

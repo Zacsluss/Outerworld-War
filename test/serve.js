@@ -124,11 +124,13 @@ function send(c, msg) { try { c.socket.write(frame(JSON.stringify(msg))); } catc
 // a connection leaking the existence of a game it has not given the code for.
 function inRoom(L) { const out = []; for (const c of clients.values()) if (c.room === L.code) out.push(c); return out; }
 function broadcast(L, msg, except) { for (const c of inRoom(L)) if (c !== except) send(c, msg); }
-function hostOf(L) { return L.players.find(q => !q.ai && !q.gone) || null; }
+// The first human here. One who is `away` (still on a finished game's end screen) hands it to the next one who came back,
+// and has it again on return if they are first; a room of nobody but away humans keeps its first (queue item B).
+function hostOf(L) { return L.players.find(q => !q.ai && !q.gone && !q.away) || L.players.find(q => !q.ai && !q.gone) || null; }
 // The style rides here and in startMsg's player list, and that is the WHOLE plumbing an AI play style
 // needs: js/ai.js's constructor reads it off G.setup.players[id].style, and G.setup is the options object
 // Net.startGame builds. So a styled network AI costs no change to any stamped file. (item 1)
-function lobbyState(L) { const host = hostOf(L); return { t: 'lobby', room: L.code, title: L.title, listed: !!L.listed, players: L.players.map(p => Object.assign({ id: p.id, name: p.name, race: p.race, team: p.team, ai: !!p.ai, difficulty: p.difficulty, style: p.style, gone: !!p.gone, ready: !!p.ready || !!p.ai, host: host ? p.id === host.id : false, ping: p.ai ? null : pingOf(p.id) }, startOf(p))), cap: capOf(L), specs: (L.specs || []).map(s => ({ id: s.id, name: s.name, ping: pingOf(s.id) })), layout: L.layout, state: L.state, speed: L.speed == null ? 6 : L.speed, count: L.count | 0, lockTeams: !!L.lockTeams, rules: L.rules, delay: DELAY, readyCheck: READY_CHECK }; }
+function lobbyState(L) { const host = hostOf(L); return { t: 'lobby', room: L.code, title: L.title, listed: !!L.listed, players: L.players.map(p => Object.assign({ id: p.id, name: p.name, race: p.race, team: p.team, ai: !!p.ai, difficulty: p.difficulty, style: p.style, gone: !!p.gone, ready: !!p.ready || !!p.ai, host: host ? p.id === host.id : false, ping: p.ai ? null : pingOf(p.id) }, startOf(p), p.back ? { back: true } : {}, p.away ? { away: true } : {})), cap: capOf(L), specs: (L.specs || []).map(s => ({ id: s.id, name: s.name, ping: pingOf(s.id) })), layout: L.layout, state: L.state, speed: L.speed == null ? 6 : L.speed, count: L.count | 0, lockTeams: !!L.lockTeams, rules: L.rules, delay: DELAY, readyCheck: READY_CHECK }; }
 function pingOf(id) { const c = clients.get(id); return c && c.rtt != null ? c.rtt : null; }
 // A START POSITION (ninth session, queue item A; OpenRA, StarCraft II and Age of Empires II all let a lobby place players).
 // `start` is an index into the map's starts -- the lobby draws it plus one -- and a slot without one is AUTOMATIC: the
@@ -193,12 +195,63 @@ function catchUp(L, c, idx) {
     }, 4000);
   } else sendRejoin(L, c, idx, null, 0);
 }
+// BACK TO THE LOBBY, AND A REMATCH (ninth session, queue item B; RESEARCH-LOBBY.md section 8). A finished game hands its
+// room back to its lobby -- the same code, title, privacy, map, speed, rules, computers, teams and starts -- instead of
+// emptying it when the last socket goes, which was the only way out before.
+//   * `back` from a player in a running game takes them out of the GAME, not the room. To the lockstep it is exactly a drop
+//     (dropFromGame: their units stop after their last batch and nobody waits on them again); in the room they are `back`,
+//     and see the lobby while the others finish. `ready: true` is REMATCH: their ready is waiting for them in the lobby.
+//   * `over` from a player is their client's G.over and the frame it came at. The game is OVER when every human still in it
+//     has said so at the same frame: lockstep makes honest clients agree, and one client cannot end a game for the rest.
+//     (Queue item C reads the same agreement for a result.)
+//   * THE ROOM IS A LOBBY AGAIN (returnToLobby) when the game is over and someone is back, or when nobody human is left in
+//     the game and someone is back. A player still on the end screen then is `away`: their seat is kept, they are not
+//     ready, START waits for them like any unready player, the host can remove them, and their own BACK TO LOBBY or
+//     REMATCH brings them in. A player who closed the socket loses the seat; spectators stay spectators.
+//   * Nobody going back leaves today's behaviour alone: players who all DROP while a spectator watches still leave the game
+//     running for a rejoin by name.
+function dropFromGame(L, idx, back) {
+  const stopAt = Math.max((L.lastF[idx] == null ? -1 : L.lastF[idx]) + 1, DELAY);
+  L.players[idx].gone = true; L.gone[idx] = { from: stopAt, to: null };
+  broadcast(L, back ? { t: 'left', p: idx, f: stopAt, back: true } : { t: 'left', p: idx, f: stopAt });
+  return stopAt;
+}
+const inGame = L => L.players.filter(p => !p.ai && !p.gone);
+// Is the game over? Every human still in it has reported the same frame. Asked again whenever that set shrinks -- a player
+// who goes back or drops can be the one whose report was missing -- and true only once.
+function checkOver(L) {
+  if (L.over || L.state !== 'playing' || !L.overs) return !!L.over;
+  const still = inGame(L).map(p => L.players.indexOf(p));
+  if (!still.length || !still.every(i => L.overs[i]) || new Set(still.map(i => L.overs[i].f)).size !== 1) return false;
+  L.over = { f: L.overs[still[0]].f };
+  console.log(tag(L) + 'game over at frame ' + L.over.f + ', agreed by ' + still.length + ' player' + (still.length === 1 ? '' : 's'));
+  return true;
+}
+function returnToLobby(L) {
+  if (L.timer) { clearTimeout(L.timer); L.timer = null; }
+  L.state = 'lobby'; L.started = null; L.history = []; L.lastF = {}; L.gone = {}; L.pendingSnaps = null; L.count = 0; L.over = null; L.overs = null;
+  // who is still here: every computer, and every human whose socket is in this room (a player who dropped has id 0)
+  const here = id => { const x = id ? clients.get(id) : null; return !!x && x.room === L.code; };
+  L.players = L.players.filter(p => p.ai || here(p.id));
+  if (!L.players.some(p => !p.ai)) L.players = [];
+  for (const p of L.players) {
+    if (p.ai) continue;
+    p.ready = !!(p.back && p.readyBack);
+    if (p.back) delete p.away; else p.away = true;
+    delete p.back; delete p.readyBack; delete p.gone;
+  }
+  const away = L.players.filter(p => p.away).map(p => p.name);
+  sys(L, 'lobby', { away });
+  const now = hostOf(L); if (now && L.hostId != null && now.id !== L.hostId) sys(L, 'host', { name: now.name });   // L.hostId: who hosted when the game began
+  broadcast(L, lobbyState(L)); pushLobbies();
+  console.log(tag(L) + 'back to the lobby: ' + L.players.map(p => p.name + (p.away ? ' (away)' : p.ready && !p.ai ? ' (ready)' : '')).join(', '));
+}
 function startMsg(L, idx) { return { room: L.code, seed: L.seed, layout: L.layout, players: L.started, you: idx, delay: DELAY, gone: L.gone, speed: L.speed == null ? 6 : L.speed, cheats: CHEATS, rules: L.rules, spectate: idx < 0 }; }
 // The body of the old start case, now reached either straight away (COUNTDOWN 0) or when the count runs
 // out. Everything the game is built from is read HERE, at zero, not when START was pressed -- which is
 // why the room is frozen in between.
 function beginGame(L) {
-  L.state = 'playing'; L.count = 0; L.timer = null; pushLobbies();
+  L.state = 'playing'; L.count = 0; L.timer = null; L.over = null; L.overs = null; L.hostId = (hostOf(L) || {}).id; pushLobbies();
   L.seed = Math.floor(Math.random() * 1e9); const races = ['T', 'Z', 'P'];
   L.started = L.players.map(p => Object.assign({ name: p.name, race: p.race === 'R' ? races[Math.floor(Math.random() * 3)] : p.race, team: p.team, human: !p.ai, difficulty: p.difficulty, style: p.style }, startOf(p)));
   L.history = []; L.lastF = {}; L.gone = {};
@@ -262,7 +315,7 @@ function onMessage(c, m) {
       }
       if (L.state !== 'lobby') { // a dropped player reconnecting under the same name takes their slot back
         if (me) { send(c, { t: 'error', msg: 'You are already in this game.' }); return; }   // a live player re-sending join with a dropped name used to take that slot too, and two slots shared one id
-        const name = String(m.name || '').slice(0, 16); const idx = L.players.findIndex(p => p.gone && p.name === name);
+        const name = String(m.name || '').slice(0, 16); const idx = L.players.findIndex(p => p.gone && !p.back && p.name === name);   // a player BACK in the lobby is gone from the game, not from the room: their seat is not for taking
         if (idx < 0) { send(c, { t: 'error', msg: 'Game already in progress' + (name ? ' and no dropped player is called ' + name : '') + '.' }); return; }
         c.room = L.code;
         const slot = L.players[idx]; slot.id = c.id; slot.gone = false;
@@ -380,12 +433,48 @@ function onMessage(c, m) {
     // another player's units, cancel their production or `game over man` them, deterministically, on
     // every client, with no desync to show for it. A batch that is not an array is dropped: forwarded, it
     // threw inside every receiver's beforeTick. (REVIEW-M17)
-    case 'cmds': { const idx = L.players.findIndex(p => p.id === c.id); if (idx >= 0 && L.state === 'playing' && Array.isArray(m.c)) { const cs = m.c.filter(x => x && typeof x === 'object' && (CHEATS || x.t !== 'cheat')).map(x => Object.assign({}, x, { p: idx })); const f = m.f | 0; if (f > maxFrame(L) + CMD_LEAD) { console.log(tag(L) + 'dropped a batch from ' + L.players[idx].name + ' claiming frame ' + f + ' (' + (f - maxFrame(L)) + ' ahead of the room, window ' + CMD_LEAD + ')'); break; } L.history.push({ p: idx, f, c: cs }); if (!(L.lastF[idx] >= f)) L.lastF[idx] = f; broadcast(L, { t: 'cmds', p: idx, f, c: cs }, c); } break; }
-    case 'hash': { const idx = L.players.findIndex(p => p.id === c.id); if (idx >= 0) broadcast(L, { t: 'hash', p: idx, f: m.f, h: m.h }, c); break; }
+    case 'cmds': { const idx = L.players.findIndex(p => p.id === c.id); if (idx >= 0 && L.state === 'playing' && !L.players[idx].back && Array.isArray(m.c)) { const cs = m.c.filter(x => x && typeof x === 'object' && (CHEATS || x.t !== 'cheat')).map(x => Object.assign({}, x, { p: idx })); const f = m.f | 0; if (f > maxFrame(L) + CMD_LEAD) { console.log(tag(L) + 'dropped a batch from ' + L.players[idx].name + ' claiming frame ' + f + ' (' + (f - maxFrame(L)) + ' ahead of the room, window ' + CMD_LEAD + ')'); break; } L.history.push({ p: idx, f, c: cs }); if (!(L.lastF[idx] >= f)) L.lastF[idx] = f; broadcast(L, { t: 'cmds', p: idx, f, c: cs }, c); } break; }
+    case 'hash': { const idx = L.players.findIndex(p => p.id === c.id); if (idx >= 0 && L.state === 'playing' && !L.players[idx].back) broadcast(L, { t: 'hash', p: idx, f: m.f, h: m.h }, c); break; }
+    // THE END OF A GAME and THE WAY BACK (queue item B) -- see "BACK TO THE LOBBY" above startMsg.
+    case 'over': {
+      const idx = L.players.findIndex(p => p.id === c.id);
+      if (idx < 0 || L.state !== 'playing' || L.over || L.players[idx].gone) break;
+      const f = m.f | 0; if (f < 0 || f > maxFrame(L) + CMD_LEAD) break;
+      L.overs = L.overs || {}; L.overs[idx] = { f, team: Number.isInteger(m.team) ? m.team : null };
+      if (checkOver(L) && L.players.some(p => p.back)) returnToLobby(L);
+      break;
+    }
+    case 'back': {
+      const i = L.players.findIndex(p => p.id === c.id);
+      if (L.state === 'playing' && i >= 0 && !L.players[i].back) {
+        const p = L.players[i];
+        if (!p.gone) dropFromGame(L, i, true);
+        p.back = true; p.readyBack = m.ready === true;
+        sys(L, 'back', { name: p.name, ready: p.readyBack });
+        console.log(tag(L) + p.name + ' went back to the lobby' + (p.readyBack ? ' for a rematch' : ''));
+        if (checkOver(L) || !inGame(L).length) returnToLobby(L); else broadcast(L, lobbyState(L));
+      } else if (L.state === 'lobby' && i >= 0 && L.players[i].away) {
+        const was = hostOf(L), p = L.players[i]; delete p.away; if (m.ready === true) p.ready = true;
+        sys(L, 'back', { name: p.name, ready: m.ready === true });
+        const now = hostOf(L); if (now && now !== was) sys(L, 'host', { name: now.name });
+        broadcast(L, lobbyState(L)); pushLobbies();
+      }
+      break;
+    }
     // `leave` is the lobby's LEAVE button: out of the room and back to the list on the same socket. The
     // host leaving hands the room to the next human (hostOf), and the last human leaving empties it. In
     // a running game closing the socket is the way out, so `leave` there is ignored.
-    case 'leave': if (L.state !== 'playing') { if (L.state === 'starting' && me) cancelCountdown(L, me.name + ' left, so the start was cancelled.'); const wasHost = hostOf(L), sp = specOf(L, c.id); L.players = L.players.filter(p => p.id !== c.id); L.specs = (L.specs || []).filter(s => s.id !== c.id); if (!L.players.some(p => !p.ai)) L.players = []; c.room = null; c.browsing = true; departed(L, me || sp, wasHost); broadcast(L, lobbyState(L)); if (!inRoom(L).length && L.code !== DEFAULT_ROOM) rooms.delete(L.code); send(c, lobbies()); pushLobbies(); console.log(tag(L) + (me ? me.name : 'client ' + c.id) + ' left the lobby'); } break;
+    // ...and in a running game, a player already BACK in the lobby, or a spectator, may still walk out of the room.
+    case 'leave': if (L.state === 'playing') {
+      const p = L.players.find(q => q.id === c.id && q.back), sp = specOf(L, c.id);
+      if (!p && !sp) break;
+      if (p) { p.id = 0; delete p.back; delete p.readyBack; }
+      if (sp) L.specs = L.specs.filter(s => s !== sp);
+      c.room = null; c.browsing = true; sys(L, 'leave', { name: (p || sp).name });
+      if (!inRoom(L).length) { if (L.code !== DEFAULT_ROOM) rooms.delete(L.code); else { L.players = []; L.specs = []; L.state = 'lobby'; L.started = null; L.history = []; L.lastF = {}; L.gone = {}; } }
+      else if (L.players.some(q => q.back) && (checkOver(L) || !inGame(L).length)) returnToLobby(L); else broadcast(L, lobbyState(L));
+      send(c, lobbies()); pushLobbies();
+    } else if (L.state !== 'playing') { if (L.state === 'starting' && me) cancelCountdown(L, me.name + ' left, so the start was cancelled.'); const wasHost = hostOf(L), sp = specOf(L, c.id); L.players = L.players.filter(p => p.id !== c.id); L.specs = (L.specs || []).filter(s => s.id !== c.id); if (!L.players.some(p => !p.ai)) L.players = []; c.room = null; c.browsing = true; departed(L, me || sp, wasHost); broadcast(L, lobbyState(L)); if (!inRoom(L).length && L.code !== DEFAULT_ROOM) rooms.delete(L.code); send(c, lobbies()); pushLobbies(); console.log(tag(L) + (me ? me.name : 'client ' + c.id) + ' left the lobby'); } break;
     case 'chat': { const sp = me ? null : specOf(L, c.id), from = me || sp; if (from) broadcast(L, { t: 'chat', from: from.name, id: from.id, spec: !!sp, text: String(m.text).slice(0, 200) }); break; }
     case 'ping': send(c, { t: 'pong' }); break;
   }
@@ -397,12 +486,15 @@ function leave(c) {
   if (L.state === 'playing') {
     if (idx >= 0 && !L.players[idx].gone) {
       // every client can only have simulated up to the last frame this player sent a batch for; stop their units on the next one
-      const stopAt = Math.max((L.lastF[idx] == null ? -1 : L.lastF[idx]) + 1, DELAY);
-      L.players[idx].gone = true; L.players[idx].id = 0; L.gone[idx] = { from: stopAt, to: null };
-      broadcast(L, { t: 'left', p: idx, f: stopAt }); broadcast(L, lobbyState(L)); console.log(tag(L) + L.players[idx].name + ' dropped; units stop at frame ' + stopAt);
+      const stopAt = dropFromGame(L, idx); L.players[idx].id = 0;
+      broadcast(L, lobbyState(L)); console.log(tag(L) + L.players[idx].name + ' dropped; units stop at frame ' + stopAt);
+    } else if (idx >= 0 && L.players[idx].back) {
+      // back in the lobby already, and now gone from the room too: the seat is not kept for them
+      L.players[idx].id = 0; delete L.players[idx].back; delete L.players[idx].readyBack; sys(L, 'leave', { name: L.players[idx].name }); broadcast(L, lobbyState(L));
     }
     if (specOf(L, c.id)) { L.specs = L.specs.filter(s => s.id !== c.id); broadcast(L, lobbyState(L)); }
-    if (!inRoom(L).length) { L.players = []; L.specs = []; L.state = 'lobby'; L.started = null; L.history = []; L.lastF = {}; L.gone = {}; L.pendingSnaps = null; console.log(tag(L) + 'all players gone, back to lobby'); }   // `started` too: `set` and `addai` gate on it, so the second game in the LAN room could change no race, team, map or speed (REVIEW-M17)
+    if (!inRoom(L).length) { L.players = []; L.specs = []; L.state = 'lobby'; L.started = null; L.history = []; L.lastF = {}; L.gone = {}; L.pendingSnaps = null; L.over = null; L.overs = null; console.log(tag(L) + 'all players gone, back to lobby'); }   // `started` too: `set` and `addai` gate on it, so the second game in the LAN room could change no race, team, map or speed (REVIEW-M17)
+    else if (L.state === 'playing' && L.players.some(q => q.back) && (checkOver(L) || !inGame(L).length)) returnToLobby(L);   // the last player still in the game walked out, or the one whose report was missing: the ones who went back have their lobby
   }
   else {
     // ...including one that drops mid-countdown: beginGame() reads the player list at zero, so a slot that

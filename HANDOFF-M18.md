@@ -1,6 +1,6 @@
 # HANDOFF — M18 (the ninth session: the user's answers, the playtest recorder, start positions)
 
-Written during the ninth session (2026-09-12), after queue item A. Branch `m10-overnight`, which is `origin/main`.
+Written during the ninth session (2026-09-12), after queue items A and B. Branch `m10-overnight`, which is `origin/main`.
 **Everything is committed and pushed; there are no open pull requests, no other branches and no extra worktrees.**
 Trust `git log -1` for HEAD, not a hash written here.
 
@@ -12,13 +12,16 @@ Trust `git log -1` for HEAD, not a hash written here.
 
 ## The state
 
-- **The gate is 86 suites (the new one is `starts`, 58 checks) and 2 are red: `aistyles` and `queens`**, and every failing
-  line is byte-identical to the eighth session's gate log -- choosing a start moved no AI measurement. **Build stamp
+- **The gate is 87 suites (new: `starts`, 58 checks; `rematch`, 39) and 2 are red: `aistyles` and `queens`**, and every
+  failing line is byte-identical to the eighth session's gate log -- neither item moved an AI measurement. **Build stamp
   `506fb0d48d1e1d36`** (moved: `js/game.js` and `js/map.js` place players by `GameMap.assignStarts`).
 - **By hand:** `net_many` 51/51; `desktop/page-check.js` 22/22 (`desktop/dist` refreshed); `aistyles` seed 1 125/7, seed 5
   125/7 (the same seven wave-and-attack-timing lines), seed 11 124/8 (the seven plus the long-standing flaky "harasser
   fields more fast units than turtle", 3 vs 5); `eightplayer` 18/19 (the economy-floor line). All as before.
-- **Negative controls:** 30 in `.claude/review/starts/controls.js`, every one cleanly red.
+- **Negative controls:** 30 in `.claude/review/starts/controls.js` and 29 in `.claude/review/rematch/controls.js`, every one
+  cleanly red. After item B, by hand: `net_many` 51/51 again, `page-check` 22/22; and in two real browser tabs on the relay,
+  a player's REMATCH took the room back while the other was still in the game, who was shown the end screen, came back
+  host, and started the rematch on a new seed.
 - **The user answered the three questions** (TODO-M18): **G is authorized**, **D is unsigned builds only**, and their
   **playtest of 88-93 is done** (results in TODO-M18, "The ninth session"). They want every queue item finished.
 - **The playtest recorder** may still be running from this session on ports 8870-8871 (a `preview_start` server named
@@ -36,9 +39,18 @@ Trust `git log -1` for HEAD, not a hash written here.
 3. **A playtest can be recorded** (for the assistant, not the player): `node tools/playtest-listen.js`, play at
    http://127.0.0.1:8870, press NOTE when something looks wrong.
 
-**Saves and replays from before this session are refused** (the build stamp moved).
+4. **After a game, the room is still there** (PLAYTEST 95). The end screen of a game you started from a lobby leads with
+   **Rematch** (you go back to the same lobby, ready) and **Back to lobby** (not ready). Online, the room keeps its code,
+   map, rules, computers, teams and starts; a player still looking at the end screen is shown as "end screen" and START
+   waits for them; whoever closed the game's tab loses their seat. In single player, Rematch is the same game again at once
+   on a new seed, and Back to lobby is the skirmish lobby as you left it.
+5. **F10 in an online game no longer offers Restart or Save game** -- Restart started a private copy of the game, Save game
+   did nothing.
 
-**Not done yet:** queue items B-G.
+**Saves and replays from before this session are refused** (the build stamp moved with item A; item B changed no stamped
+file).
+
+**Not done yet:** queue items C-G.
 
 ## Traps found this session
 
@@ -58,6 +70,18 @@ Trust `git log -1` for HEAD, not a hash written here.
    `test/starts.js`. `test/menus.js` is still 79/79.
 8. **A Monitor tailing the recorder's notable log floods during combat micro** (a line per right-click). Filter
    `RIGHT-CLICK` out; the lines are in the file anyway.
+9. **A player index is a position in `L.players`, so nothing may be REMOVED from it while a game runs** -- a player who goes
+   back is marked (`back`, `gone`) and pruned only in `returnToLobby`. Removing one would shift every later player's batches
+   onto the wrong index.
+10. **A client's last `lobby` message is stale during a game** (the seventh session's trap 5): the first rematch probe read
+    `lobby.state` after a start and saw `lobby`. A client in a game that receives a `lobby` with state `lobby` knows the
+    room went back without it (`Net.roomBack`).
+11. **PowerShell 5.1 breaks a `git commit -m` here-string containing double quotes** into pathspecs. Write the message to a
+    file with the Write tool and use `git commit -F`.
+12. **The Browser pane does not run `requestAnimationFrame` while it is hidden**: `UI.loop` never runs, so the end screen
+    never opens by itself and screenshots time out. Verify in-game state with `javascript_tool`.
+13. **A `tools/patch.js` replace that does not end in a newline swallows the next line's indent** when the search did: the
+    item A patch left a `}` on a `case` line and a comment on another. End such replacements with an empty last element.
 
 ## Diagnostics added this session
 
@@ -86,20 +110,20 @@ READ IN THIS ORDER, then start:
   3. HANDOFF-M18.md     -- the state and the traps, newest session first.
   4. PLAYTEST-M18.md (items 64 on) and RESEARCH-LOBBY.md -- as each item needs them.
 
-THE STATE: node test/all.js is 86 suites, ~5 minutes, and 2 are RED: aistyles and queens (the computer AI's pacing under
-the slower economy). Build stamp 506fb0d48d1e1d36. Queue item A (start positions) is DONE.
+THE STATE: node test/all.js is 87 suites, ~5 minutes, and 2 are RED: aistyles and queens (the computer AI's pacing under
+the slower economy). Build stamp 506fb0d48d1e1d36. Queue items A (start positions) and B (rematch) are DONE.
 
 THE USER'S ANSWERS (do not ask again): G is AUTHORIZED ("you can fix now") -- narrowly, with test/balance.js and
 test/proxy.js untouched; D is UNSIGNED BUILDS ONLY (no Apple Developer Program, no paid Windows signing); their playtest
 of 88-93 is done and written up in TODO-M18 ("The ninth session"). The user wants EVERY queue item finished: do not
 stop between items, and resume anything a message interrupts.
 
-THE SINGLE NEXT ACTION: queue item B -- rematch / back to the same lobby after a game. Research first (OpenRA, BAR/SPADS,
-FAF, StarCraft II, Age of Empires II), write the design for the hard cases BEFORE code (who is host, players who left,
-spectators, a player still on the end screen, the room code), then build it, test it on its own relay ports, and
-negative-control it. Then C, D, E, F, G in order.
+THE SINGLE NEXT ACTION: queue item C -- ratings and skill-balanced teams. Research Beyond All Reason's OpenSkill ratings
+and its balancer first, then: an identity token per browser, results recorded only when the connected humans agree (the
+relay's `over` agreement from item B already exists -- read L.overs), Weng-Lin/OpenSkill written inline (the relay stays
+dependency-free), a JSON file for persistence, ratings in the lobby and a BALANCE TEAMS button. Then D, E, F, G in order.
 
-THE QUEUE, in order: B rematch / back to the lobby -> C ratings and skill-balanced teams -> D the desktop Mac build in
+THE QUEUE, in order: C ratings and skill-balanced teams -> D the desktop Mac build in
 GitHub Actions, unsigned -> E basic internet-play safety for the relay -> F research that gets stuck (reproduce first;
 the playtest recorder's stall detector helps) -> G the two red suites (authorized). DEFERRED until the user says so:
 the AI rebalance (TODO-M18 7b) and the terrain art path.

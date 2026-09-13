@@ -154,7 +154,7 @@ const UI = {
   },
   start(opts) {
     opts = Object.assign({}, opts, { players: opts.players.map(p => Object.assign({}, p, { race: p.race === 'R' ? ['T', 'Z', 'P'][Math.floor(Math.random() * 3)] : p.race })) });
-    this.lastOpts = opts; this.mode = opts.mode || 'play'; this.viewAll = false; this.prodOverlay = false; this.chat = null; this.loading = null; if (this.speedIdx > this.maxSpeedIdx()) this.speedIdx = this.maxSpeedIdx();
+    this.lastOpts = opts; this.mode = opts.mode || 'play'; this.overSent = false; this.fromLobby = null; this.viewAll = false; this.prodOverlay = false; this.chat = null; this.loading = null; if (this.speedIdx > this.maxSpeedIdx()) this.speedIdx = this.maxSpeedIdx();
     // A composed skirmish layout id describes its own map, so it can be rebuilt rather than shipped.
     // This is the one place that has to happen, and it has to happen BEFORE G.init: GameMap resolves
     // the id in its constructor, and G.daylight looks the layout up in MAP_LAYOUTS by name on every
@@ -270,6 +270,10 @@ const UI = {
     if (typeof Codex !== 'undefined') Codex.draw(Render.ctx);   // above the console, below the menu
     if (this.mode === 'replay') { this.drawTimeline(); if (this.prodOverlay) this.drawProdOverlay(); }
     if ((G.over || this.humanIsOut()) && !this.menu) this.menu = 'over';
+    // THE END OF A NETWORK GAME, told to the relay once (queue item B): the frame G.over came at and the winning team. The relay
+    // calls the game over when every player still in it says the same frame, and only then can one player's BACK TO LOBBY
+    // take the room with them. A spectator's word counts for nothing, so a spectator sends none.
+    this.reportOver();
     if (this.menu) this.drawMenu();
     this.frames++; if (t - this.fpsT > 1000) { this.fps = this.frames; this.frames = 0; this.fpsT = t; }
   },
@@ -1550,13 +1554,25 @@ const UI = {
     ctx.fillStyle = '#7b869a'; ctx.fillText('[ ] switch player   O hide   Ctrl+V all vision   Shift+arrows skip 30 s', 10, 66 + rows.length * 20 + 12);
   },
   // ---------------- menus ----------------
+  // REMATCH and BACK TO LOBBY (ninth session, queue item B), first on the end screen of a game that came from a lobby. Online
+  // they go to the relay's room (Net.backToLobby; a spectator has no seat to be ready in, so only goes back); in single player
+  // to the skirmish lobby the page still holds (UI.Skirmish). A mission, a loaded save and a replay came from no lobby and
+  // get neither.
+  lobbyItems() {
+    if (this.fromLobby === 'net' && typeof Net !== 'undefined' && Net.connected) return (this.mode === 'replay' ? [] : [['Rematch', () => Net.backToLobby(true)]]).concat([['Back to lobby', () => Net.backToLobby(false)]]);
+    if (this.fromLobby === 'skirmish' && this.Skirmish && this.Skirmish.L) return [['Rematch', () => this.Skirmish.rematch()], ['Back to lobby', () => this.Skirmish.backToLobby()]];
+    return [];
+  },
+  reportOver() { if (G.over && this.net && !this.overSent && typeof Net !== 'undefined' && Net.active && !Net.spectating) { this.overSent = true; Net.send({ t: 'over', f: G.frame, team: G.winTeam }); return true; } return false; },
+  // Restart keeps where the game came from, so a restarted skirmish still offers its lobby.
+  restart() { const from = this.fromLobby; this.start(this.lastOpts); this.fromLobby = from; },
   menuItems() {
     if (this.menu === 'brief' && G.mission) { const d = G.mission.def; return { title: d.title.toUpperCase(), lines: d.brief.concat(['', 'OBJECTIVE: ' + d.objective]), items: [['Begin mission', () => { this.menu = null; }]] }; }
     if (this.net && Net.active && !Net.connected) return { title: 'CONNECTION LOST', lines: ['The relay connection dropped.', 'Reconnect from the main menu with the same name to rejoin this game.'], items: [['Keep watching', () => { this.menu = null; }], ['Return to main menu', () => this.toMenu()]] };
-    if (this.menu === 'over') { const hp = G.players[G.human]; const won = G.mission ? G.winner === G.human : (G.winTeam != null ? G.winTeam === hp.team : G.winner === G.human); const mins = Math.max(1, G.frame / TPS / 60); const apm = Math.round(G.log.filter(e => e.c.p === G.human).length / mins); const lines = [`Time ${Math.floor(G.frame / TPS / 60)}:${String(Math.floor(G.frame / TPS) % 60).padStart(2, '0')}   APM ${apm}`]; if (G.mission) { lines.push('Objective: ' + G.mission.def.objective + (G.mission.done ? (won ? '  — complete' : '  — failed') : '')); if (G.mission.summary) lines.push(G.mission.summary); } lines.push(''); for (const q of G.players) { const s = q.stats; lines.push(`${q.name} (${RACE_INFO[q.race].name})  kills ${s.unitsKilled}/${s.buildingsKilled}  lost ${s.unitsLost}/${s.buildingsLost}  minerals ${s.mined}  gas ${s.gassed}${q.defeated ? '  ELIMINATED' : ''}`); } return { title: this.mode === 'replay' && this.net ? 'GAME OVER' : won ? 'VICTORY' : 'DEFEAT', lines, items: [[hp.defeated || this.mode === 'replay' ? 'Keep watching' : 'Continue playing', () => { this.menu = null; G.over = false; G.freePlay = true; }]].concat(this.net ? [] : [['Restart this game', () => this.start(this.lastOpts)]], [['Save replay', () => { Replay.saveReplay(); }], ['Return to main menu', () => this.toMenu()]]) }; }   // no Restart online: it would start a private copy of a game everyone else is still in
+    if (this.menu === 'over') { const hp = G.players[G.human]; const won = G.mission ? G.winner === G.human : (G.winTeam != null ? G.winTeam === hp.team : G.winner === G.human); const mins = Math.max(1, G.frame / TPS / 60); const apm = Math.round(G.log.filter(e => e.c.p === G.human).length / mins); const lines = [`Time ${Math.floor(G.frame / TPS / 60)}:${String(Math.floor(G.frame / TPS) % 60).padStart(2, '0')}   APM ${apm}`]; if (G.mission) { lines.push('Objective: ' + G.mission.def.objective + (G.mission.done ? (won ? '  — complete' : '  — failed') : '')); if (G.mission.summary) lines.push(G.mission.summary); } lines.push(''); for (const q of G.players) { const s = q.stats; lines.push(`${q.name} (${RACE_INFO[q.race].name})  kills ${s.unitsKilled}/${s.buildingsKilled}  lost ${s.unitsLost}/${s.buildingsLost}  minerals ${s.mined}  gas ${s.gassed}${q.defeated ? '  ELIMINATED' : ''}`); } return { title: this.mode === 'replay' && this.net ? 'GAME OVER' : won ? 'VICTORY' : 'DEFEAT', lines, items: this.lobbyItems().concat([[hp.defeated || this.mode === 'replay' ? 'Keep watching' : 'Continue playing', () => { this.menu = null; G.over = false; G.freePlay = true; }]], this.net ? [] : [['Restart this game', () => this.restart()]], [['Save replay', () => { Replay.saveReplay(); }], ['Return to main menu', () => this.toMenu()]]) }; }   // no Restart online: it would start a private copy of a game everyone else is still in
     // A network spectator's menu: the game runs on behind it (the lockstep never waits for a spectator), and there is no
     // speed to change, nothing to seek and nobody's game to take over.
-    if (this.mode === 'replay' && this.net) return { title: 'SPECTATING', lines: ['Watching: ' + (this.viewAll ? 'everyone' : G.players[G.human].name), '', '[ and ] switch player, O production overlay, Ctrl+V the whole map', 'The game carries on while this menu is open.'], items: [['Resume (Esc)', () => { this.menu = null; }], [(Sound.muted ? 'Sound: off' : 'Sound: on') + ' (Ctrl+M)', () => Sound.setMuted(!Sound.muted)], ['Toggle full map view (Ctrl+V)', () => { this.viewAll = !this.viewAll; this.menu = null; }], ['Next player (])', () => { this.cycleObserved(1); this.viewAll = false; this.menu = null; }], ['Toggle production overlay (O)', () => { this.prodOverlay = !this.prodOverlay; this.menu = null; }], ['Stop watching', () => this.toMenu()]] };
+    if (this.mode === 'replay' && this.net) return { title: 'SPECTATING', lines: ['Watching: ' + (this.viewAll ? 'everyone' : G.players[G.human].name), '', '[ and ] switch player, O production overlay, Ctrl+V the whole map', 'The game carries on while this menu is open.'], items: [['Resume (Esc)', () => { this.menu = null; }], [(Sound.muted ? 'Sound: off' : 'Sound: on') + ' (Ctrl+M)', () => Sound.setMuted(!Sound.muted)], ['Toggle full map view (Ctrl+V)', () => { this.viewAll = !this.viewAll; this.menu = null; }], ['Next player (])', () => { this.cycleObserved(1); this.viewAll = false; this.menu = null; }], ['Toggle production overlay (O)', () => { this.prodOverlay = !this.prodOverlay; this.menu = null; }]].concat(this.lobbyItems(), [['Stop watching', () => this.toMenu()]]) };
     if (this.mode === 'replay') return { title: 'REPLAY PAUSED', lines: ['Speed: ' + this.speedName(), 'Watching: ' + (this.viewAll ? 'everyone' : G.players[G.human].name), '', '[ and ] switch player, O production overlay', 'Shift+Left/Right skip 30 s, Home restarts, click the bar to seek'], items: [['Resume (Esc)', () => { this.menu = null; }], [(Sound.muted ? 'Sound: off' : 'Sound: on') + ' (Ctrl+M)', () => Sound.setMuted(!Sound.muted)], ['Toggle full map view (Ctrl+V)', () => { this.viewAll = !this.viewAll; this.menu = null; }], ['Next player (])', () => { this.cycleObserved(1); this.viewAll = false; this.menu = null; }], ['Toggle production overlay (O)', () => { this.prodOverlay = !this.prodOverlay; this.menu = null; }], ['Take control from here (Ctrl+B)', () => this.branchReplay()], ['Quit to menu', () => this.toMenu()]] };
     // Settings is its own screen rather than four more rows on the pause menu: the pause menu is where
     // you go to leave or to save, and mixing "quit to menu" in with "music off" made both harder to find.
@@ -1580,7 +1596,10 @@ const UI = {
       lines: br ? ['You took control at ' + this.clock(br.at) + '. Saving a replay saves the branch.'] : [],
       items: [['Resume (Esc)', () => { this.menu = null; }],
       ...(br ? [['Abandon branch, watch the original', () => this.unbranch()]] : []),
-      ['Settings', () => { this.menu = 'settings'; }], ['Save game (F5)', () => { Replay.save(true); this.menu = null; }], ['Save replay', () => { Replay.saveReplay(); this.menu = null; }], ['Restart', () => { this.start(this.lastOpts); }], ['Quit to menu', () => this.toMenu()]] };
+      // ONLINE, no Save game and no Restart (found while building queue item B): Replay.save does nothing while Net.active,
+      // and Restart started a private copy of a game everyone else was still in -- the end screen had always left it out for
+      // that reason, and this menu had not.
+      ['Settings', () => { this.menu = 'settings'; }]].concat(this.net ? [] : [['Save game (F5)', () => { Replay.save(true); this.menu = null; }]], [['Save replay', () => { Replay.saveReplay(); this.menu = null; }]], this.net ? [] : [['Restart', () => { this.restart(); }]], [['Quit to menu', () => this.toMenu()]]) };
   },
   menuClick(x, y) { for (const r of this.menuRects || []) if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) { r.fn(); return; } },
   // The codex, opened from the main menu where there is no game. Two things stand in the way and both
@@ -1656,7 +1675,10 @@ const UI = {
     this.startFromLog(b.data, 'replay');
   },
   clock(f) { const s = Math.floor(f / TPS); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); },
-  toMenu() { this.running = false; this.menuCodex = false; this.menu = null; this.loading = null; if (this.refreshMapList) this.refreshMapList(); if (typeof Net !== 'undefined' && Net.active) Net.disconnect(); if (typeof Music !== 'undefined') Music.stop(); if (this.showPanel) this.showPanel('mainPanel'); document.getElementById('menu').style.display = 'flex'; document.getElementById('game').style.display = 'none'; const ab = document.getElementById('autosaveBtn'); if (ab) ab.style.display = Replay.hasAutosave() ? 'block' : 'none'; },
+  toMenu() { if (typeof Net !== 'undefined' && Net.active) Net.disconnect(); this.leaveGame('mainPanel'); },
+  // Out of the game onto a menu panel, keeping any connection: toMenu less the disconnect, for BACK TO LOBBY (queue item B),
+  // which goes to a room the socket is still in, or to the skirmish lobby.
+  leaveGame(panel) { this.running = false; this.menuCodex = false; this.menu = null; this.loading = null; if (this.refreshMapList) this.refreshMapList(); if (typeof Music !== 'undefined') Music.stop(); if (this.showPanel) this.showPanel(panel || 'mainPanel'); document.getElementById('menu').style.display = 'flex'; document.getElementById('game').style.display = 'none'; const ab = document.getElementById('autosaveBtn'); if (ab) ab.style.display = Replay.hasAutosave() ? 'block' : 'none'; },
 
   // ==========================================================================
   // Skirmish setup (M11 wave two, item 22)
@@ -2090,9 +2112,14 @@ UI.Skirmish = {
     const opts = this.options();
     UI.speedIdx = this.L.speed == null ? 6 : this.L.speed;
     const el = this.el(); if (el) el.innerHTML = '';   // its ids are the multiplayer lobby's; nothing of it may linger behind a game
-    UI.start(opts);
+    UI.start(opts); UI.fromLobby = 'skirmish';   // the end screen offers REMATCH and BACK TO LOBBY (UI.lobbyItems)
     return true;
   },
+  // REMATCH and BACK TO LOBBY from a skirmish's end screen (queue item B): the room the game started from, which the page
+  // still holds. A rematch is that room at once on a new seed -- as the relay picks a new one at every START, and "Restart
+  // this game" is still there for the same one; back to the lobby is the room as it was left, to change something first.
+  rematch() { if (!this.L) return false; this.L.seed = this.roll(); return this.start(); },
+  backToLobby() { if (UI.leaveGame) UI.leaveGame('skirmishPanel'); this.open(); },
   open() {
     if (!this.L) { this.L = this.load(); this.log = []; this.teamsShown = 2; }
     const me = this.L.players.find(p => p.id === this.ME); if (me) me.name = this.name();

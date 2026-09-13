@@ -842,3 +842,37 @@ the same there). The map preview is at the top of GAME SETTINGS on the right.
 - **Online** (two browser tabs, one hosting): a guest clicks a start and the host sees it at once; a guest cannot move the
   host or a computer, and nobody can take a start someone holds. Moving a computer makes everyone ready up again; moving
   your own start only un-readies you.
+
+---
+
+## 95. Rematch, and back to the same lobby
+
+*(Ninth session, queue item B: "build this now". `RESEARCH-LOBBY.md` section 8 -- Beyond All Reason's room that outlives
+the match, with Age of Empires II's opt-in Rematch.)*
+
+**Single player.** Skirmish Setup, add a second computer and take a start, START GAME. To reach the end quickly, open
+the browser console and run `G.over = true` (or win or lose for real).
+- **The end screen leads with Rematch and Back to lobby**, above Continue playing, Restart this game, Save replay and Return to
+  main menu.
+- **Rematch** starts the same game again at once -- same map, computers, teams, starts and rules -- on a **new seed**
+  (Restart this game is the same seed).
+- **Back to lobby** opens Skirmish Setup exactly as you left it, to change something and START again.
+- A campaign mission, a loaded save or a watched replay offers neither.
+
+**Online** (two browser tabs on the same server -- `PLAY.bat`, or `node tools/playtest-listen.js` to have it recorded).
+Tab A hosts, tab B joins and readies, add a computer, START GAME. End it in both tabs with `G.over = true` in each
+console (the relay only believes the end when both say the same frame -- which a real game's end always is).
+- **Tab B presses Rematch.** Tab B is in the lobby at once: the same room code, map, rules, computer and starts, and B is
+  already READY. The chat says the game is over and that A is still on the end screen.
+- **Tab A, still on its end screen, is "end screen" in the lobby**, not ready -- and B is the host for now. B's START says
+  it is waiting for A "(still on the end screen)".
+- **Tab A presses Back to lobby**: A is in, not ready, and host again (the chat says so). A presses START: a new game on
+  the same settings.
+- **Going back before the end**: in a game of three or more, a player who is knocked out gets the end screen while the rest
+  play on. Their Back to lobby puts them in the lobby marked "back", with a line naming who the room is waiting for; the
+  others are told they went back, as for a drop. The room opens when the rest finish. (The buttons are on the end screen
+  only, not in the F10 pause menu.) A player who closes the tab instead has no seat in the next lobby.
+- **The game list** (a third tab, Multiplayer) shows the room "open" again after the game, not "in game".
+- **A spectator** (join with SPECTATE) gets Back to lobby, never Rematch, and stays a spectator in the lobby.
+- **F10 in an online game has no Restart and no Save game any more.** Restart used to start a private copy of a game
+  everyone else was still in, and Save game did nothing online. A game against the computer still has both.

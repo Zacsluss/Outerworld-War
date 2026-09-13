@@ -62,6 +62,18 @@ const Net = {
   browse(url, name, opts) { this.room = ''; this.browsing = true; this.open(url, name, () => { this.status(''); this.saveIdentity(); if (opts && opts.host) this.host(opts.title); else if (opts && opts.join) { this.send({ t: 'list' }); this.join(opts.join, true); } else this.send({ t: 'list' }); this.render(); }); },
   host(title) { this.send({ t: 'join', name: this.name, race: this.race, create: true, title: String(title || '').trim() || this.name + "'s game" }); this.status('Hosting...'); },
   join(code, existing, spectate) { code = String(code || '').trim(); if (!code) { this.status('Type a room code first.'); return; } this.room = code; this.send({ t: 'join', name: this.name, race: this.race, room: code, existing: !!existing, spectate: !!spectate }); this.status((spectate ? 'Joining ' + code.toUpperCase() + ' to watch...' : 'Joining ' + code.toUpperCase() + '...')); },
+  // BACK TO LOBBY and REMATCH (ninth session, queue item B): out of the game and into the same room, on the same socket. The
+  // relay takes the player out of the game exactly as a drop does and keeps their seat (test/serve.js, "BACK TO THE
+  // LOBBY"); `ready` is REMATCH, the agreement to play again on the same settings. This client's game ends where it is.
+  backToLobby(ready) {
+    if (!this.connected) { if (typeof UI !== 'undefined' && UI.toMenu) UI.toMenu(); return false; }
+    this.send({ t: 'back', ready: !!ready });
+    this.active = false; this.catchingUp = false; this.roomBack = false; this.outbox = [];
+    if (typeof UI !== 'undefined' && UI.leaveGame) UI.leaveGame('multiPanel');
+    this.status(ready ? 'Back in the lobby, ready for a rematch.' : 'Back in the lobby.');
+    this.render();
+    return true;
+  },
   leaveRoom() { this.send({ t: 'leave' }); this.lobby = null; this.room = ''; this.browsing = true; this.chatLog = []; this.teamsShown = 2; this.count = 0; this.countMsg = ''; this.status('Connected.'); this.render(); },
   disconnect() { if (this.ws) { try { this.ws.close(); } catch (e) { } } this.ws = null; this.connected = false; this.connecting = false; this.active = false; this.lobby = null; this.catchingUp = false; },
   send(m) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(m)); },
@@ -79,7 +91,10 @@ const Net = {
       // Only a client in no room is sent the list, so receiving it means the relay has us out of any lobby
       // (left, or kicked): back to the browser.
       case 'lobbies': this.lobbies = Array.isArray(m.rooms) ? m.rooms : []; this.online = m.online | 0; this.lobby = null; this.browsing = true; this.render(); if (typeof Desktop !== 'undefined' && Desktop.hosting) Desktop.share(); break;
-      case 'lobby': this.lobby = m; if (m.room) this.room = m.room; this.count = m.count | 0; for (const q of [].concat(Array.isArray(m.players) ? m.players : [], Array.isArray(m.specs) ? m.specs : [])) if (q && typeof q.ping === 'number') this.pings[q.id | 0] = q.ping | 0;
+      // A LOBBY WHILE THIS CLIENT IS STILL IN THE GAME: the game is over and the room went back to its lobby without us
+      // (queue item B). Nothing more will be relayed for this game; the end screen offers the way in (UI.lobbyItems).
+      case 'lobby': if (this.active && m.state === 'lobby' && !this.roomBack) { this.roomBack = true; if (typeof G !== 'undefined' && G.players && G.players[G.human]) G.players[G.human].msg('The room is back in the lobby. Press F10 for Back to lobby or Rematch.', 'info'); if (typeof UI !== 'undefined' && UI.running && !UI.menu) UI.menu = 'over'; }
+        this.lobby = m; if (m.room) this.room = m.room; this.count = m.count | 0; for (const q of [].concat(Array.isArray(m.players) ? m.players : [], Array.isArray(m.specs) ? m.specs : [])) if (q && typeof q.ping === 'number') this.pings[q.id | 0] = q.ping | 0;
         if (!this.active) this.spectating = Array.isArray(m.specs) && m.specs.some(s => s && s.id === this.id);
         // The host's client keeps the relay told how many seats the chosen map has (test/serve.js, capOf).
         if (m.state === 'lobby' && m.cap != null && Array.isArray(m.players) && m.players.some(q => q && q.id === this.id && q.host)) { const want = this.mapCap(m.layout, m.rules && m.rules.size); if (want !== m.cap) this.send({ t: 'set', cap: want }); } if (this.browsing) this.status('In the lobby.'); this.browsing = false; this.render(); if (typeof Desktop !== 'undefined' && Desktop.hosting) Desktop.share(); break;
@@ -104,7 +119,7 @@ const Net = {
       case 'needsnap': if (this.active && typeof Snapshot !== 'undefined') { try { this.send({ t: 'snap', req: m.req, frame: G.frame, applied: this.appliedFrame === G.frame, snap: Snapshot.take() }); } catch (e) { console.error('snapshot for rejoin failed', e); } } break;
       case 'cmds': if (this.active && m.f >= G.frame) { if (!this.inbox[m.f]) this.inbox[m.f] = {}; this.inbox[m.f][m.p] = Array.isArray(m.c) ? m.c : []; } break;   // a batch that is not a list counts as an empty one that ARRIVED, so the frame is not blocked forever
       case 'hash': this.onHash(m); break;
-      case 'left': { this.gone[m.p] = { from: m.f, to: Infinity }; if (typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg(this.playerName(m.p) + ' dropped. Their units stop at ' + this.clock(m.f) + '; the game continues.', 'info'); break; }
+      case 'left': { this.gone[m.p] = { from: m.f, to: Infinity }; if (typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg(this.playerName(m.p) + (m.back ? ' went back to the lobby' : ' dropped') + '. Their units stop at ' + this.clock(m.f) + '; the game continues.', 'info'); break; }
       case 'rejoined': { const g = this.gone[m.p]; if (g) g.to = m.f; else this.gone[m.p] = { from: -1, to: m.f }; if (typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg(this.playerName(m.p) + ' is rejoining; they take control again at ' + this.clock(m.f) + '.', 'info'); break; }
       case 'chat': if (this.active && typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg((m.spec ? '(watching) ' : '') + m.from + ': ' + m.text, 'chat'); else { this.logLine({ from: String(m.from), id: m.id, spec: !!m.spec, text: String(m.text) }); this.render(); } break;   // in a game it is chat on screen; in the lobby it is the lobby's log
     }
@@ -400,7 +415,10 @@ const Net = {
       case 'spectate': return n(m.name) + ' is watching.';
       case 'play': return n(m.name) + ' took a seat.';
       case 'start': return n(m.name) + (Number.isInteger(m.start) ? ' takes start ' + (m.start + 1) + '.' : ' is on Auto.');
-      case 'starts': return 'Start positions are back on Auto for the new map.';    }
+      case 'starts': return 'Start positions are back on Auto for the new map.';
+      case 'back': return n(m.name) + (m.ready ? ' is back in the lobby, ready for a rematch.' : ' is back in the lobby.');
+      case 'lobby': return 'The game is over. This is its lobby again, with the same settings.' + (Array.isArray(m.away) && m.away.length ? ' Still on the end screen: ' + m.away.map(n).join(', ') + '.' : '');
+    }
     return '';
   },
   logLine(entry) { this.chatLog.push(entry); if (this.chatLog.length > 80) this.chatLog.shift(); },
@@ -613,7 +631,7 @@ const Net = {
         + '<span class="lbSwatch" style="background:' + this.slotColor(seat.get(p.id)) + '" title="Seat ' + (seat.get(p.id) + 1) + ': this seat plays in this colour, from this start"></span>'
         + '<span class="lbReady" title="' + (p.ready || p.ai ? 'ready' : 'not ready') + '">' + (p.ready || p.ai ? '&#10003;' : '&middot;') + '</span>'
         + (p.host ? '<span class="lbStar" title="host">&#9733;</span>' : '')
-        + '<span class="lbName">' + e(p.name) + (p.ai ? '<i class="lbTag">A.I.</i>' : '') + (p.gone ? '<i class="lbTag">dropped</i>' : '') + '</span>'
+        + '<span class="lbName">' + e(p.name) + (p.ai ? '<i class="lbTag">A.I.</i>' : '') + (p.back ? '<i class="lbTag" title="Out of the game and waiting here">back</i>' : p.gone ? '<i class="lbTag">dropped</i>' : '') + (p.away ? '<i class="lbTag" title="Still on the end screen of the last game">end screen</i>' : '') + '</span>'
         + (p.ai || local ? '' : '<span class="' + this.pingClass(ms) + '" data-ping="' + (p.id | 0) + '" title="' + this.pingTitle(ms) + '">' + this.pingInner(ms) + '</span>')
         + (host && open && checks && !p.ai && !p.ready && !p.host && !mine ? '<a href="#" class="lbNudge" data-ring="' + (p.id | 0) + '" title="Remind this player the room is waiting for them to ready up">&#128276;</a>' : '')
         + '<span class="lbSlotOpts">'
@@ -646,7 +664,7 @@ const Net = {
     // Readiness, in words: who the start is waiting on. The host is not listed -- the host's START is the host's ready.
     const humans = L.players.filter(p => !p.ai && !p.gone), waiting = checks ? humans.filter(p => !p.host && !p.ready) : [];
     const readyLine = !checks ? '' : humans.length <= 1 ? 'Just you so far. Add an A.I. or share the code.'
-      : waiting.length ? 'Waiting for ' + waiting.map(p => e(p.name)).join(', ') + ' to ready up.' : 'Everyone is ready.';
+      : waiting.length ? 'Waiting for ' + waiting.map(p => e(p.name) + (p.away ? ' (still on the end screen)' : '')).join(', ') + ' to ready up.' : 'Everyone is ready.';
     // THE SETTINGS COLUMN, and what is deliberately NOT in it. The StarCraft II lobby shows Category, Mode, Game
     // Duration, Game Speed, Locked Alliances and Game Privacy; two of those six are real here.
     //   * Game Speed and Game Privacy are honoured -- the relay carries both.
@@ -695,7 +713,7 @@ const Net = {
     // same moment; nothing is timed locally. (item 12)
     if (open && over) h += '<div class="sub lbCancelled">' + e(this.mapName(L.layout)) + ' has ' + seats + ' start positions and there are ' + L.players.length + ' players. ' + (host ? 'Remove a slot or pick a bigger map to start.' : 'The host has to remove a slot or pick a bigger map.') + '</div>';
     if (counting) h += '<div class="lbCd"><span class="lbCdT">The game starts in</span><span class="lbCdN">' + (this.count | 0) + '</span></div>';
-    else if (!open) h += '<div class="sub">Game in progress. Dropped players can rejoin by connecting with their name.</div>';
+    else if (!open) h += '<div class="sub">' + (meP && meP.back ? 'You are back in the lobby. It opens again when the game is over for ' + L.players.filter(p => !p.ai && !p.gone).map(p => e(p.name)).join(', ') + '.' : 'Game in progress. Dropped players can rejoin by connecting with their name.') + '</div>';
     else if (!local && this.countMsg) h += '<div class="sub lbCancelled">' + e(this.countMsg) + '</div>';
     const rung = !local && this.rungAt && Date.now() - this.rungAt < 8000;
     // THE BUTTON BAR: READY first, because it is the one thing every player has to press. The skirmish lobby has
@@ -724,8 +742,8 @@ const Net = {
     this.reset(m);
     this.speed = m.speed == null ? 6 : m.speed; // agreed in the lobby; every client must pace the same or lockstep just makes the fast ones wait
     this.cheats = !!m.cheats;                   // the relay says whether cheats are on for this game (off unless it was started with BW_CHEATS=1)
-    this.spectating = m.you < 0;
-    UI.start(this.gameOptions(m));
+    this.spectating = m.you < 0; this.roomBack = false;
+    UI.start(this.gameOptions(m)); UI.fromLobby = 'net';   // the end screen offers REMATCH and BACK TO LOBBY (UI.lobbyItems)
     if (this.spectating) { UI.viewAll = true; UI.prodOverlay = true; }   // a spectator sees the whole map and everyone's production
   },
   // Rejoin after a drop: the relay sends every command batch since the start; re-simulate from frame 0, then continue live.
@@ -733,8 +751,8 @@ const Net = {
     this.reset(m);
     this.speed = m.speed == null ? 6 : m.speed; this.cheats = !!m.cheats;
     for (const h of (m.history || [])) { if (!this.inbox[h.f]) this.inbox[h.f] = {}; this.inbox[h.f][h.p] = Array.isArray(h.c) ? h.c : []; if (h.p === this.me) this.sent[h.f] = true; }
-    this.catchingUp = true; this.catchTarget = m.frame || 0; this.spectating = m.you < 0;
-    UI.start(this.gameOptions(m));
+    this.catchingUp = true; this.catchTarget = m.frame || 0; this.spectating = m.you < 0; this.roomBack = false;
+    UI.start(this.gameOptions(m)); UI.fromLobby = 'net';
     if (this.spectating) { UI.viewAll = true; UI.prodOverlay = true; };
     // A snapshot from a live player skips straight to their state; only the commands after it get replayed.
     // Without one this re-simulates the whole game, which gets slower the longer the game has run.
