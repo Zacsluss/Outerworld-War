@@ -57,12 +57,23 @@ const Net = {
     ws.onclose = () => { if (this.ws !== ws) return; if (this.connected) this.failed = 'lost'; else { this.failed = 'unreachable'; this.status(''); } this.connected = false; this.connecting = false; if (this.active) { this.status('Connection lost.'); if (typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg('Connection to the relay lost. Reconnect from the menu with the same name to rejoin.', 'error'); } this.lobby = null; this.lobbies = null; this.browsing = false; this.render(); };
     ws.onerror = () => { this.status('Could not connect to ' + (url || this.defaultUrl())); };
   },
-  connect(url, name, race, room) { this.room = (room == null ? this.room : room) || ''; this.browsing = false; this.open(url, name, () => { this.send({ t: 'join', name: this.name, race, room: this.room }); this.status('Connected. Waiting in lobby...'); }); },
+  connect(url, name, race, room) { this.room = (room == null ? this.room : room) || ''; this.browsing = false; this.open(url, name, () => { this.send({ t: 'join', name: this.name, race, room: this.room, key: this.identityKey() }); this.status('Connected. Waiting in lobby...'); }); },
+  // WHO THIS BROWSER IS, for ratings (queue item C): a random secret made once and kept here, sent with every join. The relay
+  // keeps only its hash, so a rating follows the browser and not a name anyone can type. It is not a login: clearing the
+  // browser's storage starts a new player.
+  ID_KEY: 'bw_id',
+  identityKey() {
+    let k = ''; try { k = (typeof localStorage !== 'undefined' && localStorage.getItem(this.ID_KEY)) || ''; } catch (ex) { k = ''; }
+    if (/^[0-9a-f]{32}$/.test(k)) return k;
+    try { const a = new Uint8Array(16); crypto.getRandomValues(a); k = Array.from(a, b => b.toString(16).padStart(2, '0')).join(''); localStorage.setItem(this.ID_KEY, k); return k; } catch (ex) { return ''; }
+  },
+  KIND_NAMES: { duel: 'Duel', team: 'Team', ffa: 'Free-for-all' },
+  ratedText(m) { return (this.KIND_NAMES[m.kind] || m.kind) + ' rating' + (m.how === 'forfeit' ? ' (a forfeit)' : '') + ': ' + (m.changes || []).map(c => c.name + ' ' + Number(c.before).toFixed(1) + ' \u2192 ' + Number(c.after).toFixed(1)).join(', ') + '.'; },
   // `opts.join`: an invite link's code, joined the moment the socket opens -- as an EXISTING game, so a link to one that
   // has ended says so instead of quietly making an empty room under its name.
   browse(url, name, opts) { this.room = ''; this.browsing = true; this.open(url, name, () => { this.status(''); this.saveIdentity(); if (opts && opts.host) this.host(opts.title); else if (opts && opts.join) { this.send({ t: 'list' }); this.join(opts.join, true); } else this.send({ t: 'list' }); this.render(); }); },
-  host(title) { this.send({ t: 'join', name: this.name, race: this.race, create: true, title: String(title || '').trim() || this.name + "'s game" }); this.status('Hosting...'); },
-  join(code, existing, spectate) { code = String(code || '').trim(); if (!code) { this.status('Type a room code first.'); return; } this.room = code; this.send({ t: 'join', name: this.name, race: this.race, room: code, existing: !!existing, spectate: !!spectate }); this.status((spectate ? 'Joining ' + code.toUpperCase() + ' to watch...' : 'Joining ' + code.toUpperCase() + '...')); },
+  host(title) { this.send({ t: 'join', name: this.name, race: this.race, create: true, title: String(title || '').trim() || this.name + "'s game", key: this.identityKey() }); this.status('Hosting...'); },
+  join(code, existing, spectate) { code = String(code || '').trim(); if (!code) { this.status('Type a room code first.'); return; } this.room = code; this.send({ t: 'join', name: this.name, race: this.race, room: code, existing: !!existing, spectate: !!spectate, key: this.identityKey() }); this.status((spectate ? 'Joining ' + code.toUpperCase() + ' to watch...' : 'Joining ' + code.toUpperCase() + '...')); },
   // BACK TO LOBBY and REMATCH (ninth session, queue item B): out of the game and into the same room, on the same socket. The
   // relay takes the player out of the game exactly as a drop does and keeps their seat (test/serve.js, "BACK TO THE
   // LOBBY"); `ready` is REMATCH, the agreement to play again on the same settings. This client's game ends where it is.
@@ -139,6 +150,9 @@ const Net = {
       case 'hash': this.onHash(m); break;
       case 'left': { this.gone[m.p] = { from: m.f, to: Infinity }; if (typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg(this.playerName(m.p) + (m.back ? ' went back to the lobby' : ' dropped') + '. Their units stop at ' + this.clock(m.f) + '; the game continues.', 'info'); break; }
       case 'rejoined': { const g = this.gone[m.p]; if (g) g.to = m.f; else this.gone[m.p] = { from: -1, to: m.f }; if (typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg(this.playerName(m.p) + ' is rejoining; they take control again at ' + this.clock(m.f) + '.', 'info'); break; }
+      // A RATED RESULT (queue item C): every player's match rating before and after. On screen if the game is still up, and
+      // in the lobby's log either way; the end screen lists it too (UI.menuItems).
+      case 'rated': { this.lastRated = m; const text = this.ratedText(m); if (this.active && typeof G !== 'undefined' && G.players && G.players[G.human]) G.players[G.human].msg(text, 'info'); this.logLine({ sys: true, text }); this.render(); break; }
       case 'chat': if (this.active && typeof G !== 'undefined' && G.players[G.human]) G.players[G.human].msg((m.spec ? '(watching) ' : '') + m.from + ': ' + m.text, 'chat'); else { this.logLine({ from: String(m.from), id: m.id, spec: !!m.spec, text: String(m.text) }); this.render(); } break;   // in a game it is chat on screen; in the lobby it is the lobby's log
     }
   },
@@ -435,6 +449,8 @@ const Net = {
       case 'start': return n(m.name) + (Number.isInteger(m.start) ? ' takes start ' + (m.start + 1) + '.' : ' is on Auto.');
       case 'starts': return 'Start positions are back on Auto for the new map.';
       case 'back': return n(m.name) + (m.ready ? ' is back in the lobby, ready for a rematch.' : ' is back in the lobby.');
+      case 'balance': return 'The host balanced the teams by rating: ' + Number(m.diff || 0).toFixed(1) + ' between the strongest team and the weakest.';
+      case 'unrated': return 'That game is not rated: ' + n(m.why) + '.';
       case 'lobby': return 'The game is over. This is its lobby again, with the same settings.' + (Array.isArray(m.away) && m.away.length ? ' Still on the end screen: ' + m.away.map(n).join(', ') + '.' : '');
     }
     return '';
@@ -543,6 +559,7 @@ const Net = {
     on('lbPrivacy', 'onclick', () => send({ t: 'set', listed: !L.listed }));
     on('lbLock', 'onchange', () => send({ t: 'set', lockTeams: !!$('lbLock').checked }));
     on('lbShuffle', 'onclick', ev => { if (ev && ev.preventDefault) ev.preventDefault(); send({ t: 'shuffle' }); });
+    on('lbBalance', 'onclick', ev => { if (ev && ev.preventDefault) ev.preventDefault(); send({ t: 'balance' }); });
     on('lbRename', 'onchange', () => { const v = String($('lbRename').value || '').trim(); if (v) send({ t: 'set', title: v }); });
     on('lbReady', 'onclick', () => { this.rungAt = 0; send({ t: 'set', ready: !(meP && meP.ready) }); });
     on('lbToSpec', 'onclick', ev => { if (ev && ev.preventDefault) ev.preventDefault(); send({ t: 'set', spectate: true }); });
@@ -599,6 +616,7 @@ const Net = {
         + '<div class="lbDetRow"><label>Speed</label><span>' + e(speedName(pick)) + '</span></div>'
         + '<div class="lbDetRow"><label>Rules</label><span>' + (rules.length ? rules.join('<br>') : 'Standard') + (pick.lockTeams ? '<br>Teams locked' : '') + '</span></div>'
         + '<div class="lbDetRow"><label>Watching</label><span>' + (pick.specs | 0) + '</span></div>'
+        + '<div class="lbDetRow"><label>Rated</label><span>' + (pick.rated ? e(this.KIND_NAMES[pick.rated] || pick.rated) + (pick.avg != null ? ', players average ' + Number(pick.avg).toFixed(1) : '') : 'No') + '</span></div>'
         + '<div class="lbDetBtns"><button id="lbJoinSel"' + (joinable ? '' : ' disabled') + '>' + (joinable ? 'JOIN' : pick.state === 'lobby' ? 'FULL' : 'IN PROGRESS') + '</button>'
         + '<button id="lbSpecSel" class="small"' + ((pick.specs | 0) < 8 ? '' : ' disabled') + ' title="Watch this game with the whole map in view, without taking a seat">SPECTATE</button></div></div>';
     } else {
@@ -659,6 +677,7 @@ const Net = {
         + '<span class="lbReady" title="' + (p.ready || p.ai ? 'ready' : 'not ready') + '">' + (p.ready || p.ai ? '&#10003;' : '&middot;') + '</span>'
         + (p.host ? '<span class="lbStar" title="host">&#9733;</span>' : '')
         + '<span class="lbName">' + e(p.name) + (p.ai ? '<i class="lbTag">A.I.</i>' : '') + (p.back ? '<i class="lbTag" title="Out of the game and waiting here">back</i>' : p.gone ? '<i class="lbTag">dropped</i>' : '') + (p.away ? '<i class="lbTag" title="Still on the end screen of the last game">end screen</i>' : '') + '</span>'
+        + (typeof p.rating === 'number' ? '<span class="lbRating" title="Match rating for ' + e(this.KIND_NAMES[L.rated && L.rated.shown] || 'these') + ' games: skill minus uncertainty, after ' + (p.games | 0) + ' rated game' + ((p.games | 0) === 1 ? '' : 's') + '">' + p.rating.toFixed(1) + '</span>' : '')
         + (p.ai || local ? '' : '<span class="' + this.pingClass(ms) + '" data-ping="' + (p.id | 0) + '" title="' + this.pingTitle(ms) + '">' + this.pingInner(ms) + '</span>')
         + (host && open && checks && !p.ai && !p.ready && !p.host && !mine ? '<a href="#" class="lbNudge" data-ring="' + (p.id | 0) + '" title="Remind this player the room is waiting for them to ready up">&#128276;</a>' : '')
         + '<span class="lbSlotOpts">'
@@ -719,6 +738,7 @@ const Net = {
       + this.RULE_ORDER.map(ruleRow).join('')
       + (local ? '' : setRow('Teams', edit ? '<label class="chk lbChk" title="Only the host moves players between teams"><input type="checkbox" id="lbLock"' + (L.lockTeams ? ' checked' : '') + '> Locked</label>' : '<span>' + (L.lockTeams ? 'Locked by the host' : 'Players choose') + '</span>'))
       + (local ? '' : setRow('Privacy', '<span>' + (L.listed ? 'Public &mdash; in the game list' : 'Private &mdash; code only') + '</span>'))
+      + (local ? '' : setRow('Rated', '<span>' + (L.rated && L.rated.kind ? 'Yes &mdash; ' + e(this.KIND_NAMES[L.rated.kind] || L.rated.kind) : 'No &mdash; ' + e((L.rated && L.rated.why) || 'this server does not say')) + '</span>'))
       + setRow('Alliances', '<span>Locked</span>')
       + (edit && !local ? setRow('Name', '<input id="lbRename" maxlength="40" class="lbSel grow" value="' + e(L.title || '') + '">') : '')
       + (code ? setRow('Code', '<b class="lbCodeVal">' + e(code) + '</b><button id="lbCopy" class="small inline">COPY</button>' + (invite ? '<button id="lbInvite" class="small inline" title="' + e(invite) + '">INVITE LINK</button>' : '')) : '')
@@ -732,7 +752,8 @@ const Net = {
       : '<div><b style="color:' + (seat.has(c.id) ? this.slotColor(seat.get(c.id)) : '#aab4c4') + '">' + e(c.from) + (c.spec ? ' (watching)' : '') + ':</b> ' + e(c.text) + '</div>').join('');
     h += '<div class="lbBody"><div class="lbSlots"><div class="lbTeams">' + teams.join('') + '</div>' + specBox
       + '<div class="lbTeamTools">' + (open && maxTeam < 8 ? '<a href="#" id="lbAddTeam" class="lbLink">+ add a team</a>' : '')
-      + (edit ? '<a href="#" id="lbShuffle" class="lbLink" title="Deal every slot onto the teams in use at random, as evenly as they go">shuffle teams</a>' : '') + '</div>'
+      + (edit ? '<a href="#" id="lbShuffle" class="lbLink" title="Deal every slot onto the teams in use at random, as evenly as they go">shuffle teams</a>' : '')
+      + (edit && !local ? '<a href="#" id="lbBalance" class="lbLink" title="Split the players onto the teams in use by match rating, as evenly as they go (every slot must be a player)">balance teams</a>' : '') + '</div>'
       + '<div class="lbChat" id="lbChatLog">' + lines + '</div>'
       + '<input id="lbChat" placeholder="Say something and press Enter" maxlength="200">'
       + '</div>' + settings + '</div>';
@@ -769,7 +790,7 @@ const Net = {
     this.reset(m);
     this.speed = m.speed == null ? 6 : m.speed; // agreed in the lobby; every client must pace the same or lockstep just makes the fast ones wait
     this.cheats = !!m.cheats;                   // the relay says whether cheats are on for this game (off unless it was started with BW_CHEATS=1)
-    this.spectating = m.you < 0; this.roomBack = false;
+    this.spectating = m.you < 0; this.roomBack = false; this.lastRated = null;
     UI.start(this.gameOptions(m)); UI.fromLobby = 'net';   // the end screen offers REMATCH and BACK TO LOBBY (UI.lobbyItems)
     if (this.spectating) { UI.viewAll = true; UI.prodOverlay = true; }   // a spectator sees the whole map and everyone's production
   },

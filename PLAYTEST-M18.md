@@ -921,3 +921,31 @@ itself when `desktop/` or the workflow changes, on a `v*` tag, or from **Run wor
   `node test/safety.js`: a thousand messages at once gets a socket dropped, a 100 KB message is refused.)
 - **A tab closed abruptly** (end the browser's process) now leaves the game at once -- the others see "dropped" in a
   second, not after 45 seconds.
+
+---
+
+## 98. Ratings, and BALANCE TEAMS
+
+*(Ninth session, queue item C. `RESEARCH-LOBBY.md` section 10 -- Beyond All Reason's system.)*
+
+**How to reach it.** Two players are needed, **each in their own browser** (two tabs of one browser are one player: the
+lobby will say "two players share one browser"). Use two browsers (say Chrome and Edge) or one normal and one private
+window. Run `PLAY.bat`; both open the page, press Multiplayer; one hosts, the other joins.
+
+**What to look for.**
+- **Each player's slot shows a number: 16.7** for a new player -- BAR's Match Rating, skill minus uncertainty. Hover it for
+  what it means and how many rated games are behind it.
+- **GAME SETTINGS has a Rated row**: "Yes — Duel" with one player a side. Add a computer: "No — computers are playing". Put
+  both players on one team: "No — everyone is on one team".
+- **Play a duel for more than 90 seconds and win it** (or, to be quick, run `G.over = true; G.winTeam = <your team>` in both
+  consoles once the clock passes 1:30 -- both must say the same). The end screen says "Duel rating: you 16.7 → 19.6,
+  them 16.7 → 14.3", and so does the lobby's log. Back in the lobby, the slots show the new numbers.
+- **Close the page and the server, start them again**: the numbers are still there (they live in
+  `%USERPROFILE%\.broodwar-remake\ratings.json`).
+- **A game under 90 seconds** says "That game is not rated: it lasted less than 90 seconds."
+- **Walk out of a rated duel** (close the tab) and let the other player go Back to lobby 10 seconds later: "Duel rating (a
+  forfeit)" -- the one who left loses.
+- **BALANCE TEAMS** (the host, under the teams, beside shuffle teams) with four players in their own browsers: the teams are
+  split so the totals are as close as they go, and the log says the difference. With equal players, pressing it again can
+  deal a different split. With a computer in the lobby it refuses and says why.
+- **Single player and games against computers are never rated**, and the skirmish lobby shows no ratings.

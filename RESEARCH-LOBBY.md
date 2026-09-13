@@ -364,3 +364,52 @@ hostile page could do. Found on the way: a far end that vanished without a close
 running game) for 45 s, because the HTTP server's sockets are half-open -- it is now left at once.
 
 Tests: `test/safety.js` (25), with 21 negative controls in `.claude/review/safety/controls.js`.
+
+---
+
+## 10. Ratings and skill-balanced teams
+
+*Ninth session, queue item C (the user: "build this now"). Before it, nothing recorded a result, and a name was not an
+identity: anyone could type anyone's.*
+
+Read from source: Beyond All Reason's lobby server **Teiserver** and BAR's fork of **openskill.ex**, with **openskill.js**,
+**openskill.py** and Weng & Lin's paper for the formulas.
+
+- **The model** [src] -- Teiserver rates with Weng-Lin **Plackett-Luce**: mu 25, sigma 25/3, beta 25/6, a sigma floor of
+  0.0001, tau 1/3, and sigma never allowed to rise
+  ([match_rating_lib.ex](https://github.com/beyond-all-reason/teiserver/blob/main/lib/teiserver/game/libs/match_rating_lib.ex),
+  [openskill.ex](https://github.com/beyond-all-reason/openskill.ex)).
+- **The number shown** [src][doc] -- **Match Rating = skill minus uncertainty** (mu - sigma, used for balance); the
+  leaderboard uses mu - 3 sigma. A new player is 16.7
+  ([balance_lib.ex](https://github.com/beyond-all-reason/teiserver/blob/main/lib/teiserver/battle/libs/balance_lib.ex),
+  [BAR's guide](https://www.beyondallreason.info/guide/rating-and-lobby-balance)).
+- **Kinds** [src] -- Duel (two teams of one), Small and Large Team (two teams), FFA and Team FFA (more than two); any bot makes
+  a game unrated ([match_lib.ex](https://github.com/beyond-all-reason/teiserver/blob/main/lib/teiserver/battle/libs/match_lib.ex)).
+- **Unrated** [src] -- no winner, unequal team sizes, fewer than two teams, shorter than **90 seconds**, marked unranked, or
+  cheating. **Leavers get no special treatment**: everyone who started is rated with their team's result.
+- **More than two teams** [src] -- Teiserver updates the winners in one call but each losing team in its own call against
+  them; its issue 434 found that inflates ratings, and the fix was reverted. Not copied.
+- **Who says who won** [src] -- the autohost posts the end-of-game data; no player clients agree on anything.
+- **The balancer** [src] -- for a small two-team lobby, a brute force over every split scored as |difference of team
+  totals| + |difference of their spreads| + |difference of their best players| (plus penalties for broken parties);
+  `loser_picks` adds a fuzz of up to half a point to each rating
+  ([brute_force.ex](https://github.com/beyond-all-reason/teiserver/blob/main/lib/teiserver/battle/balance/brute_force.ex)).
+- **Test vectors** [src] -- openskill.js and openskill.py publish exact results; seven of them, including BAR's own upset
+  test, are what `test/ratings.js` checks the relay's arithmetic against, to 1e-9.
+
+**What was built** (`PLAYTEST-M18.md` item 98):
+
+| | Here |
+|---|---|
+| Identity | A random 128-bit key made once per browser (`bw_id`), sent with every join; the relay keeps only its SHA-256. A dropped seat with a key is rejoined only from that browser. Not a login: clearing storage makes a new player. |
+| The result | Every player still in the game reports the end frame and the winning team; the relay believes it only when they all agree (lockstep makes honest clients identical) -- where Teiserver trusts its autohost, this relay has no referee of its own. |
+| Walking out | **Deliberately different from Teiserver:** a game nobody finishes goes to the side that stayed longest, if every other side left at least 10 seconds before -- so quitting a lost duel is still a loss. Otherwise, as Teiserver, everyone is rated with their team's result. |
+| Rated | Teiserver's rules: players only, each with their own key, no computers, no cheats, two or more teams of equal size, at least 90 seconds. Duel, team and free-for-all are separate ratings. The lobby says whether a game will be rated and why not. |
+| Maths | Teiserver's Plackett-Luce settings, but ONE update for all teams (winners rank 1, everyone else shares rank 2), not the per-losing-team update issue 434 flagged. |
+| Shown | BAR's Match Rating on every player's slot and in the game list's detail (the players' average); a rated result in the lobby's log and on the end screen ("Duel rating: Ada 16.7 → 19.6, Ben 16.7 → 14.3"). |
+| Kept | `BW_RATINGS` (default `~/.broodwar-remake/ratings.json`, for PLAY.bat and the desktop app alike; `off` to switch off), written whole and renamed. |
+| BALANCE TEAMS | For the host, when every slot is a player: Teiserver's brute-force score over every split into the teams in use, with the ±0.5 fuzz, so pressing again can give a different split that is as fair. |
+
+Not built: parties, BAR's leaderboard and rank icons, seasons, matchmaking.
+
+Tests: `test/ratings.js` (37), with 25 negative controls in `.claude/review/ratings/controls.js`.

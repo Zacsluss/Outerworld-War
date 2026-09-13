@@ -90,7 +90,12 @@ and fixed on the way: F10 in an online game offered Restart and Save game. `PLAY
   new seed; BACK TO LOBBY opens the skirmish lobby as it was (`UI.Skirmish.L`).
 - Relay suites (`test/lobby.js` pattern, its own ports -- the CLAUDE.md port list), negative controls, PLAYTEST.
 
-**C. Ratings and skill-balanced teams (item 7, "build this now").**
+**C. Ratings and skill-balanced teams (item 7, "build this now").** **DONE (ninth session)** -- Beyond All Reason's system,
+read from Teiserver's source: a key per browser (hashed on the relay), results agreed by every player still in the game, a
+forfeit to the side that stayed longest, Plackett-Luce with Teiserver's settings (checked against seven published vectors),
+Match Rating on the slots and in the game list, BW_RATINGS as the file, and BALANCE TEAMS with Teiserver's brute-force score
+and fuzz. Unrated with computers, cheats, uneven teams, one browser twice, or under 90 s. `RESEARCH-LOBBY.md` section 10,
+`PLAYTEST-M18.md` item 98, `test/ratings.js` (37), 25 negative controls. The plan as it was written:
 - Today nothing records a result, and a name is not an identity (anyone can type any name).
 - Build, smallest honest version: (1) an identity token -- a random secret each browser generates and keeps with
   `bw_net`, sent on join; the name stays display-only. (2) Results: at game end every human client reports the outcome
@@ -178,6 +183,7 @@ repo goes private).
 - **Queue item D, unsigned desktop builds in GitHub Actions: BUILT** (above); taken before C while C's research ran. Its
   first run (commit 3eeeab6) succeeded on all three machines.
 - **Queue item E, basic internet-play safety: DONE** (above).
+- **Queue item C, ratings and balanced teams: DONE** (above).
 
 ## The eighth session's list (the user's third message, 2026-09-12)
 

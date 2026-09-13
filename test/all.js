@@ -93,6 +93,7 @@ const TESTS = [
   { name: 'hotkeys', args: ['hotkeys.js'], what: 'every command card key belongs to the player: the editor shows the real cards, one key per command, per layout, remembered, clashes named' },
   { name: 'lobby', args: ['lobby.js'], what: 'ready means ready, latency, system lines, teams, seats per map, rules, the browser and the invite link' },
   { name: 'rematch', args: ['rematch.js'], what: 'after a game the room goes back to its lobby: agreed game over, REMATCH and BACK TO LOBBY, away players, the same settings, the skirmish lobby too' },
+  { name: 'ratings', args: ['ratings.js'], what: 'ratings: OpenSkill against published vectors, agreed and forfeited results, what is unrated, the file, BALANCE TEAMS' },
   { name: 'safety', args: ['safety.js'], what: 'internet-play safety: a server password, sockets per address, message and frame caps, the address behind a tunnel' },
   { name: 'starts', args: ['starts.js'], what: 'a start chosen in the lobby: on the map, in the list, placed by the host, refused when taken, reset by a new map, and the game it starts' },
   { name: 'shots', args: ['shots.js'], what: 'every weapon has its own shot, the races are disjoint, and every kind actually draws' },

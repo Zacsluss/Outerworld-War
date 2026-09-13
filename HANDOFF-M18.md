@@ -1,6 +1,6 @@
 # HANDOFF — M18 (the ninth session: the user's answers, the playtest recorder, start positions)
 
-Written during the ninth session (2026-09-12), after queue items A, B, D and E. Branch `m10-overnight`, which is `origin/main`.
+Written during the ninth session (2026-09-12), after queue items A to E. Branch `m10-overnight`, which is `origin/main`.
 **Everything is committed and pushed; there are no open pull requests, no other branches and no extra worktrees.**
 Trust `git log -1` for HEAD, not a hash written here.
 
@@ -12,7 +12,7 @@ Trust `git log -1` for HEAD, not a hash written here.
 
 ## The state
 
-- **The gate is 88 suites (new: `starts`, 58 checks; `rematch`, 39; `safety`, 25) and 2 are red: `aistyles` and `queens`**,
+- **The gate is 89 suites (new: `starts`, 58 checks; `rematch`, 39; `safety`, 25; `ratings`, 37) and 2 are red: `aistyles` and `queens`**,
   and every failing line is byte-identical to the eighth session's gate log -- no item moved an AI measurement.
 - **The desktop builds run in GitHub Actions** (`.github/workflows/desktop.yml`); the first run, on 3eeeab6, succeeded on
   Windows, macOS Apple silicon and macOS Intel. Check a run with the public API
@@ -54,11 +54,17 @@ Trust `git log -1` for HEAD, not a hash written here.
 7. **A server can have a password** (PLAY-ONLINE.bat asks), typed once and remembered; and the relay drops a connection
    that floods it, ignores chat and lobby spam past a few a second, refuses oversized messages, and lets one address hold
    24 connections (PLAYTEST 97). A tab closed abruptly now leaves a game at once instead of after 45 seconds.
+8. **Online games between players are rated**, the way Beyond All Reason rates them (PLAYTEST 98): a Match Rating on every
+   slot, a Rated row saying whether the game will count and why not, the change on the end screen, a forfeit for walking
+   out, and BALANCE TEAMS for the host. Games with computers, cheats, uneven teams or under 90 seconds are not rated.
+   **Deliberately different from BAR:** the players' own clients agree on the result (there is no referee here), a game
+   nobody finishes goes to the side that stayed, and every team is updated at once rather than BAR's per-team scheme its
+   own issue tracker flagged.
 
 **Saves and replays from before this session are refused** (the build stamp moved with item A; item B changed no stamped
 file).
 
-**Not done yet:** queue items C, F and G.
+**Not done yet:** queue items F and G.
 
 ## Traps found this session
 
@@ -98,6 +104,12 @@ file).
     browser's 25-30). A new harness that starts relay games must pass `BW_MSG_RATE`, as net_many, net, spectate and editor do.
 17. **PowerShell's `Set-Content -Encoding utf8` writes a byte-order mark.** Node strips it from a required spec; anything
     else should be written with the Write tool.
+18. **A room code under four characters is refused** -- a suite that picks 'OFF' as a code gets no lobby and a confusing
+    null; the ratings suite did.
+19. **The relay's RATING MATH block is cut out of test/serve.js by its markers and run alone** by test/ratings.js: keep
+    it free of anything else in the file, and keep the markers.
+20. **A ratings file exists only once a rated game is recorded** (default `~/.broodwar-remake/ratings.json`); suites set
+    `BW_RATINGS` to a temporary file. Nothing but test/ratings.js sends an identity key to a real relay.
 
 ## Diagnostics added this session
 
@@ -126,21 +138,20 @@ READ IN THIS ORDER, then start:
   3. HANDOFF-M18.md     -- the state and the traps, newest session first.
   4. PLAYTEST-M18.md (items 64 on) and RESEARCH-LOBBY.md -- as each item needs them.
 
-THE STATE: node test/all.js is 88 suites, ~5 minutes, and 2 are RED: aistyles and queens (the computer AI's pacing under
-the slower economy). Build stamp 506fb0d48d1e1d36. Queue items A (start positions), B (rematch), D (unsigned desktop
-builds in GitHub Actions, first run green) and E (relay safety) are DONE.
+THE STATE: node test/all.js is 89 suites, ~5 minutes, and 2 are RED: aistyles and queens (the computer AI's pacing under
+the slower economy). Build stamp 506fb0d48d1e1d36. Queue items A (start positions), B (rematch), C (ratings and balanced
+teams), D (unsigned desktop builds in GitHub Actions, first run green) and E (relay safety) are DONE.
 
 THE USER'S ANSWERS (do not ask again): G is AUTHORIZED ("you can fix now") -- narrowly, with test/balance.js and
 test/proxy.js untouched; D is UNSIGNED BUILDS ONLY (no Apple Developer Program, no paid Windows signing); their playtest
 of 88-93 is done and written up in TODO-M18 ("The ninth session"). The user wants EVERY queue item finished: do not
 stop between items, and resume anything a message interrupts.
 
-THE SINGLE NEXT ACTION: queue item C -- ratings and skill-balanced teams. Research Beyond All Reason's OpenSkill ratings
-and its balancer first, then: an identity token per browser, results recorded only when the connected humans agree (the
-relay's `over` agreement from item B already exists -- read L.overs), Weng-Lin/OpenSkill written inline (the relay stays
-dependency-free), a JSON file for persistence, ratings in the lobby and a BALANCE TEAMS button. Then F and G in order.
+THE SINGLE NEXT ACTION: queue item F -- research that sometimes gets stuck. Re-run tools/stall-probe.js and
+tools/stall-scenes.js on today's code first; if it still does not reproduce, add the in-game detector TODO-M18 item F
+describes (a production slot that stops advancing for no rule-backed reason writes one line the player can copy). Then G.
 
-THE QUEUE, in order: C ratings and skill-balanced teams -> F research that gets stuck (reproduce first;
+THE QUEUE, in order: F research that gets stuck (reproduce first;
 the playtest recorder's stall detector helps) -> G the two red suites (authorized). DEFERRED until the user says so:
 the AI rebalance (TODO-M18 7b) and the terrain art path.
 

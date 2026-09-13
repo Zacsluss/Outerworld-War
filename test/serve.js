@@ -179,7 +179,9 @@ function hostOf(L) { return L.players.find(q => !q.ai && !q.gone && !q.away) || 
 // The style rides here and in startMsg's player list, and that is the WHOLE plumbing an AI play style
 // needs: js/ai.js's constructor reads it off G.setup.players[id].style, and G.setup is the options object
 // Net.startGame builds. So a styled network AI costs no change to any stamped file. (item 1)
-function lobbyState(L) { const host = hostOf(L); return { t: 'lobby', room: L.code, title: L.title, listed: !!L.listed, players: L.players.map(p => Object.assign({ id: p.id, name: p.name, race: p.race, team: p.team, ai: !!p.ai, difficulty: p.difficulty, style: p.style, gone: !!p.gone, ready: !!p.ready || !!p.ai, host: host ? p.id === host.id : false, ping: p.ai ? null : pingOf(p.id) }, startOf(p), p.back ? { back: true } : {}, p.away ? { away: true } : {})), cap: capOf(L), specs: (L.specs || []).map(s => ({ id: s.id, name: s.name, ping: pingOf(s.id) })), layout: L.layout, state: L.state, speed: L.speed == null ? 6 : L.speed, count: L.count | 0, lockTeams: !!L.lockTeams, rules: L.rules, delay: DELAY, readyCheck: READY_CHECK }; }
+// Each person's MATCH RATING for the kind of game the lobby would be (queue item C), and whether it would be rated at all.
+function ratingView(L, rated) { const kind = rated.kind || kindOf(teamSizes(L.players)) || 'duel'; return { kind, of: p => { if (p.ai || !p.key || !RATINGS_FILE) return {}; const r = ratingFor(p.key, kind); return { rating: +matchRating(r).toFixed(1), games: r.games }; } }; }
+function lobbyState(L) { const host = hostOf(L), rated = ratedAs(L), view = ratingView(L, rated); return { t: 'lobby', room: L.code, rated: Object.assign({ shown: view.kind }, rated), title: L.title, listed: !!L.listed, players: L.players.map(p => Object.assign({ id: p.id, name: p.name, race: p.race, team: p.team, ai: !!p.ai, difficulty: p.difficulty, style: p.style, gone: !!p.gone, ready: !!p.ready || !!p.ai, host: host ? p.id === host.id : false, ping: p.ai ? null : pingOf(p.id) }, startOf(p), p.back ? { back: true } : {}, p.away ? { away: true } : {}, view.of(p))), cap: capOf(L), specs: (L.specs || []).map(s => ({ id: s.id, name: s.name, ping: pingOf(s.id) })), layout: L.layout, state: L.state, speed: L.speed == null ? 6 : L.speed, count: L.count | 0, lockTeams: !!L.lockTeams, rules: L.rules, delay: DELAY, readyCheck: READY_CHECK }; }
 function pingOf(id) { const c = clients.get(id); return c && c.rtt != null ? c.rtt : null; }
 // A START POSITION (ninth session, queue item A; OpenRA, StarCraft II and Age of Empires II all let a lobby place players).
 // `start` is an index into the map's starts -- the lobby draws it plus one -- and a slot without one is AUTOMATIC: the
@@ -199,7 +201,12 @@ function sys(L, ev, extra) { broadcast(L, Object.assign({ t: 'sys', ev }, extra 
 function unreadyAll(L, why) { const host = hostOf(L); let n = 0; for (const p of L.players) if (!p.ai && p.ready && p !== host) { p.ready = false; n++; } if (n) sys(L, 'unready', { why }); return n; }
 // The browser. A row per listed room that still has someone in it; pushed to every browsing client (one
 // that sent `list` and is in no room) whenever a listed room changes, and sent once to a `list`.
-function lobbyRow(L) { const h = hostOf(L); return { code: L.code, title: L.title, host: h ? h.name : '', players: L.players.length, humans: L.players.filter(p => !p.ai).length, cap: capOf(L), state: L.state, layout: L.layout, speed: L.speed == null ? 6 : L.speed, created: L.created, lockTeams: !!L.lockTeams, rules: L.rules, specs: (L.specs || []).length }; }
+function lobbyRow(L) {
+  const h = hostOf(L), r = ratedAs(L), kind = r.kind || kindOf(teamSizes(L.players)) || 'duel';
+  const mrs = RATINGS_FILE ? L.players.filter(p => !p.ai && p.key).map(p => matchRating(ratingFor(p.key, kind))) : [];
+  return { code: L.code, title: L.title, host: h ? h.name : '', players: L.players.length, humans: L.players.filter(p => !p.ai).length, cap: capOf(L), state: L.state, layout: L.layout, speed: L.speed == null ? 6 : L.speed, created: L.created, lockTeams: !!L.lockTeams, rules: L.rules, specs: (L.specs || []).length,
+    rated: r.kind || null, avg: mrs.length ? +(mrs.reduce((s, v) => s + v, 0) / mrs.length).toFixed(1) : null };
+}
 function lobbies() { return { t: 'lobbies', rooms: [...rooms.values()].filter(L => L.listed && L.players.length).map(lobbyRow), online: clients.size }; }
 function pushLobbies() { const m = lobbies(); for (const c of clients.values()) if (c.browsing && !c.room) send(c, m); }
 // A hosted room's code, made here so two hosts cannot collide and no host has to invent one. Six from an
@@ -262,21 +269,153 @@ function catchUp(L, c, idx) {
 function dropFromGame(L, idx, back) {
   const stopAt = Math.max((L.lastF[idx] == null ? -1 : L.lastF[idx]) + 1, DELAY);
   L.players[idx].gone = true; L.gone[idx] = { from: stopAt, to: null };
+  L.leftAt = L.leftAt || {}; L.leftAt[idx] = Date.now();   // queue item C: who stayed longest, for a forfeit
   broadcast(L, back ? { t: 'left', p: idx, f: stopAt, back: true } : { t: 'left', p: idx, f: stopAt });
   return stopAt;
 }
 const inGame = L => L.players.filter(p => !p.ai && !p.gone);
+// RATINGS (ninth session, queue item C, the user: "build this now"; RESEARCH-LOBBY.md section 10). Beyond All Reason's
+// system, as its lobby server Teiserver runs it, written out here because the relay stays dependency-free:
+//   * A PLAYER IS A KEY, not a name. Each browser makes a random secret once (Net.identityKey) and sends it with every
+//     join; the relay keeps only its SHA-256 (keyOf), so a name stays what anyone can type, and a rating follows the browser.
+//   * THE RESULT IS AGREED: every player still in the game reports the frame the game ended at and the winning team, and
+//     the relay believes it only when they all say the same (checkOver) -- lockstep makes honest clients identical. A game
+//     nobody finishes is a FORFEIT to the side that stayed longest, when every other side had gone at least FORFEIT_MS
+//     before it did, so walking out of a lost game does not avoid the loss.
+//   * WHAT IS RATED, as Teiserver: at least two players, every one a person with a key of their own, no computers, no
+//     cheats, two or more teams of equal size, and at least 90 seconds. Duel (1v1), team (two teams) and free-for-all (more
+//     than two teams) are rated separately. Everyone who started is rated with their team's result -- Teiserver gives
+//     leavers no special treatment either.
+//   * THE MATHS is Weng-Lin Plackett-Luce with Teiserver's settings (mu 25, sigma 25/3, beta 25/6, tau 1/3, sigma never
+//     allowed to rise), in ONE update for every team (winners rank 1, everyone else shares rank 2) -- not Teiserver's
+//     separate update per losing team, which its own issue 434 found inflates ratings. The number shown is BAR's MATCH
+//     RATING, skill minus uncertainty, and it is what the balancer balances.
+//   * KEPT in BW_RATINGS (a JSON file; default ~/.broodwar-remake/ratings.json, which suits PLAY.bat and the desktop app
+//     alike; `off` turns ratings off), written whole to a temporary file and renamed, so a crash cannot leave half of it.
+// RATING MATH BEGIN -- test/ratings.js runs this block on its own: it uses nothing from the rest of the file.
+const OS = { MU: 25, SIGMA: 25 / 3, BETA: 25 / 6, KAPPA: 0.0001, TAU: 1 / 3 };
+// teams: [[{ mu, sigma }, ...], ...]; ranks: one per team, lower is better, ties share one. opts: { tau, limitSigma }.
+function plackettLuce(teams, ranks, opts) {
+  opts = opts || {}; const tau = opts.tau == null ? OS.TAU : opts.tau, limit = opts.limitSigma == null ? true : !!opts.limitSigma;
+  const pre = teams.map(t => t.map(p => ({ mu: p.mu, sigma: Math.sqrt(p.sigma * p.sigma + tau * tau), orig: p.sigma })));
+  const T = pre.map((t, i) => ({ rank: ranks[i], M: t.reduce((s, p) => s + p.mu, 0), S: t.reduce((s, p) => s + p.sigma * p.sigma, 0) }));
+  const c = Math.sqrt(T.reduce((s, t) => s + t.S + OS.BETA * OS.BETA, 0));
+  const C = T.map(q => T.reduce((s, t) => t.rank >= q.rank ? s + Math.exp(t.M / c) : s, 0));
+  const A = T.map(q => T.filter(t => t.rank === q.rank).length);
+  return pre.map((team, i) => {
+    const ti = T[i]; let om = 0, de = 0;
+    T.forEach((tq, q) => { if (tq.rank > ti.rank) return; const p = Math.exp(ti.M / c) / C[q]; om += (q === i ? 1 - p : -p) / A[q]; de += p * (1 - p) / A[q]; });
+    const gamma = Math.sqrt(ti.S) / c, Omega = om * (ti.S / c), Delta = de * (ti.S / (c * c)) * gamma;
+    return team.map(p => { const f = p.sigma * p.sigma / ti.S; let sigma = p.sigma * Math.sqrt(Math.max(1 - f * Delta, OS.KAPPA)); if (limit && tau > 0) sigma = Math.min(sigma, p.orig); return { mu: p.mu + f * Omega, sigma }; });
+  });
+}
+function matchRating(r) { return Math.max(0, r.mu - r.sigma); }
+function kindOf(sizes) { if (sizes.length < 2) return null; return sizes.length > 2 ? 'ffa' : Math.max(...sizes) === 1 ? 'duel' : 'team'; }
+// RATING MATH END
+const RATED_MIN_FRAMES = 90 * 24;   // Teiserver's 90 seconds, at the game's 24 frames a second
+const FORFEIT_MS = Math.max(0, parseInt(process.env.BW_FORFEIT_MS || '10000', 10) || 0);   // BW_FORFEIT_MS: test/ratings.js does not wait ten seconds a forfeit
+const RATINGS_FILE = process.env.BW_RATINGS === 'off' ? '' : (process.env.BW_RATINGS || path.join(os.homedir(), '.broodwar-remake', 'ratings.json'));
+let ratingStore = null;
+function ratings() {
+  if (ratingStore) return ratingStore;
+  ratingStore = { version: 1, players: {}, games: [] };
+  if (RATINGS_FILE) try { const o = JSON.parse(fs.readFileSync(RATINGS_FILE, 'utf8')); if (o && o.players && Array.isArray(o.games)) ratingStore = o; } catch (e) { }
+  return ratingStore;
+}
+function saveRatings() {
+  if (!RATINGS_FILE) return;
+  try { fs.mkdirSync(path.dirname(RATINGS_FILE), { recursive: true }); const tmp = RATINGS_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(ratingStore)); fs.renameSync(tmp, RATINGS_FILE); }
+  catch (e) { console.log('ratings could not be saved to ' + RATINGS_FILE + ': ' + e.message); }
+}
+function keyOf(raw) { return typeof raw === 'string' && /^[0-9a-f]{32}$/.test(raw) ? crypto.createHash('sha256').update(raw).digest('hex').slice(0, 24) : null; }
+function ratingFor(key, kind) { const pl = key ? ratings().players[key] : null, r = pl && pl[kind]; return r ? { mu: r.mu, sigma: r.sigma, games: r.games | 0 } : { mu: OS.MU, sigma: OS.SIGMA, games: 0 }; }
+function teamSizes(players) { const m = new Map(); for (const p of players) m.set(p.team, (m.get(p.team) || 0) + 1); return [...m.values()]; }
+// Would a game started now be rated, and as what? { kind } or { why }.
+function ratedAs(L) {
+  const humans = L.players.filter(p => !p.ai), sizes = teamSizes(L.players);
+  if (!RATINGS_FILE) return { why: 'ratings are off on this server' };
+  if (L.players.some(p => p.ai)) return { why: 'computers are playing' };
+  if (CHEATS) return { why: 'cheats are on' };
+  if (humans.length < 2) return { why: 'it needs two players' };
+  if (humans.some(p => !p.key) || new Set(humans.map(p => p.key)).size !== humans.length) return { why: 'two players share one browser' };
+  if (sizes.length < 2) return { why: 'everyone is on one team' };
+  if (new Set(sizes).size !== 1) return { why: 'the teams are uneven' };
+  return { kind: kindOf(sizes) };
+}
+function recordResult(L, winTeam, how) {
+  if (L.rated || !L.started || !L.ratedKind || !L.ratedKind.kind) return;
+  const teamIds = [...new Set(L.started.map(p => p.team))];
+  if (!teamIds.includes(winTeam)) return;
+  const frame = L.over ? L.over.f : maxFrame(L);
+  L.rated = true;
+  if (frame < RATED_MIN_FRAMES) { sys(L, 'unrated', { why: 'it lasted less than 90 seconds' }); return; }
+  const kind = L.ratedKind.kind, store = ratings(), changes = [];
+  const entries = teamIds.map(t => L.started.map((p, i) => ({ p, i })).filter(x => x.p.team === t));
+  const before = entries.map(team => team.map(x => ratingFor(L.startKeys[x.i], kind)));
+  const after = plackettLuce(before, teamIds.map(t => t === winTeam ? 1 : 2));
+  entries.forEach((team, ti) => team.forEach((x, j) => {
+    const key = L.startKeys[x.i], a = after[ti][j], won = teamIds[ti] === winTeam;
+    const pl = store.players[key] || (store.players[key] = {}); pl.name = x.p.name; pl.seen = new Date().toISOString();
+    const r = pl[kind] || { mu: OS.MU, sigma: OS.SIGMA, games: 0, wins: 0 };
+    r.mu = a.mu; r.sigma = a.sigma; r.games = (r.games | 0) + 1; if (won) r.wins = (r.wins | 0) + 1; pl[kind] = r;
+    changes.push({ name: x.p.name, team: x.p.team, won, before: +matchRating(before[ti][j]).toFixed(1), after: +matchRating(a).toFixed(1) });
+  }));
+  store.games.push({ at: new Date().toISOString(), kind, how, frame, winTeam, teams: entries.map(t => t.map(x => L.startKeys[x.i])), changes });
+  if (store.games.length > 500) store.games.splice(0, store.games.length - 500);
+  saveRatings();
+  broadcast(L, { t: 'rated', kind, how, changes });
+  console.log(tag(L) + 'rated ' + kind + ' (' + how + '): ' + changes.map(x => x.name + ' ' + x.before + ' -> ' + x.after).join(', '));
+}
+// A game that ends without an agreed result goes to the side that stayed longest, if every other side left clearly before.
+function forfeit(L) {
+  if (L.rated || L.over || !L.started || !L.ratedKind || !L.ratedKind.kind) return;
+  const last = new Map();
+  L.started.forEach((p, i) => { const t = (L.leftAt && L.leftAt[i] != null) ? L.leftAt[i] : Infinity; last.set(p.team, Math.max(last.has(p.team) ? last.get(p.team) : -Infinity, t)); });
+  const order = [...last.entries()].sort((a, b) => b[1] - a[1]);
+  if (order.length >= 2 && order[0][1] - order[1][1] >= FORFEIT_MS) recordResult(L, order[0][0], 'forfeit');
+}
+// BALANCE TEAMS (Teiserver's brute force, which it uses for small lobbies): every split of the players into the teams in
+// use, sizes as even as they go, scored as Teiserver scores one -- the difference of the team totals, plus the difference
+// of their spreads, plus the difference of their best players -- and the lowest wins. Each rating gets Teiserver's fuzz of
+// up to half a point either way first, so pressing it again can deal a different split that is just as fair.
+function balanceTeams(L) {
+  const ps = L.players, n = ps.length;
+  if (n < 2 || ps.some(p => p.ai)) return null;
+  const k = Math.max(2, new Set(ps.map(p => p.team || 1)).size), cap = Math.ceil(n / k);
+  const kind = kindOf(Array.from({ length: k }, (_, t) => Math.floor(n / k) + (t < n % k ? 1 : 0))) || 'team';
+  const real = ps.map(p => matchRating(ratingFor(p.key, kind))), fuzzed = real.map(v => v + crypto.randomInt(0, 1000001) / 1000000 - 0.5);
+  const score = (vals, as) => {
+    const teams = Array.from({ length: k }, () => []); as.forEach((t, i) => teams[t].push(vals[i]));
+    const tot = teams.map(t => t.reduce((s, v) => s + v, 0)), top = teams.map(t => Math.max(...t));
+    const sd = teams.map((t, j) => { const m = tot[j] / t.length; return Math.sqrt(t.reduce((s, v) => s + (v - m) * (v - m), 0) / t.length); });
+    const spread = a => Math.max(...a) - Math.min(...a);
+    return { score: spread(tot) + spread(sd) + spread(top), diff: spread(tot) };
+  };
+  let best = null; const as = new Array(n), count = new Array(k).fill(0);
+  (function deal(i) {
+    if (i === n) { if (count.some(x => x === 0)) return; const s = score(fuzzed, as); if (!best || s.score < best.score) best = { score: s.score, as: as.slice() }; return; }
+    for (let t = 0; t < k; t++) { if (count[t] >= cap) continue; as[i] = t; count[t]++; deal(i + 1); count[t]--; }
+  })(0);
+  if (!best) return null;
+  const inUse = [...new Set(ps.map(p => p.team || 1))].sort((a, b) => a - b);
+  for (let t = 1; inUse.length < k; t++) if (!inUse.includes(t)) inUse.push(t);
+  inUse.sort((a, b) => a - b);
+  ps.forEach((p, i) => { p.team = inUse[best.as[i]]; });
+  return { teams: k, diff: +score(real, best.as).diff.toFixed(1), kind };
+}
 // Is the game over? Every human still in it has reported the same frame. Asked again whenever that set shrinks -- a player
 // who goes back or drops can be the one whose report was missing -- and true only once.
 function checkOver(L) {
   if (L.over || L.state !== 'playing' || !L.overs) return !!L.over;
   const still = inGame(L).map(p => L.players.indexOf(p));
-  if (!still.length || !still.every(i => L.overs[i]) || new Set(still.map(i => L.overs[i].f)).size !== 1) return false;
-  L.over = { f: L.overs[still[0]].f };
+  if (!still.length || !still.every(i => L.overs[i]) || new Set(still.map(i => L.overs[i].f + '|' + L.overs[i].team)).size !== 1) return false;
+  L.over = { f: L.overs[still[0]].f, team: L.overs[still[0]].team };
   console.log(tag(L) + 'game over at frame ' + L.over.f + ', agreed by ' + still.length + ' player' + (still.length === 1 ? '' : 's'));
+  recordResult(L, L.over.team, 'agreed');   // queue item C: the agreed end is the result a rating is made from
   return true;
 }
 function returnToLobby(L) {
+  forfeit(L);   // a game nobody finished, before what it was made of is cleared
   if (L.timer) { clearTimeout(L.timer); L.timer = null; }
   L.state = 'lobby'; L.started = null; L.history = []; L.lastF = {}; L.gone = {}; L.pendingSnaps = null; L.count = 0; L.over = null; L.overs = null;
   // who is still here: every computer, and every human whose socket is in this room (a player who dropped has id 0)
@@ -301,6 +440,7 @@ function startMsg(L, idx) { return { room: L.code, seed: L.seed, layout: L.layou
 // why the room is frozen in between.
 function beginGame(L) {
   L.state = 'playing'; L.count = 0; L.timer = null; L.over = null; L.overs = null; L.hostId = (hostOf(L) || {}).id; pushLobbies();
+  L.startKeys = L.players.map(p => p.key || null); L.ratedKind = ratedAs(L); L.rated = false; L.leftAt = {};   // queue item C
   L.seed = Math.floor(Math.random() * 1e9); const races = ['T', 'Z', 'P'];
   L.started = L.players.map(p => Object.assign({ name: p.name, race: p.race === 'R' ? races[Math.floor(Math.random() * 3)] : p.race, team: p.team, human: !p.ai, difficulty: p.difficulty, style: p.style }, startOf(p)));
   L.history = []; L.lastF = {}; L.gone = {};
@@ -346,6 +486,7 @@ function onMessage(c, m) {
   // other makes it a browser that is told the listed rooms until it joins one.
   if (m.t === 'list' && !roomOf(c)) { c.browsing = true; send(c, lobbies()); return; }
   if (m.t !== 'join' && !roomOf(c)) return;
+  if (m.t === 'join' && !c.key) c.key = keyOf(m.key);   // who this browser is, for ratings (queue item C); the raw secret is not kept
   if (m.t === 'join' && !c.room) {
     if (m.create === true) m.room = newCode();   // a hosted game: the relay picks the code
     const k = roomCode(m.room); if (k !== DEFAULT_ROOM && k.length < MIN_CODE) { send(c, { t: 'error', msg: 'A room code is at least ' + MIN_CODE + ' letters or digits.' }); return; }
@@ -376,10 +517,10 @@ function onMessage(c, m) {
       }
       if (L.state !== 'lobby') { // a dropped player reconnecting under the same name takes their slot back
         if (me) { send(c, { t: 'error', msg: 'You are already in this game.' }); return; }   // a live player re-sending join with a dropped name used to take that slot too, and two slots shared one id
-        const name = String(m.name || '').slice(0, 16); const idx = L.players.findIndex(p => p.gone && !p.back && p.name === name);   // a player BACK in the lobby is gone from the game, not from the room: their seat is not for taking
+        const name = String(m.name || '').slice(0, 16); const idx = L.players.findIndex(p => p.gone && !p.back && p.name === name && (!p.key || p.key === c.key));   // ...and a seat with a key is only for the browser that held it (queue item C)   // a player BACK in the lobby is gone from the game, not from the room: their seat is not for taking
         if (idx < 0) { send(c, { t: 'error', msg: 'Game already in progress' + (name ? ' and no dropped player is called ' + name : '') + '.' }); return; }
         c.room = L.code;
-        const slot = L.players[idx]; slot.id = c.id; slot.gone = false;
+        const slot = L.players[idx]; slot.id = c.id; slot.gone = false; if (L.leftAt) delete L.leftAt[idx];
         const R = Math.max(maxFrame(L) + 1, DELAY); L.gone[idx].to = R;
         // ...and not a client that is itself mid-rejoin: `slot.gone` is cleared before this search, so
         // once simultaneous rejoins actually work, the previous rejoiner looks like a healthy donor
@@ -393,7 +534,7 @@ function onMessage(c, m) {
       // while reaching the server meant being on the LAN.
       if (!me && L.players.length >= capOf(L)) { send(c, { t: 'error', msg: 'That game is full (' + capOf(L) + ' players).' }); return; }
       if (!c.room) c.room = L.code;
-      if (!me) L.players.push({ id: c.id, name: String(m.name || 'Player').slice(0, 16), race: raceOf(m.race), team: joinTeam(L) });
+      if (!me) L.players.push(Object.assign({ id: c.id, name: String(m.name || 'Player').slice(0, 16), race: raceOf(m.race), team: joinTeam(L) }, c.key ? { key: c.key } : {}));
       if (fresh && m.create === true) { L.listed = true; L.title = String(m.title || '').trim().slice(0, 40) || L.players[0].name + "'s game"; }   // a hosted game: listed under its title
       c.browsing = false; broadcast(L, lobbyState(L)); if (!me) sys(L, 'join', { name: L.players[L.players.length - 1].name }); lobbyPing(c); if (L.listed) pushLobbies(); break;
     }
@@ -436,7 +577,7 @@ function onMessage(c, m) {
         if (typeof m.spectate === 'boolean') {
           const sp = specOf(L, c.id);
           if (m.spectate && me && !isHost && (L.specs || []).length < MAX_SPECS) { L.players = L.players.filter(p => p !== me); L.specs.push({ id: me.id, name: me.name }); sys(L, 'spectate', { name: me.name }); }
-          else if (!m.spectate && sp && L.players.length < capOf(L)) { L.specs = L.specs.filter(s => s !== sp); L.players.push({ id: sp.id, name: sp.name, race: raceOf(m.race), team: joinTeam(L) }); sys(L, 'play', { name: sp.name }); }
+          else if (!m.spectate && sp && L.players.length < capOf(L)) { L.specs = L.specs.filter(s => s !== sp); L.players.push(Object.assign({ id: sp.id, name: sp.name, race: raceOf(m.race), team: joinTeam(L) }, c.key ? { key: c.key } : {})); sys(L, 'play', { name: sp.name }); }
         }
         if (me && typeof m.ready === 'boolean' && !!me.ready !== m.ready) { me.ready = m.ready; sys(L, m.ready ? 'ready' : 'notready', { name: me.name }); }
         if (isHost && typeof m.layout === 'string' && m.layout.length <= 64 && m.layout !== L.layout) { L.layout = m.layout; sys(L, 'map', { layout: L.layout }); clearStarts(L); unreadyAll(L, 'map'); }
@@ -473,6 +614,11 @@ function onMessage(c, m) {
     // balance on, so this is the honest half: every slot dealt at random onto as many teams as are in use (at least
     // two), sizes differing by at most one. The relay's randomness, so no client can deal itself a team; the seats,
     // and so the colours, stay where they were.
+    case 'balance': if (isHost && L.state === 'lobby' && !L.started) {
+      const r = balanceTeams(L);
+      if (!r) { send(c, { t: 'error', msg: 'Balancing needs every slot to be a player: computers have no rating.' }); break; }
+      sys(L, 'balance', r); unreadyAll(L, 'teams'); broadcast(L, lobbyState(L)); pushLobbies();
+    } break;
     case 'shuffle': if (isHost && L.state === 'lobby' && !L.started) {
       const n = Math.max(2, new Set(L.players.map(p => p.team || 1)).size);
       const deck = L.players.slice(); for (let i = deck.length - 1; i > 0; i--) { const j = crypto.randomInt(i + 1); const x = deck[i]; deck[i] = deck[j]; deck[j] = x; }
@@ -556,7 +702,7 @@ function leave(c) {
       L.players[idx].id = 0; delete L.players[idx].back; delete L.players[idx].readyBack; sys(L, 'leave', { name: L.players[idx].name }); broadcast(L, lobbyState(L));
     }
     if (specOf(L, c.id)) { L.specs = L.specs.filter(s => s.id !== c.id); broadcast(L, lobbyState(L)); }
-    if (!inRoom(L).length) { L.players = []; L.specs = []; L.state = 'lobby'; L.started = null; L.history = []; L.lastF = {}; L.gone = {}; L.pendingSnaps = null; L.over = null; L.overs = null; console.log(tag(L) + 'all players gone, back to lobby'); }   // `started` too: `set` and `addai` gate on it, so the second game in the LAN room could change no race, team, map or speed (REVIEW-M17)
+    if (!inRoom(L).length) { forfeit(L); L.players = []; L.specs = []; L.state = 'lobby'; L.started = null; L.history = []; L.lastF = {}; L.gone = {}; L.pendingSnaps = null; L.over = null; L.overs = null; console.log(tag(L) + 'all players gone, back to lobby'); }   // `started` too: `set` and `addai` gate on it, so the second game in the LAN room could change no race, team, map or speed (REVIEW-M17)
     else if (L.state === 'playing' && L.players.some(q => q.back) && (checkOver(L) || !inGame(L).length)) returnToLobby(L);   // the last player still in the game walked out, or the one whose report was missing: the ones who went back have their lobby
   }
   else {

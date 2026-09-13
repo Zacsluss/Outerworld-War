@@ -12,7 +12,7 @@
 # Signing later is additive: add the repository secrets TODO-M18 item D lists and pass Tauri's documented variables to the
 # build step (v2.tauri.app/distribute/sign/macos/ and /windows/). Nothing here reads a secret today.
 #
-# Runs on a push to main that changes the desktop wrapper or this file, on a v* tag, and by hand (Actions -> Desktop builds
+# Runs on a push to main that changes the desktop wrapper, the relay it ships, or this file, on a v* tag, and by hand (Actions -> Desktop builds
 # -> Run workflow). The installers are the run's artifacts. macos-15-intel is GitHub's last Intel image (until August 2027).
 name: Desktop builds
 
@@ -23,6 +23,7 @@ on:
     tags: ['v*']
     paths:
       - 'desktop/**'
+      - 'test/serve.js'          # the relay sidecar is built from it
       - '.github/workflows/desktop.yml'
 
 permissions:
