@@ -1,14 +1,100 @@
 # TODO-M18 — the user's thirteen-item list from the first internet game
 
 Started when the fifth session paused for the night (2026-09-12) and kept since. `HANDOFF-M18.md` has the state, the
-traps and the kickoff prompt; this file is the open list. **Its first section, THE WORK QUEUE, is what to do next**: the
-user's decision on every open item after the eighth session, in order. The sessions' lists follow it (what each did,
+traps and the kickoff prompt; this file is the open list. **Its first section, THE TENTH SESSION'S QUEUE, is what to do
+next** (the user's playtest findings and the build path); THE WORK QUEUE after it is the ninth session's, all done. The
+sessions' lists follow (what each did,
 with commits), then the older open items with their measurements, then what is closed. There are no worktrees.
 
 The gate is **90 suites** (`node test/all.js`, ~5 min) and **ALL GREEN** since queue item G (ninth session) -- the first
 time since `136b1b0`. Every rule in `CLAUDE.md`
 applies to every item here: measure before fixing, a negative control that goes cleanly RED, `tools/patch.js`
 for edits, and the gate green before the commit.
+
+---
+
+## THE TENTH SESSION'S QUEUE -- the user's playtest of PLAYTEST-M18 94-100 (2026-09-13)
+
+The user played through the recorder (`.claude/review/playtest/2026-09-13_09-39-07/`, `report-2.txt`) and sent six
+findings, then: **"anything i missed in testing, run auto tests without me to test. fix and do all - first add to tasks
+docs, optimize build path, then execute build."** Every item gets research with sources, a probe first, negative
+controls, a PLAYTEST entry, and the gate. The other three open items (7b, terrain art, the research stall) wait until
+this queue is done -- the user said so.
+
+**The six findings, in the user's words, with what was measured before any change:**
+1. **"my own units should NOT attack my own structures if they are 'right clicked to attack'... BUT if we click the
+   'attack' button in the hud and we select our own unit/building, that should bypass and allow our units to attack our
+   own buildings/units, like in starcraft (applies to drones/probes/scv as well)."** Measured: a right-click on your own
+   unit or building already moves, follows, repairs, loads or gathers, never attacks (`UI.smartCommand`); the ATTACK
+   command on your own unit or building is turned into an attack-move to the spot (`UI.execPending`, case 'attack':
+   `t.owner !== G.human`), so it can never force-attack. The simulation already allows it (`G.targetable` passes an own
+   target). The user's recorded attack orders all hit enemy Probes (`.claude/review/tenth/replay-targets.js`).
+2. **"there is no color picker in multiplayer lobby - user should be able to click their color swatch and choose from
+   the available colors."** Measured: a slot's colour IS its seat (`Net.slotColor`, a deliberate no-picker comment in
+   js/net.js) and `Player` paints `PLAYER_COLORS[id]` (js/sim.js). A picker has to reach G.init, so the stamp moves.
+3. **"once ai is added to multiplayer lobby, there is no way to remove it - it enters as 'readied up' - so no changes can
+   be made. it should not have to ready up - it is always ready, but must ALWAYS be able to be changed/moved/removed."**
+   Measured in the Browser pane: the HOST's row for a computer has race, difficulty, style, team and start lists and a
+   10-px red x; a joined player's view of the same row is plain text with no controls; every computer shows the same
+   green READY tick a human gets. The user's host tab clicked the lobby twelve times in five seconds after adding it
+   and hit no control.
+4. **"in 2 player human testing, when the one human opponent leaves, it does NOT trigger an end game - it should."**
+   Measured: Return to main menu in a network game closes the socket (`UI.toMenu` -> `Net.disconnect`); the relay
+   treats it as a DROP (`dropFromGame`), the others get `left` and "...dropped. Their units stop at 0:51; the game
+   continues." (the recording), and the leaver's units get `stopall` at that frame (replay-d8u1ig-1). Nobody is ever
+   defeated, so `G.checkVictory` never ends it.
+5. **"join by code should not work if no lobbies exist with the code used"** Measured: JOIN BY CODE sends
+   `existing: false`, so the relay CREATES the room -- "fewrg" made a lobby FEWRG with the user as host (the recording).
+   The relay already refuses a missing room when `existing: true` (the list and invite links send it).
+6. **"settings in-game should be bound to ESC, not F10"** Measured: the pause menu is the `pause` binding, default
+   F10 (`UI.BIND_DEFAULTS`); Escape is RESERVED and cancels placement, targeting, the build menu, an unfinished building
+   or the last queued item; F10 is named in the HUD's help line, the replay banner, the connection-lost line and a lobby
+   message.
+8. **LOCKED IN UNTIL FIXED (the user, mid-session): "if i send a probe/drone/scv to an enemy base and start attacking it,
+   the AI enemy should know to swarm the probe/drone/scv with their probes/drones/scvs to repel/destroy the attacking
+   probe/drone/scv."** Read before measuring: `AI.army()` defends only with army units (`state 'defend'` attack-moves
+   `armyUnits()`), and `G.onHit`'s retaliation skips workers (`!t.def.worker`), so a computer with no army, or its
+   army away, lets a lone worker kill its workers one by one. Probe first (a worker harassing a computer's mineral line,
+   what the computer does), then pull a few workers onto the harasser and send them back to mining when it is dead or
+   gone. Stamped (js/ai.js).
+7. **"anything i missed in testing, run auto tests without me"** -- from the recording, NOT exercised: 92 in a game
+   (a rebound key training, Grid), 94 online (a guest taking a start), 95 (rematch, single player and online), 96 (the
+   desktop app), 97 (password), 98 (ratings: the game had a computer, so it was unrated), 99 (stall watcher), 100 (the
+   computer attacking; the games lasted 0:48 and 2:18). Run each automatically and report.
+
+**DONE, first batch (commit after `a4dd42a`; gate 95 of 95, net_many 51/51, aistyles 132/0 on seeds 1, 5 and 11 with item G's
+first waves unchanged, queens 25/0, eightplayer 19/19; build stamp `096229469e3da005`; PLAYTEST-M18 items 101-105):**
+- **1** -- the ATTACK command on your own unit or building attacks it (`UI.execPending`), workers included, and a unit hit by
+  its own side no longer retaliates (`G.onHit`); a right-click is unchanged. `test/wrongthing.js`'s "shoot at your own
+  units -> you cannot order fire on your own" was reversed on the user's word. `test/forceattack.js` (12), 5 controls.
+  **Found measuring it and fixed:** melee attackers gave up a tile short of a building ("path ended short" in `Unit.moveTo`):
+  107 of 384 approaches over eight attackers and six buildings on open ground, an Ultralisk from 7 directions in 8 on a
+  Pylon. A unit within 1.5 tiles of a target building's edge keeps closing (1 tile still lost 7). 0 of 384 after.
+- **2** -- a colour picker: the swatch opens a palette of the colours nobody else wears, plus Auto; the relay keeps chosen
+  colours unique; `Player.assignColors` (the assignStarts rule) paints G.init, the lobby, the preview and chat; the skirmish
+  lobby too. `test/colours.js` (18), 6 controls.
+- **3** -- a computer shows a gear, not a ready tick; REMOVE in words for the host; "host sets" for a guest; the host may
+  change or remove one during the countdown, which calls the count off. `test/aislots.js` (12), 5 controls. (Measured: the
+  host's row already had the lists and a 10-px x, so this is mostly legibility; the countdown was a real freeze.)
+- **5** -- JOIN BY CODE sends `existing` and `byCode`; the relay answers "No game here has the code X." and makes no room.
+  `test/joincode.js` (8), 4 controls.
+- **6** -- Escape is the pause binding's default: it cancels a placement, a target, a build menu or the chat line first, and
+  otherwise opens the menu; it never cancels a queued unit or a building (their Cancel has no key); F10 is free; the HUD
+  and help name the bound key. `test/escmenu.js` (13), 4 controls; `test/controls.js`'s count guard lowered on purpose.
+
+**THE BUILD PATH** -- ordered so no file is opened twice across phases, the two stamp moves land together, and every
+relay change is followed by `node test/net_many.js`:
+- **Phase 1, the client's input (js/ui.js, js/hud.js; no relay, no stamp):** 6 (Escape opens the menu). One commit, one
+  gate.
+- **Phase 2, the lobby and the relay (js/net.js, test/serve.js; no stamp):** 5 (join by code refuses a missing room),
+  then 3 (a computer slot is always ready and always editable/removable). One commit, one gate, net_many.
+- **Phase 3, the simulation (stamped: js/sim.js, js/game.js, js/commands.js, js/ai.js):** 2 (a colour picker carried into
+  G.init), then 4 (a player who leaves is defeated, so the game ends), then 8 (the computer's workers answer a worker
+  attacking its base). A commit each, a gate each, net_many, and aistyles seeds 1/5/11 + eightplayer after the stamp moves.
+  (1 joins this phase too: measuring it found `G.onHit` makes an idle unit hit by its OWN side fight back, so a force-
+  attack on your own unit needs js/game.js.)
+- **Phase 4, verification without the user:** 7's automatic run of every untested PLAYTEST item, the PLAYTEST entries,
+  HANDOFF-M18 and a kickoff prompt.
 
 ---
 

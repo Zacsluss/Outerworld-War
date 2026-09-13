@@ -71,6 +71,18 @@ class Player {
     this.vis = null; this.msgs = []; this.lastAlert = {}; this.nukes = 0;
     this.stats = { unitsKilled: 0, unitsLost: 0, buildingsKilled: 0, buildingsLost: 0, mined: 0, gassed: 0 };
   }
+  // A COLOUR CHOSEN IN THE LOBBY (tenth session, item 2). The rule is GameMap.assignStarts' own, for the same reasons: a
+  // chosen colour in range that nobody else chose is kept; an Auto seat keeps the colour its seat always had, i % count, while
+  // that is free, and otherwise takes the first free one. Pure and seed-free, so the lobby draws with it exactly what G.init
+  // paints, and a game where nobody chooses is painted as every game was. No two players share one, as in StarCraft II's
+  // melee lobby (Age of Empires II's shared colour means shared control, which this game does not have).
+  static assignColors(players, count) {
+    const n = Math.max(0, count | 0), list = Array.isArray(players) ? players : [];
+    const out = list.map(() => -1), taken = new Array(n).fill(false);
+    list.forEach((po, i) => { const c = po ? po.color : null; if (Number.isInteger(c) && c >= 0 && c < n && !taken[c]) { out[i] = c; taken[c] = true; } });
+    list.forEach((po, i) => { if (out[i] >= 0 || !n) return; let c = i % n; if (taken[c]) { const free = taken.indexOf(false); if (free >= 0) c = free; } out[i] = c; taken[c] = true; });
+    return out;
+  }
   upgLevel(k) { return k ? (this.upg[k] || 0) : 0; }
   hasTech(t) { return this.tech.has(t); }
   msg(text, kind = 'info') { if (!this.human) return; const last = this.lastAlert[text] || -9999; if (G.frame - last < 72) return; this.lastAlert[text] = G.frame; this.msgs.push({ text, t: G.frame, kind }); if (this.msgs.length > 6) this.msgs.shift();
@@ -655,7 +667,16 @@ class Unit {
       // advance along path
       while (this.path && this.pathI < this.path.length) { const wp = this.path[this.pathI]; const wx = (wp[0] + 0.5) * TILE, wy = (wp[1] + 0.5) * TILE; if (distPt(this.x, this.y, wx, wy) < Math.max(6, spd + 2)) this.pathI++; else break; }
       if (this.path && this.pathI < this.path.length) { const wp = this.path[this.pathI]; gx = (wp[0] + 0.5) * TILE; gy = (wp[1] + 0.5) * TILE; }
-      else if (this.path && this.path.length) { const wp = this.path[this.path.length - 1]; if (distPt(this.x, this.y, (wp[0] + .5) * TILE, (wp[1] + .5) * TILE) < TILE && distPt(this.x, this.y, x, y) > TILE * 1.5) { /* path ended short (unreachable) */ this.stuck = 0; this.moveFailed = true; return true; } }
+      // A PATH THAT RUNS OUT BESIDE A BUILDING HAS NOT FAILED (tenth session). A building's centre is inside its own footprint,
+      // so the path to it ends on a free tile next to it -- and this line called that "unreachable" whenever the unit was
+      // still more than a tile and a half from the centre, which a melee attacker on the tile beside a 2x2 building always
+      // is. Measured on open ground (.claude/review/tenth/melee-probe.js, eight directions): Probes, SCVs, Drones, Zerglings
+      // and Zealots dropped their attack on a Pylon, Photon Cannon, Missile Turret or Creep Colony from three to five
+      // directions in eight, an Ultralisk from seven, 107 attacks in 384 in all -- a player's first worker sent at a Pylon
+      // stood there. So a unit within a tile and a half of a target building's EDGE keeps closing on it straight (1 tile
+      // still lost 7 Ultralisk attacks; 1.5 and 2 lost none); anything else still counts as unreachable here, and the
+      // watchdog above still ends a real grind.
+      else if (this.path && this.path.length) { const wp = this.path[this.path.length - 1]; const b = targetUnit && targetUnit.isBuilding && !targetUnit.lifted ? targetUnit : null; const gap = b ? DMath.hypot(Math.max(b.tx * TILE - this.x, 0, this.x - (b.tx + b.def.w) * TILE), Math.max(b.ty * TILE - this.y, 0, this.y - (b.ty + b.def.h) * TILE)) - this.r : Infinity; if (distPt(this.x, this.y, (wp[0] + .5) * TILE, (wp[1] + .5) * TILE) < TILE && distPt(this.x, this.y, x, y) > TILE * 1.5 && !(gap <= TILE * 1.5)) { /* path ended short (unreachable) */ this.stuck = 0; this.moveFailed = true; return true; } }
     }
     const want = DMath.atan2(gy - this.y, gx - this.x); let ang = want; let step = Math.min(spd, dd);
     if (!this.lifted) {

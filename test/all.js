@@ -97,6 +97,12 @@ const TESTS = [
   { name: 'safety', args: ['safety.js'], what: 'internet-play safety: a server password, sockets per address, message and frame caps, the address behind a tunnel' },
   { name: 'starts', args: ['starts.js'], what: 'a start chosen in the lobby: on the map, in the list, placed by the host, refused when taken, reset by a new map, and the game it starts' },
   { name: 'stallwatch', args: ['stallwatch.js'], what: 'production or research frozen with no reason the rules give is reported once, in one line; a research paused for a rule reason is explained' },
+  // The tenth session: the user's playtest of PLAYTEST-M18 94-100 (TODO-M18, THE TENTH SESSION'S QUEUE).
+  { name: 'forceattack', args: ['forceattack.js'], what: 'ATTACK on your own unit or building attacks it (workers too) and the victim does not fight back; a right-click never does; melee attackers reach a small building from every side' },
+  { name: 'escmenu', args: ['escmenu.js'], what: 'Escape opens the game menu, after cancelling a placement, a target, a build menu or the chat line; it cancels no queued unit or building; the key is a binding' },
+  { name: 'joincode', args: ['joincode.js'], what: 'JOIN BY CODE joins a game that exists and names a code that matches none; it makes no room' },
+  { name: 'aislots', args: ['aislots.js'], what: 'a computer slot is always ready and always the host\'s to change or remove, the countdown included; a guest is told' },
+  { name: 'colours', args: ['colours.js'], what: 'a colour chosen in the lobby: unique, Auto, the host\'s for a computer, carried into the game and the replay, the skirmish lobby too' },
   { name: 'shots', args: ['shots.js'], what: 'every weapon has its own shot, the races are disjoint, and every kind actually draws' },
   { name: 'wavetarget', args: ['wavetarget.js'], what: 'an attack wave scores a defended main above a bare expansion, and finishes the base it is in' },
   { name: 'fognight', args: ['fognight.js'], what: 'explored ground remembers, and night shortens sight on maps that have one' },

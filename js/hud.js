@@ -891,7 +891,7 @@ Object.assign(UI, {
     // degrades and never says why is atmosphere; a HUD that names the thing degrading is a readout,
     // and the word it uses is the third thing (after the material and the damage) that says which
     // race's machine you are sitting at.
-    else { const cd = HUD.condition(); HUD.text(ctx, RACE_INFO[p.race].name + ' Command', ix + 12, y0 + 30, HUD.accent(), 13); HUD.text(ctx, 'F1 help  ·  F10 menu  ·  F5 save  ·  Enter chat  ·  speed ' + this.speedName() + ' (+/-)  ·  ' + this.fps + ' fps', ix + 12, y0 + 50, '#8a93a0', 11, false); HUD.text(ctx, 'Seed ' + G.map.seed + '   Frame ' + G.frame + '   ' + HUD.INTEGRITY[p.race] + ' ' + Math.round(cd.v * 100) + '%', ix + 12, y0 + 68, cd.v < 0.5 ? '#c98a6a' : '#8a93a0', 11, false); }
+    else { const cd = HUD.condition(); HUD.text(ctx, RACE_INFO[p.race].name + ' Command', ix + 12, y0 + 30, HUD.accent(), 13); HUD.text(ctx, UI.keyName(UI.key('help')) + ' help  ·  ' + UI.keyName(UI.key('pause')) + ' menu  ·  ' + UI.keyName(UI.key('save')) + ' save  ·  Enter chat  ·  speed ' + this.speedName() + ' (+/-)  ·  ' + this.fps + ' fps', ix + 12, y0 + 50, '#8a93a0', 11, false); HUD.text(ctx, 'Seed ' + G.map.seed + '   Frame ' + G.frame + '   ' + HUD.INTEGRITY[p.race] + ' ' + Math.round(cd.v * 100) + '%', ix + 12, y0 + 68, cd.v < 0.5 ? '#c98a6a' : '#8a93a0', 11, false); }
     // ---- command card ----
     HUD.inset(ctx, cr.x, cr.y, cr.w, cr.h);
     const btns = this.currentCard(); this.tooltip = null;
@@ -1087,11 +1087,11 @@ Object.assign(UI, {
     // map without a cycle (dayPhase is null there), so the plate is only drawn when the dial is.
     // REVIEW-M17 task 1: this file replaces ui.js's drawTop, whose call to it was the only one.
     if (this.dayPhase()) { HUD.bevel(ctx, 190, 6, 122, 24, true, 'rgba(12,15,20,0.85)'); this.drawDayDial(ctx, 193, 7); }
-    if (this.mode === 'replay') HUD.text(ctx, this.net ? 'SPECTATING  ([ ] player, Ctrl+V map, O production, F10 menu)' : 'REPLAY  ' + this.speedName() + '  (+/- speed, Ctrl+V perspective, F10 menu)', Render.W / 2, 23, '#ffe45a', 13, true, 'center');
+    if (this.mode === 'replay') HUD.text(ctx, this.net ? 'SPECTATING  ([ ] player, Ctrl+V map, O production, ' + UI.keyName(UI.key('pause')) + ' menu)' : 'REPLAY  ' + this.speedName() + '  (+/- speed, Ctrl+V perspective, ' + UI.keyName(UI.key('pause')) + ' menu)', Render.W / 2, 23, '#ffe45a', 13, true, 'center');
     if (G.mission && !G.mission.done) { const d = G.mission.def; const left = d.minutes ? Math.max(0, d.minutes * 60 - Math.floor((G.frame - G.mission.start) / TPS)) : 0; HUD.text(ctx, 'Objective: ' + d.objective + (d.minutes ? `   ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : ''), 16, 66, '#ffe45a', 12); }
     if (this.net && Net.waitingSince && performance.now() - Net.waitingSince > 800) HUD.text(ctx, 'Waiting for other players...', Render.W / 2, 60, '#ffe45a', 14, true, 'center');
     if (this.net && Net.desynced) HUD.text(ctx, 'DESYNC DETECTED at ' + Net.clock(Net.desyncFrame) + ' — command log saved to a download; the game is no longer in sync', Render.W / 2, 84, '#ff5050', 14, true, 'center');
-    if (this.net && !Net.connected && Net.active) HUD.text(ctx, 'Connection lost — leave with F10 and reconnect with the same name to rejoin', Render.W / 2, 108, '#ff5050', 14, true, 'center');
+    if (this.net && !Net.connected && Net.active) HUD.text(ctx, 'Connection lost — leave with ' + UI.keyName(UI.key('pause')) + ' and reconnect with the same name to rejoin', Render.W / 2, 108, '#ff5050', 14, true, 'center');
     if (this.pending) HUD.text(ctx, 'Select target: ' + (this.pending.kind === 'ability' ? DATA.abilities[this.pending.abil].name : this.pending.kind) + '  (right-click to cancel)', 16, 48, '#ffe45a', 12);
     if (this.showHelp) this.drawHelp(ctx);
   },
@@ -1177,8 +1177,8 @@ Object.assign(UI, {
     const card = (id, slot) => UI.keyName(UI.cardKeyFor('cmd:' + id, slot, UI.CARD_COMMANDS[id][1])) || '(none)', bind = id => UI.keyName(UI.key(id)) || '(unbound)';
     const lines = ['CONTROLS', 'Left click / drag: select    Right click: smart command    Shift: queue / add to selection', 'Ctrl+click or double-click: select all of a type on screen',
       card('move', 0) + ' move   ' + card('stop', 1) + ' stop   ' + card('attack', 2) + ' attack-move   ' + card('patrol', 3) + ' patrol   ' + card('hold', 4) + ' hold   ' + card('build', 6) + ' build   ' + card('buildAdv', 7) + ' advanced build',
-      'Ctrl+0..9 assign group   0..9 select group   Shift+# add   F2 F4 F6 F7 (+Shift) camera saves   F8 load autosave', 'Esc: cancel / cancel construction or last queued item    ' + bind('lastAlert') + ': jump to last alert',
-      'Arrow keys or screen edge: scroll    Minimap: click to move, right-click to command', bind('speedUp') + ' / ' + bind('speedDown') + ': game speed    F9: pause    ' + bind('pause') + ': menu    ' + bind('help') + ': toggle this help',
+      'Ctrl+0..9 assign group   0..9 select group   Shift+# add   F2 F4 F6 F7 (+Shift) camera saves   F8 load autosave', bind('pause') + ': cancel a target or a placement, otherwise the game menu    ' + bind('lastAlert') + ': jump to last alert',
+      'Arrow keys or screen edge: scroll    Minimap: click to move, right-click to command', bind('speedUp') + ' / ' + bind('speedDown') + ': game speed    F9: pause    Cancel on the card: a queued unit or a building going up    ' + bind('help') + ': toggle this help',
       'Unit-specific hotkeys are the yellow letters on the command card. Every key is changed in Settings, Controls.'];
     HUD.bevel(ctx, Render.W / 2 - 340, 60, 680, 20 * lines.length + 24, true, 'rgba(10,12,16,0.94)'); lines.forEach((l, i) => HUD.text(ctx, l, Render.W / 2 - 326, 86 + i * 20, i ? '#d0d6de' : '#ffe45a', 13, i === 0));
   },

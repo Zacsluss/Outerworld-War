@@ -116,8 +116,10 @@ ok(unread.length === 0, 'every declared binding is actually consulted by onKey -
   for (const m of scroll.matchAll(/this\.keys\.(\w+)/g)) { add(m[1], 'polled by scrollCam'); reads++; }
   // count guard: 22 reads and 29 distinct keys measured at REVIEW-M17 task 15. Fewer means a pattern
   // stopped matching -- or onKey lost a read, in which case lower these on purpose, with the RESERVED line.
+  // Lowered on purpose in the tenth session (item 6) to 19 reads and 28 keys: Escape became the pause binding's default,
+  // read through hit(), and its three literal reads went with its RESERVED line.
   ok(onKey.length > 0 && scroll.length > 0 && chatLines.length === 1, 'the scrape found onKey, scrollCam and the chat buffer line', JSON.stringify([onKey.length, scroll.length, chatLines.length]));
-  ok(reads >= 22 && found.size >= 29, 'the scrape found the hard-coded reads (count guard: at least 22 reads, 29 keys)', reads + ' reads, ' + found.size + ' keys: ' + [...found.keys()].join(' '));
+  ok(reads >= 19 && found.size >= 28, 'the scrape found the hard-coded reads (count guard: at least 19 reads, 28 keys)', reads + ' reads, ' + found.size + ' keys: ' + [...found.keys()].join(' '));
 
   const r2 = vm.runInContext(`(() => {
     const out = { reserved: [...UI.RESERVED] };
@@ -126,7 +128,7 @@ ok(unread.length === 0, 'every declared binding is actually consulted by onKey -
     const snap = () => JSON.stringify(Object.keys(UI.bindings()).map(id => UI.bindings()[id].key)) + '|' + localStorage.getItem('bw_binds');
     const before = snap();
     out.refused = {};
-    for (const key of ['F8', 'ctrl+m', '5', 'F2', 'Escape', 'O', 'ctrl+f8', 'ArrowUp']) out.refused[key] = UI.setBinding('idleWorker', key);
+    for (const key of ['F8', 'ctrl+m', '5', 'F2', 'O', 'ctrl+f8', 'ArrowUp']) out.refused[key] = UI.setBinding('idleWorker', key);
     out.unchanged = snap() === before && UI.bindings().idleWorker.key === ',';
     out.plain = UI.setBinding('idleWorker', 'q') === true && UI.bindings().idleWorker.key === 'q';
     out.aDefault = UI.setBinding('idleWorker', ',') === true && UI.bindings().idleWorker.key === ',';
@@ -147,7 +149,7 @@ ok(unread.length === 0, 'every declared binding is actually consulted by onKey -
   ok(stale.length === 0, '...and every reserved key was found by the scrape (a stale entry, or a read the patterns no longer see)', stale.join(', '));
   ok(r2.defaultsReserved.length === 0, 'no default key is reserved, so a fresh profile is a legal one', r2.defaultsReserved.join(', '));
   const accepted = Object.keys(r2.refused).filter(k => r2.refused[k] !== false);
-  ok(accepted.length === 0 && r2.unchanged, 'setBinding refuses a reserved key (F8, Ctrl+M, a digit, a camera slot, Escape, O for o, Ctrl+F8, an arrow) with false and changes nothing', JSON.stringify({ accepted, unchanged: r2.unchanged }));
+  ok(accepted.length === 0 && r2.unchanged, 'setBinding refuses a reserved key (F8, Ctrl+M, a digit, a camera slot, O for o, Ctrl+F8, an arrow) with false and changes nothing', JSON.stringify({ accepted, unchanged: r2.unchanged }));
   ok(r2.plain && r2.aDefault, '...and still binds a free key, and a default', JSON.stringify([r2.plain, r2.aDefault]));
   ok(r2.f11Closes && !r2.f10Closes, 'the menus close on the pause BINDING: with pause on F11, F11 closes the pause menu and F10 no longer does', JSON.stringify({ f11: r2.f11Closes, f10: r2.f10Closes }));
 

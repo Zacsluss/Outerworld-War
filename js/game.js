@@ -110,8 +110,10 @@ const G = {
     // rejoin reproduce verbatim, and seed-free, so it draws nothing from G.rand() and every game without a choice is the
     // game it always was.
     const startOf = GameMap.assignStarts(opts.players, this.map.starts.length);
+    const colorOf = Player.assignColors(opts.players, PLAYER_COLORS.length);   // a colour chosen in the lobby (tenth session, item 2), read from opts.players like the start
     opts.players.forEach((po, i) => {
       const p = new Player(i, pick(po.race), po.human, po.name || (po.human ? 'Player' : 'Computer ' + i)); p.team = po.team == null ? i : po.team;
+      p.color = PLAYER_COLORS[colorOf[i]];
       p.vis = new Uint8Array(this.map.w * this.map.h); p.ai = po.human ? null : new AI(p, po.difficulty || 'normal');
       this.players.push(p);
       // Starting bank, if the setup screen asked for one. Here rather than applied by the caller
@@ -752,8 +754,10 @@ const G = {
     // taught players to ignore alerts.
     const far = t.isBuilding && distPt(t.x, t.y, p.startX, p.startY) >= 16 * TILE;
     if (p.human && src && src.owner !== t.owner && !far) { if (this.frame - (p.lastAttackAlert || -9999) > 24 * 20) { p.lastAttackAlert = this.frame; p.msg(t.isBuilding || t.def.worker ? 'Your base is under attack.' : 'Your forces are under attack.', 'attack'); if (typeof UI !== 'undefined' && t.owner === this.human) UI.ping(t.x, t.y); } }
-    // auto-retaliate: idle units that get hit attack back
-    if (src && t.idle && !t.isBuilding && t.hasWeapon() && !t.def.worker && t.weaponFor(src) && this.targetable(t, src)) t.applyOrder({ type: 'attack', target: src, auto: true });
+    // auto-retaliate: idle units that get hit attack back -- but never at their own side. A unit your own force-attack hits
+    // (UI.execPending, tenth session item 1) stands and takes it, as in StarCraft; answering it would turn one order into a
+    // brawl inside your own army.
+    if (src && t.idle && !t.isBuilding && t.hasWeapon() && !t.def.worker && src.owner !== t.owner && !this.allied(t.owner, src.owner) && t.weaponFor(src) && this.targetable(t, src)) t.applyOrder({ type: 'attack', target: src, auto: true });
     // workers flee when attacked (mining)
     if (src && t.def.worker && t.owner !== src.owner && t.order.type === 'gather' && t.hp < t.maxHp * 0.5 && !p.human) { /* AI workers ignore */ }
   },

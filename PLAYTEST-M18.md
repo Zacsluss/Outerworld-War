@@ -1026,3 +1026,87 @@ beats a Zerg at about thirteen minutes. Fixing Zerg is the AI rebalance (TODO-M1
 4. **A Zerg computer's Queens.** Set it to **Zerg, Normal**, `black sheep wall`, and look at its hatcheries around **10:00**:
    a Queen beside each one (it had only its starting Queen). It will not have attacked you -- that is the unfinished part.
 5. **Easy and hard still differ**: an easy computer waits for a bigger wave (31) and a hard one for a smaller (20).
+
+---
+
+# The tenth session -- the user's playtest of 94-100
+
+**The build stamp moved** (to `096229469e3da005` with items 101-105): saves and replays from before are refused.
+
+## 101. Attack your own units and buildings on purpose -- and right-click still never does
+
+*(Tenth session, item 1. Brood War and StarCraft II both let the Attack command hit your own side; a right-click never does.)*
+
+**How to see it by hand** (Single Player, any skirmish):
+1. **Right-click is friendly.** Select a few Marines (or SCVs) and right-click your own Supply Depot: they walk to it. Right-click
+   one of your own units: they follow it. SCVs right-clicking your own damaged building repair it. Nothing attacks.
+2. **The ATTACK command is not.** With the same Marines selected, press **A** (or the Attack button on the card) and left-click
+   your own Supply Depot: they shoot it until you stop them. Do the same on one of your own Marines: they shoot it, and **it
+   stands there and takes it** -- it does not turn on your army.
+3. **Workers too.** Select three SCVs, Drones or Probes, press A, click your own building: they hit it.
+4. **Found and fixed on the way: melee attackers reach small buildings from every side.** Send one Probe (or a Zealot,
+   Zergling or Ultralisk) to attack an enemy Pylon or Photon Cannon from any direction: it hits it. Before, a melee attacker
+   stopped a tile short and gave up from three to seven directions in eight (107 attacks in 384 measured).
+
+---
+
+## 102. Escape opens the game menu
+
+*(Tenth session, item 6: "settings in-game should be bound to ESC, not F10". Age of Empires IV and Beyond All Reason try
+Escape's cancel first and open the menu otherwise; StarCraft II keeps the menu on F10.)*
+
+**How to see it by hand** (any game):
+1. **Escape opens the menu** (Settings is in it). Escape again closes it; from Settings, Escape steps back to the menu.
+2. **But first it cancels what is half-done.** Start placing a building and press Escape: the placement is cancelled and no
+   menu opens. Same for a target (press A, then Escape), for the build menu of a worker, and for a chat line you are typing.
+   The next Escape opens the menu.
+3. **It destroys nothing.** Select a Barracks with two Marines queued, press Escape: both are still queued and the menu
+   opens. **Cancelling a queued unit or a building going up is its card's Cancel button now** (it has no key).
+4. **F10 does nothing by default.** The key is in Settings -> Controls -> Interface ("Game menu"); put it back on F10 if you
+   prefer, and the help overlay (F1) and the HUD line say whichever key it is.
+
+**Deliberately different:** StarCraft II's Escape cancels the last queued unit; here it never does, so reaching for the menu
+cannot lose one.
+
+---
+
+## 103. Join by code only joins a game that exists
+
+*(Tenth session, item 5. Brood War says "Game doesn't exist"; Beyond All Reason "No lobby found".)*
+
+**How to see it by hand:** Multiplayer, type a code no game has ("fewrg") in the code box and press JOIN BY CODE (or
+Enter). The status line says **"No game here has the code FEWRG."** and you stay on the game list -- no empty lobby with you
+as its host (which is what the playtest made). Host a game in another tab, copy its code, join by it: you are in.
+
+---
+
+## 104. A computer slot is always ready, and always the host's to change or remove
+
+*(Tenth session, item 3. OpenRA's and Beyond All Reason's ready checks count humans only; only the host changes a bot.)*
+
+**How to see it by hand** (Multiplayer -> HOST GAME, two tabs if you like):
+1. **+ ADD A.I.** The computer's row shows a **gear** where a human's ready tick goes (hover it: always ready), its race,
+   difficulty, style, team and start lists, and a **REMOVE** button in words at the right.
+2. **Change anything, any time.** Change its difficulty, team or start; press REMOVE and it is gone. START never waits for
+   a computer.
+3. **During the countdown too.** Press START with a second human ready, and while it counts change the computer's
+   difficulty or REMOVE it: the count is called off ("The host changed Computer 0, so the start was cancelled.") and the
+   change is made.
+4. **A guest** (the second tab) sees the computer's settings as text with **host sets** beside them: only the host changes a
+   computer, as in OpenRA.
+
+---
+
+## 105. Choose your colour in the lobby
+
+*(Tenth session, item 2. StarCraft II's melee lobby keeps colours unique; OpenRA's picker is free and corrects a clash.)*
+
+**How to see it by hand** (Multiplayer -> HOST GAME, or Single Player -> Skirmish Setup):
+1. **Click your colour square** (the swatch at the left of your row). A palette opens under the row: the eight colours,
+   yours ringed, the ones other players wear dimmed with their name on hover, and **Auto**.
+2. **Click Brown.** Your square turns brown, the chat says "<you> plays in Brown.", and in the game your units, buildings,
+   minimap dots and name are brown. Nobody's ready is withdrawn for it.
+3. **Nobody shares a colour.** In a second tab, try to pick Brown: it is dimmed. As the host, click a computer's square to
+   choose its colour.
+4. **Auto** gives your colour back (your seat's own, or the first free one). A lobby where nobody chooses looks and plays
+   exactly as before; the Skirmish lobby remembers your choice.

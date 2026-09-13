@@ -181,7 +181,7 @@ function hostOf(L) { return L.players.find(q => !q.ai && !q.gone && !q.away) || 
 // Net.startGame builds. So a styled network AI costs no change to any stamped file. (item 1)
 // Each person's MATCH RATING for the kind of game the lobby would be (queue item C), and whether it would be rated at all.
 function ratingView(L, rated) { const kind = rated.kind || kindOf(teamSizes(L.players)) || 'duel'; return { kind, of: p => { if (p.ai || !p.key || !RATINGS_FILE) return {}; const r = ratingFor(p.key, kind); return { rating: +matchRating(r).toFixed(1), games: r.games }; } }; }
-function lobbyState(L) { const host = hostOf(L), rated = ratedAs(L), view = ratingView(L, rated); return { t: 'lobby', room: L.code, rated: Object.assign({ shown: view.kind }, rated), title: L.title, listed: !!L.listed, players: L.players.map(p => Object.assign({ id: p.id, name: p.name, race: p.race, team: p.team, ai: !!p.ai, difficulty: p.difficulty, style: p.style, gone: !!p.gone, ready: !!p.ready || !!p.ai, host: host ? p.id === host.id : false, ping: p.ai ? null : pingOf(p.id) }, startOf(p), p.back ? { back: true } : {}, p.away ? { away: true } : {}, view.of(p))), cap: capOf(L), specs: (L.specs || []).map(s => ({ id: s.id, name: s.name, ping: pingOf(s.id) })), layout: L.layout, state: L.state, speed: L.speed == null ? 6 : L.speed, count: L.count | 0, lockTeams: !!L.lockTeams, rules: L.rules, delay: DELAY, readyCheck: READY_CHECK }; }
+function lobbyState(L) { const host = hostOf(L), rated = ratedAs(L), view = ratingView(L, rated); return { t: 'lobby', room: L.code, rated: Object.assign({ shown: view.kind }, rated), title: L.title, listed: !!L.listed, players: L.players.map(p => Object.assign({ id: p.id, name: p.name, race: p.race, team: p.team, ai: !!p.ai, difficulty: p.difficulty, style: p.style, gone: !!p.gone, ready: !!p.ready || !!p.ai, host: host ? p.id === host.id : false, ping: p.ai ? null : pingOf(p.id) }, startOf(p), p.back ? { back: true } : {}, p.away ? { away: true } : {}, view.of(p), colorOf(p))), cap: capOf(L), specs: (L.specs || []).map(s => ({ id: s.id, name: s.name, ping: pingOf(s.id) })), layout: L.layout, state: L.state, speed: L.speed == null ? 6 : L.speed, count: L.count | 0, lockTeams: !!L.lockTeams, rules: L.rules, delay: DELAY, readyCheck: READY_CHECK }; }
 function pingOf(id) { const c = clients.get(id); return c && c.rtt != null ? c.rtt : null; }
 // A START POSITION (ninth session, queue item A; OpenRA, StarCraft II and Age of Empires II all let a lobby place players).
 // `start` is an index into the map's starts -- the lobby draws it plus one -- and a slot without one is AUTOMATIC: the
@@ -189,6 +189,10 @@ function pingOf(id) { const c = clients.get(id); return c && c.rtt != null ? c.r
 // relay checks what it can know without the map: a whole number below the cap the host's client declared for the map,
 // and nobody else's. Carried only when chosen, so a lobby where nobody chooses sends exactly what it always sent.
 function startOf(p) { return Number.isInteger(p.start) ? { start: p.start } : {}; }
+// A COLOUR (tenth session, item 2): an index into the game's eight, carried only when chosen. The relay keeps two CHOSEN
+// colours apart; an Auto seat's colour is the client's to work out (Player.assignColors), as a start is (assignStarts).
+function colorOf(p) { return Number.isInteger(p.color) ? { color: p.color } : {}; }
+const COLORS = 8;
 // Starts belong to a map: a new map, or a new size of a procedural one, puts everyone back on automatic, and the room hears it.
 function clearStarts(L) { let n = 0; for (const p of L.players) if (Number.isInteger(p.start)) { delete p.start; n++; } if (n) sys(L, 'starts', { reset: true }); return n; }
 // A line for the lobby chat, written by the relay (item 2). Every change a player did not make themselves -- a join, a
@@ -442,7 +446,7 @@ function beginGame(L) {
   L.state = 'playing'; L.count = 0; L.timer = null; L.over = null; L.overs = null; L.hostId = (hostOf(L) || {}).id; pushLobbies();
   L.startKeys = L.players.map(p => p.key || null); L.ratedKind = ratedAs(L); L.rated = false; L.leftAt = {};   // queue item C
   L.seed = Math.floor(Math.random() * 1e9); const races = ['T', 'Z', 'P'];
-  L.started = L.players.map(p => Object.assign({ name: p.name, race: p.race === 'R' ? races[Math.floor(Math.random() * 3)] : p.race, team: p.team, human: !p.ai, difficulty: p.difficulty, style: p.style }, startOf(p)));
+  L.started = L.players.map(p => Object.assign({ name: p.name, race: p.race === 'R' ? races[Math.floor(Math.random() * 3)] : p.race, team: p.team, human: !p.ai, difficulty: p.difficulty, style: p.style }, startOf(p), colorOf(p)));
   L.history = []; L.lastF = {}; L.gone = {};
   for (const cl of inRoom(L)) { const idx = L.players.findIndex(p => p.id === cl.id); if (idx >= 0) send(cl, Object.assign({ t: 'start' }, startMsg(L, idx))); else if (specOf(L, cl.id)) send(cl, Object.assign({ t: 'start' }, startMsg(L, -1))); }
   console.log(tag(L) + 'game started: ' + L.started.map(p => p.name + '/' + p.race + (p.human ? '' : '/' + p.difficulty + '/' + (p.style || 'standard')) + (p.start != null ? '/start ' + (p.start + 1) : '')).join(', ') + ' on ' + L.layout + ' seed ' + L.seed);
@@ -492,7 +496,7 @@ function onMessage(c, m) {
     const k = roomCode(m.room); if (k !== DEFAULT_ROOM && k.length < MIN_CODE) { send(c, { t: 'error', msg: 'A room code is at least ' + MIN_CODE + ' letters or digits.' }); return; }
     // `existing`: an invite link or a click in the list means THAT game. Without it a code that has since emptied would
     // quietly make a new, empty room under the old name, and the player would sit in it waiting for a host who has gone.
-    if (m.existing === true && m.create !== true && !rooms.has(k)) { send(c, { t: 'error', msg: 'That game has ended or no longer exists.', gone: true }); return; }
+    if (m.existing === true && m.create !== true && !rooms.has(k)) { send(c, { t: 'error', msg: m.byCode === true ? 'No game here has the code ' + k + '.' : 'That game has ended or no longer exists.', gone: true }); return; }   // byCode: JOIN BY CODE (tenth session, item 5)
     if (!joinAllowed(c.ip)) { send(c, { t: 'error', msg: 'Too many join attempts from this address. Wait a minute.' }); return; }
   }
   const fresh = m.t === 'join' && !c.room && !rooms.has(roomCode(m.room));   // this join is what creates the room
@@ -546,6 +550,8 @@ function onMessage(c, m) {
     // Gated on the STATE now, not only on L.started: L.started is built at zero of the countdown, so a
     // gate that read it alone would have let every setting change while the count was running.
     case 'set': {
+      // A COMPUTER IS ALWAYS THE HOST'S TO CHANGE (tenth session, item 3): during the countdown too, which the change calls off.
+      if (L.state === 'starting' && isHost && m.id != null) { const ai = L.players.find(p => p.id === m.id && p.ai); if (ai) cancelCountdown(L, 'The host changed ' + ai.name + ', so the start was cancelled.'); }
       if (L.state === 'lobby' && !L.started) {
         // WHOSE SLOT. A message with no id means the sender's own, which is every set the client sent
         // before AI slots became editable. An AI slot has no socket of its own, so the host naming its id
@@ -564,6 +570,13 @@ function onMessage(c, m) {
           if ('start' in m) {
             if (m.start === null) delete t.start;
             else if (Number.isInteger(m.start) && m.start >= 0 && m.start < capOf(L) && !L.players.some(q => q !== t && q.start === m.start)) t.start = m.start;
+          }
+          // A colour is paint: nobody's ready is withdrawn for it, and two players may not choose the same one.
+          if ('color' in m) {
+            const wasColor = t.color;
+            if (m.color === null) delete t.color;
+            else if (Number.isInteger(m.color) && m.color >= 0 && m.color < COLORS && !L.players.some(q => q !== t && q.color === m.color)) t.color = m.color;
+            if (wasColor !== t.color) sys(L, 'color', Object.assign({ name: t.name }, colorOf(t)));
           }
           const moved = wasStart !== t.start;
           if (moved) sys(L, 'start', Object.assign({ name: t.name }, startOf(t)));
@@ -600,7 +613,8 @@ function onMessage(c, m) {
       broadcast(L, lobbyState(L)); pushLobbies(); break;   // everyone must run the same speed or lockstep just makes the fast clients wait
     }
     case 'addai': if (isHost && L.state === 'lobby' && !L.started && L.players.length < capOf(L)) { L.players.push({ id: -(nextId++), name: 'Computer ' + L.players.filter(p => p.ai).length, race: raceOf(m.race), team: teamOf(m.team, L.players.length + 1), ai: true, difficulty: diffOf(m.difficulty), style: styleOf(m.style) }); sys(L, 'addai', { name: L.players[L.players.length - 1].name }); unreadyAll(L, 'ai'); broadcast(L, lobbyState(L)); pushLobbies(); } break;   // `team`: the lobby's add-AI is per team
-    case 'kick': if (isHost && L.state === 'lobby' && m.id !== c.id) { const out = L.players.find(p => p.id === m.id) || specOf(L, m.id); L.players = L.players.filter(p => p.id !== m.id); L.specs = (L.specs || []).filter(s => s.id !== m.id); if (out) { sys(L, 'kick', { name: out.name, ai: !!out.ai }); if (out.ai) unreadyAll(L, 'ai'); } const kc = clients.get(m.id); if (kc) { kc.room = null; kc.browsing = true; send(kc, { t: 'error', msg: 'The host removed you from the game.' }); send(kc, lobbies()); } broadcast(L, lobbyState(L)); if (L.listed) pushLobbies(); } break;   // the kicked client leaves the room too: it used to keep hearing every broadcast, and a re-sent join put it straight back
+    case 'kick': if (isHost && L.state === 'starting' && L.players.some(p => p.id === m.id && p.ai)) cancelCountdown(L, 'The host removed a computer, so the start was cancelled.');   // item 3: a computer is removable during the count too
+      if (isHost && L.state === 'lobby' && m.id !== c.id) { const out = L.players.find(p => p.id === m.id) || specOf(L, m.id); L.players = L.players.filter(p => p.id !== m.id); L.specs = (L.specs || []).filter(s => s.id !== m.id); if (out) { sys(L, 'kick', { name: out.name, ai: !!out.ai }); if (out.ai) unreadyAll(L, 'ai'); } const kc = clients.get(m.id); if (kc) { kc.room = null; kc.browsing = true; send(kc, { t: 'error', msg: 'The host removed you from the game.' }); send(kc, lobbies()); } broadcast(L, lobbyState(L)); if (L.listed) pushLobbies(); } break;   // the kicked client leaves the room too: it used to keep hearing every broadcast, and a re-sent join put it straight back
     case 'start': {
       if (!isHost || L.state !== 'lobby' || L.players.filter(p => !p.ai).length < 1) return;
       // The host pressing START is the host's own ready; everyone else must have readied, and the room hears who has not.

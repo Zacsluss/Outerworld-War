@@ -73,7 +73,7 @@ const Net = {
   // has ended says so instead of quietly making an empty room under its name.
   browse(url, name, opts) { this.room = ''; this.browsing = true; this.open(url, name, () => { this.status(''); this.saveIdentity(); if (opts && opts.host) this.host(opts.title); else if (opts && opts.join) { this.send({ t: 'list' }); this.join(opts.join, true); } else this.send({ t: 'list' }); this.render(); }); },
   host(title) { this.send({ t: 'join', name: this.name, race: this.race, create: true, title: String(title || '').trim() || this.name + "'s game", key: this.identityKey() }); this.status('Hosting...'); },
-  join(code, existing, spectate) { code = String(code || '').trim(); if (!code) { this.status('Type a room code first.'); return; } this.room = code; this.send({ t: 'join', name: this.name, race: this.race, room: code, existing: !!existing, spectate: !!spectate, key: this.identityKey() }); this.status((spectate ? 'Joining ' + code.toUpperCase() + ' to watch...' : 'Joining ' + code.toUpperCase() + '...')); },
+  join(code, existing, spectate, byCode) { code = String(code || '').trim(); if (!code) { this.status('Type a room code first.'); return; } this.room = code; this.send(Object.assign({ t: 'join', name: this.name, race: this.race, room: code, existing: !!existing, spectate: !!spectate, key: this.identityKey() }, byCode ? { byCode: true } : {})); this.status((spectate ? 'Joining ' + code.toUpperCase() + ' to watch...' : 'Joining ' + code.toUpperCase() + '...')); },
   // BACK TO LOBBY and REMATCH (ninth session, queue item B): out of the game and into the same room, on the same socket. The
   // relay takes the player out of the game exactly as a drop does and keeps their seat (test/serve.js, "BACK TO THE
   // LOBBY"); `ready` is REMATCH, the agreement to play again on the same settings. This client's game ends where it is.
@@ -122,7 +122,7 @@ const Net = {
       case 'lobbies': this.lobbies = Array.isArray(m.rooms) ? m.rooms : []; this.online = m.online | 0; this.lobby = null; this.browsing = true; this.render(); if (typeof Desktop !== 'undefined' && Desktop.hosting) Desktop.share(); break;
       // A LOBBY WHILE THIS CLIENT IS STILL IN THE GAME: the game is over and the room went back to its lobby without us
       // (queue item B). Nothing more will be relayed for this game; the end screen offers the way in (UI.lobbyItems).
-      case 'lobby': if (this.active && m.state === 'lobby' && !this.roomBack) { this.roomBack = true; if (typeof G !== 'undefined' && G.players && G.players[G.human]) G.players[G.human].msg('The room is back in the lobby. Press F10 for Back to lobby or Rematch.', 'info'); if (typeof UI !== 'undefined' && UI.running && !UI.menu) UI.menu = 'over'; }
+      case 'lobby': if (this.active && m.state === 'lobby' && !this.roomBack) { this.roomBack = true; if (typeof G !== 'undefined' && G.players && G.players[G.human]) G.players[G.human].msg('The room is back in the lobby. Press ' + (typeof UI !== 'undefined' && UI.keyName ? UI.keyName(UI.key('pause')) : 'Escape') + ' for Back to lobby or Rematch.', 'info'); if (typeof UI !== 'undefined' && UI.running && !UI.menu) UI.menu = 'over'; }
         this.lobby = m; if (m.room) this.room = m.room; this.count = m.count | 0; for (const q of [].concat(Array.isArray(m.players) ? m.players : [], Array.isArray(m.specs) ? m.specs : [])) if (q && typeof q.ping === 'number') this.pings[q.id | 0] = q.ping | 0;
         if (!this.active) this.spectating = Array.isArray(m.specs) && m.specs.some(s => s && s.id === this.id);
         // The host's client keeps the relay told how many seats the chosen map has (test/serve.js, capOf).
@@ -133,7 +133,7 @@ const Net = {
       case 'countdown': this.count = m.n | 0; this.countMsg = m.cancelled ? String(m.msg || 'The start was cancelled.') : ''; this.render(); break;
       // A refusal while browsing (a full game, one that has ended) is answered with a fresh list, so the row that could
       // not be joined is gone from it.
-      case 'error': this.lastError = m.msg; this.status(m.msg); if (!this.lobby && this.connected && this.browsing) this.send({ t: 'list' }); break;
+      case 'error': this.lastError = m.msg; this.status(m.msg); if (m.gone && !this.lobby) this.room = ''; if (!this.lobby && this.connected && this.browsing) this.send({ t: 'list' }); break;   // a code that reached no game is not this client's room
       case 'sys': { const text = this.sysText(m); if (text) { this.logLine({ sys: true, text }); this.render(); } break; }
       case 'pings': this.applyPings(m.list); break;
       case 'lping': this.send({ t: 'lpong', n: m.n }); break;
@@ -182,11 +182,14 @@ const Net = {
     try { if (typeof AI !== 'undefined' && AI.prototype && AI.prototype.styleDeltas) keys = Object.keys(AI.prototype.styleDeltas()); } catch (ex) { }
     return keys.map(k => [k, this.STYLE_NAMES[k] || (k.charAt(0).toUpperCase() + k.slice(1))]);
   },
-  // A slot's colour is its SEAT, not a choice. Player i is painted PLAYER_COLORS[i] in js/sim.js and the
-  // relay starts the game in the order the lobby lists, so slot i really is that colour and the lobby can
-  // say so truthfully. It is deliberately NOT a picker: a chosen colour has to be read back in G.init or
-  // in Player's constructor, both STAMPED files, and TODO-M18 says not to move the build stamp for paint.
-  slotColor(i) { try { return (typeof PLAYER_COLORS !== 'undefined' && PLAYER_COLORS[i]) || '#8f98a8'; } catch (ex) { return '#8f98a8'; } },
+  // A slot's colour is a CHOICE now (tenth session, item 2; the user: "user should be able to click their color swatch and
+  // choose from the available colors"). It used to be the seat, deliberately, to keep paint out of the stamped files; the
+  // user asked for the picker, so G.init reads `color` from the players the way it reads `start`, and every place that
+  // draws a slot's colour asks the same pure rule G.init paints with (Player.assignColors). Without `players` it is the
+  // seat's colour, which is also what every seat gets while nobody chooses.
+  COLOR_NAMES: ['Red', 'Blue', 'Teal', 'Purple', 'Orange', 'Brown', 'White', 'Yellow'],
+  colorIndex(i, players) { try { return Array.isArray(players) && typeof Player !== 'undefined' && Player.assignColors ? Player.assignColors(players, PLAYER_COLORS.length)[i] : i; } catch (ex) { return i; } },
+  slotColor(i, players) { try { return (typeof PLAYER_COLORS !== 'undefined' && PLAYER_COLORS[this.colorIndex(i, players)]) || '#8f98a8'; } catch (ex) { return '#8f98a8'; } },
   // The maps a host may pick, as [id, name, players, group]. Never a custom map -- it exists only on the machine that
   // drew it, and a client without it falls back to Lost Ruins: a desync on the first frame -- except in the skirmish
   // lobby (`custom`), where the machine that drew it is the only one playing. The fixed maps; the map
@@ -279,7 +282,7 @@ const Net = {
       let chips = '';
       if (G && G.corners.length) {
         const at = assign(G.corners.length);
-        chips = '<div class="lbStartChips">' + G.corners.map((c, j) => { const w = holder(at, j); return '<a href="#" class="lbStartChip' + (chose(w) ? ' chosen' : '') + '"' + (o.pick ? ' data-start="' + j + '"' : '') + ' style="background:' + (w ? this.slotColor(w.i) : '#39424f') + '" title="' + tip(j, w, c) + '">' + (j + 1) + '</a>'; }).join('') + '</div>';
+        chips = '<div class="lbStartChips">' + G.corners.map((c, j) => { const w = holder(at, j); return '<a href="#" class="lbStartChip' + (chose(w) ? ' chosen' : '') + '"' + (o.pick ? ' data-start="' + j + '"' : '') + ' style="background:' + (w ? this.slotColor(w.i, list) : '#39424f') + '" title="' + tip(j, w, c) + '">' + (j + 1) + '</a>'; }).join('') + '</div>';
       }
       return '<div class="lbPrev lbPrevNone">' + (gen ? 'grown from the seed at START' : 'no preview') + chips + '</div>';
     }
@@ -291,7 +294,7 @@ const Net = {
     M.starts.forEach((s, j) => {
       const w = holder(at, j);
       g += '<g' + (o.pick ? ' class="lbStartPt" data-start="' + j + '"' : '') + '><title>' + tip(j, w) + '</title>'
-        + '<circle cx="' + X(s) + '" cy="' + Y(s) + '" r="' + R.toFixed(1) + '" fill="' + (w ? this.slotColor(w.i) : '#39424f') + '" stroke="' + (chose(w) ? '#f2e3b3' : '#0b0e13') + '" stroke-width="' + (chose(w) ? 2 : 1) + '"/>';
+        + '<circle cx="' + X(s) + '" cy="' + Y(s) + '" r="' + R.toFixed(1) + '" fill="' + (w ? this.slotColor(w.i, list) : '#39424f') + '" stroke="' + (chose(w) ? '#f2e3b3' : '#0b0e13') + '" stroke-width="' + (chose(w) ? 2 : 1) + '"/>';
       if (S >= 160) g += '<text x="' + X(s) + '" y="' + (+Y(s) + R * 0.42).toFixed(1) + '" text-anchor="middle" font-size="' + (R * 1.15).toFixed(1) + '" font-weight="bold" fill="' + (w ? '#0b0e13' : '#9aa3b0') + '">' + (j + 1) + '</text>';
       g += '</g>';
     });
@@ -332,6 +335,7 @@ const Net = {
     const players = (m.players || []).map(p => {
       const o = { race: p.race, human: p.human, name: p.name, difficulty: p.difficulty, team: p.team, style: p.style, minerals: p.minerals, gas: p.gas };
       if (Number.isInteger(p.start)) o.start = p.start;   // a start chosen in the lobby (GameMap.assignStarts); absent is Auto
+      if (Number.isInteger(p.color)) o.color = p.color;   // ...and a colour (Player.assignColors, tenth session item 2); absent is Auto
       if (bank && bank[2] !== 50 && o.minerals === undefined) o.minerals = bank[2];
       if (bank && bank[3] !== 0 && o.gas === undefined) o.gas = bank[3];
       return o;
@@ -448,6 +452,7 @@ const Net = {
       case 'play': return n(m.name) + ' took a seat.';
       case 'start': return n(m.name) + (Number.isInteger(m.start) ? ' takes start ' + (m.start + 1) + '.' : ' is on Auto.');
       case 'starts': return 'Start positions are back on Auto for the new map.';
+      case 'color': return n(m.name) + (Number.isInteger(m.color) ? ' plays in ' + (this.COLOR_NAMES[m.color] || 'a new colour') + '.' : ' is back on an Auto colour.');
       case 'back': return n(m.name) + (m.ready ? ' is back in the lobby, ready for a rematch.' : ' is back in the lobby.');
       case 'balance': return 'The host balanced the teams by rating: ' + Number(m.diff || 0).toFixed(1) + ' between the strongest team and the weakest.';
       case 'unrated': return 'That game is not rated: ' + n(m.why) + '.';
@@ -499,8 +504,11 @@ const Net = {
       const $ = this.finder(el), q = sel => (el.querySelectorAll ? Array.from(el.querySelectorAll(sel)) : []);
       const on = (id, ev, fn) => { const x = $(id); if (x) x[ev] = fn; };
       on('lbHost', 'onclick', () => this.host($('lbTitle') ? $('lbTitle').value : ''));
-      on('lbJoinCode', 'onclick', () => this.join($('lbCode') ? $('lbCode').value : ''));
-      on('lbCode', 'onkeydown', ev => { if (ev.key === 'Enter') this.join($('lbCode').value); });
+      // JOIN BY CODE joins a game that EXISTS (tenth session, the user: "join by code should not work if no lobbies exist
+      // with the code used"). It sent `existing: false`, so a mistyped code made a new, empty room with the typist as its
+      // host -- "fewrg" did, in the user's playtest. HOST GAME is the one way to make a room.
+      on('lbJoinCode', 'onclick', () => this.join($('lbCode') ? $('lbCode').value : '', true, false, true));
+      on('lbCode', 'onkeydown', ev => { if (ev.key === 'Enter') this.join($('lbCode').value, true, false, true); });
       on('lbQuick', 'onclick', () => this.quickJoin());
       on('lbSearch', 'oninput', () => { this.filt.q = $('lbSearch').value; this.render(); });
       on('lbFull', 'onchange', () => { this.filt.full = !!$('lbFull').checked; this.render(); });
@@ -578,6 +586,10 @@ const Net = {
     // hard rushers is three clicks and not nine. The first is Random/normal/standard, as it always was.
     for (const a of q('[data-addai]')) a.onclick = ev => { ev.preventDefault(); const last = L.players.filter(p => p.ai).pop() || {}; send({ t: 'addai', race: last.race || 'R', difficulty: last.difficulty || 'normal', style: last.style || 'standard', team: parseInt(a.dataset.addai, 10) }); };
     for (const a of q('[data-kick]')) a.onclick = ev => { ev.preventDefault(); send({ t: 'kick', id: parseInt(a.dataset.kick, 10) }); };
+    // THE COLOUR PALETTE (tenth session, item 2): the swatch opens it under its row and closes it again; a colour sends the
+    // choice (Auto sends null) and closes it. Which colours are offered is roomHtml's; the relay refuses one already chosen.
+    for (const a of q('[data-color-open]')) a.onclick = ev => { if (ev && ev.preventDefault) ev.preventDefault(); const id = parseInt(a.dataset.colorOpen, 10); this.palette = this.palette === id ? null : id; ctx.redraw(); };
+    for (const a of q('[data-color]')) a.onclick = ev => { if (ev && ev.preventDefault) ev.preventDefault(); const id = parseInt(a.dataset.colorFor, 10), v = a.dataset.color; this.palette = null; send({ t: 'set', id, color: v === 'auto' ? null : parseInt(v, 10) }); if (local) ctx.redraw(); };
     for (const a of q('[data-ring]')) a.onclick = ev => { ev.preventDefault(); send({ t: 'ring', id: parseInt(a.dataset.ring, 10) }); };
     // A START ON THE MAP (queue item A; OpenRA's lobby, LobbyUtils). A free start goes to you -- or, for the host, to the first
     // of the host and the computers still on Auto, in seat order, so a host places everyone with a click each, as OpenRA's
@@ -669,12 +681,19 @@ const Net = {
     // difficulty, play style and team TO THE HOST -- an AI has no socket of its own, so the host is the only one who
     // can ever speak for it. The host also sees a bell on every human who has not readied.
     const row = p => {
-      const mine = p.id === myId, editable = open && (mine || (host && p.ai)), teamEditable = editable && (!L.lockTeams || host);
+      const mine = p.id === myId, editable = (open && (mine || (host && p.ai))) || (counting && host && p.ai), teamEditable = editable && (!L.lockTeams || host);   // a computer stays the host's during the countdown, which a change calls off (tenth session, item 3)
       const fixed = s => '<span class="lbFixed">' + e(s) + '</span>';
       const ms = this.pingOf(p);
       return '<div class="lp' + (p.gone ? ' gone' : '') + (mine ? ' me' : '') + '">'
-        + '<span class="lbSwatch" style="background:' + this.slotColor(seat.get(p.id)) + '" title="Seat ' + (seat.get(p.id) + 1) + ': this seat plays in this colour, from this start"></span>'
-        + '<span class="lbReady" title="' + (p.ready || p.ai ? 'ready' : 'not ready') + '">' + (p.ready || p.ai ? '&#10003;' : '&middot;') + '</span>'
+        // THE COLOUR, a click to choose (tenth session, item 2): your own slot's, and the host's for a computer. The palette
+        // opens under the row and offers the colours nobody else is wearing; Auto gives the choice back.
+        + (editable ? '<a href="#" class="lbSwatch lbSwatchPick" data-color-open="' + (p.id | 0) + '" style="background:' + this.slotColor(seat.get(p.id), L.players) + '" title="' + e(this.COLOR_NAMES[this.colorIndex(seat.get(p.id), L.players)] || '') + ' -- click to choose a colour"></a>'
+          : '<span class="lbSwatch" style="background:' + this.slotColor(seat.get(p.id), L.players) + '" title="' + e(this.COLOR_NAMES[this.colorIndex(seat.get(p.id), L.players)] || '') + '"></span>')
+        // A COMPUTER IS NOT A PLAYER WHO HAS READIED (tenth session, item 3): it wore the tick a human earns, and a player
+        // took it for a slot that was locked in. It shows a gear instead -- always ready, never waited for, and the host's to
+        // change or remove at any moment the room is a lobby.
+        + (p.ai ? '<span class="lbReady lbAlways" title="A computer is always ready: START never waits for it, and the host can change or remove it at any time">&#9881;</span>'
+          : '<span class="lbReady" title="' + (p.ready ? 'ready' : 'not ready') + '">' + (p.ready ? '&#10003;' : '&middot;') + '</span>')
         + (p.host ? '<span class="lbStar" title="host">&#9733;</span>' : '')
         + '<span class="lbName">' + e(p.name) + (p.ai ? '<i class="lbTag">A.I.</i>' : '') + (p.back ? '<i class="lbTag" title="Out of the game and waiting here">back</i>' : p.gone ? '<i class="lbTag">dropped</i>' : '') + (p.away ? '<i class="lbTag" title="Still on the end screen of the last game">end screen</i>' : '') + '</span>'
         + (typeof p.rating === 'number' ? '<span class="lbRating" title="Match rating for ' + e(this.KIND_NAMES[L.rated && L.rated.shown] || 'these') + ' games: skill minus uncertainty, after ' + (p.games | 0) + ' rated game' + ((p.games | 0) === 1 ? '' : 's') + '">' + p.rating.toFixed(1) + '</span>' : '')
@@ -687,13 +706,30 @@ const Net = {
         + (teamEditable ? slotSel(p, 'team', teamOpts, String(p.team || 1)) : '')
         + (editable ? startSel(p) : Number.isInteger(p.start) ? fixed('Start ' + (p.start + 1)) : '')
         + '</span>'
-        + (host && open && p.id !== myId ? '<a href="#" class="lbKick" data-kick="' + (p.id | 0) + '" title="Remove this slot">&#10005;</a>' : '')
+        // (the palette, when this row's swatch was clicked, is drawn after the row -- palette() below)
+        // A computer's row says REMOVE in words for the host, where a human's has the small x (a kick is rarer and should not
+        // be the easiest thing to press); a guest is told who sets it, rather than seeing plain text and guessing.
+        + (host && (open || counting) && p.ai ? '<a href="#" class="lbRemove" data-kick="' + (p.id | 0) + '" title="Remove this computer">REMOVE</a>'
+          : host && open && p.id !== myId ? '<a href="#" class="lbKick" data-kick="' + (p.id | 0) + '" title="Remove this slot">&#10005;</a>'
+          : p.ai && open && !local ? '<i class="lbTag lbHostSets" title="Only the host changes or removes a computer">host sets</i>' : '')
         + '</div>';
+    };
+    // The colours this slot may take: every one nobody else is wearing, chosen or Auto. A colour someone wears is shown
+    // taken, with their name, and cannot be clicked -- "choose from the available colors".
+    const cols = (typeof Player !== 'undefined' && Player.assignColors && typeof PLAYER_COLORS !== 'undefined') ? Player.assignColors(L.players, PLAYER_COLORS.length) : L.players.map((_, i) => i);
+    const palette = p => {
+      if (this.palette !== p.id || !((open && (p.id === myId || (host && p.ai))) || (counting && host && p.ai))) return '';
+      const mineIdx = seat.get(p.id);
+      return '<div class="lbPalette" data-palette="' + (p.id | 0) + '">' + PLAYER_COLORS.map((hex, n) => {
+        const byIdx = cols.findIndex((c, qi) => qi !== mineIdx && c === n), by = byIdx >= 0 ? L.players[byIdx] : null;
+        return by ? '<span class="lbPick taken" style="background:' + hex + '" title="' + e(this.COLOR_NAMES[n]) + ': ' + e(by.name) + ' has it"></span>'
+          : '<a href="#" class="lbPick' + (cols[mineIdx] === n ? ' on' : '') + '" data-color="' + n + '" data-color-for="' + (p.id | 0) + '" style="background:' + hex + '" title="' + e(this.COLOR_NAMES[n]) + '"></a>';
+      }).join('') + '<a href="#" class="lbPickAuto" data-color="auto" data-color-for="' + (p.id | 0) + '" title="The seat\'s own colour, or the first free one">Auto</a></div>';
     };
     const team = t => '<div class="lbTeam"><div class="lbTeamHead"><b>Team ' + t + '</b><span class="lbTeamBtns">'
       + (open && meP && meP.team !== t && (!L.lockTeams || host) ? '<a href="#" data-team="' + t + '">join</a>' : '')
       + (host && open && L.players.length < seats ? '<a href="#" data-addai="' + t + '">+ add A.I.</a>' : '') + '</span></div>'
-      + (L.players.filter(p => (p.team || 1) === t).map(row).join('') || '<div class="lbNone">empty</div>') + '</div>';
+      + (L.players.filter(p => (p.team || 1) === t).map(p => row(p) + palette(p)).join('') || '<div class="lbNone">empty</div>') + '</div>';
     const teams = []; for (let t = 1; t <= maxTeam; t++) teams.push(team(t));
     const specs = Array.isArray(L.specs) ? L.specs : [];
     const specBox = local ? '' : '<div class="lbSpecs"><div class="lbTeamHead"><b>Spectators</b><span class="lbTeamBtns">'
@@ -749,7 +785,7 @@ const Net = {
       + (code ? ' &middot; code <b>' + e(code) + '</b>' : '') + '</span></div>';
     const lines = chatLog.map(c => c.sys
       ? '<div class="lbSys">' + e(c.text) + '</div>'
-      : '<div><b style="color:' + (seat.has(c.id) ? this.slotColor(seat.get(c.id)) : '#aab4c4') + '">' + e(c.from) + (c.spec ? ' (watching)' : '') + ':</b> ' + e(c.text) + '</div>').join('');
+      : '<div><b style="color:' + (seat.has(c.id) ? this.slotColor(seat.get(c.id), L.players) : '#aab4c4') + '">' + e(c.from) + (c.spec ? ' (watching)' : '') + ':</b> ' + e(c.text) + '</div>').join('');
     h += '<div class="lbBody"><div class="lbSlots"><div class="lbTeams">' + teams.join('') + '</div>' + specBox
       + '<div class="lbTeamTools">' + (open && maxTeam < 8 ? '<a href="#" id="lbAddTeam" class="lbLink">+ add a team</a>' : '')
       + (edit ? '<a href="#" id="lbShuffle" class="lbLink" title="Deal every slot onto the teams in use at random, as evenly as they go">shuffle teams</a>' : '')

@@ -603,7 +603,11 @@ const UI = {
     zoomOut: { key: '_', label: 'Zoom out', group: 'Camera' },
     help: { key: 'F1', label: 'Toggle help overlay', group: 'Interface' },
     codex: { key: 'F3', label: 'Open the codex', group: 'Interface' },
-    pause: { key: 'F10', label: 'Pause menu', group: 'Interface' },
+    // ESCAPE, NOT F10 (tenth session, item 6; the user: "settings in-game should be bound to ESC, not F10"). One key does both
+    // things Escape means: it first cancels what is half-done -- placing a building, choosing a target, a build menu -- and
+    // otherwise opens the game menu, which is where Settings is. It never destroys anything: a queued unit or an unfinished
+    // building is cancelled with its card's Cancel button, not with Escape, so a player reaching for the menu cannot lose one.
+    pause: { key: 'Escape', label: 'Game menu (Escape also cancels a target or a placement)', group: 'Interface' },
     save: { key: 'F5', label: 'Save game', group: 'Interface' },
     chat: { key: 'Enter', label: 'Chat', group: 'Interface' },
     speedUp: { key: '=', label: 'Game speed up', group: 'Interface' },
@@ -622,7 +626,7 @@ const UI = {
     'F8',   // onKey: load the autosave (Replay.loadAutosave, asking first with a game running)
     'F9',   // onKey: pause the simulation (G.paused; not in a network game)
     'Pause',   // onKey: pause the simulation, the same line as F9
-    'Escape',   // onKey: cancel placing / pending / the card menu, cancel construction or the last queued item; the menus and the chat buffer read it too
+    // (Escape is not here any more: it is the pause binding's default, read through hit() -- tenth session, item 6.)
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',   // onKey: control groups (Ctrl assigns, Shift adds, bare recalls)
     'F2', 'F4', 'F6', 'F7',   // onKey: camera slots (Shift saves, bare recalls) -- the four the help overlay lists
     '[', ']',   // onKey, replay: switch whose vision is shown (cycleObserved)
@@ -684,15 +688,17 @@ const UI = {
     // The pause key is read from the table here and in the menu below, like every other bound key: read
     // as the literal F10 it stayed the menus' close key after a rebind, and the rebound key never closed
     // them. (REVIEW-M17 task 15)
-    if (this.loading && !this.hit('pause', e, k) && k !== 'Escape') { e.preventDefault(); return; }
+    if (this.loading && !this.hit('pause', e, k)) { e.preventDefault(); return; }
     // The codex is modal: while it is open it eats the keyboard so nothing leaks through to the game.
     if (typeof Codex !== 'undefined' && Codex.isOpen()) { if (Codex.key(k)) { e.preventDefault(); return; } }
     if (this.hit('codex', e, k)) { e.preventDefault(); if (typeof Codex !== 'undefined') Codex.toggle(); return; }
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'F10', 'F1'].includes(k)) e.preventDefault();
-    if (this.menu) { if (k === 'Escape' || this.hit('pause', e, k)) { if (this.menu === 'settings') this.menu = 'pause'; else if (this.menu === 'pause') this.menu = null; } return; }
-    if (this.hit('pause', e, k)) { this.menu = 'pause'; return; }
+    if (this.menu) { if (this.hit('pause', e, k)) { if (this.menu === 'settings') this.menu = 'pause'; else if (this.menu === 'pause') this.menu = null; } return; }
     if (this.chat !== null) { e.preventDefault(); if (k === 'Enter') { const line = this.chat.trim(); this.chat = null; if (line) { if (this.net) Net.chat(line); else if (!G.cheat(line)) G.players[G.human].msg(line, 'info'); } } else if (k === 'Escape') this.chat = null; else if (k === 'Backspace') this.chat = this.chat.slice(0, -1); else if (k.length === 1 && this.chat.length < 60) this.chat += k; return; }
     if (this.hit('chat', e, k) && this.mode === 'play') { this.chat = ''; e.preventDefault(); return; }
+    // AFTER the chat buffer, which keeps Escape for itself (closing what you are typing is not opening the menu). A placement,
+    // a target being chosen or a build menu is cancelled first; only with none of them does the key open the menu.
+    if (this.hit('pause', e, k)) { e.preventDefault(); if (this.placing || this.pending || this.cardMenu) { this.placing = null; this.pending = null; this.cardMenu = null; } else this.menu = 'pause'; return; }
     if (this.hit('save', e, k)) { e.preventDefault(); Replay.save(true); return; }
     // F8 loads the autosave (README) -- and it used to do so mid-game with no confirmation, while the
     // help text advertised F8 as a camera slot. A running game asks first. (REVIEW-M17)
@@ -715,7 +721,6 @@ const UI = {
     if (this.hit('centerSel', e, k)) { e.preventDefault(); this.centerOnSelection(); return; }
     if (this.hit('selectArmy', e, k)) { e.preventDefault(); this.selectArmy(); return; }
     if (this.hit('help', e, k)) { this.showHelp = !this.showHelp; return; }
-    if (k === 'Escape') { if (this.placing || this.pending || this.cardMenu) { this.placing = null; this.pending = null; this.cardMenu = null; } else if (this.selection.length === 1 && this.selection[0].isBuilding && !this.selection[0].done && this.selection[0].owner === G.human) G.cancelBuilding(this.selection[0]); else if (this.selection.length === 1 && this.selection[0].prod.length && this.selection[0].owner === G.human) G.cancelProd(this.selection[0], this.selection[0].prod.length - 1); return; }
     if (k === 'F9' || k === 'Pause') { if (!this.net) G.paused = !G.paused; return; }
     // Speed and zoom share the +/- row, so zoom takes SHIFT and speed takes the bare key. The
     // strategic zoom shipped with no keyboard access at all -- only the wheel -- which left it
@@ -753,7 +758,7 @@ const UI = {
   GRID_KEYS: 'QWERASDFZXCV',
   currentCard() {
     const btns = this.paginate(this.buildCard());
-    for (const b of btns) if (b.hk !== 'Escape') b.hk = this.cardKeyFor(b.cmd, b.slot, b.hk);
+    for (const b of btns) if (b.hk !== 'Escape' && !b.noKey) b.hk = this.cardKeyFor(b.cmd, b.slot, b.hk);   // noKey: a Cancel that destroys something has no key at all (tenth session, item 6)
     return btns;
   },
   // ---- the command card's keys, every one of them the player's to choose ----
@@ -1152,7 +1157,13 @@ const UI = {
       if (u.isBuilding && !u.lifted && p.kind !== 'ability') continue;
       switch (p.kind) {
         case 'move': if (t) u.setOrder({ type: 'follow', target: t }, shift); else u.setOrder({ type: 'move', x: wx, y: wy }, shift); break;
-        case 'attack': if (t && t.owner !== G.human) u.setOrder({ type: 'attack', target: t }, shift); else if (t) u.setOrder({ type: 'attackmove', x: wx, y: wy }, shift); else u.setOrder({ type: 'attackmove', x: wx, y: wy }, shift); break;
+        // THE ATTACK COMMAND ON A UNIT ATTACKS THAT UNIT, WHOEVER OWNS IT (tenth session, item 1; the user: "if we click the
+        // 'attack' button in the hud... and we select our own unit/building, that should bypass and allow our units to attack
+        // our own buildings/units, like in starcraft (applies to drones/probes/scv as well)"). An own or allied target used
+        // to become an attack-move to the spot, so there was no way to kill your own blocking depot or an infested unit. The
+        // RIGHT-click never attacks your own side (smartCommand) -- that half is unchanged. A unit told to attack itself
+        // attack-moves to the spot instead, as the rest of the selection does.
+        case 'attack': if (t && t !== u) u.setOrder({ type: 'attack', target: t }, shift); else u.setOrder({ type: 'attackmove', x: wx, y: wy }, shift); break;
         case 'patrol': u.setOrder({ type: 'patrol', x: wx, y: wy }, shift); break;
         case 'gather': { const res = G.map.resourceAt(Math.floor(wx / TILE), Math.floor(wy / TILE)); if (res && res.type === 'mineral') u.setOrder({ type: 'gather', target: res, phase: 'goto' }, shift); else if (t && t.def.onGeyser) u.setOrder({ type: 'gather', target: t, phase: 'goto' }, shift); break; }
         case 'repair': if (t && t.owner === G.human) u.setOrder({ type: 'repair', target: t }, shift); break;
@@ -1311,7 +1322,7 @@ const UI = {
       C(0, 'rally', setPending('rally'));
       return btns;
     }
-    if (u.def.egg) { C(6, 'rally', setPending('rally')); B(this.CARD_SLOTS - 1, 'Cancel', 'Escape', () => { for (const e of sel) G.cancelProd(e, 0); }, { pin: true }); return btns; }
+    if (u.def.egg) { C(6, 'rally', setPending('rally')); B(this.CARD_SLOTS - 1, 'Cancel', '', () => { for (const e of sel) G.cancelProd(e, 0); }, { pin: true, noKey: true }); return btns; }   // no Escape: Escape is the menu (item 6)
     // Several buildings at once. Brood War shows the first one's card and applies what you press to all
     // of them that can do it, which is what makes "select every hatchery, press S" work. The card is
     // built from `u` as before; only the actions below fan out. Buildings that cannot do the thing are
@@ -1353,7 +1364,7 @@ const UI = {
       // the building a production order should go to: fewest items queued, ties broken by id so it is
       // stable frame to frame and does not jitter between two equal buildings
       const target = () => (bldGroup ? bldGroup.slice().sort((a, b) => a.prod.length - b.prod.length || a.id - b.id)[0] : u);
-      if (!u.done) { B(this.CARD_SLOTS - 1, 'Cancel', 'Escape', () => G.cancelBuilding(u), { pin: true }); return btns; }
+      if (!u.done) { B(this.CARD_SLOTS - 1, 'Cancel', '', () => G.cancelBuilding(u), { pin: true, noKey: true }); return btns; }
       if (u.lifted) { C(0, 'land', () => { this.placing = { def: d, builder: u, land: true, tx: 0, ty: 0 }; }); return btns; }
       for (const id of d.produces) { const ud = DATA.units[id]; const ok = p.hasReq(ud); B(i++, ud.name, ud.hk, () => G.queueUnit(target(), id), { cmd: 'unit:' + id, cost: ud, enabled: ok, dim: !ok, why: why(ud) }); }
       for (const id of d.upg) { const ud = DATA.upgrades[id]; const lvl = p.upgLevel(id); if (lvl >= 3) continue; const rq = ud.req[lvl]; const ok = !rq || p.hasBuilding(rq); B(i++, ud.name + ' L' + (lvl + 1), ud.hk, () => G.queueUpgrade(u, id), { cmd: 'upg:' + id, cost: { min: ud.min[lvl], gas: ud.gas[lvl], time: ud.time[lvl] }, enabled: ok && !p.researching.has(id), dim: !ok || p.researching.has(id), why: !ok && rq ? 'Requires ' + DATA.buildings[rq].name : p.researching.has(id) ? 'Already researching.' : null }); }
@@ -1385,7 +1396,7 @@ const UI = {
           { enabled: lv.length > 0, dim: !lv.length, why: lv.length ? null : 'No larvae have hatched yet.' }); }
       if (d.produces.length || d.spawnsLarva) C(6, 'rally', setPending('rally'));
       if (d.canLift && !u.prod.length) C(7, 'lift', () => G.liftBuilding(u));
-      if (u.prod.length) B(8, 'Cancel', 'Escape', () => G.cancelProd(u, u.prod.length - 1));
+      if (u.prod.length) B(8, 'Cancel', '', () => G.cancelProd(u, u.prod.length - 1), { noKey: true });
       return btns;
     }
     // mobile units
@@ -1971,6 +1982,7 @@ const UI = {
     // A start chosen in the lobby, and only then: an Auto seat carries no key, so an untouched lobby's options stay the old
     // menu's byte for byte (G.init places a keyless player on its seat's own start, GameMap.assignStarts).
     if (Number.isInteger(s.start)) players[0].start = s.start;
+    if (Number.isInteger(s.color)) players[0].color = s.color;   // a colour chosen in the lobby, likewise only when chosen (tenth session, item 2)
     const opps = Array.isArray(s.opponents) ? s.opponents : d.opponents;
     opps.forEach((o, i) => {
       o = o || {};
@@ -1979,6 +1991,7 @@ const UI = {
       // keeps a default game's options byte-identical to the ones the old menu produced.
       if (o.style && o.style !== 'standard') p.style = String(o.style);
       if (Number.isInteger(o.start)) p.start = o.start;
+      if (Number.isInteger(o.color)) p.color = o.color;
       players.push(purse(p));
     });
     return { players, seed: this.skirmishSeed(s), layout: this.skirmishLayoutId(s) };
@@ -2096,7 +2109,7 @@ UI.Skirmish = {
   },
   save() {
     const L = this.L; if (!L) return;
-    const keep = { layout: L.layout, speed: L.speed, rules: L.rules, players: L.players.map(p => Object.assign(p.ai ? { ai: true, race: p.race, difficulty: p.difficulty, style: p.style, team: p.team } : { race: p.race, team: p.team }, Number.isInteger(p.start) ? { start: p.start } : {})) };
+    const keep = { layout: L.layout, speed: L.speed, rules: L.rules, players: L.players.map(p => Object.assign(p.ai ? { ai: true, race: p.race, difficulty: p.difficulty, style: p.style, team: p.team } : { race: p.race, team: p.team }, Number.isInteger(p.start) ? { start: p.start } : {}, Number.isInteger(p.color) ? { color: p.color } : {})) };
     try { localStorage.setItem(this.KEY, JSON.stringify(keep)); } catch (e) { }
   },
   // Last time's room, read back through the same checks a message from the lobby's controls passes. Whatever does not
@@ -2117,6 +2130,7 @@ UI.Skirmish = {
     // the computers themselves came back.
     const from = [me || null].concat(ais.length ? ais : L.players.slice(1).map(() => null));
     L.players.forEach((p, i) => { const s = from[i] ? from[i].start : null; if (Number.isInteger(s) && s >= 0 && s < L.cap && !L.players.some(q => q !== p && q.start === s)) p.start = s; });
+    L.players.forEach((p, i) => { const c = from[i] ? from[i].color : null; if (Number.isInteger(c) && c >= 0 && c < PLAYER_COLORS.length && !L.players.some(q => q !== p && q.color === c)) p.color = c; });   // colours come back as starts do (item 2)
     return this.renumber(L);
   },
   // The lobby's messages, answered as test/serve.js answers them for a host -- less everything about other humans.
@@ -2138,6 +2152,13 @@ UI.Skirmish = {
             if (m.start === null) delete t.start;
             else if (Number.isInteger(m.start) && m.start >= 0 && m.start < this.cap(L) && !L.players.some(q => q !== t && q.start === m.start)) t.start = m.start;
             if (was !== t.start) line('start', Object.assign({ name: t.name }, Number.isInteger(t.start) ? { start: t.start } : {}));
+          }
+          // As the relay: a colour no other seat chose, or null for Auto (tenth session, item 2).
+          if ('color' in m) {
+            const was = t.color;
+            if (m.color === null) delete t.color;
+            else if (Number.isInteger(m.color) && m.color >= 0 && m.color < PLAYER_COLORS.length && !L.players.some(q => q !== t && q.color === m.color)) t.color = m.color;
+            if (was !== t.color) line('color', Object.assign({ name: t.name }, Number.isInteger(t.color) ? { color: t.color } : {}));
           }
         }
         if (typeof m.layout === 'string' && m.layout !== L.layout && Net.maps(true).some(x => x[0] === m.layout)) { L.layout = m.layout; line('map', { layout: L.layout }); this.clearStarts(L, line); }
@@ -2175,8 +2196,8 @@ UI.Skirmish = {
   // The room as the settings object UI.skirmishOptions reads. You are seat one; the computers follow in seat order.
   setup(L) {
     L = L || this.L; const me = L.players.find(p => p.id === this.ME) || L.players[0], r = Object.assign({}, Net.RULE_DEFAULTS, L.rules);
-    return { race: me.race, team: me.team, start: me.start, seed: L.seed, map: L.layout, size: r.size, bank: r.bank, hazard: r.hazard, night: r.night, features: r.features,
-      derelicts: r.derelicts, wildlife: r.wildlife, opponents: L.players.filter(p => p.ai).map(p => ({ race: p.race, difficulty: p.difficulty, style: p.style, team: p.team, start: p.start })) };
+    return { race: me.race, team: me.team, start: me.start, color: me.color, seed: L.seed, map: L.layout, size: r.size, bank: r.bank, hazard: r.hazard, night: r.night, features: r.features,
+      derelicts: r.derelicts, wildlife: r.wildlife, opponents: L.players.filter(p => p.ai).map(p => ({ race: p.race, difficulty: p.difficulty, style: p.style, team: p.team, start: p.start, color: p.color })) };
   },
   // START needs someone to play and a map with a start for everyone -- nothing else, because there is nobody to wait for.
   canStart(L) { L = L || this.L; return !!L && L.players.some(p => p.ai) && L.players.length <= this.cap(L); },

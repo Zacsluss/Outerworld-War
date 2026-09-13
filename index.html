@@ -84,12 +84,19 @@
   .lbReady { color: #8fb07a; width: 12px; text-align: center; } .lbStar { color: #e8c25a; } .lbName { font-weight: bold; flex: 1; min-width: 70px; }
   /* The seat's colour. Not a picker -- see Net.slotColor. */
   .lbSwatch { width: 10px; height: 10px; border: 1px solid #0b0e13; box-shadow: 0 0 0 1px #3a3122; flex: none; }
+  a.lbSwatchPick { width: 14px; height: 14px; cursor: pointer; box-shadow: 0 0 0 1px #8a7a4a; } a.lbSwatchPick:hover { box-shadow: 0 0 0 2px #e8c25a; }
+  .lbPalette { display: flex; gap: 5px; align-items: center; padding: 5px 8px 6px 26px; background: #0f141b; border-bottom: 1px solid #1a1f27; }
+  .lbPick { width: 18px; height: 18px; border: 1px solid #0b0e13; box-shadow: 0 0 0 1px #3a3122; display: inline-block; } a.lbPick:hover { box-shadow: 0 0 0 2px #e8c25a; } .lbPick.on { box-shadow: 0 0 0 2px #f2e3b3; }
+  .lbPick.taken { opacity: 0.25; cursor: not-allowed; } .lbPickAuto { color: #c9b27a; font-size: 10px; letter-spacing: 1px; text-decoration: none; margin-left: 6px; }
   .lbTag { color: #8f98a8; font-style: normal; font-size: 9px; letter-spacing: 1px; margin-left: 6px; text-transform: uppercase; }
   .lbSlotOpts { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; flex-basis: 100%; order: 2; }
   .lbSel { width: auto; height: 22px; padding: 1px 4px; font-size: 10px; margin: 0; }
   .lbSel.grow { flex: 1; width: 100%; }
   .lbFixed { color: #aab4c4; font-size: 11px; padding: 0 3px; }
   .lbKick { color: #f66; text-decoration: none; order: 1; } .lbNone { padding: 8px; color: #5c6473; font-size: 11px; font-style: italic; }
+  .lbRemove { order: 1; color: #f2a0a0; text-decoration: none; font-size: 10px; letter-spacing: 1px; border: 1px solid #6a3a3a; border-radius: 2px; padding: 1px 6px; background: #2a1a1c; }
+  .lbRemove:hover { color: #fff; border-color: #c05050; background: #4a2226; }
+  .lbAlways { color: #8fa3b8; } .lbHostSets { order: 1; }
   .lbLink { display: inline-block; margin: 6px 0; color: #d8bd76; font-size: 11px; text-decoration: none; }
   /* Slots on the left, the settings column on the right, in the shape of the StarCraft II lobby. */
   .lbBody { display: grid; grid-template-columns: 1fr 184px; gap: 10px; align-items: start; }

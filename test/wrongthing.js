@@ -68,6 +68,9 @@ run(`(() => {
   this.rclick = (x, y, t) => UI.smartCommand(t !== undefined ? t : UI.unitAt(x, y), x, y, false);
   this.uiOrder = (kind, x, y, t) => { UI.pending = { kind }; UI.execPending(t || null, x, y, false); };
   this.hotkey = k => { UI.onKey({ key: k, preventDefault() { }, ctrlKey: false, shiftKey: false }); };
+  // The card's Cancel, pressed as a click presses it. It was Escape until the tenth session (item 6): Escape opens the game
+  // menu now and never cancels a queued unit, an egg or a building going up.
+  this.cancel = () => { const b = UI.currentCard().find(x => x.label === 'Cancel'); if (b) UI.press(b); return !!b; };
   this.cardHas = label => UI.currentCard().some(b => b.label === label);
   this.msgs = () => this.p.msgs.map(m => m.text);
   this.clearMsgs = () => { this.p.msgs = []; this.p.lastAlert = {}; };
@@ -341,7 +344,7 @@ for (const race of races) {
       // while its SCV is standing on it, and nudgeOut can throw the SCV a dozen tiles clear first.
       for (let i = 0; i < 24 * 90 && b.progress < d.time * 0.1; i++) this.tick(1);
       const prog = b.progress, hp = b.hp;
-      this.select(b); this.hotkey('Escape');  // Escape on an unfinished building is Cancel
+      this.select(b); this.cancel();  // the unfinished building's Cancel
       this.tick(4);
       const drones = this.own(u => u.def.id === 'drone').length;
       // give the builder time to get itself into trouble if it is going to
@@ -393,7 +396,7 @@ for (const race of races) {
       UI.press(btn);
       this.tick(24 * 2);
       const wasEgg = l.def.id === 'egg';
-      this.select(l); this.hotkey('Escape');
+      this.select(l); this.cancel();
       this.tick(24);
       return { wasEgg, backToLarva: l.alive && l.def.id === 'larva', listed: !l.alive || !l.hatch || l.hatch.larvae.includes(l), order: l.order.type };
     });
@@ -414,7 +417,7 @@ for (const race of races) {
       G.applying = true; try { Abilities.issue(u, 'lurker_aspect'); } finally { G.applying = false; }
       this.tick(24 * 2);
       const wasEgg = !!u.def.egg;
-      this.select(u); this.hotkey('Escape');
+      this.select(u); this.cancel();
       this.tick(24);
       return { wasEgg, back: u.alive ? u.def.id : 'dead', settled: this.settled(u) };
     });
@@ -500,7 +503,7 @@ for (const race of races) {
 
   for (const [n, test, why] of [
     ['give orders to a unit that is already dead', r => r.deadStayedDead === true && r.resurrected === false && r.accepted.length === 0 && r.queue === 0 && r.lifted === false && r.charged === 0 && r.resLeak === 0, 'every command aimed at a corpse is a no-op: nothing queued, nothing charged, no research reservation left behind'],
-    ['shoot at your own units', r => r.bothAlive === true, 'you cannot order fire on your own'],
+    ['shoot at your own units', r => r.bothAlive === false, 'the ATTACK command fires on your own unit, as StarCraft does (the tenth session reversed this on the user\'s word: "that should bypass and allow our units to attack our own buildings/units")'],
     ['merge two units that cannot merge', r => r.bothAlive === true && r.defs === 'marine,marine', 'nothing happens'],
     ['cast a spell with no energy and no research', r => r.alive === true && r.settled === true, 'refused, and the caster is not left mid-cast forever'],
     ['walk into a Nydus Canal that has no other end', r => r.skipped || r.settled === true, 'the order is dropped'],
