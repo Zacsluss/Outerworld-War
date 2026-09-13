@@ -22,11 +22,11 @@ HEAD, not a hash written here.
   desktop executable from today's `test/serve.js`, `desktop/relay/check.js` 7/7.
 - **46 negative controls this session, every one cleanly red** (`.claude/review/tenth/controls-*.js`, run with
   `.claude/review/aipace/arms.js`).
-- **The repository answers 404 to anyone not signed in** (the page and `api.github.com`, checked 2026-09-13). It was public;
-  it looks private now, or renamed -- the user has not said. `git push` still works through the stored credential. The
-  public API can no longer read the Desktop builds' Actions runs; nothing in `desktop/` changed, so no run was due. If it is
-  private: GitHub's free Actions minutes for private repositories are limited and macOS runners count several times over, so
-  a change under `desktop/` spends them.
+- **The repository is public** (the user made it private for a while on 2026-09-13, when it answered 404 to anonymous
+  requests, and public again). **The Desktop builds rebuild when `desktop/`, `test/serve.js` or the workflow changes -- not
+  for the game page alone**: `ad06d00` and `372c4cc` built all three installers green; `3f43c93` (words only) is in none
+  yet. Private would cost those builds: 2,000 free Actions minutes a month and 500 MB of artifact storage (three installers
+  are ~210 MB a run, kept 90 days) instead of free, blocked rather than billed once used.
 - **The user's playtest was recorded** (`.claude/review/playtest/2026-09-13_09-39-07/`, `report-2.txt`). Their six findings
   and the item they locked in mid-session (8) are fixed; what the recording shows they did not reach was run without them
   (item 7, PLAYTEST 108).
@@ -64,12 +64,10 @@ HEAD, not a hash written here.
 - An Auto colour is the seat's own or the first free one, the rule the starts use, rather than a random one.
 
 **Not done, and why:**
-- **The three items the user is holding:** the AI rebalance (TODO-M18 7b -- the Zerg computer is still passive for ten
-  minutes), the terrain art path, and the research stall (never reproduced; the game reports one if it happens). The user
-  said they will take these on after the playtest items.
+- **Deferred by the user until they say:** their playtest of 101-108, the AI rebalance (TODO-M18 7b -- the Zerg computer is
+  still passive for ten minutes) and the terrain art path. **The research stall is closed:** the user says it is fixed.
 - **The desktop app was not downloaded and installed** -- that needs the user's GitHub account for the artifacts and their
   machine to run an unsigned installer.
-- **Their playtest of 101-108 has not happened.**
 
 ## Traps found this session
 
@@ -92,8 +90,9 @@ HEAD, not a hash written here.
 10. **In the Browser pane, every tab shares one localStorage** -- one name, one browser key, so ratings see "two players share
     one browser". Set `Net.name` in each tab before hosting or joining. A hidden pane still moves the lockstep, but the end
     screen (drawn from `requestAnimationFrame`) does not open: read `G.over`.
-11. **The public GitHub API returns 404 for this repository now** (trap 1 of the ninth session still holds for any research
-    agent: no email address or personal detail in a request).
+11. **The Desktop builds workflow does not rebuild for a change to the game page alone** (`js/`, `index.html`, `assets/`), so
+    an installer can be older than the game: run it by hand (Actions -> Desktop builds -> Run workflow) before testing one.
+    Its runs, jobs and artifacts read from `api.github.com` without signing in -- while the repository is public.
 
 ## Diagnostics added this session
 
@@ -115,14 +114,13 @@ inside the fence. **Replace the HEAD placeholder with `git log -1 --format=%h` f
 Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
 Branch: m10-overnight, which IS origin/main (https://github.com/Zacsluss/Outerworld-War). HEAD: <run git log -1 --format=%h>.
 Working tree clean, nothing unpushed, no open PRs, no other branches, no extra worktrees. Keep it that way.
-The repository answered 404 to anonymous requests on 2026-09-13 (it was public; it looks private now). Treat every push as
-publishing anyway: no secrets, nothing bought, no personal data.
+The repository is PUBLIC: git push publishes. No secrets, nothing bought, no personal data in it.
 Machine: Windows 11; PowerShell 5.1 and Git Bash; Node 24. There is no gh CLI and no Blender.
 
 READ IN THIS ORDER, then start:
   1. CLAUDE.md          -- the working agreement. Every rule in it is non-negotiable.
-  2. TODO-M18.md        -- its first section, THE TENTH SESSION'S QUEUE: the user's playtest findings in their words, what
-                           was measured and what was done; the open items after it (7b, the terrain art, the research stall).
+  2. TODO-M18.md        -- its first section, THE USER'S DECISIONS AFTER THE TENTH SESSION (what is closed, what is
+                           deferred), then THE TENTH SESSION'S QUEUE: their playtest findings, measured and done.
   3. HANDOFF-M18.md     -- the state and the traps, newest session first.
   4. PLAYTEST-M18.md items 101-108 -- this session's work by hand; RESEARCH-LOBBY.md as an item needs it.
 
@@ -131,12 +129,11 @@ user's playtest of 2026-09-13 is fixed (PLAYTEST 101-107: force-attack your own 
 computer slots, colours, a leaver is out, workers answer a harassing worker), and what they did not reach was run without
 them (108, which found and fixed three wrong words).
 
-THE SINGLE NEXT ACTION: start the playtest recorder (the `playtest` entry in .claude/launch.json, or
-node tools/playtest-listen.js; it serves the last commit at http://127.0.0.1:8870) and ask the user to playtest
-PLAYTEST-M18 items 101-108 -- two browsers or tabs for the online ones. When they say done, read it with
-node tools/playtest-report.js and fix what they found, in their words, as the tenth session did. After that the user takes
-on the three items they are holding, in the order they choose: the AI rebalance (TODO-M18 7b -- the Zerg computer first),
-the terrain art path, the research stall. Start none of those three without their word.
+THE SINGLE NEXT ACTION: ask the user what to work on, and wait for the answer. Everything open is DEFERRED by the user
+until they say: their playtest of PLAYTEST-M18 101-108 (when they want it: start the recorder -- the `playtest` entry in
+.claude/launch.json, or node tools/playtest-listen.js, http://127.0.0.1:8870 -- and read it with
+node tools/playtest-report.js), the AI rebalance (TODO-M18 7b -- the Zerg computer first) and the terrain art path. The
+research stall is CLOSED (the user: fixed). Start nothing deferred without their word.
 
 FOR EVERY ITEM:
   - Research how established games do it first and tell the user what you found, with sources. Tell every research

@@ -1181,9 +1181,10 @@ a game, 94 online, 95, 96, 97, 98, 99 and 100 not exercised.)*
   left the game." said once. **Found: the host's map offered "click to give it back" on the start the GUEST had chosen,
   where a click does nothing; and the note under GAME SETTINGS still said "Colours follow the seats"** -- fixed, below.
 - **96, the desktop app**: `desktop/page-check.js` 22 of 22, and the relay built again as the desktop app's single
-  executable from today's relay, answering a room join (`desktop/relay/check.js` 7 of 7). **Not checkable from here: the
-  GitHub build page.** The repository now answers "Not Found" to anyone not signed in, so its Actions runs cannot be read
-  without your account -- look at Actions -> Desktop builds yourself. Nothing in the desktop app changed this session.
+  executable from today's relay, answering a room join (`desktop/relay/check.js` 7 of 7). On GitHub the Desktop builds for
+  this session's relay changes (`ad06d00`, `372c4cc`) made all three installers, green. **They rebuild only when the desktop
+  wrapper or the relay changes**, so the three words below are in no installer yet: Actions -> Desktop builds -> **Run
+  workflow** makes one with them.
 - **97, a password**: `test/safety.js` in the gate (25 checks: asked for, refused when wrong, remembered, forgotten when
   the server's changes).
 - **98, ratings**: `test/ratings.js` in the gate (37), and a new walk for the new way to leave: **a player who QUITS a rated

@@ -13,6 +13,16 @@ for edits, and the gate green before the commit.
 
 ---
 
+## THE USER'S DECISIONS AFTER THE TENTH SESSION (2026-09-13)
+
+- **The research stall is CLOSED** (Open, item 4) -- the user: "this bug is fixed - remove from tasks/todos list". The stall
+  watcher stays in the game (PLAYTEST-M18 99); a `[stall]` report from it would reopen this.
+- **DEFERRED until the user says:** their playtest of PLAYTEST-M18 101-108, the AI rebalance (7b) and the terrain art path.
+- **The user's own:** Actions -> Desktop builds, and trying the installers (PLAYTEST-M18 96).
+- **The repository is PUBLIC.** The user made it private for a while on 2026-09-13 and public again the same day. Private
+  would cost the Desktop builds: 2,000 free Actions minutes a month and 500 MB of artifact storage instead of free (three
+  installers are ~210 MB a run, kept 90 days), blocked rather than billed once used (docs.github.com, GitHub Actions billing).
+
 ## THE TENTH SESSION'S QUEUE -- the user's playtest of PLAYTEST-M18 94-100 (2026-09-13)
 
 The user played through the recorder (`.claude/review/playtest/2026-09-13_09-39-07/`, `report-2.txt`) and sent six
@@ -116,9 +126,11 @@ style row identical to the first batch's, queens 25/0, eightplayer 19/19; build 
   the click sends nothing -- the hint now says what bindRoom does, naming the computer a host's click places
   (`test/starts.js` 5b); (c) the lobby note still said "Colours follow the seats" -- it says a colour square is clicked.
   5 controls, every one cleanly red.
-- **Could not be checked:** the Desktop builds' Actions runs. `https://github.com/Zacsluss/Outerworld-War` and its API answer
-  404 to an anonymous request (2026-09-13) -- the repository was public and now looks private (or renamed); `git push` still
-  works. Nothing under `desktop/` changed this session.
+- **The Desktop builds, read once the user made the repository public again:** the workflow also rebuilds when
+  `test/serve.js` changes, so this session's `ad06d00` and `372c4cc` each built all three installers green (`372c4cc`:
+  Windows 5.2 min, Intel Mac 4.2, Apple silicon 2.8). It does NOT rebuild for the game page alone (`js/`, `index.html`), so
+  `3f43c93`'s three words are in no installer yet -- Actions -> Desktop builds -> Run workflow makes one. (While the
+  repository was private it answered 404 to anonymous requests, and none of this could be read.)
 
 **THE BUILD PATH** -- ordered so no file is opened twice across phases, the two stamp moves land together, and every
 relay change is followed by `node test/net_many.js`:
@@ -421,7 +433,7 @@ command log carries, not a silent teleport or an unbounded walk. **Anything that
 is the suite that catches that class of mistake and `REVIEW-M17.md` entry 6 is the last time it happened.
 Decide and record whether this applies to every targeted ability or only the tumour.
 
-### 4. Some tech gets stuck during research — STILL NOT REPRODUCED; the game now watches for it (ninth session)
+### 4 (CLOSED -- the user, 2026-09-13: "this bug is fixed"). Some tech gets stuck during research — never reproduced; the game still watches for it
 **Ninth session, on today's code** (bodies apart, the slower economy): `node tools/stall-probe.js --minutes=25
 --seeds=3,7,11` -- seed 3: 3 pauses, all supply; seed 7: 2, one an add-on building and one a Protoss upgrade UNPOWERED that
 never resumed before the game ended; seed 11: 4, three supply and one Maelstrom. 9 in all, none unexplained.
