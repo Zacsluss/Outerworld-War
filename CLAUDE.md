@@ -47,7 +47,7 @@ exist only in a chat transcript.
 
 ## Non-negotiable
 
-- **`node test/all.js` is the gate before any commit.** 97 suites, about two minutes wall on this machine. Green means green. A red
+- **`node test/all.js` is the gate before any commit.** 98 suites, about two minutes wall on this machine. Green means green. A red
   `rooms` with `EADDRINUSE` is another gate or a stray server on the relay ports (8793-8800; 8810-8813 for `lobby`, 8820-8821 for `starts`, 8840 for `spectate`, 8850-8851 for `rematch`, 8860-8863 for `safety`, 8890-8892 for `ratings`, 8900 for `joincode`, 8904 for `aislots`, 8908 for `colours`, 8912-8913 for `leaver`; 8870-8871 is the playtest recorder, 8897 `tools/terrain-shot.js`, 8899 the `broodwar` preview server), not a fault:
   re-run `node test/rooms.js` alone, then the gate.
 - **Determinism.** Never `Math.random()` in simulation code — use `G.rand()`. Anything a replay or a

@@ -1225,3 +1225,66 @@ so far - exactly the direction i want". `RESEARCH-TERRAIN.md` sections 7-8; the 
 **Not in the test run, and next (TODO-M18, THE TERRAIN QUEUE):** props on open ground, ramps walled on both sides, the other four
 tilesets (Jungle, Ice, Desert, Space Platform keep the old look even with `?hd=1`), a matching zoomed-out view and minimap (both
 still the old colours), a speed check on the biggest map, and switching it on for everyone.
+
+## 110. Ramps have walls: you go up at the bottom or come down at the top, never over the side
+
+*(The user, 2026-09-13, the terrain queue's item 2: "Better-shaped ramps - can only go up them from base, NOT from sides of ramp".
+TODO-M18, THE TERRAIN QUEUE, phase 1. The rule is `GameMap.wallRamps` in `js/map.js`; `test/ramps.js` holds it to its word.)*
+
+**THE BUILD STAMP MOVES** (`js/map.js` and `js/build.js` are stamped; the new stamp is `eff84c60f4bc9cf2`). Saves and replays made
+before this commit are refused, as they should be: the ground they were played on has changed.
+
+**What changed for a player:**
+1. **Every ramp on every map is entered only at its foot or its top.** The tiles beside a ramp are cliff now -- walls you cannot walk
+   or build on. Measured before: 132 of 158 ramps over every layout, size and archetype could be walked onto from a side.
+2. **Ramps are shorter: at most three tiles, counted down from the cliff edge.** The layouts drew ramps five to thirteen tiles long
+   because nothing walled them; walled at that length they would be piers into the low ground, and on Broken Expanse, Dust Bowl,
+   Nightfall and Chokepoint Valley a Thor, an Ultralisk or a Reaver could no longer leave its main (measured). The part of an old
+   ramp that ran back into the plateau is plateau now, so the top of a ramp is where the cliff is.
+3. **Where a ramp's foot opens onto crowded ground -- a mineral line, a rock formation -- it is shorter still**, so a large unit can
+   step off it and turn. And the rule checks itself: if walling a ramp would cost anyone a base, a mineral patch, a town-hall site
+   or a route a large unit had, it tries that ramp shorter, down to the cliff row alone.
+4. **Generated maps changed shape in four places, so every one of them can be walled** (without these, 26 of 32 small Vertical
+   Cliffs maps could not): *Vertical Cliffs* -- the natural's ramp is three tiles wider than the rock formation in it, which now
+   sits on its west side, so the natural is never sealed while the rocks stand; the main's ramp sits two tiles in from the corner of
+   its plateau; the rock blob that always landed on the natural's terrace is gone; the spire keeps clear of the natural's ramp.
+   *Island Chain* and *Chokepoint Valley* -- the main's ramp sits two tiles in from the corner; on the smallest size Chokepoint's
+   natural stands east of its main ramp instead of with its mineral line across it. *Open Basin* -- its random rock blobs never land
+   on a ramp. A side effect worth knowing: of 1,037 maps measured, those where some mineral patch cannot be reached or a base
+   refuses its town hall fell from 200 to 58 -- almost all of the difference is the Vertical Cliffs blob, which used to bury part of
+   the natural's mineral line. None got worse.
+5. **Detailed terrain (`?hd=1`): a ramp is drawn as a slope, and the cliff folds down both sides of it.** Every ramp used to be drawn
+   at one flat middle height, so it read as a slab with a drop at each end.
+
+**How to see it by hand:**
+1. **Single Player -> Skirmish on Lost Ruins, START.** Scroll to your main's ramp (south-east of your base, where the cliff turns).
+   *Working:* a short stair with a rock face on both sides that runs all the way down to its foot; the foot opens onto the low ground.
+2. **Walk round.** Put a Marine (or a worker) on the low ground right beside the ramp's side wall and right-click the plateau above.
+   *Working:* it walks along the wall to the foot and up the ramp -- it never steps onto the ramp from the side.
+3. **Build on a wall.** With a worker selected, try to place a Supply Depot over a wall tile beside the ramp. *Working:* refused.
+4. **A large unit.** On Broken Expanse, bring a Thor (or a Reaver or an Ultralisk) from your main to your natural. *Working:* it goes
+   down the ramp and round the natural's mineral line without sticking.
+5. **Detailed terrain.** Add `?hd=1` to the address, reload, and open Lost Ruins again. *Working:* the ramp is a slope between two
+   folds of the cliff, not a pale box stuck to it.
+6. **Generated maps.** Single Player -> Skirmish -> a generated map (Vertical Cliffs, Island Chain, Chokepoint Valley, Open Basin)
+   at each size. *Working:* every ramp has walls; on Vertical Cliffs the natural's ramp has a rock formation on its west half and a
+   three-tile lane beside it (a Thor fits); breaking the rocks opens the full width.
+
+**Invisible from normal play, and where to look instead:** that nothing reachable became unreachable. `test/ramps.js` (in the gate)
+checks it on 53 maps -- every shipped layout, the archetypes at every size on two seeds, and the seeds that found each generator fix
+-- against the same maps generated without walls; it was measured on 1,037 (`.claude/review/terrain/audit-shipped-64e.log`). Twelve
+negative controls turn it red (`.claude/review/terrain/controls-ramps.log`).
+
+**Deliberately different from what was asked:** walls "the whole length" of a ramp -- the whole length of a much shorter ramp (item
+2 above says why). And the `queens` suite now checks one Queen per hatchery at twelve minutes rather than ten: the fourth and fifth
+Queens arrive in a burst between minutes nine and ten, and over twelve seeds the ten-minute check passed on 7 without walls and 8
+with them, so the seed, not the walls, decided it; at twelve all 24 games have exactly one per hall.
+
+**Numbers recorded (by-hand runs after the change; the tenth session's are `.claude/review/aipace/after-*.log`):**
+- `aistyles` seed 1: 132/132; seed 11: 132/132; **seed 5: 131/132** -- "harasser fields more of the fast units its table favours than
+  turtle" came out 7 vs 10 (it passed before). The suite's own comment calls this "the weakest of the behavioural checks by some way"
+  (ten minutes is too short for compositions to separate); the gate runs aistyles on its default seed, which passes. The AI
+  rebalance is deferred by the user, so nothing was tuned for it.
+- `queens` 25/25 (with the twelve-minute check above); `eightplayer` 19/19 -- every player alive at 10:00, 16 of 16 bases claimed
+  (14 before), 634 units (523), tick 2.48 ms/frame mean (2.61), worst segment 4.74 ms (5.62).
+- `net_many` 51/51, no desync; phase 1's four hashes agree at frame 3552 (820315027; 995386952 before -- the ground changed).

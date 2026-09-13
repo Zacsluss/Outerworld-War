@@ -279,15 +279,31 @@ const Terrain = {
     // the grid exactly). It is read LINEARLY between centres and then pushed through a steep curve, so a cliff is one drop
     // about two thirds of a tile wide at the cliff tile -- the smoothstep of the second pass made two small steps with a
     // shelf between them, which read as a trench -- while a ramp keeps the linear value and climbs evenly from end to end.
+    //
+    // A ramp tile is not "halfway" any more: it sits at its own place on the climb (rampLevels), so a three-tile ramp reads as a
+    // slope from the plateau down to the floor instead of a flat slab with a drop at each end -- which is what every ramp looked
+    // like while they were all 0.5. And a wall beside a ramp (GameMap.wallRamps) stands above the ramp at that point, drawn as
+    // the cliff it is -- the plateau's edge folding down both sides of the ramp -- rather than as a slab wider than where you can
+    // walk. (Drawn as a lumpy rock zone first, RAMP_WALL_ROCK 0.6, the walls read as two boulders.)
     const M = 3, GW = CH + 2 * M + 1, raw = new Float32Array(GW * GW), rz = new Float32Array(GW * GW), rpz = new Float32Array(GW * GW), t0x = cx * CH - M, t0y = cy * CH - M;
+    const RL = this.rampLevels(), wal = new Uint8Array(GW * GW);
     for (let j = 0; j < GW; j++) for (let i = 0; i < GW; i++) {
       const tx = t0x + i, ty = t0y + j, o = j * GW + i;
       if (tx < 0 || ty < 0 || tx >= m.w || ty >= m.h) { raw[o] = 1.25; rz[o] = 1; continue; }
       const q = ty * m.w + tx, cl = m.cliff[q], h = m.height[q];
       raw[o] = cl === 2 ? 1 : cl === 1 ? 0.5 : h === 2 ? 1 : h === 1 ? 0.5 : 0; rz[o] = cl === 2 ? 1 : 0; rpz[o] = !cl && h === 1 ? 1 : 0;
+      if (RL[q] >= 0) { if (rpz[o]) raw[o] = RL[q]; else if (cl === 1) { raw[o] = RL[q]; rz[o] = this.RAMP_WALL_ROCK; wal[o] = 1; } }
+      if (cl === 1) wal[o] |= 2;
     }
     const blur = src => { const out = new Float32Array(GW * GW); for (let j = 0; j < GW; j++) for (let i = 0; i < GW; i++) { let s = 0, wsum = 0; for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const ii = i + a, jj = j + b; if (ii < 0 || jj < 0 || ii >= GW || jj >= GW) continue; const w = (a ? 1 : 2) * (b ? 1 : 2); s += src[jj * GW + ii] * w; wsum += w; } out[j * GW + i] = s / wsum; } return out; };
     const gh = blur(raw), gr = blur(rz), gp = rpz;   // the ramp mask stays sharp: a ramp is a passage and has to read as one
+    // ...and so does a ramp wall: blurred with the floor on one side and the ramp on the other, a one-tile parapet averages down
+    // to a soft bump no one reads as a wall (tried first). Its own cell keeps its height and its rock; its neighbours still blur.
+    for (let o = 0; o < GW * GW; o++) if (wal[o] & 1) { gh[o] = raw[o]; gr[o] = rz[o]; }
+    // Where the climb is read linearly rather than through the cliff curve: the ramp and one tile round it, blurred, but never on
+    // a cliff or a wall tile. With the sharp mask alone the curve took over half a tile before each end of the ramp and put a
+    // dark kink across its top and its foot; walls and cliffs keep their one crisp drop.
+    const gk = blur(rpz); for (let o = 0; o < GW * GW; o++) if (wal[o]) gk[o] = 0;
     const sm = t => t * t * (3 - 2 * t), PAD = 24, PW = W + 2 * PAD;
     const hf = new Float32Array(PW * PW), rk = new Float32Array(PW * PW), rp = new Float32Array(PW * PW);
     for (let py = 0; py < PW; py++) for (let pxx = 0; pxx < PW; pxx++) {
@@ -305,7 +321,8 @@ const Terrain = {
       const gx2 = wx / TILE - 0.5 - t0x, gy2 = wy / TILE - 0.5 - t0y; let i1 = Math.floor(gx2), u1 = gx2 - i1, j1 = Math.floor(gy2), v1 = gy2 - j1;
       if (i1 < 0) { i1 = 0; u1 = 0; } else if (i1 > GW - 2) { i1 = GW - 2; u1 = 1; } if (j1 < 0) { j1 = 0; v1 = 0; } else if (j1 > GW - 2) { j1 = GW - 2; v1 = 1; }
       const a1 = j1 * GW + i1; rp[o] = gp[a1] * (1 - u1) * (1 - v1) + gp[a1 + 1] * u1 * (1 - v1) + gp[a1 + GW] * (1 - u1) * v1 + gp[a1 + GW + 1] * u1 * v1;
-      const kRamp = sm(Math.min(1, rp[o] * 1.5)), cliffH = sm(Math.min(1, Math.max(0, (lin - 0.5) / 0.36 + 0.5)));
+      const kk = gk[a1] * (1 - u1) * (1 - v1) + gk[a1 + 1] * u1 * (1 - v1) + gk[a1 + GW] * (1 - u1) * v1 + gk[a1 + GW + 1] * u1 * v1;
+      const kRamp = sm(Math.min(1, Math.max(rp[o], kk) * 1.5)), cliffH = sm(Math.min(1, Math.max(0, (lin - 0.5) / 0.36 + 0.5)));
       // rock zones stand a little above the high ground and are lumpy, so the light finds boulders and hollows in them
       hf[o] = cliffH * (1 - kRamp) + lin * kRamp + (rock > 0.05 ? (0.22 + (this.fbm(wx / 26, wy / 26, 2) - 0.5) * 0.6) * rock : 0);
     }
@@ -329,7 +346,7 @@ const Terrain = {
         const hr = tmp[0] * (1 - gl) + col[0] * gl * 1.3, hg = tmp[1] * (1 - gl) + col[1] * gl * 1.3, hb = tmp[2] * (1 - gl) + col[2] * gl * 1.3;
         col[0] += (hr - col[0]) * tH; col[1] += (hg - col[1]) * tH; col[2] += (hb - col[2]) * tH;
       }
-      const pr = rp[o]; if (pr > 0.02) { mat(T.ramp, gRamp, wx, wy, q, tmp); const kp = sm(Math.min(1, pr * 1.3)) * 0.5; col[0] += (tmp[0] - col[0]) * kp; col[1] += (tmp[1] - col[1]) * kp; col[2] += (tmp[2] - col[2]) * kp; }   // half strength: worn tracks on the ground, not a new floor
+      const pr = rp[o]; if (pr > 0.02) { mat(T.ramp, gRamp, wx, wy, q, tmp); const kp = sm(Math.min(1, pr * 1.3)) * this.RAMP_TRACKS; col[0] += (tmp[0] - col[0]) * kp; col[1] += (tmp[1] - col[1]) * kp; col[2] += (tmp[2] - col[2]) * kp; }   // worn tracks on the ground, not a new floor
       // rock where the ground is steep -- the cliff's own face, not the whole tile around it -- and in the rock zones
       const kr = Math.max(sm(Math.min(1, Math.max(0, (steep - 0.016) / 0.02))) * (pr > 0.35 ? 0 : 1), sm(Math.min(1, rk[o] * 1.3)));
       let bx = 0, by = 0;
@@ -350,6 +367,38 @@ const Terrain = {
     }
     x.putImageData(img, 0, 0);
     return cv;
+  },
+  // Per tile, for the textured bake: a ramp tile's height along its climb, and the height of a wall standing beside a ramp; -1
+  // everywhere else. A ramp tile's level is d_low / (d_low + d_high), its 4-connected steps through the ramp to the nearest low
+  // ground and to the nearest high ground, so a three-tile ramp climbs 0.25, 0.5, 0.75 from its foot. A wall (a cliff tile
+  // touching a ramp tile) stands RAMP_WALL_RISE above the highest ramp tile it touches, capped at the plateau, and is rock zone
+  // only by RAMP_WALL_ROCK (none: its faces are steep, and the steep ground takes the rock texture by itself). Recomputed when
+  // the map or its features change (a feature can move a ramp tile's height); a few milliseconds on the largest map.
+  RAMP_WALL_RISE: 0.35, RAMP_WALL_ROCK: 0,
+  // How much of the ramp texture shows on a ramp. The test run used half ("worn tracks, not a new floor"); with walls folding the
+  // cliff down both sides the passage no longer needs it to read, and at half its streaks drew a pale striped rectangle.
+  // Judged on screen at 0.5, 0.3 and 0.15 (.claude/review/terrain/shots/p1-tracks-*).
+  RAMP_TRACKS: 0.15,
+  rampLevels() {
+    const m = G.map, key = m.featureRev ? m.featureRev() : 0;
+    if (this._rampLv && this._rampLvMap === m && this._rampLvKey === key) return this._rampLv;
+    const W = m.w, N = W * m.h, lv = new Float32Array(N).fill(-1), isRamp = i => m.height[i] === 1 && m.cliff[i] === 0;
+    const dist = high => {
+      const d = new Int32Array(N).fill(-1), q = [];
+      for (let i = 0; i < N; i++) if (m.cliff[i] === 0 && (high ? m.height[i] === 2 : m.height[i] === 0 && m.walk[i] === 1)) { d[i] = 0; }
+      for (let i = 0; i < N; i++) if (d[i] === 0) { const x = i % W; for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W]) if (j >= 0 && j < N && isRamp(j) && d[j] < 0) { d[j] = 1; q.push(j); } }
+      for (let k = 0; k < q.length; k++) { const i = q[k], x = i % W; for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W]) if (j >= 0 && j < N && isRamp(j) && d[j] < 0) { d[j] = d[i] + 1; q.push(j); } }
+      return d;
+    };
+    const dh = dist(true), dl = dist(false);
+    for (let i = 0; i < N; i++) if (isRamp(i)) lv[i] = dh[i] < 0 ? 0 : dl[i] < 0 ? 1 : dl[i] / (dl[i] + dh[i]);
+    for (let i = 0; i < N; i++) {
+      if (m.cliff[i] !== 1) continue;
+      const x = i % W; let top = -1;
+      for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W]) if (j >= 0 && j < N && isRamp(j) && lv[j] > top) top = lv[j];
+      if (top >= 0) lv[i] = Math.min(1, top + this.RAMP_WALL_RISE);
+    }
+    this._rampLvMap = m; this._rampLvKey = key; return this._rampLv = lv;
   },
   renderChunk(cx, cy) {
     const T = this.texSet(); if (T) return this.renderChunkTex(cx, cy, T);   // textured ground, when it is on and loaded

@@ -289,17 +289,26 @@ ok('and clearing it afterwards opens a ramp rather than reopening the hole',
   featSeal.brokeHeight === 1 && featSeal.brokeWalk === 1 && featSeal.brokeClean === 0, JSON.stringify(featSeal));
 
 // The second defect this found, kept as a regression with its seed: a rock formation dropped across
-// terrace 2 of Vertical Cliffs cuts fifteen tiles of it off from the ramp, and stranded high ground is
+// terrace 2 of Vertical Cliffs cut fifteen tiles of it off from the ramp, and stranded high ground is
 // a hole in every ground army's vision that neither player can ever stand in.
+//
+// That rock ellipse is no longer placed (terrain queue item 2, Archetypes.cliffs), so the seed strands nothing now. The pass
+// still has to REPAIR, so the case is rebuilt by hand: a 3x3 of open low ground with nothing walkable above height 0 within
+// two tiles is raised -- a plateau no ramp touches -- and the pass has to find it and put it down again. Small on purpose:
+// elevationProblems lists 24 lines, and the raised block's own cliff-less edges come first.
 const strand = R(`
   const m = new GameMap(9, 'arch:cliffs:11');
   const before = Array.from(m.walk).join('');
   const out = { probs: m.elevationProblems().length, stranded: m.flattenStrandedHeight(), walkSame: Array.from(m.walk).join('') === before };
-  // ...and the same map with the repair undone by hand still has to be REPAIRABLE, not merely quiet:
-  // put the fifteen tiles back up and check the pass finds them again and puts them down again.
   const m2 = new GameMap(9, 'arch:cliffs:11');
-  let raised = 0;
-  for (let y = 42; y <= 49; y++) for (let x = 38; x <= 43; x++) { const i = m2.idx(x, y); if (m2.walk[i] === 1 && m2.height[i] === 0 && m2.cliff[i] === 0) { m2.height[i] = 2; raised++; } }
+  let raised = 0, spot = null;
+  for (let y = 8; y < m2.h - 10 && !spot; y++) for (let x = 8; x < m2.w - 10 && !spot; x++) {
+    let ok = true;
+    for (let b = -2; b <= 4 && ok; b++) for (let a = -2; a <= 4; a++) { const i = m2.idx(x + a, y + b), inner = a >= 0 && a <= 2 && b >= 0 && b <= 2;
+      if (inner ? (m2.walk[i] !== 1 || m2.height[i] !== 0 || m2.cliff[i] !== 0 || m2.blocked[i] !== -1) : (m2.walk[i] === 1 && m2.height[i] > 0)) { ok = false; break; } }
+    if (ok) spot = [x, y];
+  }
+  if (spot) for (let y = spot[1]; y < spot[1] + 3; y++) for (let x = spot[0]; x < spot[0] + 3; x++) { m2.height[m2.idx(x, y)] = 2; raised++; }
   out.raised = raised;
   out.found = m2.elevationProblems().filter(s => s.includes('no ramp')).length;
   out.flattened = m2.flattenStrandedHeight();

@@ -12,8 +12,11 @@ requests, no other branches, no extra worktrees.** Trust `git log -1` for HEAD, 
 
 ## The state
 
-- **The gate is 97 suites, ALL GREEN** (about two minutes). **Build stamp `56406f9d777368ac`** -- nothing since has touched a
-  stamped file. No known reds.
+- **THE TERRAIN QUEUE, phase 1 (item 2, walled ramps) is DONE and committed** (PLAYTEST-M18 110; TODO-M18, THE TERRAIN QUEUE, has
+  the whole account). **The next action is phase 2: the other four tilesets' textures.** Phases 3-5 follow in the queue's order.
+- **The gate is 98 suites, ALL GREEN** (about two minutes; `ramps` is new). **Build stamp `eff84c60f4bc9cf2`** -- phase 1 moved it
+  (`js/map.js`, `js/build.js`); phases 2-5 are drawing only and must not move it again. No known reds in the gate. By hand,
+  `aistyles` seed 5 fails its weakest check (7 vs 10; recorded in PLAYTEST-M18 110; not a gate suite).
 - **The Badlands test run is committed and OFF unless `?hd=1` is in the address** (`7f8cf40`; PLAYTEST-M18 109). Badlands is painted
   from four Poly Haven CC0 textures, lit from the upper left like the sprites; every other tileset, the strategic zoom and the
   minimap are unchanged. The user: **"this looks amazing so far - exactly the direction i want."**
@@ -87,7 +90,7 @@ Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
 Branch: m10-overnight, which IS origin/main (https://github.com/Zacsluss/Outerworld-War -- PUBLIC: git push publishes).
 HEAD: <run git log -1 --format=%h>. Working tree clean, nothing unpushed, no open PRs, no other branches, no extra worktrees.
 Machine: Windows 11; PowerShell 5.1 and Git Bash; Node 24; Rust + the Tauri CLI under desktop/; no gh CLI, no Blender.
-The gate (node test/all.js) is 97 suites, about two minutes, ALL GREEN; no known reds. test/balance.js and test/proxy.js are
+The gate (node test/all.js) is 98 suites, about two minutes, ALL GREEN; no known reds. test/balance.js and test/proxy.js are
 GATED: never start them without an explicit, double-checked instruction.
 
 THE JOB -- make every map look great. The user: "i do not need an editor. i just want great looking maps." Of the Badlands test
@@ -98,7 +101,8 @@ run (docs/terrain/*.jpg, PLAYTEST-M18 109, on with ?hd=1): "this looks amazing s
   4. A matching zoomed-out view and minimap, plus a speed check on the biggest map (The Long March, 256x256).
   5. Switch it on by default and commit.
 BUILD ORDER: 2 (ramps -- the only SIMULATION change, so props and art land on final geometry and the stamp moves once), then 3,
-then 1, then 4, then 5. TODO-M18.md, THE TERRAIN QUEUE, gives the reasons and each phase's acceptance.
+then 1, then 4, then 5. TODO-M18.md, THE TERRAIN QUEUE, gives the reasons and each phase's acceptance. PHASE 1 (item 2, ramps) IS
+DONE (PLAYTEST-M18 110, build stamp eff84c60f4bc9cf2): start at phase 2, and do not move the build stamp again.
 
 READ, in this order, before touching anything:
   1. CLAUDE.md                -- the working agreement; every rule in it is non-negotiable.
@@ -116,11 +120,9 @@ name each file and its size in the chat as you fetch it, look at it before using
 no editor work. NOT approved: anything paid, anything not CC0.
 
 ALREADY MEASURED (re-measure only to compare):
-  - Ramps: 132 of 158 walkable from a side (1,604 side contacts) over every layout, size mode and archetype
-    (.claude/review/terrain/ramp-probe.js). Cause: a ONE-tile cliff ring with ramp rectangles stamped through and past it. Every RTS
-    researched walls ramp sides with unwalkable CELLS, not blocked edges: use wall tiles, 4-connected (the pathfinder already
-    refuses diagonal corner cuts), in one pass every generator runs through (after sealElevations, before placeNeutrals), and prove
-    with flood fills on every layout and many archetype seeds that no base, resource or start is cut off.
+  - Ramps (DONE in phase 1): 132 of 158 were walkable from a side; GameMap.wallRamps walls them, at most RAMP_LEN 3 tiles long, and
+    measures itself (test/ramps.js). Props (phase 3) must keep clear of ramps AND their walls; the textured bake reads ramp heights
+    and wall heights from Terrain.rampLevels().
   - Speed (V8, never inside a vm harness -- that is ten times slower): textured chunk bake median 18.5 ms, palette 21.7 ms. At zoom 1
     Terrain.draw has no bake budget: a jump to unbaked ground stalls ~0.6-0.85 s, a chunk-boundary crossing 75-165 ms.
     overview() 17.4 ms, buildMini() 1.2 ms on 128x128. Render.syncFeatures clears every chunk when any feature changes.

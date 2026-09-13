@@ -44,9 +44,40 @@ guarantees high never touches low directly, and says nothing about a ramp's side
 own on archetypes, and `sealElevations` demotes one-tile slopes. The pathfinder already refuses to cut a corner diagonally
 past two blocked tiles (map.js ~1800), which a wall needs.
 
+**PHASE 1 (item 2, walled ramps) -- DONE** (PLAYTEST-M18 110; build stamp `eff84c60f4bc9cf2`). `GameMap.wallRamps` runs after the
+seal in `generate` and `generateCustom`; `GameMap.rampProblems()` is the query; `test/ramps.js` (26 checks, twelve negative
+controls in `.claude/review/terrain/controls-ramps.log`) is in the gate, now 98 suites. What it took, measured at each step:
+- **The rule** (the method's own comment has all of it): walls on both sides of every ramp tile, low ground above a top and high
+  ground below a foot walled too; ramp tiles inside the plateau promoted to plateau; at most `RAMP_LEN` 3 tiles from the cliff row,
+  shorter while the `RAMP_CLEAR` 3 tiles past the foot are not open; then MEASURED -- a flood before and after (bases and
+  resources for a unit with every feature shut, bases for a 3x3 body with features shut and open), and if anything was lost the
+  pass is redone ramp group by ramp group at the longest length that loses nothing. Five prototypes in `.claude/review/terrain/`
+  (wall-proto, wallrule3-5, wallramps-method): full-length walls trapped every 3x3 body in its main on Broken Expanse, Dust Bowl,
+  Nightfall and Chokepoint (a natural's mineral line under the foot); promotions decided before walls walled plateau corners;
+  walls left standing beside a later-shortened ramp; a rock formation at a foot read as open ground.
+- **Four generator fixes** (each commented at its generator), found by auditing 1,037 maps (every layout, four archetypes, four
+  sizes, 64 seeds; `wall-audit.js`, `audit-shipped-64e.log`): Vertical Cliffs (natural's ramp rw+3 wide with the rocks on its west
+  side -- the rocks used to seal its only way in once the sides were walled; main ramp two tiles in from the corner; the rock ellipse
+  that always landed on terrace 2 drawn but not placed; the spire nudged west of the natural's ramp), Island Chain (main ramp inset),
+  Chokepoint (main ramp inset; the natural stands east of the ramp where its mineral row would cross it -- "eleven rows down" was
+  tried and pushed the small map's natural into its expansion, a refused hall), Open Basin (`Archetypes.rockClear`: no random rock
+  ellipse within a tile of a ramp). Result: side-open 5,052 -> 0; nothing lost for a unit or a 3x3 body; the slow road on 14 small
+  maps, the fallback on none; maps with an unreachable patch or a refused hall 200 -> 58, none new.
+- **Drawing** (`js/terrain.js`, textured path): `rampLevels()` gives each ramp tile its place on the climb and each wall its
+  height above it; walls keep their own height through the 3x3 blur and are drawn as cliff, not a lumpy rock zone; the ramp's ends
+  blend linearly; ramp texture strength 0.5 -> 0.15. Judged on screenshots (`.claude/review/terrain/shots/p1-*`).
+- **Tests changed, with the reason in each:** `craters` (its factory stood on Lost Ruins' ramp, now partly wall: it stands on the
+  walled ramp exactly, footprint checked first), `verticality` (the stranded-terrace regression rebuilt on open ground now the
+  ellipse is gone), `queens` (one Queen per hall at twelve minutes, not ten: over seeds 1-12 the ten-minute check passed 7/12 without
+  walls and 8/12 with them; at twelve, 24/24 exactly one per hall).
+- **Not done / open:** latent side contacts -- 212 over the 1,037 maps, where a spire or a rock formation stands beside a ramp, or a
+  mineral patch that could be mined out; they open only if destroyed or mined. `aistyles` seed 5 (by hand, not the gate) fails its
+  weakest check, 7 vs 10 (PLAYTEST 110 has the numbers). `test/editor.js` (not in the gate) times out in its LAN half -- at HEAD
+  before this change too.
+
 ### The build path -- in this order, and why
 
-- **Phase 1 -- item 2, ramps (SIMULATION; stamped `js/map.js`; the build stamp moves once).** First, because it is the only item
+- **Phase 1 -- item 2, ramps (SIMULATION; stamped `js/map.js`; the build stamp moves once). DONE -- see above.** First, because it is the only item
   that changes the game rather than the picture: props must keep clear of the final ramp walls, the ramp art is drawn on the
   final geometry, and every later screenshot shows the real map. Measure again, design the rule (which side of each ramp is
   its low end and its high end; walls of cliff on both sides the whole length; the ends open), apply it in ONE place every

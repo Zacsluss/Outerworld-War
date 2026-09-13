@@ -87,18 +87,23 @@ run(`(() => {
 }
 
 // ================================================================ 3. the AI keeps a Queen per hall
+// Measured at TWELVE minutes (terrain queue item 2). At ten, the Queens for the fourth and fifth halls land in a burst between
+// minutes nine and ten, and which side of the mark it falls on is the seed's business: over seeds 1-12 the old ten-minute
+// check passed on 7 without walled ramps and 8 with them, and this seed flipped (.claude/review/terrain/queens-seeds.log). At
+// twelve every one of those 24 games has exactly one Queen per hall (queens-seeds12.log) -- so the check is now the stronger
+// statement, and still fails on the fault it was written for, one Queen all game.
 {
   const g = json(`(() => {
     G.init({ players: [{ race: 'Z', human: false, difficulty: 'normal', name: 'Z' }, { race: 'T', human: true, name: 'H' }], seed: 3, layout: 'temple' }); G.players[1].ai = null;
     const ai = G.players[0].ai, injects = {}, seen = new Set(), doneAt = {}, byMinute = [];
     let frozen = null;
-    for (let i = 1; i <= 24 * 60 * 10; i++) {
+    for (let i = 1; i <= 24 * 60 * 12; i++) {
       G.tick(); if (G.over && frozen === null) frozen = i;   // a solo AI kills the AI-less Terran; ticks no-op from then on
       for (const f of G.fields) if (f.kind === 'inject' && f.owner === 0 && !seen.has(f)) { seen.add(f); injects[f.hall.id] = (injects[f.hall.id] || 0) + 1; }
       if (i % 24 === 0) for (const h of G.units) if (h.alive && h.owner === 0 && h.def.spawnsLarva && h.done && doneAt[h.id] === undefined) doneAt[h.id] = i;
       if (i % 1440 === 0) byMinute.push(G.units.filter(u => u.alive && u.owner === 0 && u.def.id === 'queen').length + '/' + ai.mine(u => u.isBuilding && u.def.spawnsLarva).length);
     }
-    const end = frozen || 24 * 60 * 10;
+    const end = frozen || 24 * 60 * 12;
     const queens = ai.mine(u => u.def.id === 'queen'), halls = ai.mine(u => u.isBuilding && u.def.spawnsLarva);
     const settled = halls.filter(h => h.done && end - doneAt[h.id] >= 24 * 90);   // finished at least ninety seconds before the end
     return {
@@ -111,7 +116,7 @@ run(`(() => {
     };
   })()`);
   const distinct = new Set(g.homes.filter(h => h !== null)).size;
-  ok('a computer Zerg ends with one Queen per hall at ten minutes (was one Queen all game; measured 1/5) -- ' + g.byMinute.join(' '), g.queens >= 4 && g.queens >= g.halls - 1, JSON.stringify(g));
+  ok('a computer Zerg has one Queen per hall at twelve minutes (was one Queen all game; measured 1/5) -- ' + g.byMinute.join(' '), g.queens >= 4 && g.queens >= g.halls, JSON.stringify(g));
   ok('...every hall that has been finished for ninety seconds has been injected at least once (was 8/10/0/0/0)', g.settled.length >= 3 && g.settled.every(s => s.injects > 0), JSON.stringify(g.settled));
   ok('...each Queen is homed to a different hall, and every settled hall has one', distinct === g.queens - g.unhomedQueens && g.settled.every(s => s.queen), JSON.stringify([g.homes, g.settled]));
   ok('...and a homed Queen is not a support unit, so the army leaves without her (open task 23)', g.homedInSupport === 0 && g.queens - g.unhomedQueens >= 4, JSON.stringify([g.homedInSupport, g.unhomedQueens]));

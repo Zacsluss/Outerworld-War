@@ -293,6 +293,9 @@ const LOWERED_BLOCKED = -6;
 // patch holds, so a patch that has been worked hard is bare rock well before it runs dry -- you can
 // read how long a base has been running off the ground, which is the point of the attrition economy.
 const CHURN_SLOW = 0.25, MINE_STRIP = 2;
+// A ramp is at most RAMP_LEN tiles long, counted from the cliff row down, and shorter wherever the RAMP_CLEAR tiles straight
+// past its foot are not open ground. The whole rule is GameMap.wallRamps.
+const RAMP_LEN = 3, RAMP_CLEAR = 3;
 const MAP_FEATURES = {
   // hp is what it takes to remove one; they are deliberately in the range of a few units for a few
   // seconds rather than a siege operation, because the decision is WHETHER to open the lane and when,
@@ -336,7 +339,7 @@ const FEATURE_SAYS = { bridge: 'A bridge has collapsed.', rocks: 'A rock formati
 //                and one bridge, so dropping a bridge costs the attacker the short way, never the
 //                defender's ability to walk home.
 //   cliffs       three terraces. The main and its natural are both on high ground, the middle is not,
-//                and rock formations sit in two of the ramps.
+//                and a rock formation half-fills the natural's ramp.
 //
 // EVERY GENERATOR IS SEEDED AND PURE. Same key, same seed, same size -> byte-identical layout, on any
 // machine and in any call order; test/mapfeatures.js compares two generations tile for tile. The RNG
@@ -427,6 +430,14 @@ const Archetypes = {
     return false;
   },
   feat(L, kind, x, y, w, h, quadrants) { const f = { kind, x, y, w, h }; if (quadrants) f.quadrants = quadrants.slice(); L.features.push(f); },
+  // Is a random rock ellipse clear of every ramp rectangle, with a tile to spare? A blob dropped by seed onto a ramp turns a
+  // way up into a slot through boulders that GameMap.wallRamps cannot shape into a ramp -- measured on arch:basin:5:small, the
+  // one map of 525 still side-open with every other fix in (terrain queue item 2). A blob that fails is drawn from the stream
+  // all the same and simply not placed, so nothing drawn after it moves.
+  rockClear(L, cx, cy, rx, ry) {
+    const x0 = Math.floor(cx - rx) - 1, x1 = Math.ceil(cx + rx) + 1, y0 = Math.floor(cy - ry) - 1, y1 = Math.ceil(cy + ry) + 1;
+    return !L.ramps.some(r => x0 <= r[0] + r[2] - 1 && x1 >= r[0] && y0 <= r[1] + r[3] - 1 && y1 >= r[1]);
+  },
 
   // An expansion ON the central plateau, with the plateau guaranteed to be underneath it.
   //
@@ -460,10 +471,16 @@ const Archetypes = {
     const W = S.w, H = S.h, fx = f => Math.round(f * W), fy = f => Math.round(f * H);
     const pw = fx(this.rf(R, 0.22, 0.27)), ph = fy(this.rf(R, 0.19, 0.23));
     L.high.push(['rect', 3, 3, pw, ph], ['ellipse', pw * 0.55, ph * 0.55, pw * 0.5, ph * 0.5]);
-    const rw = Math.max(4, fx(0.035)), rx = 3 + pw - rw, ry = 3 + ph - 2;
+    // The ramp is two tiles in from the plateau's corner, as on cliffs and islands: an outer column on the corner of the cliff
+    // ring puts that side's wall in the gap beside the corner (GameMap.wallRamps; terrain queue item 2).
+    const rw = Math.max(4, fx(0.035)), rx = 3 + pw - rw - 2, ry = 3 + ph - 2;
     L.ramps.push([rx, ry, rw, Math.max(6, fy(0.06))]);                              // down from the plateau's inner corner
     this.base(L, S, Math.max(8, fx(0.08)), Math.max(8, fy(0.08)), 'main');
-    this.base(L, S, rx + fx(0.025), ry + fy(0.075), 'natural');
+    // The natural's mineral row lies four rows above its hall. Where that row would cross the walled ramp -- the 96-tile map,
+    // where fy(0.075) is 7 -- the natural stands east of the ramp instead, clear of its wall; elsewhere it is where it was. Moving
+    // it down instead was tried and pushed it into its own expansion on the small map, which then refused a town hall.
+    const ny = ry + fy(0.075);
+    this.base(L, S, ny - 4 <= ry + RAMP_LEN ? rx + rw + 6 : rx + fx(0.025), ny, 'natural');
     this.base(L, S, Math.max(8, fx(0.06)), fy(this.rf(R, 0.32, 0.36)), 'expo');
     this.base(L, S, fx(this.rf(R, 0.32, 0.36)), Math.max(8, fy(0.06)), 'expo');
     // the river: one band across the whole map, so its 4-fold mirror is itself
@@ -492,7 +509,7 @@ const Archetypes = {
     this.base(L, S, Math.max(8, fx(0.07)), fy(this.rf(R, 0.33, 0.39)), 'expo');
     this.base(L, S, fx(this.rf(R, 0.33, 0.39)), Math.max(8, fy(0.07)), 'expo');
     this.centreBase(L, S);
-    for (let i = 0; i < 3; i++) L.rocks.push(['ellipse', fx(this.rf(R, 0.26, 0.44)), fy(this.rf(R, 0.26, 0.44)), this.ri(R, 3, 5), this.ri(R, 3, 5)]);
+    for (let i = 0; i < 3; i++) { const e = ['ellipse', fx(this.rf(R, 0.26, 0.44)), fy(this.rf(R, 0.26, 0.44)), this.ri(R, 3, 5), this.ri(R, 3, 5)]; if (this.rockClear(L, e[1], e[2], e[3], e[4])) L.rocks.push(e); }
     this.feat(L, 'spire', fx(this.rf(R, 0.29, 0.33)), fy(this.rf(R, 0.16, 0.20)), 4, 4);
     this.feat(L, 'spire', fx(this.rf(R, 0.16, 0.20)), fy(this.rf(R, 0.29, 0.33)), 4, 4);
     this.feat(L, 'rocks', fx(0.5) - 2, fy(this.rf(R, 0.38, 0.41)), 4, 3);            // in front of the plateau ramp
@@ -506,7 +523,9 @@ const Archetypes = {
     const W = S.w, H = S.h, fx = f => Math.round(f * W), fy = f => Math.round(f * H);
     const pw = fx(this.rf(R, 0.16, 0.20)), ph = fy(this.rf(R, 0.14, 0.18));
     L.high.push(['rect', 3, 3, pw, ph]);
-    L.ramps.push([3 + pw - fx(0.03), 3 + ph - 2, Math.max(4, fx(0.03)), Math.max(5, fy(0.05))]);
+    // Two tiles in from the plateau's corner, not on it: a ramp whose outer column is the corner of the cliff ring has its wall
+    // standing in the gap beside the corner, and on arch:islands:13:medium that gap was the only way a 3x3 body left the main.
+    L.ramps.push([3 + pw - fx(0.03) - 2, 3 + ph - 2, Math.max(4, fx(0.03)), Math.max(5, fy(0.05))]);
     this.base(L, S, Math.max(8, fx(0.07)), Math.max(8, fy(0.07)), 'main');
     this.base(L, S, fx(this.rf(R, 0.23, 0.26)), fy(this.rf(R, 0.23, 0.26)), 'natural');
     this.base(L, S, Math.max(8, fx(0.06)), fy(this.rf(R, 0.38, 0.43)), 'expo');
@@ -525,8 +544,20 @@ const Archetypes = {
 
   // ---- vertical cliffs ---------------------------------------------------
   // Three terraces: the main, the natural above it, and a plateau in the middle that belongs to
-  // nobody. The ramp onto the natural has a rock formation sitting in it, so a player who wants a
-  // second way into their own expansion has to make one, and the attacker gets it too.
+  // nobody. The ramp onto the natural has a rock formation sitting in it, so the natural's way in
+  // is three tiles wide until somebody clears it -- and then it is wide for the attacker too.
+  //
+  // WHY THE RAMP IS WIDER THAN THE ROCKS (terrain queue item 2). The rocks used to fill the ramp's last two rows edge to edge,
+  // and the natural was reachable only because the ramp's sides were open: units walked round the rocks. Once ramps have walls
+  // (GameMap.wallRamps) a ramp-wide rock formation seals the only way onto terrace 2 with every feature shut. So the ramp is
+  // three tiles wider than the rocks, and the rocks lie across its first two walled rows at the west side: a unit, and a
+  // Thor, get past them; clearing them opens the rest.
+  //
+  // Two more changes, for the same reason, measured over 32 seeds a size. The main's ramp is two tiles in from the plateau's
+  // corner rather than on it -- on a 96-tile map the terraces are two tiles apart there, and a wall at the corner closed the
+  // only way a 3x3 body left the main. And the rock ellipse this used to drop is still drawn from the stream but not placed:
+  // its centre range, 0.30-0.36 of the map, lies inside terrace 2 on every seed, and on the small size it left the natural a
+  // winding path through boulders that no ramp rule can wall.
   cliffs(L, S, R) {
     const W = S.w, H = S.h, fx = f => Math.round(f * W), fy = f => Math.round(f * H);
     const rw = Math.max(4, fx(0.03)), rh = Math.max(7, fy(0.065));
@@ -536,17 +567,20 @@ const Archetypes = {
     const t2x = 3 + pw + fx(0.02), t2y = 3 + ph + fy(0.02);
     L.high.push(['rect', t2x, t2y, t2w, t2h]);                                       // terrace 2: the natural, also up
     L.high.push(['ellipse', W / 2 - 0.5, H / 2 - 0.5, fx(this.rf(R, 0.10, 0.12)), fy(this.rf(R, 0.10, 0.12))]);
-    const r1 = [3 + pw - rw, 3 + ph - 2, rw, rh];                                    // main -> low ground
-    const r2 = [t2x + Math.round(t2w / 2), t2y + t2h - 2, rw, rh];                   // low ground -> terrace 2
+    const r1 = [3 + pw - rw - 2, 3 + ph - 2, rw, rh];                                // main -> low ground
+    const r2 = [t2x + Math.round(t2w / 2) - Math.round((rw + 3) / 2), t2y + t2h - 2, rw + 3, rh];   // low ground -> terrace 2
     const r3 = [Math.round(W / 2) - Math.round(rw / 2), Math.round(H / 2) - fy(0.13) - 2, rw + 2, rh + 4];   // onto the middle
     L.ramps.push(r1, r2, r3);
     this.base(L, S, Math.max(8, fx(0.08)), Math.max(8, fy(0.08)), 'main');
     this.base(L, S, t2x + Math.round(t2w / 2) - 2, t2y + Math.round(t2h / 2) - 2, 'natural');
     this.base(L, S, Math.max(8, fx(0.06)), fy(this.rf(R, 0.36, 0.42)), 'expo');
     this.base(L, S, fx(this.rf(R, 0.36, 0.42)), Math.max(8, fy(0.06)), 'expo');
-    L.rocks.push(['ellipse', fx(this.rf(R, 0.30, 0.36)), fy(this.rf(R, 0.30, 0.36)), this.ri(R, 4, 6), this.ri(R, 4, 6)]);
-    this.feat(L, 'rocks', r2[0], r2[1] + r2[3] - 2, rw, 2);                           // rocks in the ramp onto terrace 2
-    this.feat(L, 'spire', fx(this.rf(R, 0.24, 0.29)), fy(this.rf(R, 0.40, 0.45)), 4, 4);
+    this.rf(R, 0.30, 0.36); this.rf(R, 0.30, 0.36); this.ri(R, 4, 6); this.ri(R, 4, 6);   // the rock ellipse: drawn, not placed (above)
+    this.feat(L, 'rocks', r2[0], r2[1] + 1, rw, 2);                                   // across the ramp's first two walled rows
+    // The spire stands west of the natural's ramp rectangle: the ramp is three tiles wider than it was, and a spire landing on
+    // its ramp tiles is refused by placeFeatures and vanishes from all four quadrants (arch:cliffs:2 lost both).
+    const sx = fx(this.rf(R, 0.24, 0.29)), sy = fy(this.rf(R, 0.40, 0.45));
+    this.feat(L, 'spire', sx + 4 >= r2[0] && sx <= r2[0] + r2[2] && sy + 4 >= r2[1] && sy <= r2[1] + r2[3] ? r2[0] - 5 : sx, sy, 4, 4);
   },
 
   // A digest of eight seeds of every generator, folded into the sample layouts below so that
@@ -724,6 +758,7 @@ class GameMap {
     // hole in a cliff, so this cannot run until they have all had their turn. The seal comes first of
     // the two: "a plateau no ramp touches is an island" is only true once the holes are shut.
     this.sealElevations(); this.flattenStrandedHeight();
+    this.wallRamps();        // after the seal, on heights that are final: see "ramps" below
     this.placeNeutrals(L);   // after the seal: a site must sit on ground whose height is final
     this.resById = new Map(this.resources.map(r => [r.id, r]));
     for (const f of this.features) this.resById.set(f.id, f);   // see the MAP_FEATURES comment: this is what snapshots them
@@ -1421,6 +1456,296 @@ class GameMap {
     return out.slice(0, 24);
   }
 
+  // ---------------- ramps: a way up is entered at its two ends, never from a side ----------------
+  //
+  // THE TERRAIN QUEUE, item 2 (the user, 2026-09-13): "Better-shaped ramps - can only go up them from base, NOT from sides of
+  // ramp". Measured before anything was designed (.claude/review/terrain/ramp-probe.js): 132 of 158 ramps over every layout,
+  // size and archetype could be walked onto from a side. Generation paints a plateau, rings it with a ONE-tile cliff and
+  // stamps each ramp RECTANGLE through the ring -- and the rectangles run past the ring into open low ground and back into
+  // the plateau, so the part outside has low ground on both sides and the part inside has high ground on both sides.
+  //
+  // Walls are TILES, not blocked edges: every RTS researched walls a ramp's sides with unwalkable cells (RESEARCH-TERRAIN.md
+  // 8.2), and everything here that reads walkability per tile -- the flood fills, findFreeTile, the unit-radius probes, the
+  // wide-body pathing -- sees a wall tile with no new concept. The Pathfinder already refuses a diagonal step past a blocked
+  // tile, so a 4-connected wall is tight. A wall is walk 0, cliff 1, and keeps the height it had.
+  //
+  // THE RULE, run once after the seal on the grid every generator and the editor produce:
+  //   1. A ramp is a 4-connected group of tiles walkable at height 1 in their most walkable state (a feature counts at the
+  //      height it presents when open; a resource never counts). Its UP direction is the axis from the centroid of the low
+  //      ground it touches to the centroid of the high ground it touches. A group with no high ground, no low ground, no
+  //      axis, or no tile with high ground straight above it and low ground straight below it is not a way up and is left.
+  //   2. SHAPE, to a fixpoint: every walkable tile beside a ramp tile, low ground above its top and high ground below its
+  //      foot become walls -- except that a ramp tile with high ground beside or below it and no low ground anywhere around
+  //      it is inside the plateau, and is promoted to high ground. Walls and promotions are decided on one state and applied
+  //      together, round after round, so a corner tile whose low side has just been walled is promoted next round, and no
+  //      scan order can make one mirror copy of a map differ from another. (Promotions first, walls after, was tried and
+  //      walled plateau tiles at the corners instead.)
+  //   3. LENGTH: depth is counted from the top along the axis, the cliff row being 1. A ramp keeps RAMP_LEN tiles, fewer
+  //      while the RAMP_CLEAR tiles straight past its foot are not open ground -- a Thor stepping off it has to be able to
+  //      turn -- and the rest becomes low ground, or a wall where it touches high ground or the kept ramp at a side. Walls
+  //      this pass made that nothing needs any more come down again. The rectangles were drawn for side-open ramps: kept at
+  //      their full five to thirteen tiles they would be walled piers into the low ground, corridors an army cannot turn in,
+  //      and on the fixed layouts a natural's mineral line under the foot trapped every 3x3 body in its main.
+  //   4. MEASURED, NOT HOPED: before anything moves, a flood from the first start records which bases and resources a unit
+  //      reaches with every feature shut and which bases a 3x3 body reaches with features shut and open. If the pass loses
+  //      any of them it is undone and redone ramp group by ramp group -- a ramp and its mirror images -- each at the longest
+  //      length that loses nothing, down to the cliff row alone. A group that loses something at every length is left as it
+  //      was and counted in rampReport.fallback, which test/ramps.js requires to be zero on every map it builds.
+  //
+  // Measured over every shipped layout and the four archetypes at four sizes on 64 seeds each (1,037 maps): 5,052 side-open
+  // ramps before, none after; no base, resource, hall or 3x3 route lost; the slow road taken on 14 small maps, the fallback
+  // never. That needed four generator fixes, each with its reason at the generator: cliffs, islands, chokepoint, basin.
+  wallRamps() {
+    const W = this.w, H = this.h, N = W * H, DX = [0, 0, -1, 1], DY = [-1, 1, 0, 0], OPP = [1, 0, 3, 2];   // N S W E
+    const report = this.rampReport = { groups: 0, slow: false, fallback: 0, lens: [], walls: 0 };
+    const keep = new Uint8Array(N);   // base clearings: a wall or a height change there takes the town hall away
+    for (const b of this.bases) this.rect(b.x - 1, b.y - 1, 6, 5, (x, y) => { keep[this.idx(x, y)] = 1; });
+    // A feature tile's height when open, kept beside the grids because the pass can move a feature's remembered ground.
+    const openH = new Int8Array(N).fill(-1);
+    for (const f of this.features) { const K = MAP_FEATURES[f.kind]; f.tiles.forEach((t, k) => { openH[t] = K.openHeight === null ? f.baseH[k] : K.openHeight; }); }
+    const at = (i, d) => { if (i < 0) return -1; const x = i % W + DX[d], y = ((i / W) | 0) + DY[d]; return x < 0 || y < 0 || x >= W || y >= H ? -1 : y * W + x; };
+    // -1 never walkable (cliff, rock, a resource, off the map), else the height the tile has in its most walkable state
+    const cls = i => i < 0 ? -1 : this.featTile && this.featTile[i] >= 0 ? openH[i] : this.walk[i] === 1 && this.blocked[i] === -1 ? this.height[i] : -1;
+    const side = d => d < 2 ? [2, 3] : [0, 1];
+    // ---- the ramps, their axes and their mirror groups, from the map as it arrived ----
+    const up0 = new Int8Array(N).fill(-1), lab = new Int32Array(N).fill(-1), comps = [];
+    for (let s = 0; s < N; s++) {
+      if (lab[s] >= 0 || cls(s) !== 1) continue;
+      const q = [s], box = [W, H, -1, -1]; let hx = 0, hy = 0, hn = 0, lx = 0, ly = 0, ln = 0; lab[s] = comps.length;
+      for (let k = 0; k < q.length; k++) {
+        const i = q[k], x = i % W, y = (i / W) | 0;
+        if (x < box[0]) box[0] = x; if (y < box[1]) box[1] = y; if (x > box[2]) box[2] = x; if (y > box[3]) box[3] = y;
+        for (let d = 0; d < 4; d++) {
+          const j = at(i, d), c = cls(j);
+          if (c === 1) { if (lab[j] < 0) { lab[j] = comps.length; q.push(j); } }
+          else if (c === 2) { hx += 2 * x + DX[d]; hy += 2 * y + DY[d]; hn++; }
+          else if (c === 0) { lx += 2 * x + DX[d]; ly += 2 * y + DY[d]; ln++; }
+        }
+      }
+      // integer centroids (doubled coordinates, cross-multiplied counts): no rounding for a mirror image to disagree about
+      let U = -1;
+      if (hn && ln) { const vx = hx * ln - lx * hn, vy = hy * ln - ly * hn; if (Math.abs(vx) > Math.abs(vy)) U = vx < 0 ? 2 : 3; else if (vy !== 0) U = vy < 0 ? 0 : 1; }
+      let top = 0, foot = 0;
+      if (U >= 0) for (const t of q) { if (cls(at(t, U)) === 2) top++; if (cls(at(t, OPP[U])) === 0) foot++; }
+      const live = top > 0 && foot > 0;
+      if (live) for (const t of q) up0[t] = U;
+      comps.push({ tiles: q, box, live, group: -1 });
+    }
+    // A group is a ramp with its mirror images (bounding boxes that map onto each other), so the slow road below never
+    // walls one quadrant's copy and not another's. Ordered by lowest tile, which no mirror can reorder.
+    const groups = [];
+    for (let a = 0; a < comps.length; a++) {
+      const A = comps[a]; if (!A.live || A.group >= 0) continue;
+      const b = A.box, imgs = [b, [W - 1 - b[2], b[1], W - 1 - b[0], b[3]], [b[0], H - 1 - b[3], b[2], H - 1 - b[1]], [W - 1 - b[2], H - 1 - b[3], W - 1 - b[0], H - 1 - b[1]]];
+      const g = { comps: [], min: N };
+      for (let c = a; c < comps.length; c++) {
+        const C = comps[c]; if (!C.live || C.group >= 0) continue;
+        if (!imgs.some(m => m[0] === C.box[0] && m[1] === C.box[1] && m[2] === C.box[2] && m[3] === C.box[3])) continue;
+        C.group = groups.length; g.comps.push(c); for (const t of C.tiles) if (t < g.min) g.min = t;
+      }
+      groups.push(g);
+    }
+    groups.sort((p, r) => p.min - r.min);
+    report.groups = groups.length;
+    if (!groups.length) return report;
+    // ---- one application of the rule to some ramps, at a length ----
+    const apply = (ids, cap) => {
+      const up = new Int8Array(N).fill(-1), made = new Uint8Array(N), own = [];
+      for (const k of ids) for (const t of comps[k].tiles) { up[t] = up0[t]; own.push(t); }
+      const setH = (i, h) => {
+        if (keep[i]) return 0;
+        const fi = this.featTile ? this.featTile[i] : -1;
+        if (fi >= 0) {   // through the feature, as _demoteToRamp does: its tiles must keep drawing and walking as the feature
+          const f = this.features[fi]; if (MAP_FEATURES[f.kind].openHeight !== null) return 0;
+          const k = f.tiles.indexOf(i); if (f.baseH[k] === h) return 0;
+          f.baseH[k] = h; openH[i] = h; this.syncFeature(f); return 1;
+        }
+        if (this.height[i] === h) return 0; this.height[i] = h; return 1;
+      };
+      const wall = i => {
+        if (keep[i] || (this.featTile && this.featTile[i] >= 0) || this.blocked[i] !== -1 || this.walk[i] !== 1) return 0;
+        this.walk[i] = 0; this.cliff[i] = 1; made[i] = 1; return 1;
+      };
+      const shape = () => {
+        for (let round = 0; round < 256; round++) {
+          const walls = new Set(), prom = [];
+          for (const i of own) {
+            if (cls(i) !== 1) continue;
+            const U = up[i], D = OPP[U]; let low = false, inside = false;
+            for (let d = 0; d < 4; d++) if (cls(at(i, d)) === 0) low = true;
+            for (const p of side(U)) { const n = at(i, p), c = cls(n); if (c === 0) walls.add(n); else if (c === 2) { if (low) walls.add(n); else inside = true; } }
+            const nu = at(i, U); if (cls(nu) === 0) walls.add(nu);
+            const nd = at(i, D); if (cls(nd) === 2) { if (low) walls.add(nd); else inside = true; }
+            if (inside) prom.push(i);
+          }
+          let changed = 0;
+          for (const w of walls) changed += wall(w);
+          for (const p of prom) changed += setH(p, 2);
+          if (!changed) return;
+        }
+      };
+      shape();
+      // depth from the top along the axis; a tile whose way up is rock is as deep as its shallowest neighbour across
+      const depth = new Int32Array(N);
+      for (let pass = 0; pass < 512; pass++) {
+        let moved = 0;
+        for (const i of own) {
+          if (cls(i) !== 1) continue;
+          const U = up[i], u = at(i, U), cu = cls(u); let dd = 0;
+          if (cu === 2) dd = 1;
+          else if (cu === 1 && up[u] === U && depth[u] > 0) dd = depth[u] + 1;
+          else if (cu < 0) for (const p of side(U)) { const n = at(i, p); if (n >= 0 && cls(n) === 1 && up[n] === U && depth[n] > 0 && (!dd || depth[n] < dd)) dd = depth[n]; }
+          if (dd !== depth[i]) { depth[i] = dd; moved++; }
+        }
+        if (!moved) break;
+      }
+      const lenOf = new Map();
+      for (const k of ids) {
+        let len = cap;
+        for (; len > 1; len--) {
+          let ok = true;
+          for (const t of comps[k].tiles) {
+            if (!ok) break;
+            if (cls(t) !== 1 || depth[t] < 1 || depth[t] > len) continue;
+            const D = OPP[up[t]], nd = at(t, D);
+            if (nd >= 0 && cls(nd) === 1 && depth[nd] >= 1 && depth[nd] <= len) continue;   // not at the foot
+            for (let step = 0, p = t; step < RAMP_CLEAR; step++) {
+              p = at(p, D);
+              if (p < 0 || (this.featTile && this.featTile[p] >= 0)) { ok = false; break; }   // a feature: shut, in the worst case
+              if (made[p]) continue;                                                        // one of ours: it comes down if nothing needs it
+              const c = cls(p);
+              if (c === 1 && depth[p] > len) continue;                                      // the part being cut off becomes open ground
+              if (c < 0) { ok = false; break; }
+            }
+          }
+          if (ok) break;
+        }
+        lenOf.set(k, len); report.lens.push(len);
+      }
+      const kept = i => i >= 0 && up[i] >= 0 && cls(i) === 1 && depth[i] >= 1 && depth[i] <= lenOf.get(lab[i]);
+      const cutWall = [], cutLow = [];
+      for (const i of own) {
+        if (cls(i) !== 1 || kept(i)) continue;
+        let high = false, beside = false;
+        for (let d = 0; d < 4; d++) if (cls(at(i, d)) === 2) high = true;
+        for (const p of side(up[i])) if (kept(at(i, p))) beside = true;
+        (high || beside ? cutWall : cutLow).push(i);
+      }
+      for (const i of cutWall) wall(i);
+      for (const i of cutLow) setH(i, 0);
+      // Walls this pass made that no kept ramp tile touches, and that part no high ground from low, come down again --
+      // decided on one state, and a pair that would only be safe one at a time both stay, so scan order cannot matter.
+      const cut = new Set(cutWall), down = new Set();
+      for (let i = 0; i < N; i++) {
+        if (!made[i] || this.walk[i] === 1 || cut.has(i)) continue;
+        let need = false;
+        for (let d = 0; d < 4; d++) { const n = at(i, d), c = cls(n); if (kept(n) || (c === 2 && this.height[i] === 0) || (c === 0 && this.height[i] === 2)) need = true; }
+        if (!need) down.add(i);
+      }
+      for (let again = true; again;) {
+        again = false;
+        for (const i of down) for (let d = 0; d < 4; d++) { const n = at(i, d); if (down.has(n) && this.height[n] !== this.height[i] && this.height[n] + this.height[i] === 2) { down.delete(i); down.delete(n); again = true; break; } }
+      }
+      for (const i of down) { this.walk[i] = 1; this.cliff[i] = 0; }
+      shape();
+    };
+    const snap = () => ({ h: this.height.slice(), w: this.walk.slice(), c: this.cliff.slice(), f: this.features.map(f => f.baseH.slice()), o: openH.slice() });
+    const restore = S => { this.height.set(S.h); this.walk.set(S.w); this.cliff.set(S.c); openH.set(S.o); this.features.forEach((f, k) => { f.baseH.set(S.f[k]); this.syncFeature(f); }); };
+    const worse = (a, b) => { if (!a) return false; for (let i = 0; i < a.length; i++) if (a[i] && !b[i]) return true; return false; };
+    const before = this._rampReach(openH), S0 = snap(), all = [];
+    for (const g of groups) for (const c of g.comps) all.push(c);
+    apply(all, RAMP_LEN);
+    if (worse(before, this._rampReach(openH))) {
+      // the slow road: undo, then group by group, each at the longest length that loses nothing
+      restore(S0); report.slow = true; report.lens = [];
+      for (const g of groups) {
+        let done = false;
+        for (let len = RAMP_LEN; len >= 1 && !done; len--) {
+          const S1 = snap();
+          apply(g.comps, len);
+          if (!worse(before, this._rampReach(openH))) done = true; else restore(S1);
+        }
+        if (!done) report.fallback++;
+      }
+    }
+    for (let i = 0; i < N; i++) if (S0.w[i] === 1 && this.walk[i] === 0) report.walls++;
+    return report;
+  }
+  // What wallRamps must never make worse, as one flat array of 0/1: per base, a unit reaches its anchor with every feature
+  // shut, a 3x3 body reaches its surroundings with features shut, and with them open; per resource, a unit reaches a tile
+  // beside it. Flooded from the first start, which on a connected map reaches everything any start does. A 3x3 body is
+  // Pathfinder.find's wide test (all eight neighbours walkable), taken as a row pass and a column pass.
+  _rampReach(openH) {
+    const W = this.w, H = this.h, N = W * H, s = this.starts[0]; if (!s) return null;
+    const shut = new Uint8Array(N), open = new Uint8Array(N);
+    for (let i = 0; i < N; i++) {
+      const fi = this.featTile ? this.featTile[i] : -1;
+      shut[i] = fi < 0 && this.walk[i] === 1 && this.blocked[i] === -1 ? 1 : 0;
+      open[i] = fi >= 0 ? (openH[i] >= 0 ? 1 : 0) : shut[i];
+    }
+    const fits = g => {
+      const h = new Uint8Array(N), f = new Uint8Array(N);
+      for (let y = 0; y < H; y++) for (let x = 1; x < W - 1; x++) { const i = y * W + x; h[i] = g[i - 1] & g[i] & g[i + 1]; }
+      for (let i = W; i < N - W; i++) f[i] = h[i - W] & h[i] & h[i + W];
+      return f;
+    };
+    const flood = (g, seeds) => {
+      const seen = new Uint8Array(N), q = [];
+      for (const a of seeds) if (g[a] && !seen[a]) { seen[a] = 1; q.push(a); }
+      for (let k = 0; k < q.length; k++) {
+        const i = q[k], x = i % W;
+        if (x > 0 && g[i - 1] && !seen[i - 1]) { seen[i - 1] = 1; q.push(i - 1); }
+        if (x < W - 1 && g[i + 1] && !seen[i + 1]) { seen[i + 1] = 1; q.push(i + 1); }
+        if (i >= W && g[i - W] && !seen[i - W]) { seen[i - W] = 1; q.push(i - W); }
+        if (i < N - W && g[i + W] && !seen[i + W]) { seen[i + W] = 1; q.push(i + W); }
+      }
+      return seen;
+    };
+    const home = []; this.rect(s.x - 3, s.y - 3, 11, 10, (x, y) => { home.push(y * W + x); });
+    const narrow = flood(shut, home), wideShut = flood(fits(shut), home), wideOpen = flood(fits(open), home);
+    const near = (seen, b) => { let hit = 0; this.rect(b.x - 3, b.y - 3, 10, 9, (x, y) => { if (seen[y * W + x]) hit = 1; }); return hit; };
+    const sig = [];
+    for (const b of this.bases) sig.push(narrow[this.baseAnchor(b)], near(wideShut, b), near(wideOpen, b));
+    for (const r of this.resources) { let hit = 0; this.rect(r.x - 1, r.y - 1, r.w + 2, r.h + 2, (x, y) => { if ((x < r.x || x >= r.x + r.w) !== (y < r.y || y >= r.y + r.h) && narrow[y * W + x]) hit = 1; }); sig.push(hit); }
+    return sig;
+  }
+  // Every way onto a ramp other than its two ends, in the words a test or the editor would want. Empty is good, and it is empty
+  // on every layout this build ships. The axis is judged with features open, as wallRamps judges it -- a rock formation filling
+  // half a ramp must not turn its foot into a side -- and the ground around is judged as it stands: a feature standing there,
+  // or a resource, is not a way on.
+  rampProblems() {
+    const W = this.w, H = this.h, N = W * H, DX = [0, 0, -1, 1], DY = [-1, 1, 0, 0], OPP = [1, 0, 3, 2], out = [];
+    const openH = i => { const fi = this.featTile ? this.featTile[i] : -1; if (fi < 0) return this.walk[i] === 1 && this.blocked[i] === -1 ? this.height[i] : -1; const f = this.features[fi], K = MAP_FEATURES[f.kind]; return K.openHeight === null ? f.baseH[f.tiles.indexOf(i)] : K.openHeight; };
+    const live = i => this.walk[i] === 1 && this.blocked[i] === -1 ? this.height[i] : -1;
+    const at = (i, d) => { const x = i % W + DX[d], y = ((i / W) | 0) + DY[d]; return x < 0 || y < 0 || x >= W || y >= H ? -1 : y * W + x; };
+    const axis = new Int8Array(N).fill(-1), seen = new Uint8Array(N);
+    for (let s = 0; s < N; s++) {
+      if (seen[s] || openH(s) !== 1) continue;
+      const q = [s]; let hx = 0, hy = 0, hn = 0, lx = 0, ly = 0, ln = 0; seen[s] = 1;
+      for (let k = 0; k < q.length; k++) {
+        const i = q[k], x = i % W, y = (i / W) | 0;
+        for (let d = 0; d < 4; d++) {
+          const j = at(i, d); if (j < 0) continue; const c = openH(j);
+          if (c === 1) { if (!seen[j]) { seen[j] = 1; q.push(j); } }
+          else if (c === 2) { hx += 2 * x + DX[d]; hy += 2 * y + DY[d]; hn++; }
+          else if (c === 0) { lx += 2 * x + DX[d]; ly += 2 * y + DY[d]; ln++; }
+        }
+      }
+      if (!hn || !ln) continue;
+      const vx = hx * ln - lx * hn, vy = hy * ln - ly * hn, U = Math.abs(vx) > Math.abs(vy) ? (vx < 0 ? 2 : 3) : vy !== 0 ? (vy < 0 ? 0 : 1) : -1;
+      for (const t of q) axis[t] = U;
+    }
+    for (let i = 0; i < N && out.length < 24; i++) {
+      const U = axis[i]; if (U < 0 || live(i) !== 1) continue;
+      for (const d of [0, 1, 2, 3]) {
+        const j = at(i, d); if (j < 0) continue;
+        const c = live(j), bad = d === U ? c === 0 : d === OPP[U] ? c === 2 : (c === 0 || c === 2);
+        if (bad) out.push('ramp tile ' + (i % W) + ',' + ((i / W) | 0) + ' is entered from ' + (c === 0 ? 'low' : 'high') + ' ground at ' + (j % W) + ',' + ((j / W) | 0) + (d === U ? ', above its top' : d === OPP[U] ? ', below its foot' : ', at its side'));
+      }
+    }
+    return out.slice(0, 24);
+  }
+
   // ---------------- custom (editor-made) maps ----------------
   // A custom layout stores the painted height grid and rock grid run-length encoded, plus explicit
   // bases. Cliff edges are derived here exactly as for the built-in layouts, so the editor only has
@@ -1463,6 +1788,7 @@ class GameMap {
     // freely and the base clearing above opens a 6x5 wherever the author put a hall, so a town hall
     // painted on the lip of a plateau is exactly the Twilight Valley hole with a person behind it.
     this.sealElevations(); this.flattenStrandedHeight();
+    this.wallRamps();        // an editor map's ramps get the same walls as a generated map's
     this.placeNeutrals(L);   // after the seal: a site must sit on ground whose height is final
     this.resById = new Map(this.resources.map(r => [r.id, r]));
   }

@@ -40,8 +40,13 @@ const SRC = `(() => {
 
   // ---- a razed building leaves a hulk that blocks pathing and lifts height ----
   init();
-  const b = G.placeBuilding(DATA.buildings.factory, 30, 30, 0); G.completeBuilding(b);
-  const bi = G.map.idx(31, 31);
+  // On Lost Ruins' main ramp, which is four tiles wide and three long since ramps have walls (GameMap.wallRamps): the factory
+  // covers it exactly, and a hulk on a ramp is the case paintWreck's height rule was written for. The footprint is checked
+  // first, so a later change to the ramp says so here instead of as a short hulk.
+  const FX = 31, FY = 29;
+  out.footClear = []; G.map.rect(FX, FY, 4, 3, (x, y) => { const i = G.map.idx(x, y); if (G.map.walk[i] !== 1 || G.map.blocked[i] !== -1 || G.map.height[i] !== 1) out.footClear.push(x + ',' + y); });
+  const b = G.placeBuilding(DATA.buildings.factory, FX, FY, 0); G.completeBuilding(b);
+  const bi = G.map.idx(FX + 1, FY + 1);
   const beforeH = G.map.height[bi];
   G.kill(b, null);
   out.hulk = {
@@ -127,6 +132,7 @@ ok(r.speed.groundAfter < r.speed.groundBefore, 'churned ground slows a ground un
 ok(Math.abs(r.speed.groundAfter - r.speed.groundBefore * 0.75) < 1e-9, '...by exactly CHURN_SLOW at full churn', JSON.stringify(r.speed));
 ok(r.speed.airAfter === r.speed.airBefore, 'and does not slow anything flying over it', JSON.stringify(r.speed));
 
+ok(r.footClear.length === 0, 'the factory stands on twelve open ramp tiles (Lost Ruins\' main ramp)', r.footClear.join(' '));
 ok(r.hulk.n === 1 && r.hulk.covers === 12, 'a razed 4x3 factory leaves one hulk covering its whole footprint', JSON.stringify(r.hulk));
 ok(r.hulk.walk === 0 && r.hulk.blocked === -5, 'the hulk blocks pathing', JSON.stringify(r.hulk));
 ok(r.hulk.height === 2, 'and stands at height 2, the only lever this engine has that moves vision', JSON.stringify(r.hulk));
