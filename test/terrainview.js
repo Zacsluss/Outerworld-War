@@ -19,6 +19,11 @@
 //  9. NO SEAM BETWEEN CHUNKS AT ANY ZOOM (the user's playtest: "dark tile lines in a grid"): in device pixels, every pixel on a
 //     boundary between two chunks is covered whole by the chunk drawn first, the other drawn after it, and no chunk is stretched by
 //     more than a pixel; at zoom 1 every chunk is exactly its size, on whole pixels.
+// 11. THE FIRST FRAME IS THE FINISHED GROUND (the user's playtest: "I see the old textures and then the new textures load in"): a game
+//     starts behind a loading screen -- no world frame drawn, no chunk baked, the simulation held, input ignored -- while the textures
+//     load; then the far view, the minimap and every chunk of the start view at the display's ratio are made before the first frame,
+//     which replaces none of them; a texture that never comes gives up the wait; the classic look is ready at once; the boot fetches
+//     every set's files; a texture of another set arriving drops nothing; the loading screen shows the map's painted picture.
 // 10. SHARP GROUND: a chunk in view is refined to the least of 1, 1.5 and 2 covering the device pixels a world pixel spans; only once
 //     nothing in view is missing; REFINE_MS of a frame at a time -- a row a draw at 0, one chunk a draw with no limit, never two --
 //     nearest the middle first; swapped in whole, the old canvas freed; a job dropped with its chunk; nothing refined on a 1x display
@@ -434,5 +439,119 @@ ok(refine.perDraw.length > 0 && refine.perDraw.every(n => n === 1) && refine.nea
 ok(refine.dropped.hadJob && refine.dropped.rebuiltAtOne && refine.dropped.oldJobGone && refine.dropped.notSwapped, 'sharp: a job whose chunk is dropped under it is dropped too; the chunk baked again at ratio 1 is not replaced by the old job', JSON.stringify(refine.dropped));
 ok(refine.oneX.sharpened === 0 && refine.oneX.allAtOne, 'sharp: on a 1x display at zoom 1 nothing is refined', JSON.stringify(refine.oneX));
 
-ok(errors.length === 0, 'no console errors', JSON.stringify(errors.slice(0, 3)));
-summary();
+// ---------------------------------------------------------------------------------------------------------------------------
+// 11. The first frame is the finished ground
+// ---------------------------------------------------------------------------------------------------------------------------
+(async () => {
+  const flush = () => new Promise(r => setImmediate(r));
+  vm.runInContext(`
+    // an Image that can decode, as a browser's can: Terrain.canPrepare is true while it is there
+    Image.prototype.decode = function () { return Promise.resolve(); };
+    TT.spy = { frames: 0, bakes: 0, palette: 0, drawPrep: 0, first: null };
+    TT.real = { frame: Render.frame, chunk: Terrain.renderChunk, steps: Terrain.texBakeSteps, drawPrep: UI.drawPrep, texSet: Terrain.texSet };
+    // texture data only once every file of the set is in, as the real texSet: the gate the loading screen waits on
+    Terrain.texSet = function () { if (!this.textured || !TERRAIN_TEX[this.setId]) return null; return Object.values(TERRAIN_TEX[this.setId]).every(u => this._tex[u] && this._tex[u].ok) ? TT.T : null; };
+    Terrain.renderChunk = function (...a) { TT.spy.bakes++; if (!this.texSet()) TT.spy.palette++; return TT.real.chunk.apply(this, a); };
+    Terrain.texBakeSteps = function* (...a) { TT.spy.bakes++; return yield* TT.real.steps.apply(this, a); };
+    UI.drawPrep = function (...a) { TT.spy.drawPrep++; return TT.real.drawPrep.apply(this, a); };
+    TT.real.paint = Terrain.paintOverviewTex;
+    Terrain.paintOverviewTex = function (T, img, tx0, ty0, tx1, ty1) { if (UI.prep) TT.spy.maxRows = Math.max(TT.spy.maxRows || 0, ty1 - ty0); return TT.real.paint.apply(this, arguments); };
+    Render.frame = function (...a) {
+      const s = TT.spy; s.frames++;
+      if (!s.first) {
+        const v = TT.view(), before = v.keys.map(k => Terrain.chunks.get(k)), K = Terrain.sharpK(Render.zoom);
+        s.first = { keys: v.keys.length, baked: before.filter(Boolean).length, textured: before.filter(c => c && c.tex).length, sharp: before.filter(c => c && c.tex && (c.k || 1) >= K).length, K, overTex: !!Terrain._overTex, mini: !!Render.mini, sim: G.frame };
+        const r = TT.real.frame.apply(this, a);
+        s.first.replaced = v.keys.filter((k, i) => Terrain.chunks.get(k) !== before[i]).length;
+        return r;
+      }
+      return TT.real.frame.apply(this, a);
+    };
+    TT.go = (layout, textured) => {
+      TT.spy.frames = 0; TT.spy.bakes = 0; TT.spy.palette = 0; TT.spy.drawPrep = 0; TT.spy.first = null; TT.spy.maxRows = 0;
+      Terrain._tex = {}; Terrain._bakedAt = undefined; Terrain.textured = textured !== false;
+      // a small view (four to six chunks): a bake at 1.5 is slow inside a vm harness, and the rule is the same for any number
+      Render.W = 520; Render.H = 440; Render.viewW = 520; Render.viewH = 300; Render.dpr = 1.5;
+      UI.start({ players: [{ race: 'T', human: true, name: 'A', team: 1 }, { race: 'Z', human: false, name: 'B', team: 2 }], seed: 4, layout });
+      UI.menu = null; G.paused = false; for (const p of G.players) p.ai = null;
+      Render.W = 520; Render.H = 440; Render.viewW = 520; Render.viewH = 300; Render.dpr = 1.5;
+      TT.urls = Object.values(TERRAIN_TEX[Terrain.setId] || {});
+    };
+    TT.tick = () => { UI.lastT = performance.now() - 100; UI.simStep(); };
+  `, ctx);
+  const loopUntilDone = async n => { for (let i = 0; i < n; i++) { if (!R('UI.loop(performance.now()); return !!UI.prep;')) return i + 1; await flush(); } return -1; };
+
+  // the loading screen, while the files have not come
+  R("TT.go('temple');");
+  const waiting = R(`
+    const out = { prep: !!UI.prep };
+    const mx = UI.mouse.x; UI.onDown({ clientX: mx + 37, clientY: 11, button: 0, preventDefault() {} }); out.inputIgnored = UI.mouse.x === mx;
+    for (let i = 0; i < 20; i++) { UI.loop(performance.now()); TT.tick(); }
+    out.entries = TT.urls.length > 0 && TT.urls.every(u => !!Terrain._tex[u]);
+    return Object.assign(out, { frames: TT.spy.frames, drawPrep: TT.spy.drawPrep, bakes: TT.spy.bakes, chunks: Terrain.chunks.size, sim: G.frame, still: !!UI.prep, label: UI.prep && UI.prep.label });
+  `);
+  ok(waiting.prep && waiting.entries && waiting.still && waiting.frames === 0 && waiting.drawPrep === 20 && waiting.bakes === 0 && waiting.chunks === 0 && waiting.sim === 0 && waiting.inputIgnored,
+    'first frame: a game starts behind a loading screen -- twenty frames of it while the textures are on their way: no world frame drawn, no ground baked, the simulation held, a click ignored', JSON.stringify(waiting));
+  await flush();
+  R('for (const u of TT.urls) Terrain._tex[u].img.onload();');
+  const loops = await loopUntilDone(3000);
+  const ready = R(`
+    const s = TT.spy.first || {}; TT.tick(); TT.tick();
+    return Object.assign({}, s, { palette: TT.spy.palette, frames: TT.spy.frames, simAfter: G.frame, prep: !!UI.prep, maxRows: TT.spy.maxRows, rows: G.map.h });
+  `);
+  ok(loops > 0 && !ready.prep && ready.keys >= 4 && ready.baked === ready.keys && ready.sharp === ready.keys && ready.K === 1.5 && ready.overTex && ready.mini && ready.palette === 0,
+    'first frame: once they arrive, the far view is painted from them, the minimap built, and all ' + ready.keys + ' chunks of the start view baked at the display\'s ratio (1.5) before the first frame is drawn -- and not one classic chunk, ever', JSON.stringify(ready));
+  ok(ready.replaced === 0 && ready.sim === 0 && ready.simAfter > 0, 'first frame: the first frame replaces none of those chunks, the simulation starts at frame 0 and then runs', JSON.stringify(ready));
+  ok(ready.maxRows > 0 && ready.maxRows <= 4, 'first frame: the far view is painted four rows a slice (at most ' + ready.maxRows + ' of ' + ready.rows + '), so no frame of the loading screen stops for the whole map', JSON.stringify(ready));
+
+  // the picture on the loading screen, and a texture of another set arriving
+  const screen = R(`
+    TT.go('temple'); UI.loop(performance.now()); for (const u of TT.urls) Terrain._tex[u].img.onload();
+    return 1;
+  `);
+  let shown = null;
+  for (let i = 0; i < 3000 && !shown; i++) {
+    shown = R(`if (!UI.prep) return { ended: true }; UI.loop(performance.now()); if (!UI.prep || !Terrain._over || !Terrain._overTex || Terrain._overMap !== G.map) return null;
+      _rec.reset(); _rec.on = true; UI.drawPrep(); _rec.on = false;
+      const name = MAP_LAYOUTS[G.layout].name.toUpperCase();
+      return { picture: _rec.ops.some(o => o.op === 'drawImage' && o.src === Terrain._over), title: _rec.ops.some(o => o.op === 'fillText' && o.a[0] === name), name };`);
+    await flush();
+  }
+  await loopUntilDone(3000);
+  ok(!!shown && shown.picture && shown.title, 'first frame: the loading screen shows the map\'s name and, once it is painted, its picture -- the far view itself', JSON.stringify(shown));
+  const other = R(`
+    Terrain.chunks.set('0,0', Terrain.renderChunk(0, 0)); const mine = Terrain.chunks.get('0,0');
+    const foreign = Object.values(TERRAIN_TEX).flatMap(s => Object.values(s)).find(u => !TT.urls.includes(u));
+    const f = Terrain.texEntry(foreign); f.ok = false; f.img.onload();
+    const kept = Terrain.chunks.get('0,0') === mine;
+    const own = Terrain._tex[TT.urls[0]]; own.ok = false; own.img.onload();
+    return { kept, droppedByOwn: !Terrain.chunks.has('0,0') };
+  `);
+  ok(other.kept && other.droppedByOwn, 'first frame: a texture of another set arriving drops no chunk; one of the map\'s own set does', JSON.stringify(other));
+
+  // a texture that never comes, and the classic look
+  R("TT.go('temple'); Terrain.PREP_WAIT_MS = 0;");
+  const gaveUpIn = await loopUntilDone(200);
+  const gaveUp = R('const r = { frames: TT.spy.frames }; TT.tick(); r.sim = G.frame; Terrain.PREP_WAIT_MS = 20000; return r;');
+  ok(gaveUpIn > 0 && gaveUpIn < 50 && gaveUp.frames >= 1 && gaveUp.sim > 0, 'first frame: when the textures never come the loading screen gives up after PREP_WAIT_MS (' + gaveUpIn + ' frames at 0) and the game starts in the classic look', JSON.stringify(gaveUp));
+  R("TT.go('temple', false);");
+  const classicIn = await loopUntilDone(400);
+  const classic = R('const s = TT.spy.first || {}; return Object.assign({}, s, { loops: 0 });');
+  ok(classicIn > 0 && classic.keys >= 4 && classic.baked === classic.keys && classic.textured === 0 && classic.replaced === 0, 'first frame: in the classic look nothing is waited for, and the start view is baked before the first frame too (' + classicIn + ' frames of loading screen)', JSON.stringify(classic));
+
+  // the boot, and where no image can load
+  const boot = R(`
+    Terrain._tex = {}; const n = Terrain.preloadTextures(), urls = [...new Set(Object.values(TERRAIN_TEX).flatMap(s => Object.values(s)))];
+    const out = { n, unique: urls.length, all: urls.every(u => !!Terrain._tex[u]) };
+    const d = Image.prototype.decode; delete Image.prototype.decode;
+    try { Terrain._tex = {}; out.headless = Terrain.preloadTextures(); TT.go('temple'); out.headlessPrep = !!UI.prep; } finally { Image.prototype.decode = d; }
+    return out;
+  `);
+  const uiSrc = fs.readFileSync(path.join(root, 'js', 'ui.js'), 'utf8'), bootAt = uiSrc.indexOf("window.addEventListener('DOMContentLoaded'");
+  const bootCalls = bootAt >= 0 && /Terrain\.preloadTextures\(\)/.test(uiSrc.slice(bootAt, bootAt + 600));
+  ok(boot.all && boot.unique >= 13 && boot.headless === 0 && !boot.headlessPrep && bootCalls, 'first frame: the boot fetches every set\'s ' + boot.unique + ' texture files while the player is in the menus; where no image can load (these suites) nothing is fetched and a game starts at once', JSON.stringify(Object.assign({ bootCalls }, boot)));
+
+  vm.runInContext(`Render.frame = TT.real.frame; Terrain.renderChunk = TT.real.chunk; Terrain.texBakeSteps = TT.real.steps; UI.drawPrep = TT.real.drawPrep; Terrain.texSet = TT.real.texSet; Terrain.paintOverviewTex = TT.real.paint; delete Image.prototype.decode; Render.dpr = 1;`, ctx);
+  ok(errors.length === 0, 'no console errors', JSON.stringify(errors.slice(0, 3)));
+  summary();
+})();

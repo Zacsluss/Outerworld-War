@@ -345,3 +345,19 @@ Licence: CC0, no credit needed ([polyhaven.com/license](https://polyhaven.com/li
 - **Detail that costs more than a frame arrives progressively**: Unity's mipmap streaming loads low-resolution mips first and upgrades
   them within a budget, accepting a moment of blur for smoothness ([Unity Manual, The Mipmap Streaming system](https://docs.unity3d.com/2021.3/Documentation/Manual/TextureStreaming.html)).
   Here: a chunk at 1x at once, then again at the display's resolution a few milliseconds a frame (`Terrain.refine`).
+
+### 8.11 The first frame is the finished ground *(the looks queue, item 1, 2026-09-14; PLAYTEST-M18 118)*
+
+- **An image is ready to draw only once it is decoded**: `HTMLImageElement.decode()` "returns a Promise that resolves once the image is
+  decoded", so the frame that first draws it does not pause for the decode, and waiting on it avoids "the empty image problem"
+  ([MDN, HTMLImageElement.decode()](https://developer.mozilla.org/en-US/docs/Web/API/HTMLImageElement/decode)). The game drew the
+  palette ground until each texture's `onload`, then threw every chunk away and baked them again -- the flash the user saw.
+- **An RTS hides that work behind a loading screen that shows the match**: StarCraft II's default melee loading screen "shows a map
+  preview and shows which players are playing, as well as how far they have loaded"
+  ([StarCraft II Editor Tutorials, Map Properties](https://s2editor-guides.readthedocs.io/New_Tutorials/01_Introduction/008_Map_Properties/)).
+  Here: the map's name, its picture painted from the real ground, the players and a bar, while the textures decode, the far view and
+  the minimap are painted and the start view is baked at the display's ratio (`Terrain.prepSteps`, 20 ms a frame); the files
+  themselves are fetched at boot (`Terrain.preloadTextures`), so the loading screen mostly bakes.
+- **Measured** (Blood Pit, 1600 x 900): before, the classic ground was on screen from 130 ms to about 930 ms and the first seconds' worst
+  frame was 91.6 ms; after, no classic chunk, the worst frame 15.9 ms, the loading screen 0.9 s cold on a 100% display and 1.7 s on a
+  150% one. The Long March at 150%: loading 35 ms, preparing the textures 53, the far view 233, the sharp set 59, the start view 962.

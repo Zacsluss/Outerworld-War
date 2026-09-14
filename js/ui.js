@@ -169,6 +169,9 @@ const UI = {
     Render.reset(); if (typeof Music !== 'undefined' && Music.on && !Sound.muted) Music.start(); this.net = !!opts.net; if (this.net) G.paused = false; this.selection = []; this.groups = {}; this.pending = null; this.placing = null; this.menu = null; this.markers = []; this.pings = []; this.msgLog = []; if (G.mission) this.menu = 'brief';
     const hp = G.players[G.human]; Render.camX = hp.startX - Render.viewWorldW() / 2; Render.camY = hp.startY - Render.viewWorldH() / 2 + 40; this.clampCam();
     const hall = G.units.find(u => u.owner === G.human && u.isBuilding); if (hall) this.select([hall]);
+    // Behind a loading screen until the ground is ready (Terrain.prepSteps): the first frame drawn is the finished one. The simulation
+    // waits for it (simStep), so a network game's lockstep holds everyone at its first frames until every player has loaded.
+    this.prep = typeof Terrain !== 'undefined' && Terrain.canPrepare && Terrain.canPrepare() ? Terrain.prepare() : null;
     document.getElementById('menu').style.display = 'none'; document.getElementById('game').style.display = 'block';
     this.running = true; this.menuCodex = false; this.lastT = performance.now(); this.accum = 0; this.lastR = performance.now();
     if (!this._loop) { this._loop = t => this.loop(t); requestAnimationFrame(this._loop); }
@@ -251,7 +254,7 @@ const UI = {
     // A menu is a local overlay. In a network game the lockstep runs behind it: a client with the pause
     // menu open, or an eliminated player looking at the result screen, used to stop sending batches and
     // every peer froze on "Waiting for other players". (REVIEW-M17)
-    if (G.paused || this.loading || (this.menu && !this.net)) return;
+    if (G.paused || this.loading || this.prep || (this.menu && !this.net)) return;
     if (this.mode === 'play' && G.frame > 0 && G.frame % (TPS * 120) === 0 && !(typeof Net !== 'undefined' && Net.active) && !this._autosaved) { this._autosaved = true; Replay.save(false); } else if (G.frame % (TPS * 120) !== 0) this._autosaved = false;
     const step = 1 / (TPS * this.SPEEDS[this.speedIndex()]); this.accum += dt; let n = 0;
     if (this.net && typeof Net !== 'undefined' && Net.active) { while (this.accum >= step && n < 8) { if (!Net.ready(G.frame)) { if (!Net.waitingSince) Net.waitingSince = performance.now(); this.accum = Math.min(this.accum, step); break; } Net.waitingSince = 0; Net.beforeTick(); G.tick(); this.accum -= step; n++; } return; }
@@ -262,6 +265,12 @@ const UI = {
     requestAnimationFrame(this._loop);
     if (this.menuCodex) { this.drawMenuCodex(); return; }   // the main-menu codex; see openCodexFromMenu
     if (!this.running) return;
+    // The loading screen, while the ground is made ready (UI.start). Nothing of the world is drawn under it, and when the job is done the
+    // clocks start from now, so the simulation does not run the loading screen's seconds at once.
+    if (this.prep) {
+      if (Terrain.prepRun(this.prep, Terrain.PREP_MS)) { this.prep = null; this.lastT = this.lastR = performance.now(); this.accum = 0; }
+      else { this.drawPrep(); return; }
+    }
     const dt = Math.min(0.1, (t - this.lastR) / 1000); this.lastR = t;
     const step = 1 / (TPS * this.SPEEDS[this.speedIndex()]);
     this.scrollCam(dt);
@@ -512,7 +521,7 @@ const UI = {
     this.hoverRes = (!this.hover && m.y < Render.H - this.consoleH) ? this.resourceAt(m.wx, m.wy) : (this.hover ? this.resourceUnder(this.hover) : null);
   },
   onDown(e) {
-    if (this.loading) return;   // a rejoin catching up: see onKey
+    if (this.loading || this.prep) return;   // a rejoin catching up, or the loading screen: see onKey
     const m = this.mouse; m.x = e.clientX; m.y = e.clientY; [m.wx, m.wy] = this.screenToWorld(m.x, m.y);
     // Alt is the signalling modifier (M12 item 9): alt-click pings, alt-drag draws a stroke. Both go
     // out as commands, so allies see them and a replay keeps them.
@@ -692,6 +701,7 @@ const UI = {
     // The pause key is read from the table here and in the menu below, like every other bound key: read
     // as the literal F10 it stayed the menus' close key after a rebind, and the rebound key never closed
     // them. (REVIEW-M17 task 15)
+    if (this.prep) { e.preventDefault(); return; }   // the loading screen takes no keys (UI.start)
     if (this.loading && !this.hit('pause', e, k)) { e.preventDefault(); return; }
     // The codex is modal: while it is open it eats the keyboard so nothing leaks through to the game.
     if (typeof Codex !== 'undefined' && Codex.isOpen()) { if (Codex.key(k)) { e.preventDefault(); return; } }
@@ -2243,6 +2253,8 @@ UI.Skirmish = {
 // ---------------- boot ----------------
 window.addEventListener('DOMContentLoaded', () => {
   UI.init();
+  // The ground's textures, fetched while the player is in the menus (Terrain.preloadTextures): a game's loading screen then only decodes them.
+  setTimeout(() => { if (typeof Terrain !== 'undefined' && Terrain.preloadTextures) Terrain.preloadTextures(); }, 0);
   const $ = id => document.getElementById(id);
 
   // ---- panels -------------------------------------------------------------

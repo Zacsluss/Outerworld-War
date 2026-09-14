@@ -113,6 +113,31 @@ const cleanup = s => { if (s && !s.exited) { try { postClose(); } catch (e) { } 
   })()`);
   ok(!!tex && tex.textured === true && Object.keys(tex.sets).length === 5 && Object.values(tex.sets).every(Boolean), 'detailed terrain is on by default, and all five tilesets\' textures load inside the app and read back as pixels', JSON.stringify(tex));
 
+  // A skirmish started inside the app opens behind its loading screen and its first frame is the finished ground: not one classic chunk
+  // baked, every chunk of the start view detailed and at the display's ratio when the first frame is drawn, and none replaced by it.
+  const first = await dt.quiet(`(async () => {
+    const out = { palette: 0, first: null }, realChunk = Terrain.renderChunk, realFrame = Render.frame;
+    Terrain.renderChunk = function (...a) { if (!this.texSet()) out.palette++; return realChunk.apply(this, a); };
+    Render.frame = function (...a) {
+      if (!out.first) {
+        const C = Terrain.CH * TILE, z = Render.zoom, keys = []; for (let cy = Math.floor(Render.camY / C); cy <= Math.floor((Render.camY + Render.viewH / z) / C); cy++) for (let cx = Math.floor(Render.camX / C); cx <= Math.floor((Render.camX + Render.viewW / z) / C); cx++) if (cx >= 0 && cy >= 0 && cx * Terrain.CH < G.map.w && cy * Terrain.CH < G.map.h) keys.push(cx + ',' + cy);
+        const before = keys.map(k => Terrain.chunks.get(k)), K = Terrain.sharpK(z);
+        out.first = { keys: keys.length, final: before.filter(c => c && c.tex && (c.k || 1) >= K).length, K, dpr: Render.dpr, simFrame: G.frame };
+        const r = realFrame.apply(this, a); out.first.replaced = keys.filter((k, i) => Terrain.chunks.get(k) !== before[i]).length; return r;
+      }
+      return realFrame.apply(this, a);
+    };
+    try {
+      UI.start({ players: [{ race: 'T', human: true, name: 'Check' }, { race: 'Z', human: false }], seed: 3, layout: 'bloodbath' });
+      out.loadingScreen = !!UI.prep; const t0 = performance.now();
+      while ((UI.prep || !out.first) && performance.now() - t0 < 20000) await new Promise(r => setTimeout(r, 50));
+      out.ms = Math.round(performance.now() - t0);
+    } finally { Terrain.renderChunk = realChunk; Render.frame = realFrame; UI.leaveGame('mainPanel'); }
+    return out;
+  })()`);
+  ok(!!first && first.loadingScreen && first.palette === 0 && !!first.first && first.first.keys > 0 && first.first.final === first.first.keys && first.first.replaced === 0,
+    'a skirmish in the app opens behind its loading screen, and its first frame is the finished ground: no classic chunk, every chunk of the start view detailed at the display\'s ratio, none replaced', JSON.stringify(first));
+
   // HOST A GAME: the sidecar starts, the page learns the port and joins its own relay
   const port = await hostAndGetPort(s);
   ok(port > 0, 'HOST A GAME starts the sidecar and the page learns its port', await dt.quiet("document.getElementById('netStatus').textContent"));

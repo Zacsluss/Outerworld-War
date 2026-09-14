@@ -1187,6 +1187,40 @@ Object.assign(UI, {
       'Unit-specific hotkeys are the yellow letters on the command card. Every key is changed in Settings, Controls.'];
     HUD.bevel(ctx, Render.W / 2 - 340, 60, 680, 20 * lines.length + 24, true, 'rgba(10,12,16,0.94)'); lines.forEach((l, i) => HUD.text(ctx, l, Render.W / 2 - 326, 86 + i * 20, i ? '#d0d6de' : '#ffe45a', 13, i === 0));
   },
+  // THE LOADING SCREEN (Terrain.prepSteps): the map's name, its picture -- the far view itself, drawn the moment it is painted, so the
+  // player looks at the ground they are about to play on -- the players in their colours, and a bar. It covers the whole canvas: the
+  // world is not drawn until the ground is ready.
+  drawPrep() {
+    const ctx = Render.ctx, W = Render.W, H = Render.H, job = this.prep; if (!ctx || !job) return;
+    Render.base(ctx);
+    const g = ctx.createLinearGradient ? ctx.createLinearGradient(0, 0, 0, H) : null;
+    if (g) { g.addColorStop(0, '#0b0f16'); g.addColorStop(1, '#030407'); ctx.fillStyle = g; } else ctx.fillStyle = '#05070b';
+    ctx.fillRect(0, 0, W, H);
+    const L = (typeof MAP_LAYOUTS !== 'undefined' && MAP_LAYOUTS[G.layout]) || null, name = (L && L.name) || (G.map && G.map.name) || 'Skirmish';
+    const side = Math.max(120, Math.min(H * 0.52, W * 0.34)), px = W / 2 - side - 24, py = Math.max(96, H / 2 - side / 2 - 20);
+    HUD.text(ctx, name.toUpperCase(), W / 2, py - 36, '#f0d27a', 30, true, 'center');
+    HUD.bevel(ctx, px - 6, py - 6, side + 12, side + 12, false, 'rgba(10,12,16,0.95)');
+    const ov = Terrain._over && Terrain._overTex !== undefined && Terrain._overMap === G.map ? Terrain._over : null;
+    if (ov && ov.width) { const k = side / Math.max(ov.width, ov.height), w = ov.width * k, h = ov.height * k; ctx.save(); ctx.imageSmoothingEnabled = true; ctx.drawImage(ov, px + (side - w) / 2, py + (side - h) / 2, w, h); ctx.restore(); }
+    else HUD.text(ctx, 'Preparing the map', px + side / 2, py + side / 2, '#6f7a88', 14, false, 'center');
+    const lx = W / 2 + 24; let ly = py + 18;
+    HUD.text(ctx, this.mode === 'replay' ? 'WATCHING' : 'PLAYERS', lx, ly, '#8a93a0', 12, true); ly += 30;
+    const teams = new Map(); for (const p of G.players) { if (p.neutral) continue; const t = p.team == null ? p.id : p.team; if (!teams.has(t)) teams.set(t, []); teams.get(t).push(p); }
+    let first = true;
+    for (const list of teams.values()) {
+      if (!first) { HUD.text(ctx, 'VS', lx + 8, ly + 2, '#8a93a0', 13, true); ly += 26; } first = false;
+      for (const p of list) {
+        ctx.fillStyle = p.color || '#888'; ctx.fillRect(lx, ly - 13, 18, 18);
+        const race = (typeof RACE_INFO !== 'undefined' && RACE_INFO[p.race] && RACE_INFO[p.race].name) || p.race || '';
+        HUD.text(ctx, (p.name || 'Player ' + (p.id + 1)) + (p.id === G.human && this.mode !== 'replay' ? '  (you)' : ''), lx + 28, ly, '#e6eaf0', 16, true);
+        HUD.text(ctx, race, lx + 28, ly + 18, '#9aa3b0', 12, false); ly += 42;
+      }
+    }
+    const bw = Math.min(W * 0.6, 720), bx = W / 2 - bw / 2, by = Math.min(H - 60, py + side + 48), k = Math.max(0, Math.min(1, job.progress || 0));
+    HUD.bevel(ctx, bx - 3, by - 3, bw + 6, 16, false, 'rgba(6,8,11,0.95)');
+    ctx.fillStyle = '#3fe83f'; ctx.fillRect(bx, by, bw * k, 10);
+    HUD.text(ctx, (job.label || 'Loading') + '...', W / 2, by + 34, '#c8d0d8', 13, false, 'center');
+  },
   drawMenu() {
     const ctx = Render.ctx, m = this.menuItems();
     // Size the panel to its widest line instead of a fixed 440: mission briefings are long enough to be

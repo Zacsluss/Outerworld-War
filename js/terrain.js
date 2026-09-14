@@ -330,24 +330,45 @@ const Terrain = {
   setTextured(on) { on = !!on; if (on !== this.textured) { this.textured = on; this.clearChunks(); this.overRev = (this.overRev || 0) + 1; } return on; },
   TEX_PX: 512,   // texels in one repeat of a ground texture: sixteen tiles, which puts a metre of a 20 m aerial scan at about 25 px, a Marine's width
   _tex: {},
+  // One load per texture file, whoever asks first: the boot (preloadTextures), a game's loading screen (prepSteps) or a bake (texSet). ok
+  // once the file is in; failed if it cannot be (logged once, and the ground stays classic rather than a game waiting for ever). A texture
+  // arriving drops the chunks only when it is one the current map's set uses -- the boot preloads every set, and a Jungle texture landing
+  // must not throw away an Ice map's ground.
+  texEntry(url) {
+    let e = this._tex[url]; if (e) return e;
+    e = this._tex[url] = { img: new Image(), ok: false, failed: false, decoded: null, data: {} };
+    const mine = () => Object.values(TERRAIN_TEX[this.setId] || {}).includes(url);
+    e.img.onload = () => { if (e.ok) return; e.ok = true; if (mine()) this.clearChunks(); };
+    e.img.onerror = () => { if (e.ok || e.failed) return; e.failed = true; if (typeof console !== 'undefined' && console.warn) console.warn('terrain texture failed to load: ' + url); };
+    e.img.src = url;
+    return e;
+  },
+  // Every set's files, fetched while the player is still in the menus: every server here sends them with no-store, so a game that
+  // waited for its first frame to ask for them waited for the download too. Only fetched -- decoded and read back once a game needs
+  // that set (prepSteps), so the menus hold the files, not seventeen decoded 1024 x 1024 pictures. 0 where no image can load.
+  preloadTextures() {
+    if (!this.canPrepare()) return 0;
+    let n = 0; for (const set of Object.values(TERRAIN_TEX)) for (const url of Object.values(set)) { this.texEntry(url); n++; }
+    return n;
+  },
   // The set's textures, each drawn once into a size x size canvas (TEX_PX unless asked) and kept as pixels; null until every one has
   // loaded (the palette paints until then), and the chunk cache is dropped as each arrives so the ground bakes again with it. A set at
   // another size -- a sharp chunk's, TEX_PX times its ratio, up to the files' own 1024 -- is made one texture a call (_texMade says a
-  // call made one), so no frame draws, reads back and heals four textures of four times the size at once.
+  // call made one), so no frame draws, reads back and heals four textures of four times the size at once; oneAtATime asks the same of
+  // a TEX_PX set (a game's loading screen, which must not stop for four at once either).
   look() { return TERRAIN_LOOK[this.setId] || TERRAIN_LOOK.badlands; },
-  texSet(size) {
+  texSet(size, oneAtATime) {
     this._texMade = false;
     const spec = this.textured && TERRAIN_TEX[this.setId];
     if (!spec || typeof Image === 'undefined' || typeof document === 'undefined') return null;
-    const look = this.look(), S = size || this.TEX_PX, out = {}; let ready = true;
+    const look = this.look(), S = size || this.TEX_PX, stepped = oneAtATime === undefined ? S !== this.TEX_PX : !!oneAtATime, out = {}; let ready = true;
     for (const part of Object.keys(spec)) {
-      const url = spec[part]; let e = this._tex[url];
-      if (!e) { e = this._tex[url] = { img: new Image(), ok: false, data: {} }; e.img.onload = () => { e.ok = true; this.clearChunks(); }; e.img.src = url; }
+      const url = spec[part], e = this.texEntry(url);
       if (!e.ok) { ready = false; continue; }
       // kept per treatment and size: two sets may lay one texture down plain and healed
       const heal = (look.heal || []).includes(part), key = (heal ? 'healed' : 'plain') + (S === this.TEX_PX ? '' : S);
       if (!e.data[key]) {
-        if (S === this.TEX_PX) { const cv = document.createElement('canvas'); cv.width = cv.height = S; const x = cv.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(e.img, 0, 0, S, S); const px = x.getImageData(0, 0, S, S).data; e.data[key] = heal ? this.healFlecks(px, S) : px; }
+        if (!stepped) { const cv = document.createElement('canvas'); cv.width = cv.height = S; const x = cv.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(e.img, 0, 0, S, S); const px = x.getImageData(0, 0, S, S).data; e.data[key] = heal ? this.healFlecks(px, S) : px; }
         else {
           // drawn and read back in one call, healed a step a call after that: Ice's snow healed at 768 in one piece was a 56 ms frame
           if (this._texMade) { ready = false; continue; }
@@ -1174,6 +1195,89 @@ const Terrain = {
     const j = this._job, t0 = performance.now();
     do { const r = j.it.next(); if (r.done) { this.releaseChunk(j.base); this.chunks.set(j.key, r.value); this._job = null; this.sharpened = (this.sharpened || 0) + 1; break; } } while (performance.now() - t0 < this.REFINE_MS);
     return true;
+  },
+  // THE FIRST FRAME A PLAYER SEES IS THE FINISHED GROUND (the user's playtest, 2026-09-14: "when the game first loads I see the old
+  // textures and then the new textures load in after a second and a half delay. This looks super unprofessional, I can't ship like
+  // this."). Measured on a cold start of Blood Pit (.claude/review/terrain/shots/cold-start-strip.jpg): the classic ground on screen from
+  // 130 ms, detailed chunks replacing it piece by piece from 458 ms, all of it detailed at about 930 ms -- the textures were only asked
+  // for by the game's first frame, and the minimap and the far view followed later still. The playtest server reads every file out of
+  // git as it is asked for, which made the user's second and a half.
+  //
+  // A game now starts behind a loading screen (UI.start, UI.loop, UI.drawPrep) while this job runs, and the simulation waits for it --
+  // in a network game the lockstep holds everyone at the first frames until each has loaded, which is how loading screens work in the
+  // games this follows. Its steps, each a slice of a frame so the loading screen keeps moving: the set's textures loaded and decoded off
+  // the main thread (MDN: decode() "returns a Promise that resolves once the image is decoded"), their pixels made, the textured far view
+  // painted, the minimap built from it, the sharp texture set made (see refine), every chunk of the start view baked at the display's own
+  // ratio, and its creep. The first frame after it draws nothing new: no classic ground, no piece of ground arriving, no sharpening. The
+  // files themselves are fetched while the player is still in the menus (preloadTextures). A texture that fails, or takes PREP_WAIT_MS,
+  // gives up the wait: the ground is the classic look, and the game starts rather than hanging on a loading screen.
+  PREP_MS: 20, PREP_WAIT_MS: 20000,
+  // Where textures can load and a loading screen means something: a browser, or the desktop app's. The headless suites have an Image
+  // that never loads, and there a game starts at once, as it always did.
+  canPrepare() { return typeof Image === 'function' && !!Image.prototype && typeof Image.prototype.decode === 'function' && typeof document !== 'undefined'; },
+  prepare() { const job = { progress: 0, label: 'Loading', done: false, failed: false, t0: performance.now() }; job.it = this.prepSteps(job); return job; },
+  // Runs the job for at most ms of this frame, or until it asks to wait for a download; true once it is done.
+  prepRun(job, ms) {
+    const t0 = performance.now();
+    while (!job.done) {
+      const r = job.it.next();
+      if (r.done) { job.done = true; job.progress = 1; break; }
+      if (r.value === 'wait' || performance.now() - t0 >= ms) break;
+    }
+    return job.done;
+  },
+  // The chunks in the start view, nearest its middle first, exactly as draw would find them.
+  viewChunkList() {
+    const C = this.CH * TILE, z = (typeof Render !== 'undefined' && Render.zoom) || 1, vw = Render.viewW / z, vh = Render.viewH / z, camX = Render.camX, camY = Render.camY;
+    const maxCx = Math.ceil(G.map.w / this.CH), maxCy = Math.ceil(G.map.h / this.CH);
+    const cx0 = Math.max(0, Math.floor(camX / C)), cx1 = Math.min(maxCx - 1, Math.floor((camX + vw) / C)), cy0 = Math.max(0, Math.floor(camY / C)), cy1 = Math.min(maxCy - 1, Math.floor((camY + vh) / C));
+    const mx = (camX + vw / 2) / C - 0.5, my = (camY + vh / 2) / C - 0.5, out = [];
+    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) out.push([cx, cy]);
+    return out.sort((a, b) => (a[0] - mx) * (a[0] - mx) + (a[1] - my) * (a[1] - my) - (b[0] - mx) * (b[0] - mx) - (b[1] - my) * (b[1] - my));
+  },
+  *prepSteps(job) {
+    const m = G.map, spec = this.textured && TERRAIN_TEX[this.setId];
+    let T = null;
+    if (spec && this.canPrepare()) {
+      const urls = Object.values(spec), t0 = performance.now();
+      job.label = 'Loading terrain';
+      for (const u of urls) this.texEntry(u);
+      // loaded, then decoded off the main thread; a texture already drawn once is decoded already
+      for (;;) {
+        for (const u of urls) { const e = this._tex[u]; if (e.ok && !e.decoded) { e.decoded = 'pending'; const d = e.img.decode ? e.img.decode() : null; if (d && d.then) d.then(() => { e.decoded = 'yes'; }, () => { e.decoded = 'yes'; }); else e.decoded = 'yes'; } }
+        const ready = urls.filter(u => this._tex[u].decoded === 'yes').length;
+        job.progress = 0.35 * ready / urls.length;
+        if (ready === urls.length) break;
+        if (urls.some(u => this._tex[u].failed) || performance.now() - t0 > this.PREP_WAIT_MS) { job.failed = true; break; }
+        yield 'wait';
+      }
+      if (!job.failed) { job.label = 'Preparing terrain'; let n = 0; while (!(T = this.texSet(this.TEX_PX, true))) { job.progress = 0.35 + Math.min(0.1, 0.02 * n++); yield; } }
+    }
+    // the far view, painted a slice at a time from the textures (or the palette's, at once: it is quick)
+    job.label = 'Painting the map'; job.progress = T ? 0.45 : 0.1; this.clearOverview();
+    if (T) {
+      while (!this.overviewStep(T)) { job.progress = 0.45 + 0.15 * ((this._overNext ? this._overNext.row : m.h) / m.h); yield; }
+      this._overSet = this.setId; this._overMap = m;
+    } else { this.overview(); yield; }
+    // the fog canvas and the minimap, from that picture
+    if (typeof Render !== 'undefined' && Render.buildStatic) { Render.buildStatic(); Render._overRev = this.overRev; }
+    job.progress = T ? 0.62 : 0.3; yield;
+    // the sharp texture set, for the start view at the display's ratio
+    const K = T ? this.sharpK((typeof Render !== 'undefined' && Render.zoom) || 1) : 1; let TK = T;
+    if (T && K > 1) { job.label = 'Sharpening terrain'; let n = 0; while (!(TK = this.texSet(Math.round(this.TEX_PX * K)))) { job.progress = 0.62 + Math.min(0.08, 0.004 * n++); yield; } }
+    // every chunk in the start view, sharp, before the first frame
+    this.checkDpr();
+    const list = this.viewChunkList(); let n = 0;
+    job.label = 'Placing the ground';
+    for (const [cx, cy] of list) {
+      const key = cx + ',' + cy;
+      if (TK) { const it = this.texBakeSteps(cx, cy, TK, K, 'prep'); let r; while (!(r = it.next()).done) yield; this.releaseChunk(this.chunks.get(key)); this.chunks.set(key, r.value); }
+      else { this.releaseChunk(this.chunks.get(key)); this.chunks.set(key, this.renderChunk(cx, cy)); yield; }
+      job.progress = (T ? 0.7 : 0.3) + (T ? 0.27 : 0.65) * (++n / list.length);
+    }
+    // and the creep on it
+    if (this.syncCreep()) { const b = this.creepBudget; this.creepBudget = 1e9; for (const [cx, cy] of list) { this.creepChunk(cx, cy); yield; } this.creepBudget = b; }
+    job.label = 'Ready'; job.progress = 1;
   },
   draw(ctx, camX, camY, vw, vh, zoom = 1) {
     const CH = this.CH * TILE; const x0 = Math.floor(camX / CH), y0 = Math.floor(camY / CH), x1 = Math.floor((camX + vw) / CH), y1 = Math.floor((camY + vh) / CH);

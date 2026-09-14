@@ -1741,3 +1741,74 @@ the build stamp stays `ca141a3b7ffcb528`.)*
 - **Units and buildings are not sharper.** Their sprite sheets are fixed-size pictures; making those sharper means redrawing every
   sheet at twice the size, a separate decision (and four times the memory for them).
 - **Classic stays as it was** -- its checkered pixel pattern needs a whole-number resolution.
+
+## 118. A game opens on its finished ground: a loading screen, and no old textures first
+
+*(The looks queue, item 1 -- the user, 2026-09-14: "when the game first loads I see the old textures and then the new textures load in
+after a second and a half delay. This looks super unprofessional, I can't ship like this. How can we fix this so the new terrain textures
+are the only thing that's rendered. Brainstorm the best option and execute." Drawing and interface only -- `js/terrain.js`
+(`Terrain.prepSteps`, `preloadTextures`, `texEntry`), `js/ui.js`, `js/hud.js` (`UI.drawPrep`); the build stamp stays
+`ca141a3b7ffcb528`.)*
+
+**What changed for a player:**
+1. **Every game opens with a loading screen**: the map's name in gold, a picture of the whole map painted from its real ground, the
+   players with their colours and races, and a bar that fills ("Loading terrain", "Painting the map", "Placing the ground").
+2. **When it goes, the game already looks finished.** The first frame has the detailed ground everywhere on screen at your display's
+   full resolution, with the minimap and the zoomed-out view painted from the same ground. The classic painted look never appears,
+   pieces of ground no longer pop in, and nothing sharpens after the start. (Ground you scroll to later still sharpens a moment after it
+   arrives, as in 117.)
+3. **The ground's textures download while you are in the menus**, so the loading screen mostly prepares the start view: under a second
+   on a 100% display, about two seconds on a 150% one.
+4. **The game clock waits for the loading screen.** Nothing happens under it. In a multiplayer game a player who has loaded sees the
+   game's first moment and "Waiting for other players..." until everyone's loading screen has closed; then all play together.
+5. **If a texture file is missing, or the download stalls for 20 seconds**, the game starts anyway in the Classic look instead of hanging.
+
+**How to see it by hand:**
+1. **Close the game and open it again** (a fresh page, as a player gets it). **Single Player -> Skirmish**, any map, START. *Working:* a
+   loading screen with the map's name, its picture, you and your opponent, and a bar that fills; then the game with photographic ground
+   already everywhere on screen -- no flat painted ground first, no squares of ground swapping, no blur sharpening.
+2. **Straight away.** Open the game and click START as fast as you can. *Working:* the loading screen stays a little longer; the game still
+   opens on finished ground.
+3. **The minimap.** Look at it on the first frame. *Working:* already the textured picture, not flat colours turning into it.
+4. **Restart.** Esc -> Restart. *Working:* the loading screen again (about as long as the first: the ground is prepared again), then
+   finished ground.
+5. **Multiplayer.** Two browser tabs in one lobby, START. *Working:* each shows a loading screen; whichever finishes first shows the game
+   with "Waiting for other players..." until the other is in, then both play.
+6. **Classic look.** Esc -> Settings -> Terrain: Classic, then start a game. *Working:* a very short loading screen and the painted look.
+
+**Invisible from normal play, and where to look instead:**
+- Measured in the browser on this machine, Blood Pit, the start view at 1600 x 900:
+
+| What | Before | After |
+|---|---|---|
+| Classic ground on screen at the start | from 130 ms to about 930 ms, replaced piece by piece | never (0 classic chunks baked) |
+| First frame of the game | classic ground, detail arriving over the next 800 ms | every chunk on screen detailed and at the display's ratio |
+| Loading screen, a 150% display, the textures fetched at boot | -- | 1.7-1.9 s (the start view's chunks at 1.5x are most of it) |
+| Loading screen, a 100% display, the textures downloaded cold | -- | 0.9 s |
+| Restart, a 150% display | -- | 1.6 s, 0 classic chunks |
+| Worst frame of the game's first seconds | 91.6 ms | 15.9 ms (the work moved onto the loading screen) |
+| Two tabs in one room, one tab's loading screen held | -- | the other waited at frame 3 (the input delay), "Waiting for other players..."; both ran together once it closed |
+
+- `test/terrainview.js` section 11 (9 new checks), with an Image that decodes and texture files that arrive when the test says: twenty
+  frames of loading screen while the files are on their way draw no world, bake no ground, hold the simulation and ignore a click; once
+  they arrive the far view, the minimap and every chunk of the start view at 1.5x are made before the first frame, which replaces none of
+  them; the far view is painted four rows a slice; the loading screen shows the map's name and picture; a texture of another set
+  arriving drops nothing; textures that never come give up and start the game; the classic look bakes its start view first too; the boot
+  fetches every set's files, and where no image can load (the other suites) a game starts at once. Twelve negative controls, all red
+  (`.claude/review/terrain/controls-prep.log`).
+- `desktop/window-check.js` (1 new check, 25 of 25 on a debug build): a skirmish started inside the desktop app opens behind its loading
+  screen, bakes no classic chunk, and its first frame's chunks are all detailed at the display's ratio.
+
+**The options weighed** (the user asked for the best of them):
+- *Preload in the menus only* -- fixes most starts, but a player who clicks START quickly, a slow disk or a restart still sees the flash.
+- *A low-resolution texture first, then the full one* -- still a visible swap from blurry to sharp.
+- *A black screen until ready* -- looks like a hang.
+- *Chosen: a loading screen that makes the first frame final, with the files fetched in the menus* -- the way RTS games start a match
+  (StarCraft II's shows the map, the players and how far each has loaded); it covers the textures, the map picture, the minimap and the
+  sharp ground at once, and it holds the game clock so no one loses time.
+
+**Deliberately different from what was asked, or not done:**
+- **A loading screen was added**, where the request was only that the old textures never show: it is what lets the first frame be final
+  without a hitch, and it costs one to two seconds at the start of a game.
+- **A restart prepares the ground again** rather than keeping it: the same map with another seed is different ground, and keeping
+  chunks across games is a separate change for a second saved.

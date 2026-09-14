@@ -1,7 +1,7 @@
 # TODO-M18 — the user's thirteen-item list from the first internet game
 
 Started when the fifth session paused for the night (2026-09-12) and kept since. `HANDOFF-M18.md` has the state, the
-traps and the kickoff prompt; this file is the open list. **Its first section, THE TERRAIN QUEUE, is the work in hand**; the
+traps and the kickoff prompt; this file is the open list. **Its first section, THE LOOKS QUEUE, is the work in hand**; the terrain queue follows it; the
 user's answers and the earlier queues follow (THE TENTH SESSION'S QUEUE and THE WORK QUEUE are all done), then the sessions'
 lists (what each did, with commits), the older items with their measurements, and what is closed. There are no worktrees.
 `SHIPPING.md` is what must be done before the final build ships.
@@ -11,6 +11,41 @@ item here: measure before fixing, a negative control that goes cleanly RED, `too
 the commit.
 
 ---
+
+## THE LOOKS QUEUE -- the user's four items (2026-09-14), in this order
+
+**The user's words:** "1. when the game first loads I see the old textures and then the new textures load in after a second and a half
+delay. This looks super unprofessional, I can't ship like this. How can we fix this so the new terrain textures are the only thing that's
+rendered. Brainstorm the best option and execute. 2. Zerg creep has a tiled look to it with defined edges. We need to make those edges
+undefined so the creep looks like a continuous mass with no lines or tiles. 3. Cliffs look a little short. Can we make them look about
+twice as tall to really show the change in elevation? 4. All of the maps are very uninspired. Look at images of actual StarCraft II maps
+and redesign the layout of all maps in the game according to the generalized structure that StarCraft II maps have."
+During item 1: "Can you find any free textures online that would work for creep? We don't have to use that, but if we can, we should
+for greater realism." and "can you show me the links for the textures so I can see them all and tell you which one is best?"
+
+1. **The classic ground before the detailed ground at a game's start** -- **DONE** (PLAYTEST-M18 118). Measured first, Blood Pit at
+   1600 x 900: the classic ground was on screen from 130 ms to about 930 ms and was replaced a chunk at a time, then the whole screen
+   sharpened; the first seconds' worst frame was 91.6 ms. Options weighed: preloading in the menus only (a quick START, a slow disk or a
+   restart still flash), a low-resolution texture first (a visible swap), a black screen (reads as a hang). Chosen: **a loading screen
+   that makes the first frame final** -- the map's name and picture, the players, a bar -- while the textures are decoded, the far view
+   painted, the minimap built and the start view baked at the display's ratio; the game clock is held under it; the texture files are
+   fetched at boot, in the menus. After: 0 classic chunks, the first frame's chunks all detailed and sharp, the worst frame of the first
+   seconds 15.9 ms; the loading screen 0.9 s cold on a 100% display, 1.7 s on a 150% one (the sharp start view is most of it). Files that
+   fail or stall 20 s start the game in the classic look. `test/terrainview.js` 11, `desktop/window-check.js` (25 of 25), twelve
+   negative controls (`.claude/review/terrain/controls-prep.log`). Drawing and interface only: the stamp stays `ca141a3b7ffcb528`.
+2. **Creep: a continuous mass, no lines or tiles** -- **OPEN, next.** Read so far: the creep bake (`Terrain.renderCreepChunk`) cuts its
+   border with a Bayer dither and darkens a rim inside it, its material is a 192 px posterised tile (a 4 x 4 dot grid everywhere), its
+   mottles and blisters sit at tile positions, and it is baked at 1x under ground baked at the display's ratio. The user is choosing a
+   CC0 texture from the links posted in chat (ambientCG Lava001/002/003/005, Ground054, Sponge003, Moss002, Bark008; 3dtextures.me Alien
+   Flesh 001/002, Alien Muscle 001, Abstract Organic 002) -- **download nothing until they pick, and name the file and its size first**;
+   the soft continuous edge does not wait for the pick.
+3. **Cliffs that look about twice as tall** -- **OPEN.** Read so far: the textured bake's cliff is one drop the width of the cliff tile,
+   lit with `RISE` 22 (its faces already at the shade clamps) and a cast shadow read 11 px up and 9 px left (`SHY`/`SHX`), the same
+   in `paintOverviewTex`; the pinned chunks in `test/terrain-golden.json` will have to be re-pinned on purpose.
+4. **Every map redesigned to StarCraft II's structure** -- **OPEN.** The research brief is `.claude/review/maps/research-brief.md`
+   (opposite spawns with rotational symmetry, a main on high ground with one ramp into a natural, a linear and a triangle third, 7-8
+   bases a player, a centre of 2-3 lanes, rocks on back doors). A stamped change (`js/map.js`): the build stamp moves, and
+   `node test/net_many.js` and `node .claude/review/aipace/run-after.js <tag>` follow.
 
 ## THE USER'S PLAYTEST OF THE TERRAIN QUEUE (2026-09-13, recorded: `.claude/review/playtest/2026-09-13_21-44-02/`)
 
