@@ -647,7 +647,7 @@ ten items. Status, most recent first:
   `3fc2fea`, PLAYTEST 73-76. Item 10 was measured, not changed: 48 a worker a minute against StarCraft II's 54-61.
 - **The dragoon wobble fix** (item 11 above) committed on the user's word, `c343b47`.
 
-## Open
+## The older items -- every one done, closed, committed or applied, except 7b (the AI rebalance), deferred by the user
 
 ### 3 (DONE). A Queen or Overlord should walk into range to plant a creep tumour
 *Kept for the record; what shipped is in Closed at the foot of this file.*
@@ -795,7 +795,7 @@ two together, or ship 7a knowing the computer opponents are passive for the firs
   goes red reporting a stale anchor, which is a different failure from the economy one.
 - The build stamp moves, so saves and replays from before are refused.
 
-### 7b. Rebalance the AI for the slower economy — GATED, needs an explicit instruction
+### 7b. Rebalance the AI for the slower economy — DEFERRED BY THE USER ("defer until i say", 2026-09-13); GATED, needs an explicit instruction
 **Queue item G (ninth session) did the narrow part** -- the worker floor, the Terran/Protoss expansion clock and the wave
 threshold (above) -- so every style of Terran and Protoss computer attacks again. **What is left, first:** the Zerg
 computer (no Zerg style attacks inside ten minutes; a normal Zerg computer loses to a normal Terran one at 13-14
