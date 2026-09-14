@@ -16,6 +16,11 @@
 //  4. A PLATFORM FOLLOWS ITS TILES: Space Platform reads its height field straight from the tiles (look.blur 0), so along a
 //     stepped plateau edge every plateau pixel is drawn high and every low pixel low; the 3x3 blur rounds the steps off.
 //  5. THE BAKE IS A PURE FUNCTION OF THE MAP, ITS SEED AND THE TILE, and writes nothing to the map.
+//  7. SHARP CHUNKS (the user's playtest: "The resolution of the land and doodads is a bit low"): at ratio 1 the bake is byte for byte
+//     the approved one (fingerprints in test/terrain-golden.json; node test/terraintex.js --save-golden writes new ones when the look
+//     is changed on purpose); at 1.5 and 2, from textures of the same pattern at 768 and 1024 texels, a chunk averaged down is the
+//     ratio-1 chunk and its props cover K squared times the pixels; a bake in steps yields a row at a time and gives the pixels of a
+//     bake at once though other bakes run between its steps.
 //  6. PROPS (phase 3): every kind a set names draws something; on every map, no prop stands on or beside a cliff, a wall, a ramp or a
 //     map feature, near a resource or in a hall clearing, and none covers or shades a pixel outside its own tile's 3x3 block; about
 //     the set's density of the allowed ground has one; a prop crossing a chunk edge is drawn the same on both sides; what play
@@ -125,6 +130,17 @@ vm.runInContext(`
     lum(d) { const out = new Float64Array(d.length / 4); for (let i = 0; i < out.length; i++) out[i] = d[i * 4] * 0.2126 + d[i * 4 + 1] * 0.7152 + d[i * 4 + 2] * 0.0722; return out; },
     corr(a, b) { const n = a.length; let ma = 0, mb = 0; for (let i = 0; i < n; i++) { ma += a[i]; mb += b[i]; } ma /= n; mb /= n; let sab = 0, saa = 0, sbb = 0; for (let i = 0; i < n; i++) { const x = a[i] - ma, y = b[i] - mb; sab += x * y; saa += x * x; sbb += y * y; } return sab / Math.sqrt(saa * sbb || 1); },
     // chunks whose own tiles and the three round them are all flat low ground, in pairs sixteen tiles (two chunks) apart
+    // the n chunks with the most cliff, ramp and rock, then the o chunks with the most ground a prop may stand on, as [cx, cy]
+    pick(m, n, o) {
+      const CH = Terrain.CH, nx = Math.ceil(m.w / CH), ny = Math.ceil(m.h / CH), mask = Terrain.propMask(), rough = [], open = [];
+      for (let cy = 0; cy < ny; cy++) for (let cx = 0; cx < nx; cx++) {
+        let r = 0, p = 0; for (let y = cy * CH; y < Math.min(m.h, (cy + 1) * CH); y++) for (let x = cx * CH; x < Math.min(m.w, (cx + 1) * CH); x++) { const i = y * m.w + x; if (m.cliff[i]) r += 2; if (m.height[i] === 1 && !m.cliff[i]) r += 3; p += mask[i]; }
+        rough.push([r, cy * nx + cx]); open.push([p, cy * nx + cx]);
+      }
+      const top = (list, k, skip) => list.sort((a, b) => b[0] - a[0] || a[1] - b[1]).map(e => e[1]).filter(i => !skip.includes(i)).slice(0, k);
+      const ids = top(rough, n, []); ids.push(...top(open, o, ids));
+      return ids.map(i => [i % nx, (i / nx) | 0]);
+    },
     flatPairs(m, want) {
       const CH = Terrain.CH, flat = (cx, cy) => { for (let y = cy * CH - 3; y < (cy + 1) * CH + 3; y++) for (let x = cx * CH - 3; x < (cx + 1) * CH + 3; x++) { if (!m.inb(x, y)) return false; const i = m.idx(x, y); if (m.height[i] !== 0 || m.cliff[i] !== 0 || m.walk[i] !== 1) return false; } return true; };
       const out = []; for (let cy = 1; cy < m.h / CH - 1 && out.length < want; cy++) for (let cx = 1; cx + 2 < m.w / CH - 1 && out.length < want; cx++) if (flat(cx, cy) && flat(cx + 2, cy)) out.push([cx, cy]);
@@ -132,6 +148,29 @@ vm.runInContext(`
     },
   };
 `, ctx);
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// 7a. The approved bake, pinned
+// ---------------------------------------------------------------------------------------------------------------------------
+// Fingerprints of chunks on every tileset at ratio 1, props on -- on each, the two with the most cliff, ramp and rock and the two with
+// the most ground for props (open ground alone let a change to the cliffs' shadow through): the bake the look was approved on. Sharp chunks rewrote the whole bake
+// in world pixels over a ratio and moved none of them; a change meant to change the look writes new ones with --save-golden.
+const golden = R(`
+  const T = TT.set([90, 80, 70], [200, 190, 170], [150, 140, 120], [110, 90, 80]), out = {};
+  const fnv = d => { let h = 0x811c9dc5; for (let i = 0; i < d.length; i++) { h ^= d[i]; h = Math.imul(h, 16777619); } return (h >>> 0).toString(16).padStart(8, '0'); };
+  for (const t of Object.keys(TILESETS)) {
+    const m = TT.map(t, 7), hs = [];
+    for (const [cx, cy] of TT.pick(m, 2, 2)) hs.push(cx + ',' + cy + ':' + fnv(TT.bake(cx, cy, T)) + ':' + (Terrain.propLayer(cx, cy, T) ? 'p' : '-'));
+    out[t] = hs;
+  }
+  return out;
+`);
+const goldenFile = path.join(root, 'test', 'terrain-golden.json');
+if (process.argv.includes('--save-golden')) { fs.writeFileSync(goldenFile, JSON.stringify(golden, null, 1) + '\n'); console.log('wrote ' + goldenFile); process.exit(0); }
+const pinned = fs.existsSync(goldenFile) ? JSON.parse(fs.readFileSync(goldenFile, 'utf8')) : {};
+const moved = Object.keys(pinned).flatMap(t => pinned[t].filter((h, i) => !golden[t] || golden[t][i] !== h).map(h => t + ' ' + h + ' -> ' + (golden[t] ? golden[t][pinned[t].indexOf(h)] : '?')));
+const propped = Object.values(golden).flat().filter(h => h.endsWith(':p')).length;
+ok(Object.keys(pinned).length === 5 && Object.values(pinned).flat().length === 20 && propped >= 10 && !moved.length, 'golden: at ratio 1 the bake is byte for byte the approved one -- 20 chunks on five tilesets, ' + propped + ' with props (test/terrain-golden.json)', JSON.stringify(moved.slice(0, 3)));
 
 // ---------------------------------------------------------------------------------------------------------------------------
 // 3. Cells leave no repeat
@@ -327,6 +366,56 @@ const stable = R(`
 `);
 ok(stable.features > 0 && stable.broken === stable.features && stable.hulk && stable.hulkTiles > 0, 'stable: on Chokepoint Valley ' + stable.broken + ' features broken, a ' + stable.hulkTiles + '-tile hulk dropped and a mineral patch mined out', JSON.stringify(stable));
 ok(stable.diff === 0, 'stable: not one prop tile changed', JSON.stringify(stable));
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// 7b. Sharp chunks: the same picture, finer
+// ---------------------------------------------------------------------------------------------------------------------------
+vm.runInContext(`
+  // the same pattern as TT.tex at S texels to a repeat: blobs in the texture's own period, grain in cells of 512ths of it
+  TT.texS = (S, base, amp, seed) => { const d = new Uint8ClampedArray(S * S * 4), f = 2 * Math.PI / S, g = S / 512; for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { const blob = Math.sin(x * f * 3 + seed) * Math.cos(y * f * 2 + seed * 1.7) + 0.5 * Math.sin((x + y) * f * 5 + seed * 0.3); const gx = Math.floor(x / g), gy = Math.floor(y / g), grain = ((Math.imul((gx * 73856093) ^ (gy * 19349663) ^ (seed * 83492791), 2654435761) >>> 0) % 17) - 8, v = blob * amp + grain, p = (y * S + x) * 4; d[p] = base[0] + v; d[p + 1] = base[1] + v; d[p + 2] = base[2] + v; d[p + 3] = 255; } return d; };
+  TT.setS = (S, cols) => ({ low: TT.texS(S, cols[0], 50, 1), high: TT.texS(S, cols[1], 20, 2), ramp: TT.texS(S, cols[2], 30, 3), rock: TT.texS(S, cols[3], 20, 4) });
+  // a chunk's luminance averaged over n x n squares, each source pixel weighed by how much of it the square covers
+  TT.down = (d, W, n) => {
+    const s = W / n, o = new Float64Array(n * n), spans = [];
+    for (let a = 0; a < n; a++) { const lo = a * s, hi = (a + 1) * s, sp = []; for (let p = Math.floor(lo); p < Math.ceil(hi); p++) { const w = Math.min(hi, p + 1) - Math.max(lo, p); if (w > 1e-9) sp.push([p, w]); } spans.push(sp); }
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { let acc = 0, wt = 0; for (const [py, wy] of spans[y]) for (const [px, wx] of spans[x]) { const p = (py * W + px) * 4, w = wy * wx; acc += (d[p] * 0.2126 + d[p + 1] * 0.7152 + d[p + 2] * 0.0722) * w; wt += w; } o[y * n + x] = acc / wt; }
+    return o;
+  };
+  TT.mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]); return s / a.length; };
+`, ctx);
+const sharp = R(`
+  const cols = [[90, 80, 70], [200, 190, 170], [150, 140, 120], [110, 90, 80]], T1 = TT.setS(512, cols), T15 = TT.setS(768, cols), T2 = TT.setS(1024, cols), out = [];
+  const cover = L => L ? Array.from(L.a).filter(v => v > 0.5).length : 0;
+  for (const t of ['badlands', 'ice', 'space']) {
+    const m = TT.map(t, 7);
+    for (const [cx, cy] of TT.pick(m, 1, 1)) {
+      // compared as squares of four world px: the textures' own grain (a synthetic texture at 768 is not a 1.5x enlargement of the one
+      // at 512, texel for texel) averages out, and the ground's shape, light and props are what is left to compare
+      const c1 = Terrain.renderChunkTex(cx, cy, T1, 1), a = TT.down(c1.img.data, c1.width, 64);
+      const c2 = Terrain.renderChunkTex(cx, cy, T2, 2), b2 = TT.down(c2.img.data, c2.width, 64), w2 = c2.width, k2 = c2.k;
+      const c15 = Terrain.renderChunkTex(cx, cy, T15, 1.5), b15 = TT.down(c15.img.data, c15.width, 64), w15 = c15.width;
+      const cn = Terrain.renderChunkTex(cx + 1, cy + 1, T1, 1), other = TT.down(cn.img.data, cn.width, 64);
+      out.push({ t, chunk: cx + ',' + cy, w2, k2, w15, mad2: +TT.mad(a, b2).toFixed(2), mad15: +TT.mad(a, b15).toFixed(2), control: +TT.mad(a, other).toFixed(2),
+        p1: cover(Terrain.propLayer(cx, cy, T1, 1)), p15: cover(Terrain.propLayer(cx, cy, T15, 1.5)), p2: cover(Terrain.propLayer(cx, cy, T2, 2)) });
+    }
+  }
+  return out;
+`);
+ok(sharp.length === 6 && sharp.every(r => r.w2 === 512 && r.k2 === 2 && r.w15 === 384), 'sharp: six chunks on Badlands, Ice and Space Platform baked at ratio 2 (512 px) and 1.5 (384 px) from textures of 1024 and 768 texels', JSON.stringify(sharp.map(r => [r.w2, r.k2, r.w15])));
+ok(sharp.every(r => r.mad2 <= 3 && r.mad15 <= 3 && r.control > 5 * Math.max(r.mad2, r.mad15)), 'sharp: averaged over squares of four world pixels, each is the ratio-1 chunk (off by at most ' + Math.max(...sharp.map(r => r.mad2)) + ' levels at 2, ' + Math.max(...sharp.map(r => r.mad15)) + ' at 1.5) where a neighbouring chunk is off by ' + Math.min(...sharp.map(r => r.control)) + ' or more', JSON.stringify(sharp));
+const propped2 = sharp.filter(r => r.p1 > 100);
+ok(propped2.length >= 3 && propped2.every(r => r.p2 / r.p1 > 3.6 && r.p2 / r.p1 < 4.4 && r.p15 / r.p1 > 2 && r.p15 / r.p1 < 2.5), 'sharp: the props cover four times the pixels at ratio 2 and two and a quarter at 1.5 -- the same props, finer (' + propped2.map(r => r.p1 + '/' + r.p15 + '/' + r.p2).join(' ') + ')', JSON.stringify(sharp));
+const steps = R(`
+  const cols = [[90, 80, 70], [200, 190, 170], [150, 140, 120], [110, 90, 80]], T15 = TT.setS(768, cols), T1 = TT.setS(512, cols);
+  TT.map('jungle', 7);
+  const whole = Terrain.renderChunkTex(3, 3, T15, 1.5).img.data.slice();
+  const it = Terrain.texBakeSteps(3, 3, T15, 1.5, 'job'); let n = 0, r;
+  // other bakes between its steps, as refine's job is interleaved with each frame's bakes: the same ratio, and ratio 1
+  while (!(r = it.next()).done) { n++; if (n === 200) { Terrain.renderChunkTex(5, 2, T15, 1.5); Terrain.renderChunkTex(5, 2, T1, 1); } if (n === 600) Terrain.renderChunkTex(1, 4, T15, 1.5); }
+  const sliced = r.value.img.data; let diff = 0; for (let i = 0; i < whole.length; i++) if (whole[i] !== sliced[i]) diff++;
+  return { n, rows: 384 + 384 + 2 * Math.round(24 * 1.5), diff };
+`);
+ok(steps.n === steps.rows && steps.diff === 0, 'sharp: a ratio-1.5 bake in steps yields once a row (' + steps.n + ' rows) and, with three other bakes run between its steps, gives the very pixels of a bake at once', JSON.stringify(steps));
 
 ok(errors.length === 0, 'no console errors', JSON.stringify(errors.slice(0, 3)));
 summary();

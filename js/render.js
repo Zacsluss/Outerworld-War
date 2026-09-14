@@ -56,6 +56,13 @@ const SHADOW_SS = 0.5, SHADOW_A = 0.38;
 // pixel off. Flooring keeps the invariant true: at ratio 2 a whole CSS pixel is exactly two device
 // pixels and nothing moves. A 1.5 display therefore gets no change from before, which is correct until
 // the chunk bake is ratio-aware.
+//
+// IT IS RATIO-AWARE NOW, FOR DETAILED TERRAIN (the user's playtest, 2026-09-13: "The resolution of the land and doodads is a bit
+// low"). On their display, devicePixelRatio 1.5, the canvas had exactly as many pixels as the page and the browser stretched it half
+// as large again. With detailed terrain the ratio is the display's own, whole or not: a textured chunk has no dither to lose, it is
+// refined to the ratio it is shown at (Terrain.refine), and Terrain.draw rounds its zoom-1 blit to a device pixel, so at 1.5 a chunk's
+// 384 device pixels still land exact. The classic look keeps the whole number, for everything said above. The render pass is not the
+// cost of this -- the table above -- the bake is, and refine spreads that over frames.
 const DPR_CAP = 2;
 // How long a muzzle flash and a shield hit stay up, in sim frames at 24/s. Short: three frames is an
 // eighth of a second, which is a flash, and anything longer reads as a unit that is permanently on
@@ -114,7 +121,8 @@ const Render = {
   init(canvas) { this.canvas = canvas; this.ctx = canvas.getContext('2d'); this.resize(); },
   resize() { // a hidden or unlaid-out canvas reports 0 and every drawImage of it throws
     const c = this.canvas;
-    this.dpr = Math.max(1, Math.min(DPR_CAP, Math.floor(window.devicePixelRatio || 1)));   // integer only -- see DPR_CAP
+    const ratio = window.devicePixelRatio || 1, sharp = typeof Terrain !== 'undefined' && Terrain.textured;
+    this.dpr = Math.max(1, Math.min(DPR_CAP, sharp ? ratio : Math.floor(ratio)));   // a whole number for the classic look only -- see DPR_CAP
     this.W = Math.max(1, window.innerWidth); this.H = Math.max(1, window.innerHeight);
     c.width = Math.round(this.W * this.dpr); c.height = Math.round(this.H * this.dpr);
     c.style.width = this.W + 'px'; c.style.height = this.H + 'px';   // or the element lays out at its backing size
@@ -251,7 +259,7 @@ const Render = {
     // Whole pixels, or the filter eats the dither -- see Terrain.draw. Only at zoom 1: at any other
     // zoom the blit is resampled anyway and rounding the camera would just make the creep crawl
     // against the terrain under it by up to a pixel as you scroll.
-    const ox = z === 1 ? Math.round(this.camX) : this.camX, oy = z === 1 ? Math.round(this.camY) : this.camY;
+    const dq = z === 1 ? this.dpr : 0, ox = dq ? Math.round(this.camX * dq) / dq : this.camX, oy = dq ? Math.round(this.camY * dq) / dq : this.camY;   // to a device pixel, as Terrain.draw
     for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
       const cv = Terrain.creepChunk(cx, cy); if (cv) ctx.drawImage(cv, cx * CH - ox, cy * CH - oy);
     }

@@ -28,7 +28,7 @@ units; a matching far view and minimap; no hitch over 50 ms on The Long March; d
 away in Settings. Nothing is queued. DEFERRED by the user until they say: the AI rebalance (TODO-M18 7b). SKIPPED by the user: a
 look-and-feel pass of PLAYTEST-M18 101-108.
 
-THE NEXT ACTION: read the user's playtest of PLAYTEST-M18 110-116 (node tools/playtest-listen.js records one -- the head of
+THE NEXT ACTION: read the user's playtest of PLAYTEST-M18 110-117 (node tools/playtest-listen.js records one -- the head of
 PLAYTEST-M18.md says how; TODO-M18 has the findings so far), then fix what they find.
 
 READ, in this order, before touching anything:
@@ -64,7 +64,8 @@ HARD RULES:
 ## The state
 
 - **THE USER IS PLAYTESTING IT** (the recorder, `node tools/playtest-listen.js`; TODO-M18, THE USER'S PLAYTEST OF THE TERRAIN QUEUE).
-  First finding, dark grid lines on the ground when zoomed: fixed (PLAYTEST-M18 116).
+  Findings so far, both fixed: dark grid lines on the ground when zoomed (PLAYTEST-M18 116); the ground and props too soft on a
+  150% display -- detailed terrain now draws at the display's real resolution and sharpens a frame at a time (117).
 - **THE TERRAIN QUEUE is DONE** -- all five of the user's items and phase 1's leftovers, each committed and pushed: walled ramps
   (PLAYTEST-M18 110), detailed terrain on all five tilesets (111), props on open ground (112), the far view, the minimap and speed
   (113), mined-out mineral patches that open nothing (114), and detailed terrain on by default with Classic in Settings (115).

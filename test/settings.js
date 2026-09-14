@@ -156,6 +156,12 @@ const R = (c, src) => vm.runInContext('(() => {' + src + '})()', c);
     UI.menu = null;
     return { a, b, c, on1, st1, on2: Terrain.textured, st2: __store.bw_terrain };
   `);
+  const ratio = (() => { const cx = mkCtx(); cx.devicePixelRatio = 1.5; cx.innerWidth = 1200; cx.innerHeight = 800; return R(cx, `
+    UI.loadPrefs(); Render.init(document.createElement('canvas'));
+    const a = { dpr: Render.dpr, w: Render.canvas.width }; UI.setTerrainLook('classic'); const b = { dpr: Render.dpr, w: Render.canvas.width }; UI.setTerrainLook('detailed');
+    return { a, b, d: { dpr: Render.dpr, w: Render.canvas.width } };
+  `); })();
+  ok(ratio.a.dpr === 1.5 && ratio.a.w === 1800 && ratio.b.dpr === 1 && ratio.b.w === 1200 && ratio.d.dpr === 1.5 && ratio.d.w === 1800, 'TERRAIN: on a 1.5 display the canvas takes the display\'s own ratio with detailed terrain (1800 pixels for a 1200 page) and the whole number with Classic, and switching the look resizes it', JSON.stringify(ratio));
   ok(menu.a === 'Terrain: Detailed' && menu.b === 'Terrain: Classic' && menu.on1 === false && menu.st1 === '"classic"' && menu.c === 'Terrain: Detailed' && menu.on2 === true && menu.st2 === '"detailed"', 'TERRAIN: the in-game settings screen shows the look, and a press switches it either way and remembers it', J(menu));
 }
 

@@ -19,6 +19,10 @@
 //  9. NO SEAM BETWEEN CHUNKS AT ANY ZOOM (the user's playtest: "dark tile lines in a grid"): in device pixels, every pixel on a
 //     boundary between two chunks is covered whole by the chunk drawn first, the other drawn after it, and no chunk is stretched by
 //     more than a pixel; at zoom 1 every chunk is exactly its size, on whole pixels.
+// 10. SHARP GROUND: a chunk in view is refined to the least of 1, 1.5 and 2 covering the device pixels a world pixel spans; only once
+//     nothing in view is missing; REFINE_MS of a frame at a time -- a row a draw at 0, one chunk a draw with no limit, never two --
+//     nearest the middle first; swapped in whole, the old canvas freed; a job dropped with its chunk; nothing refined on a 1x display
+//     at zoom 1.
 //  8. DETAILED BY DEFAULT, CLASSIC ONE CLICK AWAY (phase 5): detailed before any setting is read; whole frames of every tileset bake
 //     every chunk from the textures; switching to Classic mid-game bakes the palette's ground though the textures are loaded, and
 //     the minimap and the far view follow; switching back steps the textured overview in rather than painting it in one frame.
@@ -355,8 +359,10 @@ const seams = R(`
   const bm = Terrain.BAKE_MS, cb = Terrain.CHUNK_BUDGET, out = [];
   TT.start('temple'); Terrain.BAKE_MS = 1e9; Terrain.CHUNK_BUDGET = 1e9;
   try {
-    for (const [z, dpr] of [[1, 1], [0.797, 1], [0.6, 1], [1.5, 1], [2.6, 1], [0.797, 2], [1, 2]]) {
-      Render.dpr = dpr; Render.setZoom(z); Render.zoom = z; UI.centerOn(40.3 * TILE, 41.7 * TILE);
+    // [zoom, display ratio, camera a world px over]: at 1.5 and zoom 1 the camera at an odd CSS pixel too, where rounding to a CSS pixel
+    // puts every chunk half a device pixel off and rounding to a device pixel does not
+    for (const [z, dpr, nudge] of [[1, 1, 0], [0.797, 1, 0], [0.6, 1, 0], [1.5, 1, 0], [2.6, 1, 0], [0.797, 2, 0], [1, 2, 0], [1, 1.5, 0], [1, 1.5, 1], [0.797, 1.5, 0]]) {
+      Render.dpr = dpr; Render.setZoom(z); Render.zoom = z; UI.centerOn(40.3 * TILE + nudge, 41.7 * TILE + nudge);
       for (let i = 0; i < 80; i++) TT.draw();
       _rec.reset(); _rec.on = true; TT.draw(); _rec.on = false;
       const C = Terrain.CH * TILE, s = z * dpr, byCanvas = new Map([...Terrain.chunks].map(([k, c]) => [c, k])), at = new Map();
@@ -371,14 +377,62 @@ const seams = R(`
         if (R2) { pairs++; if (R2.i < A.i) order++; if (!covered(A.x + A.w, R2.x)) gaps.push(k + ' right'); }
         if (D) { pairs++; if (D.i < A.i) order++; if (!covered(A.y + A.h, D.y)) gaps.push(k + ' below'); }
       }
-      out.push({ zoom: z, dpr, chunks: at.size, pairs, gaps: gaps.length, firstGaps: gaps.slice(0, 3), order, stretched, exact });
+      out.push({ zoom: z, dpr, nudge, cam: [+Render.camX.toFixed(2), +Render.camY.toFixed(2)], chunks: at.size, pairs, gaps: gaps.length, firstGaps: gaps.slice(0, 3), order, stretched, exact });
     }
   } finally { Terrain.BAKE_MS = bm; Terrain.CHUNK_BUDGET = cb; Render.dpr = 1; Render.setZoom(1); }
   return out;
 `);
-ok(seams.length === 7 && seams.every(c => c.chunks >= 2 && c.pairs >= 1), 'seams: the draw calls of ' + seams.map(c => c.chunks).join('/') + ' chunks at seven zooms and display ratios, their neighbours paired (' + seams.map(c => c.pairs).join('/') + ')', JSON.stringify(seams));
+ok(seams.length === 10 && seams.every(c => c.chunks >= 2 && c.pairs >= 1) && seams.filter(c => c.dpr === 1.5 && c.zoom === 1).some(c => Math.round(c.cam[0]) % 2 === 1), 'seams: the draw calls of ' + seams.map(c => c.chunks).join('/') + ' chunks at ten zooms, display ratios and camera positions -- a 1.5 display among them, once with the camera on an odd pixel -- their neighbours paired (' + seams.map(c => c.pairs).join('/') + ')', JSON.stringify(seams));
 ok(seams.every(c => c.gaps === 0 && c.order === 0), 'seams: at every zoom every pixel on a boundary is covered whole by the chunk drawn first, and the chunk to its right or below is drawn after it -- no dark fill shows through', JSON.stringify(seams.filter(c => c.gaps || c.order)));
-ok(seams.every(c => c.stretched === 0) && seams.filter(c => c.zoom === 1).every(c => c.exact), 'seams: no chunk is stretched by more than a device pixel, and at zoom 1 each is exactly its size on whole pixels', JSON.stringify(seams.map(c => ({ zoom: c.zoom, dpr: c.dpr, stretched: c.stretched, exact: c.exact }))));
+ok(seams.every(c => c.stretched === 0) && seams.filter(c => c.zoom === 1).every(c => c.exact), 'seams: no chunk is stretched by more than a device pixel, and at zoom 1 each is exactly its size on whole device pixels, at a display ratio of 1.5 too', JSON.stringify(seams.map(c => ({ zoom: c.zoom, dpr: c.dpr, stretched: c.stretched, exact: c.exact }))));
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// 10. Sharp ground, refined a step at a time
+// ---------------------------------------------------------------------------------------------------------------------------
+const sharpKs = R(`
+  const d = Render.dpr, out = [];
+  for (const [dpr, zoom] of [[1, 1], [1.5, 1], [1.5, 0.8], [1, 1.3], [2, 1], [1.5, 2.6], [1.25, 0.7]]) { Render.dpr = dpr; out.push(Terrain.sharpK(zoom)); }
+  Render.dpr = d; return out;
+`);
+ok(JSON.stringify(sharpKs) === JSON.stringify([1, 1.5, 1.5, 1.5, 2, 2, 1]), 'sharp: a chunk in view is refined to the least of 1, 1.5 and 2 covering the device pixels a world pixel spans -- 1x at zoom 1: 1; 1.5x: 1.5; 1.5x zoomed to 0.8: 1.5; 1x zoomed to 1.3: 1.5; 2x: 2; 1.25x at 0.7: 1', JSON.stringify(sharpKs));
+const refine = R(`
+  TT.start('temple'); Render.W = 400; Render.H = 360; Render.viewW = 400; Render.viewH = 300; Render.dpr = 1.5; Render.setZoom(1); Render.zoom = 1; UI.centerOn(40.3 * TILE, 40.7 * TILE);
+  const bm = Terrain.BAKE_MS, cb = Terrain.CHUNK_BUDGET, rm = Terrain.REFINE_MS, out = {}, v = TT.view();
+  const at = k => Terrain.chunks.get(k), dist = k => { const [x, y] = k.split(',').map(Number); return (x - v.mx) * (x - v.mx) + (y - v.my) * (y - v.my); };
+  try {
+    Terrain.clearChunks(); Terrain._job = null; Terrain.BAKE_MS = 0; Terrain.CHUNK_BUDGET = 1; Terrain.REFINE_MS = 0;
+    // missing first: one chunk a draw, all at ratio 1, and no job until the view is whole
+    let draws = 0, sharpEarly = false, jobEarly = false;
+    while (v.keys.some(k => !at(k)) && draws < 50) { TT.draw(); draws++; if (v.keys.some(k => at(k) && (at(k).k || 1) > 1)) sharpEarly = true; if (Terrain._job && v.keys.some(k => !at(k))) jobEarly = true; }
+    out.visible = v.keys.length; out.drawsToWhole = draws; out.sharpEarly = sharpEarly; out.jobEarly = jobEarly;
+    // REFINE_MS 0: the chunk nearest the middle, a row a draw, swapped in whole when its last row is done
+    const nearest = v.keys.slice().sort((a, b) => dist(a) - dist(b))[0], base = at(nearest), s0 = Terrain.sharpened || 0;
+    let rows = 0, early = false; do { TT.draw(); rows++; if (at(nearest) !== base && rows < 841) early = true; } while (at(nearest) === base && rows < 2000);
+    out.nearest = nearest; out.rows = rows; out.swappedEarly = early; out.newK = at(nearest).k; out.oldFreed = base.width === 0; out.oneSharpened = (Terrain.sharpened || 0) - s0 === 1;
+    // no limit: one chunk a draw, never two, nearest the middle first, until all in view are sharp
+    Terrain.REFINE_MS = 1e9; const order = []; let perDraw = [];
+    for (let i = 0; i < 20 && v.keys.some(k => (at(k).k || 1) < 1.5); i++) { const before = v.keys.filter(k => (at(k).k || 1) >= 1.5); TT.draw(); const now = v.keys.filter(k => (at(k).k || 1) >= 1.5 && !before.includes(k)); perDraw.push(now.length); order.push(...now); }
+    out.perDraw = perDraw; out.nearestFirst = order.every((k, i) => i === 0 || dist(order[i - 1]) <= dist(k) + 1e-9); out.allSharp = v.keys.every(k => at(k).k === 1.5);
+    // nothing left in view: the ring is baked ahead again, at ratio 1
+    const ringBefore = Terrain.chunks.size; for (let i = 0; i < 5; i++) TT.draw(); out.ringResumed = Terrain.chunks.size > ringBefore;
+    // a job dropped with its chunk: start one, drop the chunk under it, and once the view is whole again the old job is gone
+    Terrain.REFINE_MS = 0; const k0 = v.keys[0]; at(k0).k = 1; Terrain._job = null; TT.draw();
+    const oldJob = Terrain._job, hadJob = !!oldJob && oldJob.key === k0, [kx, ky] = k0.split(',').map(Number);
+    Terrain.invalidateTiles(kx * Terrain.CH + 1, ky * Terrain.CH + 1, 1, 1);
+    let g = 0; while (v.keys.some(k => !at(k)) && g++ < 30) TT.draw();
+    const rebuilt = at(k0); TT.draw();
+    out.dropped = { hadJob, rebuiltAtOne: !!rebuilt && (rebuilt.k || 1) === 1, oldJobGone: Terrain._job !== oldJob, notSwapped: at(k0) === rebuilt };
+    // a 1x display at zoom 1: nothing refined
+    Render.dpr = 1; Terrain.clearChunks(); Terrain._job = null; Terrain.REFINE_MS = 1e9; const s1 = Terrain.sharpened || 0; for (let i = 0; i < 60; i++) TT.draw();
+    out.oneX = { sharpened: (Terrain.sharpened || 0) - s1, allAtOne: [...Terrain.chunks.values()].every(c => (c.k || 1) === 1) };
+  } finally { Terrain.BAKE_MS = bm; Terrain.CHUNK_BUDGET = cb; Terrain.REFINE_MS = rm; Render.dpr = 1; }
+  return out;
+`);
+ok(refine.visible >= 2 && refine.drawsToWhole === refine.visible && !refine.sharpEarly && !refine.jobEarly, 'sharp: from an empty view on a 1.5 display the ' + refine.visible + ' chunks in view are baked first, one a draw at ratio 1, and nothing is refined until none is missing', JSON.stringify(refine));
+ok(refine.rows === 841 && !refine.swappedEarly && refine.newK === 1.5 && refine.oldFreed && refine.oneSharpened, 'sharp: with no time to spare a draw, the chunk nearest the middle is baked a row a draw (840 rows at 1.5 and the draw that finishes it), swapped in whole at the last and its old canvas freed', JSON.stringify(refine));
+ok(refine.perDraw.length > 0 && refine.perDraw.every(n => n === 1) && refine.nearestFirst && refine.allSharp && refine.ringResumed, 'sharp: with time to spare, one chunk a draw and never two, nearest the middle first, until all in view are sharp -- then the ring ahead is baked again', JSON.stringify(refine));
+ok(refine.dropped.hadJob && refine.dropped.rebuiltAtOne && refine.dropped.oldJobGone && refine.dropped.notSwapped, 'sharp: a job whose chunk is dropped under it is dropped too; the chunk baked again at ratio 1 is not replaced by the old job', JSON.stringify(refine.dropped));
+ok(refine.oneX.sharpened === 0 && refine.oneX.allAtOne, 'sharp: on a 1x display at zoom 1 nothing is refined', JSON.stringify(refine.oneX));
 
 ok(errors.length === 0, 'no console errors', JSON.stringify(errors.slice(0, 3)));
 summary();

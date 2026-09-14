@@ -292,7 +292,7 @@ const Terrain = {
   clearChunks() { for (const c of this.chunks.values()) this.releaseChunk(c); this.chunks.clear(); },
   // Scratch memory a bake reuses: a textured chunk used to allocate about 2.1 MB it threw away (five float grids and an ImageData).
   scratch(name, n) { const s = this._scratch || (this._scratch = {}); if (!s[name] || s[name].length !== n) s[name] = new Float32Array(n); return s[name]; },
-  imageFor(x, W) { const s = this._imgs || (this._imgs = {}); if (!s[W]) s[W] = x.createImageData(W, W); return s[W]; },
+  imageFor(x, W, ns = '') { const s = this._imgs || (this._imgs = {}), key = ns + W; if (!s[key]) s[key] = x.createImageData(W, W); return s[key]; },
   // The chunk cache had no bound, and did not need one while the camera never saw more than about
   // thirty chunks: a game would cache a few hundred over an hour of scrolling and that was that.
   // Zooming out to OVER_Z puts a hundred and forty in view AT ONCE, and panning a 256-tile map at
@@ -311,7 +311,10 @@ const Terrain = {
   // `& 3` -- so sampling at 1/k of a world unit still lands every k*k block of device pixels in one
   // Bayer cell. The threshold pattern keeps exactly the apparent size it has at ratio 1; what gets
   // finer is the noise, the material blend and the vector pass on top.
-  bakeDpr() { return (typeof Render !== 'undefined' && Render.dpr) || 1; },
+  //
+  // Whole numbers only, then: detailed terrain draws at the display's real ratio (Render.resize), 1.5 on many displays, and at 1.5 a
+  // Bayer cell would be a pixel and a half. The palette bakes at the whole part of it; a textured chunk is refined to its own ratio.
+  bakeDpr() { return Math.max(1, Math.floor((typeof Render !== 'undefined' && Render.dpr) || 1)); },
   // ---- textured ground (see TERRAIN_TEX) --------------------------------
   // Detailed unless the player chose Classic (UI.loadPrefs reads it at boot, UI.setTerrainLook changes it) or the address says
   // ?hd=0. Classic stays for a slow machine. It is also all the headless suites ever paint, whatever this says: they have no
@@ -327,20 +330,35 @@ const Terrain = {
   setTextured(on) { on = !!on; if (on !== this.textured) { this.textured = on; this.clearChunks(); this.overRev = (this.overRev || 0) + 1; } return on; },
   TEX_PX: 512,   // texels in one repeat of a ground texture: sixteen tiles, which puts a metre of a 20 m aerial scan at about 25 px, a Marine's width
   _tex: {},
-  // The set's textures, each drawn once into a TEX_PX canvas and kept as pixels; null until every one has loaded (the palette
-  // paints until then), and the chunk cache is dropped as each arrives so the ground bakes again with it.
+  // The set's textures, each drawn once into a size x size canvas (TEX_PX unless asked) and kept as pixels; null until every one has
+  // loaded (the palette paints until then), and the chunk cache is dropped as each arrives so the ground bakes again with it. A set at
+  // another size -- a sharp chunk's, TEX_PX times its ratio, up to the files' own 1024 -- is made one texture a call (_texMade says a
+  // call made one), so no frame draws, reads back and heals four textures of four times the size at once.
   look() { return TERRAIN_LOOK[this.setId] || TERRAIN_LOOK.badlands; },
-  texSet() {
+  texSet(size) {
+    this._texMade = false;
     const spec = this.textured && TERRAIN_TEX[this.setId];
     if (!spec || typeof Image === 'undefined' || typeof document === 'undefined') return null;
-    const look = this.look(), S = this.TEX_PX, out = {}; let ready = true;
+    const look = this.look(), S = size || this.TEX_PX, out = {}; let ready = true;
     for (const part of Object.keys(spec)) {
       const url = spec[part]; let e = this._tex[url];
       if (!e) { e = this._tex[url] = { img: new Image(), ok: false, data: {} }; e.img.onload = () => { e.ok = true; this.clearChunks(); }; e.img.src = url; }
       if (!e.ok) { ready = false; continue; }
-      // kept per treatment: two sets may lay one texture down plain and healed
-      const heal = (look.heal || []).includes(part), key = heal ? 'healed' : 'plain';
-      if (!e.data[key]) { const cv = document.createElement('canvas'); cv.width = cv.height = S; const x = cv.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(e.img, 0, 0, S, S); const px = x.getImageData(0, 0, S, S).data; e.data[key] = heal ? this.healFlecks(px, S) : px; }
+      // kept per treatment and size: two sets may lay one texture down plain and healed
+      const heal = (look.heal || []).includes(part), key = (heal ? 'healed' : 'plain') + (S === this.TEX_PX ? '' : S);
+      if (!e.data[key]) {
+        if (S === this.TEX_PX) { const cv = document.createElement('canvas'); cv.width = cv.height = S; const x = cv.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(e.img, 0, 0, S, S); const px = x.getImageData(0, 0, S, S).data; e.data[key] = heal ? this.healFlecks(px, S) : px; }
+        else {
+          // drawn and read back in one call, healed a step a call after that: Ice's snow healed at 768 in one piece was a 56 ms frame
+          if (this._texMade) { ready = false; continue; }
+          this._texMade = true;
+          const mk = e.making || (e.making = {});
+          if (!mk[key]) {
+            const cv = document.createElement('canvas'); cv.width = cv.height = S; const x = cv.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(e.img, 0, 0, S, S); const px = x.getImageData(0, 0, S, S).data;
+            if (!heal) e.data[key] = px; else { mk[key] = this.healSteps(px, S); ready = false; continue; }
+          } else { const r = mk[key].next(); if (!r.done) { ready = false; continue; } e.data[key] = r.value; delete mk[key]; }
+        }
+      }
       out[part] = e.data[key];
     }
     return ready ? out : null;
@@ -352,31 +370,43 @@ const Terrain = {
   // at 12 and 16 each twig left a grey ghost of its shape.
   HEAL_R: 24, HEAL_K: 0.97, HEAL_SOFT: 0.1,
   CELL_TILES: 6, CELL_BAND: 0.2,   // look.cells: a square's side in tiles, and how far either side of its border, in squares, two are blended
-  healFlecks(d, S) {
+  healFlecks(d, S) { const it = this.healSteps(d, S); for (;;) { const r = it.next(); if (r.done) return r.value; } },
+  // The same, in steps: each channel's box means one, then the flecks a sixth of the texture at a time (see texSet).
+  *healSteps(d, S) {
     const R = Math.max(1, Math.round(S * this.HEAL_R / 512)), n = (2 * R + 1) * (2 * R + 1), N = S * S, W = S + 1;
-    const mean = ch => {
+    const mean = function* (ch) {
       const sat = new Float64Array(W * W);
       for (let j = 0; j < S; j++) { let row = 0; for (let i = 0; i < S; i++) { row += d[(j * S + i) * 4 + ch]; sat[(j + 1) * W + i + 1] = sat[j * W + i + 1] + row; } }
+      yield;
       // the sum over columns [0, i) and rows [0, j) of the texture tiled without end, so a box may run off any edge
       const at = (i, j) => { const qi = Math.floor(i / S), qj = Math.floor(j / S), ri = i - qi * S, rj = j - qj * S; return sat[S * W + S] * qi * qj + sat[rj * W + S] * qi + sat[S * W + ri] * qj + sat[rj * W + ri]; };
       const out = new Float32Array(N);
       for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) out[j * S + i] = (at(i + R + 1, j + R + 1) - at(i - R, j + R + 1) - at(i + R + 1, j - R) + at(i - R, j - R)) / n;
       return out;
     };
-    const mr = mean(0), mg = mean(1), mb = mean(2), K = this.HEAL_K, soft = this.HEAL_SOFT;
+    const mr = yield* mean(0); yield; const mg = yield* mean(1); yield; const mb = yield* mean(2); yield;
+    const K = this.HEAL_K, soft = this.HEAL_SOFT, band = Math.ceil(N / 6);
     for (let p = 0; p < N; p++) {
       const o = p * 4, L = d[o] + d[o + 1] + d[o + 2], M = mr[p] + mg[p] + mb[p], w = M > 0 ? Math.min(1, Math.max(0, (K * M - L) / (M * soft))) : 0;
       if (w > 0) { d[o] += (mr[p] - d[o]) * w; d[o + 1] += (mg[p] - d[o + 1]) * w; d[o + 2] += (mb[p] - d[o + 2]) * w; }
+      if (p % band === band - 1) yield;
     }
     return d;
   },
-  // A textured chunk. Baked at ratio 1 whatever the display: a photograph survives the upscale where the dither did not. Per
-  // chunk it costs about what the palette's does -- a median 18.5 ms against 21.7, measured in plain V8 over 256 chunks of Lost
-  // Ruins (RESEARCH-TERRAIN.md 8.4; inside a vm harness both run ten times slower) -- so on a dpr-2 display it is far cheaper.
-  renderChunkTex(cx, cy, T) {
-    const m = G.map, CH = this.CH, W = CH * TILE, look = this.look(), S = this.TEX_PX, grade = TERRAIN_GRADE[this.setId] || {};
-    const cv = document.createElement('canvas'); cv.width = W; cv.height = W; const x = cv.getContext('2d');
-    const img = this.imageFor(x, W), d = img.data, ox = cx * CH * TILE, oy = cy * CH * TILE;   // reused: every pixel is written below
+  // A textured chunk, at ratio K -- K chunk pixels to a world pixel, 1 unless asked -- from textures of any size (S texels to the
+  // sixteen tiles of a repeat). At ratio 1 it costs about what the palette's does -- a median 18.5 ms against 21.7, measured in plain
+  // V8 over 256 chunks of Lost Ruins (RESEARCH-TERRAIN.md 8.4; inside a vm harness both run ten times slower); at ratio K it costs K
+  // squared times as much, which is why a sharp chunk is never baked in one frame (refine, below).
+  renderChunkTex(cx, cy, T, K = 1) { const it = this.texBakeSteps(cx, cy, T, K, ''); for (;;) { const r = it.next(); if (r.done) return r.value; } },
+  // The bake, in steps: it yields after every row of each of its two pixel passes, so refine can spread a sharp chunk over frames. ns
+  // names the scratch memory it uses, since a bake spread over frames must not share its grids with the bakes that run in between.
+  // Every length is written in world pixels and turned into chunk pixels by K, and at K 1 each expression reduces exactly to what it
+  // was before sharp chunks: the chunks the look was approved on are byte for byte what they were (.claude/review/terrain/bake-golden.js).
+  *texBakeSteps(cx, cy, T, K, ns) {
+    const m = G.map, CH = this.CH, W = Math.round(CH * TILE * K), look = this.look(), S = Math.round(Math.sqrt(T.low.length / 4)), sc = S / (16 * TILE), grade = TERRAIN_GRADE[this.setId] || {};
+    K = W / (CH * TILE);
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = W; cv.k = K; cv.tex = true; const x = cv.getContext('2d');
+    const img = this.imageFor(x, W, ns), d = img.data, ox = cx * CH * TILE, oy = cy * CH * TILE;   // reused: every pixel is written below
     // How HIGH each tile centre is -- low 0, a ramp or a cliff tile halfway, high 1 -- with where the rock zones and the ramps
     // are, softened by a 3x3 blur so a diagonal cliff is a slope and not a staircase of tile corners (the first pass traced
     // the grid exactly). It is read LINEARLY between centres and then pushed through a steep curve, so a cliff is one drop
@@ -407,12 +437,12 @@ const Terrain = {
     // a cliff or a wall tile. With the sharp mask alone the curve took over half a tile before each end of the ramp and put a
     // dark kink across its top and its foot; walls and cliffs keep their one crisp drop.
     const gk = blur(rpz); for (let o = 0; o < GW * GW; o++) if (wal[o]) gk[o] = 0;
-    const sm = t => t * t * (3 - 2 * t), PAD = 24, PW = W + 2 * PAD;
-    const hf = this.scratch('hf', PW * PW), rk = this.scratch('rk', PW * PW), rp = this.scratch('rp', PW * PW);   // reused: every cell is written below
+    const sm = t => t * t * (3 - 2 * t), PAD = Math.round(24 * K), PW = W + 2 * PAD;
+    const hf = this.scratch(ns + 'hf' + PW, PW * PW), rk = this.scratch(ns + 'rk' + PW, PW * PW), rp = this.scratch(ns + 'rp' + PW, PW * PW);   // reused: every cell is written below
     const celled = look.cells || [], cLow = celled.includes('low'), cHigh = celled.includes('high'), cRamp = celled.includes('ramp');
-    const wn1 = celled.length ? this.scratch('wn1', PW * PW) : null, wn2 = celled.length ? this.scratch('wn2', PW * PW) : null;
-    for (let py = 0; py < PW; py++) for (let pxx = 0; pxx < PW; pxx++) {
-      const wx = ox + pxx - PAD, wy = oy + py - PAD;
+    const wn1 = celled.length ? this.scratch(ns + 'wn1' + PW, PW * PW) : null, wn2 = celled.length ? this.scratch(ns + 'wn2' + PW, PW * PW) : null;
+    for (let py = 0; py < PW; py++) { for (let pxx = 0; pxx < PW; pxx++) {
+      const wx = ox + (pxx - PAD) / K, wy = oy + (py - PAD) / K;
       // a gentle warp of where the grid is read, so an edge wanders by up to a third of a tile instead of running dead straight
       const n1 = this.vnoise(wx / 37, wy / 37) - 0.5, n2 = this.vnoise(wx / 37 + 17, wy / 37 + 29) - 0.5, qx = wx + n1 * look.warp, qy = wy + n2 * look.warp;
       if (wn1) { wn1[py * PW + pxx] = n1; wn2[py * PW + pxx] = n2; }
@@ -431,10 +461,10 @@ const Terrain = {
       const kRamp = sm(Math.min(1, Math.max(rp[o], kk) * 1.5)), cliffH = sm(Math.min(1, Math.max(0, (lin - 0.5) / 0.36 + 0.5)));
       // rock zones stand a little above the high ground and are lumpy, so the light finds boulders and hollows in them
       hf[o] = cliffH * (1 - kRamp) + lin * kRamp + (rock > 0.05 ? (0.22 + (this.fbm(wx / 26, wy / 26, 2) - 0.5) * 0.6) * rock : 0);
-    }
+    } yield; }
     const Ln = Math.hypot(0.5, 0.6, 0.62), lx = -0.5 / Ln, ly = -0.6 / Ln, lz = 0.62 / Ln, RISE = 22, BUMP = 4;   // the sun: upper left and above; RISE world px of height per unit
     const A = [0, 0, 0], B = [0, 0, 0], col = [0, 0, 0], tmp = [0, 0, 0], one = [1, 1, 1];
-    const tex = (t, u, v, o) => { const p = ((((v | 0) % S) + S) % S * S + ((((u | 0) % S) + S) % S)) * 4; o[0] = t[p]; o[1] = t[p + 1]; o[2] = t[p + 2]; };
+    const tex = (t, u, v, o) => { u *= sc; v *= sc; const p = ((((v | 0) % S) + S) % S * S + ((((u | 0) % S) + S) % S)) * 4; o[0] = t[p]; o[1] = t[p + 1]; o[2] = t[p + 2]; };   // u, v in world px
     // A material is two samples of its texture -- the second transposed and rescaled -- mixed by broad noise, so the
     // sixteen-tile repeat does not line up into a visible grid across a map.
     const mix = look.mix || 0;
@@ -446,7 +476,7 @@ const Terrain = {
     // Judged at 4, 6 and 9 tiles (p2v-ice-cells). The square is found once a pixel, for every material laid in them.
     const CW = this.CELL_TILES * TILE, CB = this.CELL_BAND, C = [0, 0, 0], cellU = [0, 0, 0, 0], cellV = [0, 0, 0, 0], cellW = [0, 0, 0, 0];
     let cn = 0;
-    const cellPut = (jx, jy, w) => { cellU[cn] = this.hash(jx * 7 + 3, jy * 13 + 5) * S; cellV[cn] = this.hash(jy * 11 + 1, jx * 5 + 9) * S; cellW[cn++] = w; };
+    const cellPut = (jx, jy, w) => { cellU[cn] = this.hash(jx * 7 + 3, jy * 13 + 5) * (16 * TILE); cellV[cn] = this.hash(jy * 11 + 1, jx * 5 + 9) * (16 * TILE); cellW[cn++] = w; };   // offsets in world px
     const cellAt = (wx, wy, o) => {
       const gx = wx / CW + wn1[o] * 0.5, gy = wy / CW + wn2[o] * 0.5, ix = Math.floor(gx), iy = Math.floor(gy), fx = gx - ix, fy = gy - iy;
       const nx = fx < CB ? -1 : fx > 1 - CB ? 1 : 0, ny = fy < CB ? -1 : fy > 1 - CB ? 1 : 0;
@@ -458,11 +488,12 @@ const Terrain = {
       tex(t, wx, wy, A); if (!mix) { o[0] = A[0] * g[0]; o[1] = A[1] * g[1]; o[2] = A[2] * g[2]; return; } q *= mix; tex(t, wy * 0.83 + 331, wx * 0.83 + 173, B); o[0] = (A[0] + (B[0] - A[0]) * q) * g[0]; o[1] = (A[1] + (B[1] - A[1]) * q) * g[1]; o[2] = (A[2] + (B[2] - A[2]) * q) * g[2];
     };
     const gLow = grade.low || one, gHigh = grade.high || one, gRamp = grade.ramp || one, gRock = grade.rock || one;
-    const PL = this.propLayer(cx, cy, T), PSH = this.PROP_SHADOW;   // props on open ground: null where none reaches this chunk
-    for (let py = 0; py < W; py++) for (let pxx = 0; pxx < W; pxx++) {
-      const wx = ox + pxx, wy = oy + py, o = (py + PAD) * PW + pxx + PAD, h = hf[o];
+    const PL = this.propLayer(cx, cy, T, K, ns), PSH = this.PROP_SHADOW;   // props on open ground: null where none reaches this chunk
+    const SHY = Math.round(11 * K), SHX = Math.round(9 * K);   // where the shadow of higher ground is read from: 11 and 9 world px towards the sun
+    for (let py = 0; py < W; py++) { for (let pxx = 0; pxx < W; pxx++) {
+      const wx = ox + pxx / K, wy = oy + py / K, o = (py + PAD) * PW + pxx + PAD, h = hf[o];
       const q = sm(Math.min(1, Math.max(0, (this.vnoise(wx / 230, wy / 230) - 0.3) / 0.4)));
-      const dxh = (hf[o + 1] - hf[o - 1]) / 2, dyh = (hf[o + PW] - hf[o - PW]) / 2, steep = Math.sqrt(dxh * dxh + dyh * dyh);
+      const dxh = (hf[o + 1] - hf[o - 1]) / 2 * K, dyh = (hf[o + PW] - hf[o - PW]) / 2 * K, steep = Math.sqrt(dxh * dxh + dyh * dyh);   // per world px
       // low ground under high, the seam pushed about by noise; the high ground carries some of the low ground's grit, so it is
       // the same country raised up rather than a different floor
       const tH = sm(Math.min(1, Math.max(0, (h + (this.vnoise(wx / 19, wy / 19) - 0.5) * 0.3 - 0.3) / 0.35)));
@@ -487,7 +518,7 @@ const Terrain = {
       // the light: the height field's slope plus the rock's relief against the sun, so flat ground is exactly 1
       const sx = dxh * RISE + bx * BUMP, sy = dyh * RISE + by * BUMP;
       let shade = (-sx * lx - sy * ly + lz) / Math.sqrt(sx * sx + sy * sy + 1) / lz; shade = shade < 0.5 ? 0.5 : shade > 1.35 ? 1.35 : shade;
-      let env = 1; const up = hf[o - 11 * PW - 9] - h; if (up > 0.08) env = 1 - Math.min(0.32, (up - 0.08) * 0.7);   // the shadow of higher ground towards the sun
+      let env = 1; const up = hf[o - SHY * PW - SHX] - h; if (up > 0.08) env = 1 - Math.min(0.32, (up - 0.08) * 0.7);   // the shadow of higher ground towards the sun
       env *= 0.94 + (this.vnoise(wx / 150 + 40, wy / 150 + 40) - 0.5) * 0.18;   // broad light and dark patches, as clouds or wear
       shade *= env;
       const oo = (py * W + pxx) * 4; let r = col[0] * shade, g = col[1] * shade, b = col[2] * shade;
@@ -503,7 +534,7 @@ const Terrain = {
         }
       }
       d[oo] = r > 255 ? 255 : r; d[oo + 1] = g > 255 ? 255 : g; d[oo + 2] = b > 255 ? 255 : b; d[oo + 3] = 255;
-    }
+    } yield; }
     x.putImageData(img, 0, 0);
     return cv;
   },
@@ -593,17 +624,19 @@ const Terrain = {
     return { kind, tx, ty, x: (tx + 0.2 + 0.6 * this.hash(tx * 37 + 1, ty * 41 + 2)) * TILE, y: (ty + 0.2 + 0.6 * this.hash(tx * 43 + 4, ty * 47 + 6)) * TILE,
       s: this.hash(tx * 53 + 8, ty * 59 + 9), a: this.hash(tx * 61 + 10, ty * 67 + 12) * Math.PI * 2 };
   },
-  // The props over a chunk as layers of its pixels, one pixel of margin all round so a prop's slope can be read at the chunk's edge:
-  // h height (px), a cover (0-1), c colour, s shadow (0-1). Null when no prop reaches the chunk. One set of layers is kept and
-  // cleared for each chunk: chunks bake one at a time.
-  propLayer(cx, cy, T) {
-    const W = this.CH * TILE, LW = W + 2, ox = cx * this.CH * TILE - 1, oy = cy * this.CH * TILE - 1, R = this.PROP_R, reach = Math.ceil(R / TILE) + 1;
+  // The props over a chunk as layers of its pixels at ratio K, one pixel of margin all round so a prop's slope can be read at the
+  // chunk's edge: h height (layer px: world px times K, so a slope across a layer pixel is the slope across a world pixel), a cover
+  // (0-1), c colour, s shadow (0-1). Null when no prop reaches the chunk. One set of layers is kept for each ratio and namespace and
+  // cleared for each chunk.
+  propLayer(cx, cy, T, K = 1, ns = '') {
+    const W = Math.round(this.CH * TILE * K), LW = W + 2, ox = cx * this.CH * TILE - 1 / K, oy = cy * this.CH * TILE - 1 / K, R = this.PROP_R, reach = Math.ceil(R / TILE) + 1, span = LW / K;
     let L = null;
     for (let ty = cy * this.CH - reach; ty < (cy + 1) * this.CH + reach; ty++) for (let tx = cx * this.CH - reach; tx < (cx + 1) * this.CH + reach; tx++) {
-      const p = this.propAt(tx, ty); if (!p || p.x + R < ox || p.x - R >= ox + LW || p.y + R < oy || p.y - R >= oy + LW) continue;
+      const p = this.propAt(tx, ty); if (!p || p.x + R < ox || p.x - R >= ox + span || p.y + R < oy || p.y - R >= oy + span) continue;
       if (!L) {
-        if (!this._propL || this._propL.W !== LW) this._propL = { W: LW, h: new Float32Array(LW * LW), a: new Float32Array(LW * LW), c: new Float32Array(LW * LW * 3), s: new Float32Array(LW * LW) };
-        L = this._propL; L.h.fill(0); L.a.fill(0); L.c.fill(0); L.s.fill(0); L.ox = ox; L.oy = oy;
+        const slot = '_propL' + ns;
+        if (!this[slot] || this[slot].W !== LW) this[slot] = { W: LW, h: new Float32Array(LW * LW), a: new Float32Array(LW * LW), c: new Float32Array(LW * LW * 3), s: new Float32Array(LW * LW) };
+        L = this[slot]; L.h.fill(0); L.a.fill(0); L.c.fill(0); L.s.fill(0); L.ox = ox; L.oy = oy; L.K = K;
       }
       this.drawProp(L, p, T);
     }
@@ -619,17 +652,18 @@ const Terrain = {
   // footprint swept down and right by its height, darkest at the base) and then its surface, the taller surface kept where two
   // overlap. The bake lights the surface by its slopes, so every part is lit from the upper left like the sprites.
   drawProp(L, p, T) {
-    const P = TERRAIN_PROPS[this.setId], grade = TERRAIN_GRADE[this.setId] || {}, S = this.TEX_PX, LW = L.W, one = [1, 1, 1], C = [0, 0, 0];
+    const P = TERRAIN_PROPS[this.setId], grade = TERRAIN_GRADE[this.setId] || {}, S = Math.round(Math.sqrt(T.low.length / 4)), sc = S / (16 * TILE), K = L.K || 1, LW = L.W, one = [1, 1, 1], C = [0, 0, 0];
+    // Every shape below is written in world px from the layer's corner; only the pixel loops count in layer pixels, K to a world px.
     const X = p.x - L.ox, Y = p.y - L.oy, h = (k, a, b) => this.hash(p.tx * a + k, p.ty * b + k * 7), TAU = Math.PI * 2;
     const put = (x, y, hh, a, col) => {
-      if (x < 0 || y < 0 || x >= LW || y >= LW || a <= 0) return; const i = y * LW + x;
+      if (x < 0 || y < 0 || x >= LW || y >= LW || a <= 0) return; const i = y * LW + x; hh *= K;
       if (L.a[i] >= 0.5 && hh < L.h[i]) { if (a > L.a[i]) L.a[i] = a; return; }
       L.h[i] = hh; if (a > L.a[i]) L.a[i] = a; L.c[i * 3] = col[0]; L.c[i * 3 + 1] = col[1]; L.c[i * 3 + 2] = col[2];
     };
     const dark = (x, y, k) => { if (x < 0 || y < 0 || x >= LW || y >= LW) return; const i = y * LW + x; if (k > L.s[i]) L.s[i] = k; };
     const tint = (base, f) => { C[0] = base[0] * f; C[1] = base[1] * f; C[2] = base[2] * f; return C; };
     const mix3 = (u, v, t, f) => { C[0] = (u[0] + (v[0] - u[0]) * t) * f; C[1] = (u[1] + (v[1] - u[1]) * t) * f; C[2] = (u[2] + (v[2] - u[2]) * t) * f; return C; };
-    const texAt = (t, u, v) => ((((v | 0) % S) + S) % S * S + ((((u | 0) % S) + S) % S)) * 4;
+    const texAt = (t, u, v) => { u *= sc; v *= sc; return ((((v | 0) % S) + S) % S * S + ((((u | 0) % S) + S) % S)) * 4; };   // u, v in world px
     const sweep = (hh, fn) => { const sx = hh * 0.6, sy = hh * 0.72; for (const t of [0, 0.5, 1]) fn(sx * t, sy * t, 1 - 0.35 * t); };
     // A stone's colour: the set's stone colour, lightened and darkened by the cliff texture's own detail, with snow on the upper
     // faces or moss on the sides where the set has them. rel is the height over the rock's top; k picks the facet.
@@ -647,11 +681,11 @@ const Terrain = {
       const ax = cx + (h(seed, 3, 5) - 0.5) * r * 0.5, ay = cy + (h(seed + 1, 5, 3) - 0.5) * r * 0.5, dx = [], dy = [], sl = [], top = hMax * (1 - flat);
       for (let k = 0; k < m; k++) { const ang = p.a + seed + k * TAU / m + (h(seed + 2 + k, 7, 11) - 0.5) * (TAU / m) * 0.7; dx.push(Math.cos(ang)); dy.push(Math.sin(ang)); sl.push(hMax / (r * (0.7 + 0.55 * h(seed + 20 + k, 11, 7)))); }
       const at = (px, py, out) => { let v = top, kk = -1, s = 1; for (let k = 0; k < m; k++) { const hk = hMax - ((px - ax) * dx[k] + (py - ay) * dy[k]) * sl[k]; if (hk < v) { v = hk; kk = k; s = sl[k]; } } out[0] = v; out[1] = kk; out[2] = s; return v; };
-      const Q = [0, 0, 0], R = r * 1.3 + 1, x0 = Math.floor(cx - R), x1 = Math.ceil(cx + R + hMax * 0.6), y0 = Math.floor(cy - R), y1 = Math.ceil(cy + R + hMax * 0.72);
-      sweep(hMax, (sx, sy, w) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const v = at(x + 0.5 - sx, y + 0.5 - sy, Q) / Q[2] + 0.6; if (v > 0) dark(x, y, Math.min(1, v) * w); } });
+      const Q = [0, 0, 0], R = r * 1.3 + 1, x0 = Math.floor((cx - R) * K), x1 = Math.ceil((cx + R + hMax * 0.6) * K), y0 = Math.floor((cy - R) * K), y1 = Math.ceil((cy + R + hMax * 0.72) * K);
+      sweep(hMax, (sx, sy, w) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const v = at((x + 0.5) / K - sx, (y + 0.5) / K - sy, Q) / Q[2] + 0.6; if (v > 0) dark(x, y, Math.min(1, v) * w); } });
       for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-        const v = at(x + 0.5, y + 0.5, Q); if (v <= 0) continue;
-        const wx = L.ox + x, wy = L.oy + y, rough = (this.vnoise(wx / 1.6 + seed, wy / 1.6) - 0.5) * 0.5 * Math.min(1, v);
+        const v = at((x + 0.5) / K, (y + 0.5) / K, Q); if (v <= 0) continue;
+        const wx = L.ox + x / K, wy = L.oy + y / K, rough = (this.vnoise(wx / 1.6 + seed, wy / 1.6) - 0.5) * 0.5 * Math.min(1, v);
         put(x, y, v + rough, Math.min(1, v / Q[2] * 1.3), colour(wx, wy, v / hMax, Q[1]));
       }
     };
@@ -659,8 +693,8 @@ const Terrain = {
     // at both ends instead of rounded
     const blade = (xa, ya, xb, yb, wa, wb, ha, hb, colour, square) => {
       const dx = xb - xa, dy = yb - ya, ll = dx * dx + dy * dy || 1, hm = Math.max(ha, hb);
-      const box = (ox2, oy2, fn) => { for (let y = Math.floor(Math.min(ya, yb) - 2 + oy2); y <= Math.ceil(Math.max(ya, yb) + 2 + oy2); y++) for (let x = Math.floor(Math.min(xa, xb) - 2 + ox2); x <= Math.ceil(Math.max(xa, xb) + 2 + ox2); x++) {
-        const px = x + 0.5 - ox2, py = y + 0.5 - oy2, t0 = ((px - xa) * dx + (py - ya) * dy) / ll; if (square && (t0 < 0 || t0 > 1)) continue;
+      const box = (ox2, oy2, fn) => { for (let y = Math.floor((Math.min(ya, yb) - 2 + oy2) * K); y <= Math.ceil((Math.max(ya, yb) + 2 + oy2) * K); y++) for (let x = Math.floor((Math.min(xa, xb) - 2 + ox2) * K); x <= Math.ceil((Math.max(xa, xb) + 2 + ox2) * K); x++) {
+        const px = (x + 0.5) / K - ox2, py = (y + 0.5) / K - oy2, t0 = ((px - xa) * dx + (py - ya) * dy) / ll; if (square && (t0 < 0 || t0 > 1)) continue;
         const t = Math.min(1, Math.max(0, t0)), qx = xa + dx * t - px, qy = ya + dy * t - py, dd = Math.sqrt(qx * qx + qy * qy), w = (wa + (wb - wa) * t) / 2 + 0.45;
         if (dd < w) fn(x, y, t, dd / w, w - dd); } };
       sweep(hm, (sx, sy, k) => box(sx, sy, (x, y, t, e, m) => dark(x, y, Math.min(1, m) * 0.7 * k)));
@@ -675,15 +709,16 @@ const Terrain = {
     const leaf = (xa, ya, ang, len, wid, hMax, colour) => {
       const ux = Math.cos(ang), uy = Math.sin(ang), x0 = Math.floor(Math.min(xa, xa + ux * len) - wid - 1), x1 = Math.ceil(Math.max(xa, xa + ux * len) + wid + 1 + hMax), y0 = Math.floor(Math.min(ya, ya + uy * len) - wid - 1), y1 = Math.ceil(Math.max(ya, ya + uy * len) + wid + 1 + hMax);
       const at = (px, py, fn) => { const qx = px - xa, qy = py - ya, t = (qx * ux + qy * uy) / len, s = -qx * uy + qy * ux; if (t <= 0 || t >= 1) return; const w = wid * 0.5 * Math.pow(Math.sin(Math.PI * Math.pow(t, 0.7)), 0.8) + 0.35; if (Math.abs(s) < w) fn(t, Math.abs(s) / w, w - Math.abs(s)); };
-      sweep(hMax, (sx, sy, k) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) at(x + 0.5 - sx, y + 0.5 - sy, (t, e, m) => dark(x, y, Math.min(1, m * 1.5) * 0.7 * k)); });
-      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) at(x + 0.5, y + 0.5, (t, e, m) => put(x, y, hMax * (0.55 + 0.45 * (1 - e * e)) * (0.75 + 0.25 * Math.sin(Math.PI * t)), Math.min(1, m * 1.5), colour(t, e)));
+      const X0 = Math.floor(x0 * K), X1 = Math.ceil(x1 * K), Y0 = Math.floor(y0 * K), Y1 = Math.ceil(y1 * K);
+      sweep(hMax, (sx, sy, k) => { for (let y = Y0; y <= Y1; y++) for (let x = X0; x <= X1; x++) at((x + 0.5) / K - sx, (y + 0.5) / K - sy, (t, e, m) => dark(x, y, Math.min(1, m * 1.5) * 0.7 * k)); });
+      for (let y = Y0; y <= Y1; y++) for (let x = X0; x <= X1; x++) at((x + 0.5) / K, (y + 0.5) / K, (t, e, m) => put(x, y, hMax * (0.55 + 0.45 * (1 - e * e)) * (0.75 + 0.25 * Math.sin(Math.PI * t)), Math.min(1, m * 1.5), colour(t, e)));
     };
     // an axis-aligned box w x hh with bevelled edges, top height top; colour(wx, wy, edgeDistance)
     const box = (x0, y0, w, hh, top, bevel, colour) => {
-      sweep(top, (sx, sy, k) => { for (let y = Math.floor(y0 + sy); y < Math.ceil(y0 + hh + sy); y++) for (let x = Math.floor(x0 + sx); x < Math.ceil(x0 + w + sx); x++) dark(x, y, 0.85 * k); });
-      for (let y = Math.floor(y0); y < Math.ceil(y0 + hh); y++) for (let x = Math.floor(x0); x < Math.ceil(x0 + w); x++) {
-        const ed = Math.min(x + 0.5 - x0, x0 + w - x - 0.5, y + 0.5 - y0, y0 + hh - y - 0.5); if (ed <= 0) continue;
-        put(x, y, top * Math.min(1, 0.45 + ed / bevel * 0.55), Math.min(1, ed + 0.5), colour(L.ox + x, L.oy + y, ed));
+      sweep(top, (sx, sy, k) => { for (let y = Math.floor((y0 + sy) * K); y < Math.ceil((y0 + hh + sy) * K); y++) for (let x = Math.floor((x0 + sx) * K); x < Math.ceil((x0 + w + sx) * K); x++) dark(x, y, 0.85 * k); });
+      for (let y = Math.floor(y0 * K); y < Math.ceil((y0 + hh) * K); y++) for (let x = Math.floor(x0 * K); x < Math.ceil((x0 + w) * K); x++) {
+        const ed = Math.min(x / K + 0.5 / K - x0, x0 + w - x / K - 0.5 / K, y / K + 0.5 / K - y0, y0 + hh - y / K - 0.5 / K); if (ed <= 0) continue;
+        put(x, y, top * Math.min(1, 0.45 + ed / bevel * 0.55), Math.min(1, ed + 0.5), colour(L.ox + x / K, L.oy + y / K, ed));
       }
     };
     // a tangle of twigs from a knot at (cx, cy): n branches of uneven length and angle, each with a side twig or two
@@ -1107,6 +1142,39 @@ const Terrain = {
     ctx.drawImage(cv, sx0, sy0, sx1 - sx0, sy1 - sy0, sx0 / P - camX, sy0 / P - camY, (sx1 - sx0) / P, (sy1 - sy0) / P);
     ctx.restore();
   },
+  // SHARP GROUND (the user's playtest, 2026-09-13: "The resolution of the land and doodads is a bit low, can we increase its resolution
+  // without ruining performance?"). Measured on their display, devicePixelRatio 1.5: the page drew everything at 1x and the browser
+  // stretched it, so a ground sample covered 2.25 screen pixels, and the textures were read at 512 of their files' 1024 texels. The
+  // canvas now takes the display's real ratio for detailed terrain (Render.resize), and a textured chunk can be baked at any ratio
+  // (texBakeSteps) -- but at ratio 2 a bake costs four times as much, a median 39 ms against 10 for the same loops at ratio 1 in the
+  // browser (.claude/review/terrain/sharp-baseline.log), and baking chunks that way as they came into view would stutter every scroll.
+  // So a missing chunk is still baked at ratio 1, as fast as ever; and once nothing in view is missing, the chunk in view nearest the
+  // middle that is coarser than the display can show -- sharpK: the least of SHARP_KS covering the device pixels a world pixel spans at
+  // this zoom -- is baked again at that ratio for REFINE_MS of a frame at a time (the bake yields every row) and swapped in whole when
+  // it is done. Coarse at once and the detail a moment later is the trade Unity's mipmap streaming makes. On a 1x display at zoom 1
+  // there is nothing to refine, and nothing about the ground changes; zoomed in, a 1x display gets sharper ground too.
+  REFINE_MS: 8, SHARP_KS: [1, 1.5, 2],
+  sharpK(zoom) { const need = zoom * ((typeof Render !== 'undefined' && Render.dpr) || 1), ks = this.SHARP_KS; for (const k of ks) if (k >= need - 1e-6) return k; return ks[ks.length - 1]; },
+  // One frame's step of sharpening, or false when there is nothing to do (and draw goes on to bake the ring ahead). A job belongs to a
+  // chunk as it stood: when the chunk is dropped or baked again, the map, the ratio or the textures change, the job is dropped too.
+  refine(zoom, cx0, cx1, cy0, cy1, mx, my) {
+    const K = this.sharpK(zoom); if (K <= 1) { this._job = null; return false; }
+    const T = this.texSet(Math.round(this.TEX_PX * K)); if (!T) return !!this._texMade;
+    const j0 = this._job;
+    if (j0 && (j0.map !== G.map || j0.K !== K || this.chunks.get(j0.key) !== j0.base || !this.sameTex(j0.T, T))) this._job = null;
+    if (!this._job) {
+      let best = null, bd = 0;
+      for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
+        const c = this.chunks.get(cx + ',' + cy); if (!c || !c.tex || (c.k || 1) >= K) continue;
+        const dd = (cx - mx) * (cx - mx) + (cy - my) * (cy - my); if (!best || dd < bd) { best = [cx, cy, c]; bd = dd; }
+      }
+      if (!best) return false;
+      this._job = { key: best[0] + ',' + best[1], base: best[2], K, T, map: G.map, it: this.texBakeSteps(best[0], best[1], T, K, 'job') };
+    }
+    const j = this._job, t0 = performance.now();
+    do { const r = j.it.next(); if (r.done) { this.releaseChunk(j.base); this.chunks.set(j.key, r.value); this._job = null; this.sharpened = (this.sharpened || 0) + 1; break; } } while (performance.now() - t0 < this.REFINE_MS);
+    return true;
+  },
   draw(ctx, camX, camY, vw, vh, zoom = 1) {
     const CH = this.CH * TILE; const x0 = Math.floor(camX / CH), y0 = Math.floor(camY / CH), x1 = Math.floor((camX + vw) / CH), y1 = Math.floor((camY + vh) / CH);
     const maxCx = Math.ceil(G.map.w / this.CH), maxCy = Math.ceil(G.map.h / this.CH);   // both axes: a 64x128 editor map lost its lower chunk rows to a clamp on the width (REVIEW-M17)
@@ -1121,7 +1189,10 @@ const Terrain = {
     // by the same rounded amount, since their origins are all multiples of CH, so there are no seams.
     // Only at zoom 1: at any other zoom the blit is resampled regardless, and rounding the camera in
     // world units would make the ground jitter by up to a whole pixel per scroll step instead.
-    const ox = zoom === 1 ? Math.round(camX) : camX, oy = zoom === 1 ? Math.round(camY) : camY;
+    // Rounded to a DEVICE pixel: detailed terrain draws at the display's real ratio, 1.5 on many displays (Render.resize), and a chunk
+    // is then CH x 1.5 device pixels -- a whole number -- so every chunk still lands exact. At a whole ratio this is what it was.
+    const dq = zoom === 1 ? ((typeof Render !== 'undefined' && Render.dpr) || 1) : 0;
+    const ox = dq ? Math.round(camX * dq) / dq : camX, oy = dq ? Math.round(camY * dq) / dq : camY;
     // AT ANY OTHER ZOOM EACH CHUNK IS DRAWN ONE DEVICE PIXEL WIDER AND TALLER THAN IT IS (the user's playtest, 2026-09-13: "why do I
     // see dark tile lines in a grid?"). Resampled, a chunk's edges land between device pixels, so the pixel on a boundary is only
     // partly covered by each of the two chunks either side of it, and the frame's dark fill shows through: a dark line every eight
@@ -1146,6 +1217,8 @@ const Terrain = {
       if (baked < missing.length) this.drawOverview(ctx, camX, camY, vw, vh);   // under whatever is still missing
     } else if (upgrade) {
       this.overviewStep(T);   // nothing on screen missing: a step of the textured overview before any chunk ahead
+    } else if (this.refine(zoom, cx0, cx1, cy0, cy1, mx, my)) {
+      // nothing missing and the overview whole: a step of a sharper chunk in view (see refine), before any chunk ahead
     } else if ((cx1 - cx0 + 3) * (cy1 - cy0 + 3) <= this.CHUNK_CAP) {
       // Everything on screen is baked: bake one chunk of the ring round the view, nearest first. Only while the view and its whole
       // ring fit under CHUNK_CAP -- zoomed out on a big display they do not, and a ring chunk baked only to be evicted by trim()

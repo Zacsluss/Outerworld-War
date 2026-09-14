@@ -1679,3 +1679,65 @@ or hide them if you can." Drawing only -- `Terrain.draw` in `js/terrain.js`; the
   by more than a pixel; at the normal zoom each is exactly its size on whole pixels. Four negative controls, all red
   (`.claude/review/terrain/controls-seams.log`): no overlap, the overlap at the normal zoom too, five pixels over, and the squares
   drawn right to left.
+
+## 117. Sharper ground and props on high-resolution displays
+
+*(The user's playtest, 2026-09-13: "The resolution of the land and doodads is a bit low, can we increase its resolution without
+ruining performance?" Drawing only -- `js/terrain.js` (`texBakeSteps`, `Terrain.refine`), `js/render.js` (`Render.resize`), `js/ui.js`;
+the build stamp stays `ca141a3b7ffcb528`.)*
+
+**What changed for a player:**
+1. **On a display set above 100% scaling -- 125%, 150%, a Mac's Retina screen -- detailed terrain is drawn at the screen's own
+   resolution.** Ground grain, stone facets, grass blades and cliff rock are crisp instead of stretched. Measured on the user's display
+   (150%): the game drew everything at 100% and the browser stretched it, so each speck of ground covered 2.25 screen pixels, and the
+   ground textures used half the detail their files have.
+2. **The sharp detail arrives a moment after the view settles.** Ground that comes into view is drawn as quickly as before, then drawn
+   again sharp a piece at a time, the middle of the screen first: the middle within about half a second, a whole screen in two to
+   four seconds (at 60 frames a second). Scrolling and camera jumps stay as smooth as they were.
+3. **Zoom in past the normal view (mouse wheel) and the ground sharpens on any display**, a 100% one included.
+4. **The HUD, the menus and the in-game panels are crisper** on the same displays: everything drawn as shapes and text now uses the
+   screen's own pixels.
+5. **Unchanged:** a 100% display at the normal zoom looks exactly as before; the Classic look (Esc -> Settings -> Terrain) keeps drawing
+   at a whole-number resolution, as its pixel pattern needs; units and buildings are drawn from the same sprite sheets as before.
+
+**How to see it by hand:**
+1. **Sharp ground.** On a display scaled above 100%: **Single Player -> Skirmish**, any map, START, and look at open ground near your
+   base. *Working:* separate grass blades, stones with light and dark faces, fine grain in the dirt -- not a soft blur.
+2. **Sharpening.** Click a far corner of the minimap. *Working:* the new ground appears at once, a little soft, and turns sharp from the
+   middle of the screen outward within a few seconds; the game never stutters while it does.
+3. **Scrolling.** Hold an arrow key and scroll across the map, then diagonally. *Working:* as smooth as before.
+4. **Zoomed in.** On any display, roll the mouse wheel to zoom in. *Working:* the ground sharpens after a moment instead of staying blurry.
+
+**Invisible from normal play, and where to look instead:**
+- Measured in the browser on this machine's display (150%), Blood Pit and The Long March, detailed terrain:
+
+| What | Before | After |
+|---|---|---|
+| Canvas for a 1538 x 1270 page | 1538 x 1270 (stretched 1.5x) | 2307 x 1905 |
+| A chunk of ground, as it comes into view | 256 px, a median 12.0 ms to draw | the same |
+| A chunk drawn sharp (384 px at 150%) | -- | a median 27.7 ms of work (p90 37), in steps of at most 4.5 ms, 8 ms a frame at most |
+| Blood Pit at zoom 1: the middle / the whole screen sharp | -- | frame 32 / frame 141 (0.5 s / 2.4 s at 60 fps) |
+| Blood Pit at zoom 0.8: the whole screen (48 chunks) sharp | -- | frame 240 (4 s at 60 fps) |
+| Frames over 50 ms while sharpening | -- | none (the one at a game's start, the map picture, is as before) |
+| The Long March, worst frame: camera jump / scroll / diagonal / zoom 0.6 | 18.8 / 20.8 / 22.7 / 17.5 ms | 18.8 / 24.9 / 17.0 / 20.0 ms (two runs each) |
+| Preparing the sharp textures, worst frame (Ice's cleaned snow) | -- | 13 ms (56 ms before it was spread over frames) |
+| Memory for sharp ground | -- | about 0.6 MB a chunk in view (some 35-50 chunks) and 9 MB of textures |
+
+- `test/terraintex.js` 7 (5 new checks): the bake at the old resolution is byte for byte the approved one -- 20 chunks on five tilesets,
+  the roughest and the most open, pinned in `test/terrain-golden.json` from the code before this change; sharp chunks at 1.5x and 2x,
+  averaged over squares of four world pixels, are within 1.5 levels of that chunk (a neighbouring chunk is 51 off); props cover 2.25x and
+  4x the pixels; a sharp chunk drawn over hundreds of frames, with other chunks drawn between its steps, comes out pixel for pixel the
+  same as one drawn at once.
+- `test/terrainview.js` 10 (6 new checks) and 9: which resolution each display and zoom gets; missing ground drawn first; one row a frame
+  with no time to spare, one chunk a frame at most, the middle first; the old picture freed; nothing sharpened on a 100% display at the
+  normal zoom; ground pieces meeting on whole screen pixels at 150%. `test/settings.js` (1 new check): the canvas takes the display's own
+  ratio with detailed terrain and a whole one with Classic, switching the look resizes it. Thirteen negative controls, all red -- three
+  only after their checks were strengthened: the pinned chunks were all open ground (a change to cliff shadow got through), the sharp
+  comparison used flat chunks, and the camera sat on an even pixel (`.claude/review/terrain/controls-sharp.log`, `controls-sharp2.log`).
+
+**Deliberately different from what was asked, or not done:**
+- **Sharpness is not instant.** Drawing a screen of ground sharp at once would freeze the game for about a second; drawing it a little
+  each frame after the old detail keeps every frame smooth. Unity's texture streaming makes the same trade (low detail first).
+- **Units and buildings are not sharper.** Their sprite sheets are fixed-size pictures; making those sharper means redrawing every
+  sheet at twice the size, a separate decision (and four times the memory for them).
+- **Classic stays as it was** -- its checkered pixel pattern needs a whole-number resolution.

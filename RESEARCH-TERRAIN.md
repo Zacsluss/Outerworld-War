@@ -335,3 +335,13 @@ Licence: CC0, no credit needed ([polyhaven.com/license](https://polyhaven.com/li
   histograms are measured in the browser (`tools/terrain-levels.js`) and kept with the file's length and hash
   (`test/terrain-levels.json`); `test/terraintex.js` works each graded material's luminance out of them. They give back what phase 2
   measured in the browser: high ground over low 2.22, 3.49, 3.53, 3.88, 5.69; cliff rock over high ground 0.45, 0.43, 0.44, 0.29, 1.04.
+
+### 8.10 Sharp ground on high-resolution displays *(the user's playtest, 2026-09-13; PLAYTEST-M18 117)*
+
+- **A canvas is sharp only when its backing store has the display's pixels**: otherwise "the image is up-scaled from the backing store
+  to the screen, and then it is stretched and blurred" -- the fix is a canvas `devicePixelRatio` times the page's size, drawn under a
+  matching scale ([web.dev, High DPI Canvas](https://web.dev/articles/canvas-hidipi); [MDN, devicePixelRatio](https://developer.mozilla.org/en-US/docs/Web/API/Window/devicePixelRatio)).
+  The game had floored the ratio to a whole number for the classic look's dither, so a 150% display got a 100% canvas.
+- **Detail that costs more than a frame arrives progressively**: Unity's mipmap streaming loads low-resolution mips first and upgrades
+  them within a budget, accepting a moment of blur for smoothness ([Unity Manual, The Mipmap Streaming system](https://docs.unity3d.com/2021.3/Documentation/Manual/TextureStreaming.html)).
+  Here: a chunk at 1x at once, then again at the display's resolution a few milliseconds a frame (`Terrain.refine`).

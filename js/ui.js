@@ -120,7 +120,7 @@ const UI = {
   setHudScale(v) { const n = Number(v); this.hudScale = isFinite(n) ? Math.round(Math.max(HUD_SCALE_MIN, Math.min(HUD_SCALE_MAX, n)) * 10) / 10 : HUD_SCALE; this.savePref('bw_hud_scale', this.hudScale); return this.hudScale; },
   setScrollSpeed(v) { const n = Number(v); this.scrollSpeed = isFinite(n) ? Math.max(0.5, Math.min(2, n)) : 1; this.savePref('bw_scroll', this.scrollSpeed); return this.scrollSpeed; },
   setEdgeScroll(v) { this.edgeScroll = v !== false; this.savePref('bw_edge', this.edgeScroll); return this.edgeScroll; },
-  setTerrainLook(v) { const on = v !== 'classic'; if (typeof Terrain !== 'undefined') Terrain.setTextured(on); this.savePref('bw_terrain', on ? 'detailed' : 'classic'); return on ? 'detailed' : 'classic'; },
+  setTerrainLook(v) { const on = v !== 'classic'; if (typeof Terrain !== 'undefined') Terrain.setTextured(on); if (typeof Render !== 'undefined' && Render.canvas) Render.resize(); this.savePref('bw_terrain', on ? 'detailed' : 'classic'); return on ? 'detailed' : 'classic'; },   // the canvas's ratio follows the look (Render.resize)
   setVolume(v) { const n = Number(v); Sound.volume = isFinite(n) ? Math.max(0, Math.min(1, n)) : 1; this.savePref('bw_volume', Sound.volume); if (typeof Music !== 'undefined' && Music.setVolume) Music.setVolume(); return Sound.volume; },
   // The factor the band actually achieved, and therefore the scale its draw pass runs under. Never
   // below 1, because consoleH is never below consoleBase.

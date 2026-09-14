@@ -20,6 +20,14 @@ the commit.
   look 24. `Terrain.draw` now draws each chunk one device pixel over its size at any other zoom; no boundary more than a level darker
   at 0.45-2.6. Creep, blitted the same way, showed no measurable seam and is unchanged. `test/terrainview.js` section 9, four
   negative controls.
+- **"The resolution of the land and doodads is a bit low, can we increase its resolution without ruining performance?"** -- **DONE**
+  (PLAYTEST-M18 117). Measured first: their display is 150%, the game drew at 100% and the browser stretched it (each ground sample
+  over 2.25 screen pixels), and the textures were read at 512 of their 1024 texels; a chunk bakes in 12 ms, at twice the resolution in
+  39. So the canvas takes the display's real ratio with detailed terrain, missing ground is still baked at 1x, and `Terrain.refine`
+  bakes the chunks in view again at 1.5x or 2x (what the display and zoom can show) 8 ms a frame at most, middle first; a sharp set
+  of textures is made a step a frame. At 1x the bake is byte for byte the approved one (`test/terrain-golden.json`). The Long March
+  worst frames unchanged within noise (under 25 ms); a screen sharp in 2.4 s at zoom 1. `terraintex` 7, `terrainview` 10,
+  `settings`; thirteen negative controls. Not done, on purpose: units and buildings (fixed-size sprite sheets, a separate decision).
 
 ## THE TERRAIN QUEUE -- detailed terrain everywhere (the user, 2026-09-13)
 
