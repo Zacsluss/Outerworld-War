@@ -101,9 +101,10 @@ const TILESETS = {
 // the 4x4 Bayer matrix to show its whole ramp of densities, which is what reads as a dither rather
 // than as a jagged line. Narrower than about 0.12 and the stipple disappears into a hard step; wider
 // than about 0.4 and the dots spread far enough apart to read as noise on the terrain.
-// TEXTURED GROUND -- A TEST RUN, OFF BY DEFAULT (the user, 2026-09-13: "i do not need an editor. i just want great looking maps";
-// RESEARCH-TERRAIN.md). A tileset may name photographic ground textures (Poly Haven, CC0: assets/terrain/SOURCES.md). With
-// Terrain.textured on (?hd=1 in the address) and the set's textures loaded, a chunk is painted from them instead of from the
+// TEXTURED GROUND -- DETAILED TERRAIN, ON BY DEFAULT since the terrain queue's phase 5 (the user, 2026-09-13: "i do not need an
+// editor. i just want great looking maps"; of the Badlands test run, "Switch it on by default and commit."; RESEARCH-TERRAIN.md).
+// A tileset may name photographic ground textures (Poly Haven, CC0: assets/terrain/SOURCES.md). With Terrain.textured on -- it is,
+// unless the player chose Classic in Settings -- and the set's textures loaded, a chunk is painted from them instead of from the
 // palette: low ground, high ground, ramps, cliffs and rock, blended along the height steps and lit from the upper left like
 // every sprite, with the high ground's shadow thrown down its cliff. The map, the pathing and the simulation are untouched --
 // this is drawing only, so no replay or network game can tell the difference.
@@ -312,7 +313,18 @@ const Terrain = {
   // finer is the noise, the material blend and the vector pass on top.
   bakeDpr() { return (typeof Render !== 'undefined' && Render.dpr) || 1; },
   // ---- textured ground (see TERRAIN_TEX) --------------------------------
-  textured: typeof location !== 'undefined' && /[?&]hd=1(&|$)/.test(String(location.search || '')),
+  // Detailed unless the player chose Classic (UI.loadPrefs reads it at boot, UI.setTerrainLook changes it) or the address says
+  // ?hd=0. Classic stays for a slow machine. It is also all the headless suites ever paint, whatever this says: they have no
+  // images, so no texture loads there, and a test of the textured path hands renderChunkTex its texture data.
+  textured: true,
+  // ?hd=1 or ?hd=0 in the address: detailed or classic for this page whatever the setting (screenshots, a side-by-side); null if neither.
+  addressLook() { const m = typeof location !== 'undefined' && /[?&]hd=([01])(&|$)/.exec(String(location.search || '')); return m ? m[1] === '1' : null; },
+  // Detailed or classic, in the middle of a game too. Every chunk is dropped and baked again under the usual budget, and overRev
+  // moves so the minimap follows; the overview puts itself right -- a textured one gives way to the palette's the next time it is
+  // drawn, and a palette one is stepped over to the textures a few rows a frame, as when they arrive. Dropping the overview as well
+  // made the switch to detailed a 211 ms frame on The Long March (a whole textured overview at once); this way the worst frame
+  // measured was 47 ms (.claude/review/terrain/p5-toggle-probe.js).
+  setTextured(on) { on = !!on; if (on !== this.textured) { this.textured = on; this.clearChunks(); this.overRev = (this.overRev || 0) + 1; } return on; },
   TEX_PX: 512,   // texels in one repeat of a ground texture: sixteen tiles, which puts a metre of a 20 m aerial scan at about 25 px, a Marine's width
   _tex: {},
   // The set's textures, each drawn once into a TEX_PX canvas and kept as pixels; null until every one has loaded (the palette

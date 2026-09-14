@@ -1569,3 +1569,73 @@ slab is levelled and no high ground is put beside low. Ten negative controls tur
 - Over the 1,037 maps (`mined-compare.log`): 3,156 tiles walled on 210 maps, 2,384 levelled on 147; 0 cells changed anywhere but under a
   patch, 0 maps with anything reached, a hall, a mirror symmetry, an elevation or a ramp problem worse; with every patch mined out 0 ramp
   problems and 0 slopes; 0 walls standing alone.
+
+## 115. Detailed terrain is on for everyone, and Classic is one click away
+
+*(The user, 2026-09-13, the terrain queue's item 5: "Switch it on by default and commit." TODO-M18, THE TERRAIN QUEUE, phase 5.
+Drawing and interface only -- `js/terrain.js`, `js/ui.js`, `index.html`; the build stamp stays `ca141a3b7ffcb528`, and no save,
+replay or network game can tell which look a player uses.)*
+
+**What changed for a player:**
+1. **Every game is drawn in detailed terrain from the start**, with nothing added to the address: photographic ground on all five
+   tilesets, rocks and plants on open ground, the matching far view and minimap (items 111-113) -- and the walled ramps of 110 and
+   114 were already everyone's.
+2. **Classic is one click away.** **Settings -> Display -> Terrain** has two buttons, **Detailed** and **Classic**; in a game,
+   **Esc -> Settings -> Terrain: Detailed** switches with one press. Either applies at once, in the middle of a game too, and is
+   remembered the next time the game opens. Classic is the original painted look, lighter work for a slow computer.
+3. **Switching never freezes the game**: the ground is drawn again a piece a frame, so for a moment the edges of the screen are soft,
+   as after a camera jump. Measured on The Long March, the biggest map: no frame over 50 ms (the worst 47 ms).
+4. **For screenshots and side-by-sides**, `?hd=0` at the end of the address shows Classic and `?hd=1` Detailed for that page,
+   whatever the setting -- and changes nothing stored.
+5. **The desktop app shows detailed terrain too** (checked on a build of it), **but the installers on GitHub do not have any of the
+   terrain work yet**: they are built only when someone runs Actions -> Desktop builds -> Run workflow. `SHIPPING.md` says so for
+   the day the final build ships.
+
+**How to see it by hand:**
+1. **Detailed by default.** Open the game the usual way (PLAY.bat, or the desktop app), with nothing after the address. **Single
+   Player -> Skirmish**, map **Lost Ruins**, START. *Working:* photographic ground, rocks and plants, a lighter plateau with one crisp
+   cliff edge -- not the flat painted look.
+2. **Switch in a game.** Press **Esc -> Settings**. *Working:* a line **Terrain: Detailed** under HUD size. Press it: it reads
+   **Terrain: Classic**, and behind the menu the ground turns to the painted look within a moment, the minimap with it. Press it
+   again: detailed again. Zoom far out after each press: the far view is the same look.
+3. **The Settings screen.** Main menu -> **Settings -> Display**. *Working:* **Terrain** with **Detailed** lit and **Classic** beside
+   it, and a note that Classic is the original look, lighter on a slow computer. Click **Classic**, reload the page and start a game:
+   classic. Click **Detailed** to go back.
+4. **A slow computer.** If a big map stutters when you scroll, choose Classic and try again.
+
+**Invisible from normal play, and where to look instead:**
+- `test/settings.js` (7 new checks): detailed with nothing stored; Classic remembered; a malformed stored value is detailed; `?hd=`
+  decides for a page and stores nothing; a switch drops the baked ground and moves the minimap's revision; choosing the look in use
+  drops nothing; the in-game line switches both ways; the two buttons are on the Display tab.
+- `test/terrainview.js` section 8 (6 new checks, texture data handed in): detailed before any setting is read; whole frames of a game
+  on every tileset bake every chunk from the textures; switching to Classic bakes the palette's ground though the textures are
+  loaded, with the palette's minimap and far view; switching back steps the far view in, 32 draws for Lost Ruins' 128 rows, never one.
+- `test/terraintex.js` section 1b (3 new checks, the one phase 2 left open): from each texture's measured levels, every tileset's
+  graded high ground is at least as much lighter than its low ground as the approved Badlands', and its cliff rock neither a black
+  stroke nor a glare against its high ground.
+- `desktop/window-check.js` (1 new check): inside the app detailed terrain is on, and all five tilesets' textures load and read back.
+- 16 negative controls, every one red (`.claude/review/terrain/controls-p5.log`); the app's check went red on the build from before
+  this phase and on one with a texture left out (`controls-p5-window.log`, `controls-p5-window-notexture.log`).
+
+**Deliberately different from what was asked:**
+- **Two buttons, not a checkbox.** Edge scroll, the model named for this, is a checkbox; the terrain's look is a choice between two
+  named looks, laid out like the command card's Standard and Grid, so the one you are not using is named.
+- **Not on a key.** StarCraft: Remastered switches its classic graphics on F5 (RESEARCH-TERRAIN 8.9); here F5 is Save game, and the
+  in-game settings screen is one press away.
+
+**Numbers recorded:**
+- The gate with the default flipped, before anything else was changed: 100 of 100 (`.claude/review/terrain/p5-default-probe.log`).
+- A switch in the middle of a game on The Long March, 1600x900, 120 frames after each (`p5-toggle-probe.js`):
+
+| Switch | Worst frame, dropping the chunks (what shipped) | Worst frame, dropping the far view too |
+|---|---|---|
+| Detailed -> Classic, zoom 1 | 31 ms | 36 ms |
+| Classic -> Detailed, zoom 1 | 47 ms | 211 ms |
+| Detailed -> Classic, zoomed out | 22 ms | 21 ms |
+| Classic -> Detailed, zoomed out | 10 ms | 185 ms |
+
+- How light each graded material is, from the measured levels (`test/terraintex.js` 1b): high ground over low ground Badlands 2.22,
+  Jungle 3.49, Ice 3.53, Desert 3.88, Space Platform 5.69; cliff rock over high ground 0.45, 0.43, 0.44, 0.29, 1.04 -- the numbers
+  phase 2 measured in the browser.
+- `desktop/window-check.js` on a debug build of the app (`npm run build:dist`, `cargo build`): 24 of 24. Its new check failed on the
+  build from before this phase (no detailed terrain at all) and on a build with Ice's snow texture left out ("ice": false).

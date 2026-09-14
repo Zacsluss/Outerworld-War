@@ -6,6 +6,9 @@
 // (.claude/review/terrain/controls-terraintex.js) that turns it RED:
 //  1. EVERY TILESET HAS A COMPLETE SET: four textures that exist in assets/terrain and are recorded in SOURCES.md (where they
 //     came from and their licence), a grade for each, and a look whose lists name only real materials.
+//  1b. HIGH GROUND CLEARLY LIGHTER THAN LOW, CLIFFS NEITHER BLACK NOR GLARING: from each texture's levels (test/terrain-levels.json,
+//     measured in a browser by tools/terrain-levels.js and checked against the file's hash), every set's graded high ground is at
+//     least as much lighter than its low ground as the approved Badlands', and its cliff rock neither a black stroke nor a glare.
 //  2. HEALING LIFTS FLECKS AND NOTHING ELSE: Terrain.healFlecks raises the dark flecks of a light texture to the colour round them
 //     (Ice's snow_02: each twig a tile-long black squiggle across a plateau) and leaves every other texel byte-identical.
 //  3. CELLS LEAVE NO REPEAT: two stretches of flat low ground sixteen tiles apart -- one texture repeat -- come out alike when
@@ -45,6 +48,36 @@ for (const s of sets) {
   const lists = s.look ? [].concat(s.look.heal || [], s.look.cells || []) : null;
   ok(!!s.look && lists.every(p => PARTS.includes(p)), s.id + ': a look, whose heal and cells lists name only materials', JSON.stringify(s.look));
 }
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// 1b. High ground clearly lighter than low, and cliffs neither black nor glaring -- the approved look, in numbers
+// ---------------------------------------------------------------------------------------------------------------------------
+// node has no JPEG decoder, so each texture's levels -- a histogram of each channel as the game samples it -- are measured in a
+// browser (tools/terrain-levels.js, in the page tools/terrain-shot.js serves) and kept in test/terrain-levels.json with the file's
+// length and FNV-1a hash: a texture replaced without being measured again fails the first check. From them and TERRAIN_GRADE, each
+// graded material's mean luminance in linear light, as phase 2 measured it in the browser: high ground over low ground Badlands 2.2,
+// Jungle 3.5, Ice 3.5, Desert 3.9, Space Platform 5.7, the floor being the approved Badlands' 2.2 less a margin for the decoder;
+// cliff rock over high ground 0.45, 0.43, 0.44, 0.29, 1.04, where Ice's first grade gave 0.06 (a black stroke round every plateau)
+// and Space Platform's first about 2 (its bulkheads glared).
+const levels = JSON.parse(fs.readFileSync(path.join(root, 'test', 'terrain-levels.json'), 'utf8'));
+const fnv = b => { let h = 0x811c9dc5; for (let i = 0; i < b.length; i++) { h ^= b[i]; h = Math.imul(h, 16777619); } return (h >>> 0).toString(16).padStart(8, '0'); };
+const lin = c => { c = Math.min(255, c) / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+const graded = (lv, g) => { const mean = (h, k) => { let s = 0, n = 0; for (let v = 0; v < 256; v++) { s += h[v] * lin(v * k); n += h[v]; } return s / n; }; return 0.2126 * mean(lv.r, g[0]) + 0.7152 * mean(lv.g, g[1]) + 0.0722 * mean(lv.b, g[2]); };
+const APPROVED_HIGH_OVER_LOW = 2.15, stale = new Set(), light = {};
+for (const s of sets) {
+  if (!s.tex || !s.grade) continue;
+  const L = {};
+  for (const p of PARTS) {
+    const f = path.join(root, String(s.tex[p])), lv = levels[path.basename(f)], buf = fs.existsSync(f) ? fs.readFileSync(f) : null;
+    if (!lv || !buf || lv.bytes !== buf.length || lv.fnv !== fnv(buf)) { stale.add(path.basename(f)); continue; }
+    L[p] = graded(lv, s.grade[p]);
+  }
+  if (PARTS.every(p => L[p] > 0)) light[s.id] = { highOverLow: +(L.high / L.low).toFixed(2), rockOverHigh: +(L.rock / L.high).toFixed(2) };
+}
+const measured = Object.keys(light).length === sets.length, listed = k => Object.entries(light).map(([id, r]) => id + ' ' + r[k]).join(', ');
+ok(!stale.size && measured, 'levels: every texture\'s levels were measured from the file in the repository (test/terrain-levels.json; tools/terrain-levels.js measures them again)', JSON.stringify([...stale]));
+ok(measured && Object.values(light).every(r => r.highOverLow >= APPROVED_HIGH_OVER_LOW), 'levels: on every tileset the graded high ground is at least as much lighter than its low ground as the approved Badlands\' (' + listed('highOverLow') + ')', JSON.stringify(light));
+ok(measured && Object.values(light).every(r => r.rockOverHigh >= 0.2 && r.rockOverHigh <= 1.25), 'levels: and its cliff rock is neither a black stroke nor a glare against its high ground, between 0.2 and 1.25 (' + listed('rockOverHigh') + ')', JSON.stringify(light));
 
 // ---------------------------------------------------------------------------------------------------------------------------
 // 2. Healing lifts the flecks and nothing else

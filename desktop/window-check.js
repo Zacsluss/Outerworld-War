@@ -100,6 +100,19 @@ const cleanup = s => { if (s && !s.exited) { try { postClose(); } catch (e) { } 
   ok(await dt.quiet("(function () { try { return eval('1 + 1') === 2; } catch (e) { return false; } })()") === true, 'and eval is allowed under it, so Build.parts() reaches every const global and the stamp matches a browser\'s');
   ok(await dt.quiet("typeof G !== 'undefined' && typeof UI !== 'undefined' && typeof Net !== 'undefined' && !!document.getElementById('multiBtn')") === true, 'the game scripts loaded: G, UI, Net and the main menu\'s Multiplayer button exist');
 
+  // Detailed terrain is the default in the app too (the terrain queue's item 5), and every tileset's textures load from the app's own
+  // bundle under its CSP and read back as pixels -- a missing file, a refused load or a tainted image all leave Terrain.texSet() null.
+  const tex = await dt.quiet(`(async () => {
+    const out = { textured: Terrain.textured, sets: {} }, keep = Terrain.setId;
+    for (const id of Object.keys(TERRAIN_TEX)) {
+      Terrain.setId = id; let T = null;
+      for (let k = 0; k < 150 && !(T = Terrain.texSet()); k++) await new Promise(r => setTimeout(r, 100));
+      out.sets[id] = !!T && ['low', 'high', 'ramp', 'rock'].every(p => T[p] && T[p].length === Terrain.TEX_PX * Terrain.TEX_PX * 4);
+    }
+    Terrain.setId = keep; return out;
+  })()`);
+  ok(!!tex && tex.textured === true && Object.keys(tex.sets).length === 5 && Object.values(tex.sets).every(Boolean), 'detailed terrain is on by default, and all five tilesets\' textures load inside the app and read back as pixels', JSON.stringify(tex));
+
   // HOST A GAME: the sidecar starts, the page learns the port and joins its own relay
   const port = await hostAndGetPort(s);
   ok(port > 0, 'HOST A GAME starts the sidecar and the page learns its port', await dt.quiet("document.getElementById('netStatus').textContent"));

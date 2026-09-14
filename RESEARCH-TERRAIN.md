@@ -319,3 +319,19 @@ Licence: CC0, no credit needed ([polyhaven.com/license](https://polyhaven.com/li
   -- the lobby colours are the players' -- but every dot gets a dark rim, which reads on any ground.
 - **The per-frame budget with the overview underneath was enough** (8.4's "first, cheapest fix"): no frame over 50 ms, so no worker.
   Two things made it so: baking the chunk nearest the middle first, and baking the ring round the view ahead on idle frames.
+
+### 8.9 What phase 5 did to switch it on, and why *(measured, 2026-09-13; PLAYTEST-M18 115)*
+
+- **The precedent is StarCraft: Remastered, which keeps the original look one key away**: F5 switches between the remastered art
+  and the classic graphics in the middle of a game ([Gameranx](https://gameranx.com/features/id/116540/article/starcraft-remastered-how-to-swap-new-old-school-graphics/),
+  [Tom's Guide](https://tomsguide.com/us/starcraft-remastered-classic-4k-release,news-24746.html)). So the other look is called
+  Classic here, and switching applies at once, mid-game too. Not on a key: F5 is this game's Save game, and the queue asked for a
+  setting -- Settings -> Display, and the in-game settings screen -- remembered like edge scroll.
+- **Measured before changing:** the gate with the default flipped stayed 100 of 100 (the headless suites never load an image, so
+  they paint the palette whatever the setting says). A switch mid-game on The Long March at 1600x900: dropping the chunks only, the
+  worst frame 47 ms at zoom 1 and 22 ms zoomed out; dropping the far view as well, 211 ms and 185 ms -- a whole textured overview
+  painted in one frame. So a switch drops the chunks, and the far view is stepped over as when the textures first arrive (8.8).
+- **The approved look as numbers a suite can hold** (phase 2 left this open): node has no JPEG decoder, so each texture's channel
+  histograms are measured in the browser (`tools/terrain-levels.js`) and kept with the file's length and hash
+  (`test/terrain-levels.json`); `test/terraintex.js` works each graded material's luminance out of them. They give back what phase 2
+  measured in the browser: high ground over low 2.22, 3.49, 3.53, 3.88, 5.69; cliff rock over high ground 0.45, 0.43, 0.44, 0.29, 1.04.

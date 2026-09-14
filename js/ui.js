@@ -109,6 +109,9 @@ const UI = {
     this.hudScale = Math.round(num('bw_hud_scale', HUD_SCALE_MIN, HUD_SCALE_MAX, HUD_SCALE) * 10) / 10;
     this.scrollSpeed = num('bw_scroll', 0.5, 2, 1);
     this.edgeScroll = this.readPref('bw_edge') !== false;
+    // The terrain's look (the terrain queue, item 5): detailed unless the player chose Classic. ?hd=1 or ?hd=0 in the address
+    // decides for this page and stores nothing.
+    if (typeof Terrain !== 'undefined') { const hd = Terrain.addressLook(); Terrain.setTextured(hd !== null ? hd : this.readPref('bw_terrain') !== 'classic'); }
     Sound.volume = num('bw_volume', 0, 1, 1);
     // The command card's layout (Settings, Controls): stored as the bare word it always was, 'grid' or 'bw'.
     try { this.gridKeys = localStorage.getItem('bw_hotkeys') === 'grid'; } catch (e) { this.gridKeys = false; }
@@ -117,6 +120,7 @@ const UI = {
   setHudScale(v) { const n = Number(v); this.hudScale = isFinite(n) ? Math.round(Math.max(HUD_SCALE_MIN, Math.min(HUD_SCALE_MAX, n)) * 10) / 10 : HUD_SCALE; this.savePref('bw_hud_scale', this.hudScale); return this.hudScale; },
   setScrollSpeed(v) { const n = Number(v); this.scrollSpeed = isFinite(n) ? Math.max(0.5, Math.min(2, n)) : 1; this.savePref('bw_scroll', this.scrollSpeed); return this.scrollSpeed; },
   setEdgeScroll(v) { this.edgeScroll = v !== false; this.savePref('bw_edge', this.edgeScroll); return this.edgeScroll; },
+  setTerrainLook(v) { const on = v !== 'classic'; if (typeof Terrain !== 'undefined') Terrain.setTextured(on); this.savePref('bw_terrain', on ? 'detailed' : 'classic'); return on ? 'detailed' : 'classic'; },
   setVolume(v) { const n = Number(v); Sound.volume = isFinite(n) ? Math.max(0, Math.min(1, n)) : 1; this.savePref('bw_volume', Sound.volume); if (typeof Music !== 'undefined' && Music.setVolume) Music.setVolume(); return Sound.volume; },
   // The factor the band actually achieved, and therefore the scale its draw pass runs under. Never
   // below 1, because consoleH is never below consoleBase.
@@ -1671,6 +1675,7 @@ const UI = {
       ['Command card keys: ' + (this.gridKeys ? 'Grid' : 'Standard'), () => { this.setGridKeys(!this.gridKeys); }],
       // The same settings as the menu's tabs, a step per press, wrapping round (seventh session, item 2).
       ['HUD size: ' + this.hudScale.toFixed(1) + 'x', () => { this.setHudScale(this.hudScale >= HUD_SCALE_MAX - 1e-9 ? HUD_SCALE_MIN : this.hudScale + 0.1); }],
+      ['Terrain: ' + (typeof Terrain !== 'undefined' && Terrain.textured ? 'Detailed' : 'Classic'), () => { this.setTerrainLook(typeof Terrain !== 'undefined' && Terrain.textured ? 'classic' : 'detailed'); }],
       ['Scroll speed: ' + Math.round(this.scrollSpeed * 100) + '%', () => { const steps = [0.5, 0.75, 1, 1.5, 2]; const i = steps.findIndex(s => s > this.scrollSpeed + 1e-9); this.setScrollSpeed(i < 0 ? steps[0] : steps[i]); }],
       ['Edge scroll: ' + (this.edgeScroll ? 'on' : 'off'), () => { this.setEdgeScroll(!this.edgeScroll); }],
       ['Volume: ' + Math.round(Sound.volume * 100) + '%', () => { const steps = [0.25, 0.5, 0.75, 1]; const i = steps.findIndex(s => s > Sound.volume + 1e-9); this.setVolume(i < 0 ? steps[0] : steps[i]); }],
@@ -2340,6 +2345,14 @@ window.addEventListener('DOMContentLoaded', () => {
     bindRange('optVolume', () => Math.round(Sound.volume * 100), x => UI.setVolume(x / 100), x => Math.round(x) + '%'),
   ];
   const edge = $('optEdge'); if (edge) { edge.checked = UI.edgeScroll; edge.addEventListener('change', () => UI.setEdgeScroll(edge.checked)); refreshSettings.push(() => { edge.checked = UI.edgeScroll; }); }
+  // The terrain's look: two buttons, the one in use lit, as the command card's Standard and Grid are.
+  const tDet = $('optTerrainDetailed'), tCla = $('optTerrainClassic');
+  if (tDet && tCla) {
+    const showLook = () => { tDet.classList.toggle('on', Terrain.textured); tCla.classList.toggle('on', !Terrain.textured); };
+    tDet.addEventListener('click', () => { UI.setTerrainLook('detailed'); showLook(); });
+    tCla.addEventListener('click', () => { UI.setTerrainLook('classic'); showLook(); });
+    showLook(); refreshSettings.push(showLook);
+  }
   const idName = $('optNetName'), idUrl = $('optNetUrl');
   if (idName && idUrl) {
     const fillId = () => { const idn = Net.loadIdentity(); idName.value = idn.name; idUrl.value = idn.url; };

@@ -9,6 +9,8 @@
 //  3. SCROLL SPEED and EDGE SCROLL move the camera by exactly what they say, and edge scroll off leaves the arrow keys
 //  4. VOLUME reaches all three places sound comes from: the interface tones, the voices and the music
 //  5. THE IN-GAME SETTINGS SCREEN steps the same four values, and the menu's tabs read them back
+//  6. THE TERRAIN'S LOOK (the terrain queue's item 5): detailed unless the player chose Classic, remembered, ?hd= deciding for one page,
+//     a switch that drops the baked ground and moves the minimap, on the Display tab and the in-game screen
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path');
 const root = path.join(__dirname, '..');
@@ -23,10 +25,12 @@ const J = v => JSON.stringify(v);
   const tabs = (panel.match(/data-tab="(\w+)"/g) || []).map(s => s.slice(10, -1));
   const bodies = (panel.match(/data-body="(\w+)"/g) || []).map(s => s.slice(11, -1));
   ok(J(tabs) === J(['game', 'display', 'audio', 'online', 'keys', 'codex']) && J(bodies) === J(tabs), 'Settings has six tabs, each with its own body: Game, Display, Audio, Multiplayer, Controls, Codex', J({ tabs, bodies }));
-  const ids = ['optScroll', 'optScrollVal', 'optEdge', 'optHud', 'optHudVal', 'mute', 'voice', 'music', 'optVolume', 'optVolumeVal', 'optNetName', 'optNetUrl', 'bindList', 'bindReset', 'keyStd', 'keyGrid', 'codexBtn', 'settingsBack', 'setTabs'];
+  const ids = ['optScroll', 'optScrollVal', 'optEdge', 'optHud', 'optHudVal', 'optTerrainDetailed', 'optTerrainClassic', 'mute', 'voice', 'music', 'optVolume', 'optVolumeVal', 'optNetName', 'optNetUrl', 'bindList', 'bindReset', 'keyStd', 'keyGrid', 'codexBtn', 'settingsBack', 'setTabs'];
   const ui = fs.readFileSync(path.join(root, 'js', 'ui.js'), 'utf8');
   const missing = ids.filter(id => !new RegExp('id="' + id + '"').test(html)), unread = ids.filter(id => id !== 'settingsBack' && !/Val$/.test(id) && !ui.includes("'" + id + "'"));
   ok(!missing.length && !unread.length, 'every control is on the page and js/ui.js reaches for every one of them', J({ missing, unread }));
+  const display = (panel.match(/data-body="display"[\s\S]*?<\/div>\s*<div class="tabBody"/) || [''])[0];
+  ok(/<button id="optTerrainDetailed"[^>]*>Detailed</.test(display) && /<button id="optTerrainClassic"[^>]*>Classic</.test(display), 'the terrain\'s look is on the Display tab: two buttons, Detailed and Classic', display.slice(0, 200));
 }
 
 // ---- a context that loads what the page loads, and boots nothing ----
@@ -122,6 +126,37 @@ const R = (c, src) => vm.runInContext('(() => {' + src + '})()', c);
   ok(J(steps.hud) === J(['HUD size: 1.5x', 'HUD size: 1.6x', 'HUD size: 1.0x']) && J(steps.scroll) === J(['Scroll speed: 150%', 'Scroll speed: 200%']) && steps.edge === 'Edge scroll: off' && steps.vol === 'Volume: 25%',
     'each press steps the value and wraps round: HUD 1.4 -> 1.5 -> 1.6 -> 1.0, scroll 100% -> 150% -> 200%, volume 100% -> 25%', J(steps));
   ok(J(steps.values) === J({ h: 1, s: 2, e: false, v: 0.25 }), '...and the values it stepped are the ones the game uses', J(steps.values));
+}
+
+// ---- 6. THE TERRAIN'S LOOK ----
+{
+  const boot = (stored, search) => { const c = mkCtx(stored); c.location.search = search || ''; R(c, 'UI.loadPrefs();'); return c; };
+  const read = c => R(c, 'return { on: Terrain.textured, stored: __store.bw_terrain === undefined ? null : __store.bw_terrain, keys: Object.keys(__store).length };');
+  const fresh = read(boot()), classic = read(boot({ bw_terrain: '"classic"' })), detailed = read(boot({ bw_terrain: '"detailed"' }));
+  const junk = [read(boot({ bw_terrain: '{bad json' })), read(boot({ bw_terrain: '7' })), read(boot({ bw_terrain: '"Classic!"' }))];
+  ok(fresh.on === true && fresh.stored === null && fresh.keys === 0, 'TERRAIN: with nothing stored the ground is detailed, and loading stores nothing', J(fresh));
+  ok(classic.on === false && detailed.on === true && junk.every(j => j.on === true), 'TERRAIN: Classic, once chosen, comes back with the page; anything else stored, malformed included, is detailed', J({ classic, detailed, junk }));
+  const off = read(boot(null, '?hd=0')), on = read(boot({ bw_terrain: '"classic"' }, '?x=1&hd=1'));
+  ok(off.on === false && off.stored === null && on.on === true && on.stored === '"classic"', 'TERRAIN: ?hd=0 or ?hd=1 in the address decides for that page and stores nothing', J({ off, on }));
+  const sw = R(boot(), `
+    const seen = [], snap = () => ({ on: Terrain.textured, stored: __store.bw_terrain, chunks: Terrain.chunks.size, rev: Terrain.overRev || 0 });
+    const r0 = Terrain.overRev || 0;
+    Terrain.chunks.set('0,0', { stub: 1 }); seen.push(UI.setTerrainLook('classic'), snap());
+    Terrain.chunks.set('0,0', { stub: 1 }); seen.push(UI.setTerrainLook('classic'), snap());
+    seen.push(UI.setTerrainLook('detailed'), snap());
+    return { r0, seen };
+  `);
+  const [a, sa, , sb, c, sc] = sw.seen;
+  ok(a === 'classic' && sa.on === false && sa.stored === '"classic"' && sa.chunks === 0 && sa.rev > sw.r0, 'TERRAIN: choosing Classic turns the textures off, is remembered, drops every baked chunk and moves the overview\'s revision so the minimap follows', J(sw));
+  ok(sb.chunks === 1 && sb.rev === sa.rev && c === 'detailed' && sc.on === true && sc.stored === '"detailed"' && sc.chunks === 0 && sc.rev > sb.rev, 'TERRAIN: choosing the look already in use drops nothing; Detailed turns them back on the same way', J(sw));
+  const menu = R(boot(), `
+    UI.menu = 'settings';
+    const item = () => UI.menuItems().items.find(i => /^Terrain: /.test(i[0])), label = () => item() ? item()[0] : null, press = () => { if (item()) item()[1](); };
+    const a = label(); press(); const b = label(), on1 = Terrain.textured, st1 = __store.bw_terrain; press(); const c = label();
+    UI.menu = null;
+    return { a, b, c, on1, st1, on2: Terrain.textured, st2: __store.bw_terrain };
+  `);
+  ok(menu.a === 'Terrain: Detailed' && menu.b === 'Terrain: Classic' && menu.on1 === false && menu.st1 === '"classic"' && menu.c === 'Terrain: Detailed' && menu.on2 === true && menu.st2 === '"detailed"', 'TERRAIN: the in-game settings screen shows the look, and a press switches it either way and remembers it', J(menu));
 }
 
 console.log('\n' + (fail ? 'FAIL' : 'ALL PASS') + '  ' + pass + ' passed, ' + fail + ' failed');

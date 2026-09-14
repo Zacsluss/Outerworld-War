@@ -2,7 +2,8 @@
 // Serves the game page from the working tree and accepts POST /save?name=<name> with a canvas data URL, written to
 // .claude/review/terrain/shots/<name>.png (local scratch, gitignored). Open http://localhost:<port>/ in the Browser pane (the
 // `terrain-shot` entry in .claude/launch.json), start a game, and post `document.getElementById('game').toDataURL()`.
-// Unlike tools/tilesets.js it stays up, so a before and an after come from one page load.
+// Unlike tools/tilesets.js it stays up, so a before and an after come from one page load. POST /levels takes what
+// tools/terrain-levels.js measures in the page and writes it to test/terrain-levels.json (test/terraintex.js reads it).
 'use strict';
 const http = require('http'), fs = require('fs'), path = require('path');
 const root = path.join(__dirname, '..'), port = parseInt(process.argv[2] || '8897', 10);
@@ -18,6 +19,19 @@ http.createServer((req, res) => {
       fs.mkdirSync(outDir, { recursive: true }); const f = path.join(outDir, name + '.png'); fs.writeFileSync(f, png);
       console.log('wrote ' + f + ' (' + png.length + ' bytes)');
       res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('wrote ' + name + '.png, ' + png.length + ' bytes');
+    });
+    return;
+  }
+  if (req.method === 'POST' && url.pathname === '/levels') {
+    const chunks = []; req.on('data', c => chunks.push(c));
+    req.on('end', () => {
+      let levels = null; try { levels = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch (e) { }
+      const good = levels && typeof levels === 'object' && Object.keys(levels).length > 0 && Object.values(levels).every(v => v && Number.isInteger(v.bytes) && /^[0-9a-f]{8}$/.test(v.fnv) && ['r', 'g', 'b'].every(k => Array.isArray(v[k]) && v[k].length === 256 && v[k].every(Number.isInteger)));
+      if (!good) { res.writeHead(400, { 'Content-Type': 'text/plain' }); return res.end('not a levels table'); }
+      const f = path.join(root, 'test', 'terrain-levels.json'), names = Object.keys(levels).sort();
+      fs.writeFileSync(f, '{\n' + names.map(n => '  ' + JSON.stringify(n) + ': ' + JSON.stringify(levels[n])).join(',\n') + '\n}\n');
+      console.log('wrote ' + f + ' (' + names.length + ' textures)');
+      res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('wrote test/terrain-levels.json, ' + names.length + ' textures');
     });
     return;
   }

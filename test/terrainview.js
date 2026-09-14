@@ -16,6 +16,9 @@
 //  5. A FEATURE CHANGE drops only the chunks round it and repaints only that part of the overview; a new map drops nothing.
 //  6. TEXTURES ARRIVING: the textured overview is painted a step a draw, never on a draw that bakes, and the minimap follows it.
 //  7. THE MINIMAP'S UNIT DOTS each sit on a dark rim, every rim drawn before the first dot.
+//  8. DETAILED BY DEFAULT, CLASSIC ONE CLICK AWAY (phase 5): detailed before any setting is read; whole frames of every tileset bake
+//     every chunk from the textures; switching to Classic mid-game bakes the palette's ground though the textures are loaded, and
+//     the minimap and the far view follow; switching back steps the textured overview in rather than painting it in one frame.
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path');
 const { ok, summary, root } = require('./_harness');
@@ -60,6 +63,7 @@ vm.createContext(ctx);
 ctx._rec = rec;
 for (const f of FILES) vm.runInContext(fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
 const R = src => vm.runInContext('(() => {' + src + '})();', ctx);
+const initialLook = vm.runInContext('Terrain.textured', ctx);   // before this suite or any setting touches it
 
 // Texture data for every tileset: a colour per material with broad blobs and grain, periodic in the texture.
 vm.runInContext(`
@@ -285,6 +289,59 @@ const rim = R(`
   return { rims: rims.length, dots: dots.length, framed, ordered: rims.length > 0 && dots.length > 0 && Math.max(...rims.map(r => r.i)) < Math.min(...dots.map(d => d.i)) };
 `);
 ok(rim.dots > 0 && rim.rims === rim.dots && rim.framed && rim.ordered, 'rim: ' + rim.dots + ' unit dots on the minimap, each on a dark rim a pixel wider all round, every rim drawn before the first dot', JSON.stringify(rim));
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// 8. Detailed by default, Classic one click away
+// ---------------------------------------------------------------------------------------------------------------------------
+ok(initialLook === true, 'default: before any setting is read, the terrain is detailed', JSON.stringify(initialLook));
+const frames = R(`
+  const out = {}, realTex = Terrain.renderChunkTex, realChunk = Terrain.renderChunk;
+  for (const t of Object.keys(TILESETS)) {
+    const id = '__tv_' + t; if (!MAP_LAYOUTS[id]) MAP_LAYOUTS[id] = MapModes.layout('medium', { tileset: t, name: 'terrainview ' + t });
+    TT.start(id); UI.viewAll = false;
+    let tex = 0, all = 0;
+    Terrain.renderChunkTex = function (...a) { tex++; return realTex.apply(this, a); };
+    Terrain.renderChunk = function (...a) { all++; return realChunk.apply(this, a); };
+    try { for (let i = 0; i < 6; i++) Render.frame(1); } finally { Terrain.renderChunkTex = realTex; Terrain.renderChunk = realChunk; }
+    out[t] = { tex, all, set: Terrain.setId };
+  }
+  return out;
+`);
+ok(Object.keys(frames).length === 5 && Object.values(frames).every(f => f.all > 0 && f.tex === f.all), 'default: whole frames of a game on every tileset -- fog, units and the interface over the ground -- bake every chunk from the textures', JSON.stringify(frames));
+const look = R(`
+  const m = TT.start('temple'); Render.frame(1);
+  const bm = Terrain.BAKE_MS, cb = Terrain.CHUNK_BUDGET, sm = Terrain.OVER_STEP_MS; Terrain.BAKE_MS = 1e9; Terrain.CHUNK_BUDGET = 1e9; Terrain.OVER_STEP_MS = 0;
+  // which way each chunk is baked, counted -- a baked chunk's pixels cannot be read back later: the bake reuses one ImageData
+  const realTex = Terrain.renderChunkTex, realChunk = Terrain.renderChunk, count = { tex: 0, all: 0 };
+  Terrain.renderChunkTex = function (...a) { count.tex++; return realTex.apply(this, a); };
+  Terrain.renderChunk = function (...a) { count.all++; return realChunk.apply(this, a); };
+  const bakes = fn => { count.tex = 0; count.all = 0; fn(); return { tex: count.tex, all: count.all }; };
+  const same = (a, b) => { if (!a || !b || a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
+  const settle = () => { for (let i = 0; i < 400; i++) { const n = Terrain.chunks.size, t = !!Terrain._overTex; TT.draw(); Render.syncFeatures(); if (i > 2 && Terrain.chunks.size === n && t === !!Terrain._overTex && !Terrain._overNext) break; } };
+  try {
+    Render.setZoom(0.3); for (let i = 0; i < 300 && !Terrain._overTex; i++) TT.draw(); Render.setZoom(1); settle();
+    const was = { cached: Terrain.chunks.size, overTex: !!Terrain._overTex }, mini0 = Render.mini;
+    const rev0 = Terrain.overRev; UI.setTerrainLook('classic');
+    const drop = { chunks: Terrain.chunks.size, revMoved: Terrain.overRev !== rev0 };
+    const classic = bakes(() => { TT.draw(); Render.syncFeatures(); });
+    classic.miniNew = !!Render.mini && Render.mini !== mini0;
+    classic.miniIsPalette = classic.miniNew && same(Render.mini.img.data.slice(), Terrain.buildMini().img.data);
+    Render.setZoom(0.3); TT.draw(); classic.overviewPalette = !!Terrain._over && !Terrain._overTex; Render.setZoom(1);
+    const rev1 = Terrain.overRev; UI.setTerrainLook('detailed');
+    const back = { chunks: Terrain.chunks.size, revMoved: Terrain.overRev !== rev1 };
+    Render.setZoom(0.3); TT.draw(); back.firstDrawTextured = !!Terrain._overTex; back.stepping = !!Terrain._overNext;
+    let steps = 1; while (!Terrain._overTex && steps < 500) { TT.draw(); steps++; }
+    Render.syncFeatures(); back.steps = steps; back.miniWorst = Terrain._overImg && Render.mini ? +TT.miniWorst(Render.mini, Terrain._overImg.data).toFixed(2) : null;
+    Render.setZoom(1); Object.assign(back, bakes(settle));
+    const kept = new Map(Terrain.chunks), rev2 = Terrain.overRev; UI.setTerrainLook('detailed');
+    const again = { kept: kept.size > 0 && [...kept].every(([k, c]) => Terrain.chunks.get(k) === c), revSame: Terrain.overRev === rev2 };
+    return { was, drop, classic, back, again, rows: m.h };
+  } finally { Terrain.renderChunkTex = realTex; Terrain.renderChunk = realChunk; Terrain.BAKE_MS = bm; Terrain.CHUNK_BUDGET = cb; Terrain.OVER_STEP_MS = sm; Render.setZoom(1); }
+`);
+ok(look.was.cached > 0 && look.was.overTex && look.drop.chunks === 0 && look.drop.revMoved, 'classic: from settled detailed ground, choosing Classic drops every baked chunk and moves the overview\'s revision', JSON.stringify(look));
+ok(look.classic.all > 0 && look.classic.tex === 0 && look.classic.miniIsPalette && look.classic.overviewPalette, 'classic: the next draw bakes all ' + look.classic.all + ' chunks from the palette though the textures are loaded, the next sync makes the palette\'s minimap, and the far view is the palette\'s', JSON.stringify(look));
+ok(look.back.chunks === 0 && look.back.revMoved && !look.back.firstDrawTextured && look.back.stepping && look.back.steps === Math.ceil(look.rows / 4), 'classic: back to Detailed, the textured far view is stepped in, ' + look.back.steps + ' draws for ' + look.rows + ' rows, never painted in one frame (211 ms on The Long March)', JSON.stringify(look));
+ok(look.back.miniWorst !== null && look.back.miniWorst <= 1 && look.back.all > 0 && look.back.tex === look.back.all && look.again.kept && look.again.revSame, 'classic: then the minimap and every chunk baked are the textures\' again; choosing the look already in use drops nothing', JSON.stringify(look));
 
 ok(errors.length === 0, 'no console errors', JSON.stringify(errors.slice(0, 3)));
 summary();

@@ -1,4 +1,122 @@
-# HANDOFF — M18 (the terrain queue: from the Badlands test run to detailed terrain on every map)
+# HANDOFF — M18 (the terrain queue is DONE: detailed terrain on every map, for everyone)
+
+Written 2026-09-13, at the end of the session that did the whole terrain queue -- its five items and phase 1's leftovers. Branch
+`m10-overnight`, which is `origin/main`. **Everything is committed and pushed; no open pull requests, no other branches, no extra
+worktrees.** Trust `git log -1` for HEAD, not a hash written here.
+
+> **Nothing is queued.** The next action is the user's playtest of PLAYTEST-M18 110-115. `TODO-M18.md` first section, THE TERRAIN
+> QUEUE, has the account of every phase; `SHIPPING.md` is what must be done before the final build ships.
+
+---
+
+## Kickoff prompt for a fresh chat
+
+Open the new chat with the repository folder as its working directory, so `CLAUDE.md` loads by itself. Paste everything inside the
+fence. **Replace the HEAD placeholder with `git log -1 --format=%h` first** -- committing this file moves it.
+
+```
+Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
+Branch: m10-overnight, which IS origin/main (https://github.com/Zacsluss/Outerworld-War -- PUBLIC: git push publishes).
+HEAD: <run git log -1 --format=%h>. Working tree clean, nothing unpushed, no open PRs, no other branches, no extra worktrees.
+Machine: Windows 11; PowerShell 5.1 and Git Bash; Node 24; Rust + the Tauri CLI under desktop/; no gh CLI, no Blender.
+The gate (node test/all.js) is 100 suites, about two minutes, ALL GREEN; no known reds. Build stamp ca141a3b7ffcb528.
+test/balance.js and test/proxy.js are GATED: never start them without an explicit, double-checked instruction.
+
+STATE: the terrain queue is DONE (PLAYTEST-M18 110-115) -- the user's "i just want great looking maps": ramps entered only at their
+ends, and mined-out mineral patches that never open a cliff; detailed terrain on all five tilesets with rocks and plants lit like the
+units; a matching far view and minimap; no hitch over 50 ms on The Long March; detailed terrain on by default with Classic one click
+away in Settings. Nothing is queued. DEFERRED by the user until they say: the AI rebalance (TODO-M18 7b). SKIPPED by the user: a
+look-and-feel pass of PLAYTEST-M18 101-108.
+
+THE NEXT ACTION: ask the user for their playtest of PLAYTEST-M18 110-115 (node tools/playtest-listen.js records one -- the head of
+PLAYTEST-M18.md says how), then fix what they find.
+
+READ, in this order, before touching anything:
+  1. CLAUDE.md          -- the working agreement; every rule in it is non-negotiable.
+  2. HANDOFF-M18.md     -- this top section, then the traps in the terrain queue's section under it.
+  3. TODO-M18.md        -- THE TERRAIN QUEUE (every phase, measured) and THE USER'S ANSWERS DURING THE TERRAIN QUEUE.
+  4. SHIPPING.md        -- before any release: Actions -> Desktop builds -> Run workflow (it ignores js/ and assets/), and open
+                           the Mac app on a real Mac (never done: there is no Mac here).
+
+HOW TO WORK, every finding:
+  - MEASURE BEFORE CHANGING: build the probe first and make it assert its own setup.
+  - Every new behaviour gets a negative control that goes cleanly RED (tools/control.js applies one and restores the file).
+  - Judge anything visible on real screenshots (preview_start "terrain-shot", tools/terrain-shot.js, port 8897) and send the user
+    a before/after (SendUserFile) -- they judge by eye.
+  - node test/all.js before every commit; touch nothing in js/ or test/ while it runs.
+  - A PLAYTEST-M18.md entry per item saying how to see it by hand; update TODO-M18.md and HANDOFF-M18.md; commit and push.
+
+HARD RULES:
+  - Never Math.random() in simulation code (G.rand()); no native Math.sin/cos/atan2/hypot in stamped files (DMath). Anything a replay
+    or a rejoin must reproduce goes through G.init or the command log. Terrain drawing is not simulation, but props must stay a pure
+    function of the map, its seed and the tile.
+  - A change to a stamped file (js/data, map, sim, game, combat, abilities, commands, ai, missions, build) moves the build stamp: say
+    so in its PLAYTEST entry and run node test/net_many.js and node .claude/review/aipace/run-after.js <tag>.
+  - The relay (test/serve.js) stays dependency-free.
+  - Detect line endings per file. Edit with tools/patch.js; write every spec and probe with the Write tool; never sed -i.
+  - Never type, store or handle the user's passwords, certificates or API keys. Art or assets someone bought stay out of this
+    public repository. Nothing that costs money.
+  - The comments in js/ are load-bearing: they record why the obvious thing was not done. Do not delete reasoning.
+```
+
+---
+
+## The state
+
+- **THE TERRAIN QUEUE is DONE** -- all five of the user's items and phase 1's leftovers, each committed and pushed: walled ramps
+  (PLAYTEST-M18 110), detailed terrain on all five tilesets (111), props on open ground (112), the far view, the minimap and speed
+  (113), mined-out mineral patches that open nothing (114), and detailed terrain on by default with Classic in Settings (115).
+- **The gate is 100 suites, ALL GREEN.** **Build stamp `ca141a3b7ffcb528`** (phase 1 and 114 moved it; the drawing phases did not).
+  By hand, `aistyles` fails some check on about half of sixteen seeds other than the gate's, before the ramp walls and after
+  (PLAYTEST-M18 114): the AI rebalance's business.
+- **The desktop app**: a debug build shows detailed terrain and loads every texture (`desktop/window-check.js`, PLAYTEST-M18 115).
+  **The installers on GitHub are from `f68e8f3`, before any terrain work** -- `SHIPPING.md`.
+- **Deferred by the user until they say:** the AI rebalance (TODO-M18 7b). **Skipped by the user:** a look-and-feel pass of
+  PLAYTEST-M18 101-108. **Accepted by the user:** the terrain calls made without them (TODO-M18, THE USER'S ANSWERS DURING THE
+  TERRAIN QUEUE).
+- **The repository is PUBLIC.** **Nothing is left running** (the `terrain-shot` preview server was stopped at the close).
+
+## What changed, in a player's language
+
+1. **Ramps have walls**: you go up a ramp at its foot and come down at its top, never over its side; ramps are at most three tiles
+   long, and every base and route a large unit had is still there (110).
+2. **A mineral line mined out never opens a cliff**: patches on a plateau's edge used to leave steps through it -- five back doors
+   into every small Vertical Cliffs main -- and a patch beside a ramp reopened its side. Walled now; a patch on a leftover slab in open
+   ground leaves plain floor (114). The build stamp moved: older saves and replays are refused.
+3. **Detailed terrain on every tileset**: Badlands, Jungle, Ice, Desert and Space Platform are photographic ground, a lighter plateau
+   with one crisp cliff edge, and no repeating pattern on open ground (111).
+4. **Rocks, debris and plants on open ground**, lit and shadowed like the units, never in a mineral line, on a ramp or round a base (112).
+5. **The zoomed-out view and the minimap show the same ground**, unit dots on the minimap have a dark rim, and the biggest map never
+   stutters when the camera jumps, scrolls or a rock formation breaks (113).
+6. **All of it is on for everyone**, with **Classic** one click away in Settings -> Display or Esc -> Settings (115).
+7. **`SHIPPING.md`**: before the final build ships, rebuild the installers by hand on GitHub and open the Mac app on a Mac.
+
+**Deliberately different from what was asked, all in the PLAYTEST entries:** ramps walled the whole length of a much shorter ramp
+(110); thirteen textures, 8.3 MB, for "about twelve, a few MB" (111); no web worker, since the frame budget alone kept every frame
+under 50 ms (113); the minimap's dots gained a rim (113); the look is two named buttons rather than a checkbox, and not on a key (115).
+**Unfinished: nothing.** The AI rebalance waits for the user's word.
+
+## How to playtest it by hand
+
+Every item has its steps in PLAYTEST-M18 110-115. In short, with nothing added to the game's address:
+1. **Single Player -> Skirmish, Lost Ruins, START.** Detailed ground; walk a Marine beside your main's ramp and right-click the
+   plateau -- it goes round to the ramp's foot (110, 111, 112).
+2. **Skirmish on each tileset** -- Contested Ground (Jungle), Nightfall or The Long March (Ice), Dust Bowl (Desert), Open Basin with
+   Seed 1 (Space Platform): the ground reads, plateaus lighter than the low ground, rocks and plants on open ground (111, 112).
+3. **The Long March**: zoom far out -- the same country from above; click the far corner of the minimap and scroll about -- no
+   freezes (113).
+4. **Esc -> Settings -> Terrain: Detailed**, press it: Classic; press again: Detailed. Main menu -> Settings -> Display has the same
+   choice, remembered (115).
+5. **Vertical Cliffs, Small**: mine your main's mineral line out (or, in a browser, remove the patches from the console -- 114 gives
+   the line), then send a unit to the lane beyond it: it goes round by the ramp (114).
+
+---
+---
+
+# The terrain queue's handoff, as it stood while the queue was worked (kept for the record; its traps still hold)
+
+*Everything from here down describes the state before phase 5 -- "OFF unless ?hd=1", "the next action is phase 5". The top of this
+file is current.*
 
 Written 2026-09-13, at the end of the session that closed the tenth session's list, tested the desktop app, researched OpenRA and
 ran the terrain test run. Branch `m10-overnight`, which is `origin/main`. **Everything is committed and pushed; no open pull
@@ -98,6 +216,14 @@ and minimap, the speed work on The Long March, and switching it on for everyone.
     picture.
 16. **`net_many`'s hashes change on every run**: the relay picks a random seed for every game (`test/serve.js`). Compare them only
     across the clients of one run.
+17. **A baked chunk's pixels cannot be read back later** in a headless suite: every bake writes one shared ImageData
+    (`Terrain.imageFor`) and the mock canvas keeps a reference to it. Copy the pixels at once, or count which way each chunk was
+    baked (`test/terrainview.js` section 8 wraps `renderChunk` and `renderChunkTex`).
+18. **The Browser pane under viewport emulation** can tile a screenshot or time out, and a pane that is not on screen throttles
+    `requestAnimationFrame`, so the game loop crawls. Drive `Render.frame(1)` yourself; for the whole canvas, call
+    `UI.drawConsole()`, `UI.drawTop()` and `UI.drawMenu()` after it -- `Render.frame` draws only the world.
+19. **The desktop app embeds `desktop/dist` when it is compiled**: run `node desktop/dist.js` before `cargo build`, or the app
+    carries whatever dist held. A check on the app's own files needs a control build with one of them left out (phase 5 did).
 
 ## Diagnostics added this session
 
@@ -108,18 +234,10 @@ builds run, read from the public API).
 
 ---
 
-## Kickoff prompt for a fresh chat
-
-Open the new chat with the repository folder as its working directory, so `CLAUDE.md` loads by itself. Paste everything inside the
-fence. **Replace the HEAD placeholder with `git log -1 --format=%h` first** -- committing this file moves it.
+## The kickoff prompt the queue was worked from (kept for the record -- the current one is at the top of this file)
 
 ```
-Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
-Branch: m10-overnight, which IS origin/main (https://github.com/Zacsluss/Outerworld-War -- PUBLIC: git push publishes).
-HEAD: <run git log -1 --format=%h>. Working tree clean, nothing unpushed, no open PRs, no other branches, no extra worktrees.
-Machine: Windows 11; PowerShell 5.1 and Git Bash; Node 24; Rust + the Tauri CLI under desktop/; no gh CLI, no Blender.
-The gate (node test/all.js) is 100 suites, about two minutes, ALL GREEN; no known reds. test/balance.js and test/proxy.js are
-GATED: never start them without an explicit, double-checked instruction.
+(The queue's kickoff, done: every phase below is committed.)
 
 THE JOB -- make every map look great. The user: "i do not need an editor. i just want great looking maps." Of the Badlands test
 run (docs/terrain/*.jpg, PLAYTEST-M18 109, on with ?hd=1): "this looks amazing so far - exactly the direction i want." Their list:

@@ -14,6 +14,9 @@ the commit.
 
 ## THE TERRAIN QUEUE -- detailed terrain everywhere (the user, 2026-09-13)
 
+**DONE, all five items and phase 1's leftovers** (PLAYTEST-M18 110-115, committed and pushed; build stamp `ca141a3b7ffcb528`). Nothing
+of it is open. What is left for the day the final build ships is `SHIPPING.md`.
+
 **The user's words:** "i do not need an editor. i just want great looking maps." Then, of the Badlands test run (PLAYTEST-M18
 109, `docs/terrain/`): **"this looks amazing so far - exactly the direction i want. make a new handoff prompt for a new chat to
 do all of this:**
@@ -107,10 +110,10 @@ textures, 8.3 MB, in `assets/terrain/SOURCES.md`; `test/terraintex.js` (40 check
   sample, cost 14.7).
 - **Overlays checked on all five tilesets** (`shots/p2-overlays-*`): creep, fog and explored ground, night, the sandstorm, scorch and
   wreck decals, a placement ghost, units and minerals at full size. The strategic icons and the minimap colours belong to phase 4.
-- **Not done / open:** the high-to-low ratio is measured in the browser from the JPEGs and is not in a suite (no decoder headless;
-  phase 4's mean colours per material will make it assertable). Found for phase 4: baking ~1,500 chunks in a few minutes in one page
-  made Chrome drop the game canvas's 2D context (a measuring loop, not play; the game caps chunks at 160 -- but The Long March has
-  1,024).
+- **Left open by phase 2, CLOSED in phase 5:** the high-to-low ratio is in a suite -- `test/terraintex.js` 1b, from each texture's
+  levels measured in the browser and kept with the file's hash (`test/terrain-levels.json`, `tools/terrain-levels.js`). Phase 4's
+  colours per material were box-filtered in the browser too, so they had not made it assertable after all. Found for phase 4 and
+  handled there: baking ~1,500 chunks in a few minutes in one page made Chrome drop the game canvas's 2D context (a measuring loop).
 
 **PHASE 3 (item 1, props) -- DONE** (PLAYTEST-M18 112; drawing only, the stamp stays `eff84c60f4bc9cf2`). `TERRAIN_PROPS` in
 `js/terrain.js` names each set's kinds, density and colours; `Terrain.propMask` (where a prop may stand, once per map, from the map as
@@ -164,6 +167,18 @@ now 100 suites. What it took, measured in the browser on The Long March (1600x90
 - **Decided, not open:** props stay out of the far view (at 4 px a tile they are specks); the textured overview paints once at a game's
   start (about 200 ms on The Long March, inside the first frame that used to bake thirty chunks, about 600 ms).
 
+**PHASE 5 (item 5, on by default) -- DONE** (PLAYTEST-M18 115; drawing and interface only, the stamp stays `ca141a3b7ffcb528`).
+Detailed terrain is the default; **Classic** is one click away -- Settings -> Display -> Terrain, and Esc -> Settings -> Terrain --
+applied at once and remembered (`bw_terrain`); `?hd=0` / `?hd=1` decide for one page (`Terrain.addressLook`). What it took:
+- **Measured before changing:** the gate with the default flipped, 100 of 100 (`.claude/review/terrain/p5-default-probe.log`); a switch
+  mid-game on The Long March, dropping the chunks only, worst frame 47 ms, and dropping the far view too, 211 ms
+  (`p5-toggle-probe.js`) -- so `Terrain.setTextured` drops the chunks and the far view is stepped over.
+- **Research:** StarCraft: Remastered keeps its classic graphics one key away, mid-game (RESEARCH-TERRAIN 8.9) -- hence "Classic".
+- **Suites:** `settings` section 6 (+7), `terrainview` section 8 (+6, texture data handed in: whole frames of every tileset from the
+  textures, the switch both ways), `terraintex` 1b (+3, phase 2's open item), `desktop/window-check.js` (+1). Sixteen negative controls, all red (`.claude/review/terrain/controls-p5.log`).
+- **The desktop app:** a debug build (`npm run build:dist`, `cargo build`) passed `desktop/window-check.js` 24 of 24; its new check went
+  red on the build from before this phase and on one with Ice's snow texture left out. The installers need Actions -> Desktop builds -> Run workflow (`SHIPPING.md`).
+
 ### The build path -- in this order, and why
 
 - **Phase 1 -- item 2, ramps (SIMULATION; stamped `js/map.js`; the build stamp moves once). DONE -- see above.** First, because it is the only item
@@ -192,7 +207,7 @@ now 100 suites. What it took, measured in the browser on The Long March (1600x90
   ground; no hitch over about 50 ms, measured before and after -- a per-frame bake budget with the overview underneath is the first
   fix, a worker with OffscreenCanvas (feature-detected, 8.4) the second; `syncFeatures` invalidates only the chunks a feature
   touches.
-- **Phase 5 -- item 5, on by default.** Detailed terrain becomes the default, the classic look one click away in Settings
+- **Phase 5 -- item 5, on by default. DONE -- see above.** Detailed terrain becomes the default, the classic look one click away in Settings
   (`UI.readPref`/`savePref`, like edge scroll -- a slow machine, and the headless suites, which have no images). Acceptance: a
   suite covering the textured path with texture data handed to it, and its negative controls; `desktop/window-check.js` on a debug
   build so the textures are known to load in the desktop app; PLAYTEST, TODO and HANDOFF updated; committed and pushed; the user
