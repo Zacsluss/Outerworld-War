@@ -1639,3 +1639,43 @@ replay or network game can tell which look a player uses.)*
   phase 2 measured in the browser.
 - `desktop/window-check.js` on a debug build of the app (`npm run build:dist`, `cargo build`): 24 of 24. Its new check failed on the
   build from before this phase (no detailed terrain at all) and on a build with Ice's snow texture left out ("ice": false).
+
+## 116. No dark grid lines on the ground when you zoom
+
+*(The user's playtest, 2026-09-13, with a screenshot of their main on Blood Pit: "why do I see dark tile lines in a grid? remove them
+or hide them if you can." Drawing only -- `Terrain.draw` in `js/terrain.js`; the build stamp stays `ca141a3b7ffcb528`.)*
+
+**What changed for a player:**
+1. **The ground has no dark lines in a grid any more.** Zoomed in or out from the normal view -- the mouse wheel, by any amount -- a
+   thin dark line showed every eight tiles, across and down, on detailed terrain and on Classic alike. They are gone at every zoom.
+2. **Why they were there:** the ground is drawn in squares of eight by eight tiles. At the normal zoom each square lands exactly on
+   whole pixels; at any other zoom its edges fall between pixels, so the pixels along each edge were only partly painted by the
+   squares either side and the black behind the map showed through. Each square is now drawn one pixel larger than itself, so the
+   next one overlaps it -- a stretch of one pixel in two hundred, which cannot be seen. At the normal zoom nothing changes.
+
+**How to see it by hand:**
+1. **Single Player -> Skirmish**, any map (Blood Pit is where it was found), START.
+2. **Roll the mouse wheel a notch or two** to zoom out (or in), and look at open ground away from the buildings. *Working:* smooth
+   ground, no straight dark lines across or down it. Scroll around: none appear as the view moves.
+3. **Esc -> Settings -> Terrain: Detailed** to switch to Classic, and look again. *Working:* no lines in the classic look either.
+
+**Invisible from normal play, and where to look instead:**
+- The browser, Blood Pit, detailed terrain (`.claude/review/terrain/seam-probe.js`): each boundary column and row of the view against
+  the columns and rows two pixels either side, as mean brightness over the whole view.
+
+| Zoom | Before: boundaries darker by more than 2 levels (worst) | After (worst) | The ground's own variation |
+|---|---|---|---|
+| 1 | 0 of 10 (0.3) | 0 of 10 (0.3) | 1.1 |
+| 0.80 (the user's) | 12 of 12 (16.2) | 0 of 12 (0.7) | 0.7 |
+| 0.6 | 14 of 17 (18.3) | 0 of 17 (1.0) | 0.8 |
+| 1.5 | 7 of 7 (21.5) | 0 of 7 (0.2) | 0.5 |
+| 0.45 and 2.6 | -- | 0 (0.8, 0) | 0.8, 0 |
+| Classic, 0.80 | 12 of 12 (24.0) | 0 of 12 (2.0) | 3.5, its dither |
+
+- Creep is drawn in the same squares and showed no line that could be measured -- its veins vary as much at the normal zoom, where
+  nothing is resampled -- so it is unchanged.
+- `test/terrainview.js` section 9 (3 new checks): from the terrain's own draw calls, at seven zooms and display ratios, every pixel on
+  a boundary between two squares is covered whole by the square drawn first and the other is drawn after it; no square is stretched
+  by more than a pixel; at the normal zoom each is exactly its size on whole pixels. Four negative controls, all red
+  (`.claude/review/terrain/controls-seams.log`): no overlap, the overlap at the normal zoom too, five pixels over, and the squares
+  drawn right to left.

@@ -1122,6 +1122,16 @@ const Terrain = {
     // Only at zoom 1: at any other zoom the blit is resampled regardless, and rounding the camera in
     // world units would make the ground jitter by up to a whole pixel per scroll step instead.
     const ox = zoom === 1 ? Math.round(camX) : camX, oy = zoom === 1 ? Math.round(camY) : camY;
+    // AT ANY OTHER ZOOM EACH CHUNK IS DRAWN ONE DEVICE PIXEL WIDER AND TALLER THAN IT IS (the user's playtest, 2026-09-13: "why do I
+    // see dark tile lines in a grid?"). Resampled, a chunk's edges land between device pixels, so the pixel on a boundary is only
+    // partly covered by each of the two chunks either side of it, and the frame's dark fill shows through: a dark line every eight
+    // tiles. Measured in the browser on Blood Pit at the user's zoom, 0.80 (.claude/review/terrain/seam-probe.js): all 12 boundaries
+    // in view, up to 16 levels darker than the ground beside them (the classic look 24); at 0.6 and 1.5 the same; at zoom 1 none.
+    // One device pixel over, a chunk covers its boundary pixels whole and the next chunk -- to its right, then below it, the order the
+    // loop below draws them in -- is laid over its share: no boundary more than a level darker than the ground beside it at 0.45, 0.6,
+    // 0.8, 1.5 or 2.6. The stretch is a pixel in two hundred and cannot be seen. Not at zoom 1, where the blit is already exact and a
+    // stretch would blur the palette's dither. Creep is blitted the same way and showed no seam that could be measured.
+    const over = zoom === 1 ? 0 : 1 / (zoom * ((typeof Render !== 'undefined' && Render.dpr) || 1));
     const cx0 = Math.max(0, x0), cx1 = Math.min(maxCx - 1, x1), cy0 = Math.max(0, y0), cy1 = Math.min(maxCy - 1, y1);
     // The budget (see OVER_Z above). Missing chunks nearest the middle of the view first; at least one a frame, at most CHUNK_BUDGET,
     // and a second or third only while the frame has spent under BAKE_MS. The Map lookups are a hundred-odd hash hits and free next
@@ -1150,7 +1160,7 @@ const Terrain = {
     for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
       const key = cx + ',' + cy, c = this.chunks.get(key); if (!c) continue;
       this.chunks.delete(key); this.chunks.set(key, c);        // to the back of the eviction order; see CHUNK_CAP
-      ctx.drawImage(c, cx * CH - ox, cy * CH - oy, CH, CH);   // source is CH*dpr wide; destination stays in CSS pixels
+      ctx.drawImage(c, cx * CH - ox, cy * CH - oy, CH + over, CH + over);   // source is CH*dpr wide; destination stays in CSS pixels
     }
     this.trim();
   },

@@ -16,6 +16,9 @@
 //  5. A FEATURE CHANGE drops only the chunks round it and repaints only that part of the overview; a new map drops nothing.
 //  6. TEXTURES ARRIVING: the textured overview is painted a step a draw, never on a draw that bakes, and the minimap follows it.
 //  7. THE MINIMAP'S UNIT DOTS each sit on a dark rim, every rim drawn before the first dot.
+//  9. NO SEAM BETWEEN CHUNKS AT ANY ZOOM (the user's playtest: "dark tile lines in a grid"): in device pixels, every pixel on a
+//     boundary between two chunks is covered whole by the chunk drawn first, the other drawn after it, and no chunk is stretched by
+//     more than a pixel; at zoom 1 every chunk is exactly its size, on whole pixels.
 //  8. DETAILED BY DEFAULT, CLASSIC ONE CLICK AWAY (phase 5): detailed before any setting is read; whole frames of every tileset bake
 //     every chunk from the textures; switching to Classic mid-game bakes the palette's ground though the textures are loaded, and
 //     the minimap and the far view follow; switching back steps the textured overview in rather than painting it in one frame.
@@ -342,6 +345,40 @@ ok(look.was.cached > 0 && look.was.overTex && look.drop.chunks === 0 && look.dro
 ok(look.classic.all > 0 && look.classic.tex === 0 && look.classic.miniIsPalette && look.classic.overviewPalette, 'classic: the next draw bakes all ' + look.classic.all + ' chunks from the palette though the textures are loaded, the next sync makes the palette\'s minimap, and the far view is the palette\'s', JSON.stringify(look));
 ok(look.back.chunks === 0 && look.back.revMoved && !look.back.firstDrawTextured && look.back.stepping && look.back.steps === Math.ceil(look.rows / 4), 'classic: back to Detailed, the textured far view is stepped in, ' + look.back.steps + ' draws for ' + look.rows + ' rows, never painted in one frame (211 ms on The Long March)', JSON.stringify(look));
 ok(look.back.miniWorst !== null && look.back.miniWorst <= 1 && look.back.all > 0 && look.back.tex === look.back.all && look.again.kept && look.again.revSame, 'classic: then the minimap and every chunk baked are the textures\' again; choosing the look already in use drops nothing', JSON.stringify(look));
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// 9. No seam between chunks at any zoom
+// ---------------------------------------------------------------------------------------------------------------------------
+// The seam is the browser's compositing and cannot be seen here (PLAYTEST-M18 116 has the browser's numbers); what it rests on can.
+// From the terrain's own draw calls, in device pixels -- the zoom and the display ratio applied, as Render.frame applies them.
+const seams = R(`
+  const bm = Terrain.BAKE_MS, cb = Terrain.CHUNK_BUDGET, out = [];
+  TT.start('temple'); Terrain.BAKE_MS = 1e9; Terrain.CHUNK_BUDGET = 1e9;
+  try {
+    for (const [z, dpr] of [[1, 1], [0.797, 1], [0.6, 1], [1.5, 1], [2.6, 1], [0.797, 2], [1, 2]]) {
+      Render.dpr = dpr; Render.setZoom(z); Render.zoom = z; UI.centerOn(40.3 * TILE, 41.7 * TILE);
+      for (let i = 0; i < 80; i++) TT.draw();
+      _rec.reset(); _rec.on = true; TT.draw(); _rec.on = false;
+      const C = Terrain.CH * TILE, s = z * dpr, byCanvas = new Map([...Terrain.chunks].map(([k, c]) => [c, k])), at = new Map();
+      _rec.ops.forEach((o, i) => { if (o.op === 'drawImage' && o.a.length === 5 && byCanvas.has(o.src)) at.set(byCanvas.get(o.src), { i, x: o.a[1], y: o.a[2], w: o.a[3], h: o.a[4] }); });
+      let pairs = 0, gaps = [], order = 0, stretched = 0, exact = true;
+      const eps = 1e-6, covered = (endA, startB) => { const p = startB * s; return Math.abs(p - Math.round(p)) < eps ? endA * s >= p - eps : endA * s >= Math.floor(p) + 1 - eps; };
+      for (const [k, A] of at) {
+        const [cx, cy] = k.split(',').map(Number);
+        if ((A.w - C) * s > 1 + eps || (A.h - C) * s > 1 + eps) stretched++;
+        if (z === 1 && (A.w !== C || A.h !== C || Math.abs(A.x * s - Math.round(A.x * s)) > eps || Math.abs(A.y * s - Math.round(A.y * s)) > eps)) exact = false;
+        const R2 = at.get((cx + 1) + ',' + cy), D = at.get(cx + ',' + (cy + 1));
+        if (R2) { pairs++; if (R2.i < A.i) order++; if (!covered(A.x + A.w, R2.x)) gaps.push(k + ' right'); }
+        if (D) { pairs++; if (D.i < A.i) order++; if (!covered(A.y + A.h, D.y)) gaps.push(k + ' below'); }
+      }
+      out.push({ zoom: z, dpr, chunks: at.size, pairs, gaps: gaps.length, firstGaps: gaps.slice(0, 3), order, stretched, exact });
+    }
+  } finally { Terrain.BAKE_MS = bm; Terrain.CHUNK_BUDGET = cb; Render.dpr = 1; Render.setZoom(1); }
+  return out;
+`);
+ok(seams.length === 7 && seams.every(c => c.chunks >= 2 && c.pairs >= 1), 'seams: the draw calls of ' + seams.map(c => c.chunks).join('/') + ' chunks at seven zooms and display ratios, their neighbours paired (' + seams.map(c => c.pairs).join('/') + ')', JSON.stringify(seams));
+ok(seams.every(c => c.gaps === 0 && c.order === 0), 'seams: at every zoom every pixel on a boundary is covered whole by the chunk drawn first, and the chunk to its right or below is drawn after it -- no dark fill shows through', JSON.stringify(seams.filter(c => c.gaps || c.order)));
+ok(seams.every(c => c.stretched === 0) && seams.filter(c => c.zoom === 1).every(c => c.exact), 'seams: no chunk is stretched by more than a device pixel, and at zoom 1 each is exactly its size on whole pixels', JSON.stringify(seams.map(c => ({ zoom: c.zoom, dpr: c.dpr, stretched: c.stretched, exact: c.exact }))));
 
 ok(errors.length === 0, 'no console errors', JSON.stringify(errors.slice(0, 3)));
 summary();

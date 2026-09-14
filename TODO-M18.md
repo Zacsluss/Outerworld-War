@@ -12,6 +12,15 @@ the commit.
 
 ---
 
+## THE USER'S PLAYTEST OF THE TERRAIN QUEUE (2026-09-13, recorded: `.claude/review/playtest/2026-09-13_21-44-02/`)
+
+- **"why do I see dark tile lines in a grid? remove them or hide them if you can."** (with a screenshot of their main on Blood Pit) --
+  **FIXED** (PLAYTEST-M18 116). Measured in their tab first: zoom 0.80. At any zoom but 1 the ground's 8x8-tile chunks landed between
+  device pixels and the frame's dark fill showed through each boundary -- every boundary in view up to 16 levels darker, the classic
+  look 24. `Terrain.draw` now draws each chunk one device pixel over its size at any other zoom; no boundary more than a level darker
+  at 0.45-2.6. Creep, blitted the same way, showed no measurable seam and is unchanged. `test/terrainview.js` section 9, four
+  negative controls.
+
 ## THE TERRAIN QUEUE -- detailed terrain everywhere (the user, 2026-09-13)
 
 **DONE, all five items and phase 1's leftovers** (PLAYTEST-M18 110-115, committed and pushed; build stamp `ca141a3b7ffcb528`). Nothing
