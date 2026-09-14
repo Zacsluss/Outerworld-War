@@ -26,6 +26,12 @@
 //     the set's density of the allowed ground has one; a prop crossing a chunk edge is drawn the same on both sides; what play
 //     changes -- a broken feature, a hulk, a mined-out patch -- moves no prop; a prop is lit from the upper left with its shadow down
 //     and right; and the bake changes only the pixels the props cover or shade.
+//  8. CREEP AS ONE CONTINUOUS MASS (the looks queue, item 2: "Zerg creep has a tiled look to it with defined edges ... no lines or
+//     tiles"): the material tiles with no seam and is not posterised; the bake draws no ordered dither; the edge thins over a band and
+//     is half there near the tile boundary the simulation drew; the coverage never steps (noise switched on at a threshold drew a line
+//     along that contour); a chunk's apron is the very pixels of its neighbour's edge; a material repeat apart the creep does not
+//     repeat; a creep bit CREEP_REACH tiles away is in a chunk's signature; and when creep grows, the changed chunks keep their old
+//     pictures until every one has its new one, then all change together.
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path');
 const { makeCtx, ok, summary, root } = require('./_harness');
@@ -416,6 +422,107 @@ const steps = R(`
   return { n, rows: 384 + 384 + 2 * Math.round(24 * 1.5), diff };
 `);
 ok(steps.n === steps.rows && steps.diff === 0, 'sharp: a ratio-1.5 bake in steps yields once a row (' + steps.n + ' rows) and, with three other bakes run between its steps, gives the very pixels of a bake at once', JSON.stringify(steps));
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// 8. Creep as one continuous mass
+// ---------------------------------------------------------------------------------------------------------------------------
+vm.runInContext(`
+  TT.creep = {
+    mat: null,
+    material() { if (!this.mat) { const it = Terrain.creepMatSteps(128); let r; do r = it.next(); while (!r.done); this.mat = r.value; } return this.mat; },
+    bake(cx, cy, K) { const it = Terrain.creepBakeSteps(cx, cy, this.material(), K, 'tt'); let r; do r = it.next(); while (!r.done); return r.value; },
+    fill(m, x0, y0, x1, y1, v) { for (let ty = y0; ty < y1; ty++) for (let tx = x0; tx < x1; tx++) if (m.inb(tx, ty)) m.creep[m.idx(tx, ty)] = v; },
+    // a flat chunk with flat ground three chunks to its right, and the tiles round them
+    spot(m) { const CH = Terrain.CH, flat = (cx, cy) => { for (let y = cy * CH - 4; y < (cy + 1) * CH + 4; y++) for (let x = cx * CH - 4; x < (cx + 1) * CH + 4; x++) { if (!m.inb(x, y)) return false; const i = m.idx(x, y); if (m.height[i] !== 0 || m.cliff[i] !== 0 || m.walk[i] !== 1) return false; } return true; };
+      for (let cy = 1; cy < m.h / CH - 1; cy++) for (let cx = 1; cx + 3 < m.w / CH - 1; cx++) if (flat(cx, cy) && flat(cx + 1, cy) && flat(cx + 2, cy)) return [cx, cy];
+      return null; },
+  };
+`, ctx);
+const creepMat = R(`
+  const M = TT.creep.material(), N = M.N, L = M.levels[0], lum = (i, j) => { const o = (((j + N) % N) * N + (i + N) % N) * 4; return L[o] * 0.3 + L[o + 1] * 0.59 + L[o + 2] * 0.11; };
+  let wrapX = 0, inX = 0, wrapY = 0, inY = 0;
+  for (let j = 0; j < N; j++) { wrapX += Math.abs(lum(0, j) - lum(N - 1, j)); for (let i = 1; i < N; i++) inX += Math.abs(lum(i, j) - lum(i - 1, j)); }
+  for (let i = 0; i < N; i++) { wrapY += Math.abs(lum(i, 0) - lum(i, N - 1)); for (let j = 1; j < N; j++) inY += Math.abs(lum(i, j) - lum(i, j - 1)); }
+  wrapX /= N; wrapY /= N; inX /= N * (N - 1); inY /= N * (N - 1);
+  const tones = new Set(); for (let o = 0; o < 48 * 48; o++) tones.add(Math.round(L[o * 4] * 0.3 + L[o * 4 + 1] * 0.59 + L[o * 4 + 2] * 0.11));
+  return { N, levels: M.levels.map(l => Math.round(Math.sqrt(l.length / 4))), wrapX: +wrapX.toFixed(2), inX: +inX.toFixed(2), wrapY: +wrapY.toFixed(2), inY: +inY.toFixed(2), tones: tones.size };
+`);
+ok(creepMat.levels.join() === '128,64,32,16' && creepMat.inX > 1 && creepMat.wrapX <= 1.5 * creepMat.inX && creepMat.wrapY <= 1.5 * creepMat.inY && creepMat.tones >= 40,
+  'creep: the material tiles with no seam -- across its wrap a column changes by ' + creepMat.wrapX + ' and a row by ' + creepMat.wrapY + ', as between any two inside it (' + creepMat.inX + ', ' + creepMat.inY + ') -- in ' + creepMat.tones + ' tones, not a posterised handful, with levels of detail at a half, a quarter and an eighth', JSON.stringify(creepMat));
+// the edge across a flat chunk: creep on every tile left of its middle
+const creepEdge = R(`
+  const m = TT.map('badlands', 7), spot = TT.creep.spot(m); if (!spot) return { spot: null };
+  const [cx, cy] = spot, CH = Terrain.CH, bx = cx * CH + 4, E = Terrain.CREEP_EDGE, A = Terrain.CREEP_APRON;
+  m.creep.fill(0); TT.creep.fill(m, bx - 12, cy * CH - 6, bx, (cy + 1) * CH + 6, 1);
+  let calls = 0; const po = Terrain.posterise, ba = Terrain.bayerAt; Terrain.posterise = function (...a) { calls++; return po.apply(this, a); }; Terrain.bayerAt = function (...a) { calls++; return ba.apply(this, a); };
+  let cv; try { cv = TT.creep.bake(cx, cy, 1); } finally { Terrain.posterise = po; Terrain.bayerAt = ba; }
+  const OW = cv.width, d = cv.img.data, W = OW - 2 * A, ox = cx * CH * TILE;
+  // the mean opacity of each column of the chunk, against world x
+  const prof = []; for (let p = A; p < A + W; p++) { let s = 0; for (let q = A; q < A + W; q++) s += d[(q * OW + p) * 4 + 3]; prof.push({ x: ox + (p - A + 0.5), a: s / W }); }
+  const top = E.amax * 255, x90 = prof.filter(c => c.a >= 0.9 * top).map(c => c.x).pop(), x10 = prof.find(c => c.x > x90 && c.a <= 0.1 * top), x50 = prof.find(c => c.x > x90 && c.a <= 0.5 * top);
+  let step = 0; for (let q = A; q < A + W - 1; q++) for (let p = A; p < A + W - 1; p++) { const o = (q * OW + p) * 4 + 3; step = Math.max(step, Math.abs(d[o] - d[o + 4]), Math.abs(d[o] - d[o + OW * 4])); }
+  const tones = new Set(); for (let q = A; q < A + 48; q++) for (let p = A; p < A + 48; p++) { const o = (q * OW + p) * 4; tones.add(d[o] * 65536 + d[o + 1] * 256 + d[o + 2]); }
+  // the coverage the bake worked from, as it left it: no step between neighbouring pixels anywhere
+  const CW = W + 2 * (A + 1), C = Terrain._scratch['ttcreep' + CW]; let dc = 0; for (let q = 1; q < CW; q++) for (let p = 1; p < CW; p++) { const o = q * CW + p; dc = Math.max(dc, Math.abs(C[o] - C[o - 1]), Math.abs(C[o] - C[o - CW])); }
+  return { spot, width: x10 && x90 !== undefined ? +(x10.x - x90).toFixed(1) : null, cross: x50 ? +(x50.x - bx * TILE).toFixed(1) : null, step, dc: +dc.toFixed(3), calls, tones: tones.size, OW, k: cv.k, apron: cv.apron };
+`);
+ok(!!creepEdge.spot && creepEdge.OW === 256 + 2 * 2 && creepEdge.apron === 2 && creepEdge.calls === 0 && creepEdge.tones >= 200, 'creep: a chunk at ratio 1 is its 256 pixels and an apron of two round them, drawn with no ordered dither and no posterising (' + creepEdge.tones + ' colours in a corner of it)', JSON.stringify(creepEdge));
+ok(creepEdge.width >= 12 && Math.abs(creepEdge.cross) <= 16 && creepEdge.step <= 60, 'creep: the edge thins over ' + creepEdge.width + ' world px, is half there ' + creepEdge.cross + ' px from the tile boundary the simulation drew, and no pixel\'s opacity is more than ' + creepEdge.step + ' from its neighbour\'s', JSON.stringify(creepEdge));
+ok(creepEdge.dc > 0 && creepEdge.dc <= 0.1, 'creep: the coverage the edge is cut from never steps -- ' + creepEdge.dc + ' at most between neighbouring pixels -- so no line is drawn along a contour', JSON.stringify(creepEdge));
+// two chunks meeting at a creep edge, and a field a material repeat long
+const creepSeam = R(`
+  const m = TT.map('badlands', 7), spot = TT.creep.spot(m); if (!spot) return { spot: null };
+  const [cx, cy] = spot, CH = Terrain.CH, A = Terrain.CREEP_APRON, out = {};
+  m.creep.fill(0); TT.creep.fill(m, cx * CH - 6, cy * CH + 2, (cx + 1) * CH + 3, cy * CH + 6, 1);
+  for (const K of [1, 1.5]) {
+    const a = TT.creep.bake(cx, cy, K), ad = a.img.data.slice(), b = TT.creep.bake(cx + 1, cy, K), bd = b.img.data, OW = a.width, W = OW - 2 * A;
+    let worst = 0, lit = 0; for (let q = 0; q < OW; q++) for (let s = 0; s < 2 * A; s++) { const oa = (q * OW + W + s) * 4, ob = (q * OW + s) * 4; for (let k = 0; k < 4; k++) worst = Math.max(worst, Math.abs(ad[oa + k] - bd[ob + k])); if (ad[oa + 3] > 0) lit++; }
+    out['k' + String(K).replace('.', '')] = { worst, lit };
+  }
+  // all creep over three chunks: the chunk and the one a material repeat (sixteen tiles) to its right
+  m.creep.fill(0); TT.creep.fill(m, cx * CH - 6, cy * CH - 6, (cx + 3) * CH + 6, (cy + 1) * CH + 6, 1);
+  const lumOf = cv => { const d = cv.img.data, OW = cv.width, W = OW - 2 * A, o = new Float64Array(W * W); for (let q = 0; q < W; q++) for (let p = 0; p < W; p++) { const i = ((q + A) * OW + p + A) * 4; o[q * W + p] = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11; } return o; };
+  out.repeat = +TT.corr(lumOf(TT.creep.bake(cx, cy, 1)), lumOf(TT.creep.bake(cx + 2, cy, 1))).toFixed(3);
+  return out;
+`);
+ok(!!creepSeam.k1 && creepSeam.k1.lit > 20 && creepSeam.k1.worst <= 1 && creepSeam.k15.worst <= 1, 'creep: where two chunks meet across a creep edge, the apron of one is the very pixels of the other\'s edge, at ratio 1 and 1.5 (off by ' + creepSeam.k1.worst + ' and ' + creepSeam.k15.worst + ')', JSON.stringify(creepSeam));
+ok(Math.abs(creepSeam.repeat) < 0.5, 'creep: a field of creep a material repeat (sixteen tiles) apart does not repeat -- the two chunks correlate ' + creepSeam.repeat, JSON.stringify(creepSeam));
+// the reach, and the swap
+const creepSwap = R(`
+  const m = TT.map('badlands', 7), spot = TT.creep.spot(m), CH = Terrain.CH, out = {}; if (!spot) return out;
+  const [cx, cy] = spot, nx = () => Terrain.creepNx(), sigOf = (x, y) => Terrain.creepSig[y * nx() + x];
+  m.creep.fill(0); Terrain.syncCreep(); const bare = sigOf(cx, cy);
+  const t = [cx * CH - Terrain.CREEP_REACH, cy * CH + 3]; m.creep[m.idx(t[0], t[1])] = 1; Terrain.syncCreep(); out.reach = sigOf(cx, cy) !== bare;
+  m.creep[m.idx(t[0], t[1])] = 0;
+  const realTex = Terrain.texSet, ms = Terrain.CREEP_MS;
+  Terrain.textured = true; Terrain.texSet = () => ({}); Terrain._creepTex = TT.creep.material();
+  try {
+    TT.creep.fill(m, cx * CH + 2, cy * CH + 2, cx * CH + 22, cy * CH + 12, 1); Terrain.syncCreep();
+    const view = [cx - 1, cx + 3, cy - 1, cy + 1], keys = [];
+    for (let y = view[2]; y <= view[3]; y++) for (let x = view[0]; x <= view[1]; x++) if (Terrain.creepAny[y * nx() + x]) keys.push(x + ',' + y);
+    Terrain.CREEP_MS = 0; Terrain.creepWork(...view); out.firstCall = Terrain.creepChunks.size;
+    for (let i = 0; i < 60; i++) Terrain.creepWork(...view);
+    out.keys = keys.length; out.allBaked = keys.every(k => { const e = Terrain.creepChunks.get(k); return e && e.tex && e.cv.apron === Terrain.CREEP_APRON; });
+    const before = new Map(keys.map(k => [k, Terrain.creepChunks.get(k).cv]));
+    TT.creep.fill(m, cx * CH + 1, cy * CH + 1, cx * CH + 23, cy * CH + 13, 1); Terrain.syncCreep();
+    const changed = keys.filter(k => { const [x, y] = k.split(',').map(Number); return sigOf(x, y) !== Terrain.creepChunks.get(k).sig; });
+    out.changed = changed.length;
+    let calls = 0, mixed = 0, swapped = false;
+    for (; calls < 50000 && !swapped; calls++) {
+      Terrain.creepWork(...view);
+      const n = changed.filter(k => { const [x, y] = k.split(',').map(Number); return Terrain.creepChunk(x, y) !== before.get(k); }).length;
+      if (n > 0 && n < changed.length) mixed++;
+      if (n === changed.length) swapped = true;
+    }
+    out.calls = calls; out.mixed = mixed; out.swapped = swapped;
+    out.oldFreed = changed.every(k => before.get(k).width === 0);
+    out.current = keys.every(k => { const [x, y] = k.split(',').map(Number), e = Terrain.creepChunks.get(k); return e.sig === sigOf(x, y) && !e.next; });
+  } finally { Terrain.CREEP_MS = ms; Terrain.texSet = realTex; Terrain.textured = false; Terrain._creepTex = null; Terrain.dropCreepChunks(); }
+  return out;
+`);
+ok(creepSwap.reach, 'creep: a creep bit CREEP_REACH tiles outside a chunk is in the chunk\'s signature, so the chunk is baked again when it changes', JSON.stringify(creepSwap));
+ok(creepSwap.firstCall >= 1 && creepSwap.keys >= 2 && creepSwap.allBaked, 'creep: chunks in view with no picture are baked at once -- one at least on a call with no time at all -- until all ' + creepSwap.keys + ' have one', JSON.stringify(creepSwap));
+ok(creepSwap.changed >= 2 && creepSwap.swapped && creepSwap.mixed === 0 && creepSwap.calls > creepSwap.changed && creepSwap.oldFreed && creepSwap.current, 'creep: when it grows, the ' + creepSwap.changed + ' changed chunks keep their old pictures while the new ones are baked a step a call (' + creepSwap.calls + ' calls), and all change on the same call -- never half old and half new; the old pictures freed', JSON.stringify(creepSwap));
 
 ok(errors.length === 0, 'no console errors', JSON.stringify(errors.slice(0, 3)));
 summary();

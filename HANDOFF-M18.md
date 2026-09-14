@@ -27,12 +27,12 @@ STATE: the terrain queue is DONE (PLAYTEST-M18 110-115) -- the user's "i just wa
 ends, and mined-out mineral patches that never open a cliff; detailed terrain on all five tilesets with rocks and plants lit like the
 units; a matching far view and minimap; no hitch over 50 ms on The Long March; detailed terrain on by default with Classic one click
 away in Settings. THE LOOKS QUEUE (TODO-M18's first section) is in hand: 1. no old textures before the new ones (DONE, a loading
-screen, PLAYTEST-M18 118); 2. creep with no lines or tiles; 3. cliffs about twice as tall; 4. every map to StarCraft II's structure.
+screen, PLAYTEST-M18 118); 2. creep with no lines or tiles (DONE, 119-120); 3. cliffs about twice as tall; 4. every map to StarCraft II's structure.
 DEFERRED by the user until they say: the AI rebalance (TODO-M18 7b). SKIPPED by the user: a
 look-and-feel pass of PLAYTEST-M18 101-108.
 
-THE NEXT ACTION: the looks queue (TODO-M18's first section), item 2 -- creep as a continuous mass with no lines or tiles; then item 3
-(cliffs about twice as tall) and item 4 (every map redesigned to StarCraft II's structure). Item 1 is done (PLAYTEST-M18 118).
+THE NEXT ACTION: the looks queue (TODO-M18's first section), item 3 -- cliffs that look about twice as tall; then item 4 (every map
+redesigned to StarCraft II's structure). Items 1 and 2 are done (PLAYTEST-M18 118-120).
 
 READ, in this order, before touching anything:
   1. CLAUDE.md          -- the working agreement; every rule in it is non-negotiable.
@@ -68,8 +68,8 @@ HARD RULES:
 
 - **THE LOOKS QUEUE IS IN HAND** (the user, 2026-09-14; TODO-M18's first section): 1. no old textures before the new ones -- DONE,
   a loading screen makes the first frame the finished ground (PLAYTEST-M18 118); 2. creep as a continuous mass, no lines or tiles --
-  NEXT (the user is picking a CC0 creep texture from links in chat: download nothing until they pick); 3. cliffs that look about twice as
-  tall; 4. every map redesigned to StarCraft II's structure (a stamped change).
+  DONE (119; and 120, a game started in a background tab); 3. cliffs that look about twice as tall -- NEXT; 4. every map redesigned to
+  StarCraft II's structure (a stamped change).
 - **THE USER IS PLAYTESTING IT** (the recorder, `node tools/playtest-listen.js`; TODO-M18, THE USER'S PLAYTEST OF THE TERRAIN QUEUE).
   Findings so far, both fixed: dark grid lines on the ground when zoomed (PLAYTEST-M18 116); the ground and props too soft on a
   150% display -- detailed terrain now draws at the display's real resolution and sharpens a frame at a time (117).

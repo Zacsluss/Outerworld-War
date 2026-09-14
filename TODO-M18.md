@@ -33,13 +33,16 @@ for greater realism." and "can you show me the links for the textures so I can s
    seconds 15.9 ms; the loading screen 0.9 s cold on a 100% display, 1.7 s on a 150% one (the sharp start view is most of it). Files that
    fail or stall 20 s start the game in the classic look. `test/terrainview.js` 11, `desktop/window-check.js` (25 of 25), twelve
    negative controls (`.claude/review/terrain/controls-prep.log`). Drawing and interface only: the stamp stays `ca141a3b7ffcb528`.
-2. **Creep: a continuous mass, no lines or tiles** -- **OPEN, next.** Read so far: the creep bake (`Terrain.renderCreepChunk`) cuts its
+2. **Creep: a continuous mass, no lines or tiles** -- **DONE** (PLAYTEST-M18 119; and 120, a game started in a background tab, found while
+   measuring it). The creep on detailed terrain is its own pixel bake: a made material that wraps (no seam), the creep bits blurred and
+   read through a B-spline, a ragged edge a tile wide over a stain, an apron against seams, changed pieces swapped in together. No texture
+   downloaded -- the pattern is made in code; the user can still pick one of the links. Before it was measured:  the creep bake (`Terrain.renderCreepChunk`) cuts its
    border with a Bayer dither and darkens a rim inside it, its material is a 192 px posterised tile (a 4 x 4 dot grid everywhere), its
    mottles and blisters sit at tile positions, and it is baked at 1x under ground baked at the display's ratio. The user is choosing a
    CC0 texture from the links posted in chat (ambientCG Lava001/002/003/005, Ground054, Sponge003, Moss002, Bark008; 3dtextures.me Alien
    Flesh 001/002, Alien Muscle 001, Abstract Organic 002) -- **download nothing until they pick, and name the file and its size first**;
    the soft continuous edge does not wait for the pick.
-3. **Cliffs that look about twice as tall** -- **OPEN.** Read so far: the textured bake's cliff is one drop the width of the cliff tile,
+3. **Cliffs that look about twice as tall** -- **OPEN, next.** Read so far: the textured bake's cliff is one drop the width of the cliff tile,
    lit with `RISE` 22 (its faces already at the shade clamps) and a cast shadow read 11 px up and 9 px left (`SHY`/`SHX`), the same
    in `paintOverviewTex`; the pinned chunks in `test/terrain-golden.json` will have to be re-pinned on purpose.
 4. **Every map redesigned to StarCraft II's structure** -- **OPEN.** The research brief is `.claude/review/maps/research-brief.md`

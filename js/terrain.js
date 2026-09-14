@@ -349,6 +349,7 @@ const Terrain = {
   preloadTextures() {
     if (!this.canPrepare()) return 0;
     let n = 0; for (const set of Object.values(TERRAIN_TEX)) for (const url of Object.values(set)) { this.texEntry(url); n++; }
+    this.preloadCreep();
     return n;
   },
   // The set's textures, each drawn once into a size x size canvas (TEX_PX unless asked) and kept as pixels; null until every one has
@@ -1211,7 +1212,12 @@ const Terrain = {
   // ratio, and its creep. The first frame after it draws nothing new: no classic ground, no piece of ground arriving, no sharpening. The
   // files themselves are fetched while the player is still in the menus (preloadTextures). A texture that fails, or takes PREP_WAIT_MS,
   // gives up the wait: the ground is the classic look, and the game starts rather than hanging on a loading screen.
-  PREP_MS: 20, PREP_WAIT_MS: 20000,
+  //
+  // A DECODE IS WAITED FOR DECODE_WAIT_MS AT MOST once its file is in. A hidden page never settles one: measured in a Browser pane that
+  // was not on screen, the promise was still pending twenty seconds on, the loading screen gave up at PREP_WAIT_MS, and the game got the
+  // classic ground although every file was in. A texture not decoded yet is decoded when it is first read back (texSet), in a slice of
+  // the loading screen like any other step. (A page hidden during its loading screen runs the job from the simulation's timer: UI.simStep.)
+  PREP_MS: 20, PREP_WAIT_MS: 20000, DECODE_WAIT_MS: 250,
   // Where textures can load and a loading screen means something: a browser, or the desktop app's. The headless suites have an Image
   // that never loads, and there a game starts at once, as it always did.
   canPrepare() { return typeof Image === 'function' && !!Image.prototype && typeof Image.prototype.decode === 'function' && typeof document !== 'undefined'; },
@@ -1244,11 +1250,12 @@ const Terrain = {
       for (const u of urls) this.texEntry(u);
       // loaded, then decoded off the main thread; a texture already drawn once is decoded already
       for (;;) {
-        for (const u of urls) { const e = this._tex[u]; if (e.ok && !e.decoded) { e.decoded = 'pending'; const d = e.img.decode ? e.img.decode() : null; if (d && d.then) d.then(() => { e.decoded = 'yes'; }, () => { e.decoded = 'yes'; }); else e.decoded = 'yes'; } }
-        const ready = urls.filter(u => this._tex[u].decoded === 'yes').length;
+        const now = performance.now();
+        for (const u of urls) { const e = this._tex[u]; if (e.ok && !e.decoded) { e.decoded = 'pending'; e.decodeAt = now; const d = e.img.decode ? e.img.decode() : null; if (d && d.then) d.then(() => { e.decoded = 'yes'; }, () => { e.decoded = 'yes'; }); else e.decoded = 'yes'; } }
+        const ready = urls.filter(u => { const e = this._tex[u]; return e.decoded === 'yes' || (e.ok && now - e.decodeAt >= this.DECODE_WAIT_MS); }).length;
         job.progress = 0.35 * ready / urls.length;
         if (ready === urls.length) break;
-        if (urls.some(u => this._tex[u].failed) || performance.now() - t0 > this.PREP_WAIT_MS) { job.failed = true; break; }
+        if (urls.some(u => this._tex[u].failed) || now - t0 > this.PREP_WAIT_MS) { job.failed = true; break; }
         yield 'wait';
       }
       if (!job.failed) { job.label = 'Preparing terrain'; let n = 0; while (!(T = this.texSet(this.TEX_PX, true))) { job.progress = 0.35 + Math.min(0.1, 0.02 * n++); yield; } }
@@ -1275,8 +1282,13 @@ const Terrain = {
       else { this.releaseChunk(this.chunks.get(key)); this.chunks.set(key, this.renderChunk(cx, cy)); yield; }
       job.progress = (T ? 0.7 : 0.3) + (T ? 0.27 : 0.65) * (++n / list.length);
     }
-    // and the creep on it
-    if (this.syncCreep()) { const b = this.creepBudget; this.creepBudget = 1e9; for (const [cx, cy] of list) { this.creepChunk(cx, cy); yield; } this.creepBudget = b; }
+    // and the creep on it: in the detailed look the material first, where the menus have not finished it (preloadCreep)
+    if (T && !this._creepTex) { job.label = 'Growing the creep'; const it = this._creepMatJob || (this._creepMatJob = this.creepMatSteps(this.CREEP_TEX_N)); let r; while (!(r = it.next()).done) yield; this._creepTex = r.value; this._creepMatJob = null; }
+    if (this.syncCreep()) {
+      const M = this.creepTex(), nx = this.creepNx(), CK = this.creepK((typeof Render !== 'undefined' && Render.zoom) || 1);
+      if (M) for (const [cx, cy] of list) { const i = cy * nx + cx; if (!this.creepAny[i]) continue; const it = this.creepBakeSteps(cx, cy, M, CK, 'now'); let r; while (!(r = it.next()).done) yield; this.creepChunks.set(cx + ',' + cy, { cv: r.value, sig: this.creepSig[i], k: CK, tex: true, next: null }); }
+      else { const b = this.creepBudget; this.creepBudget = 1e9; for (const [cx, cy] of list) { this.creepChunk(cx, cy); yield; } this.creepBudget = b; }
+    }
     job.label = 'Ready'; job.progress = 1;
   },
   draw(ctx, camX, camY, vw, vh, zoom = 1) {
@@ -1366,19 +1378,20 @@ const Terrain = {
   // a 5 ms frame. Note that test/perf_render cannot see any of this: its camera sits on the middle of
   // `temple` and the only Zerg base is in a corner, so drawCreep early-outs on every measured frame in
   // both versions. Anyone re-measuring this has to put creep on the screen on purpose.
-  resetCreep() { this.creepChunks.clear(); this.creepSig = null; this.creepAny = null; this._creepMat = null; },
+  resetCreep() { this.dropCreepChunks(); this.creepSig = null; this.creepAny = null; this._creepMat = null; },
+  dropCreepChunks() { for (const e of this.creepChunks.values()) { this.releaseChunk(e.cv); if (e.next) this.releaseChunk(e.next.cv); } this.creepChunks.clear(); this._creepJob = null; },
   creepNx() { return Math.ceil(G.map.w / this.CH); },
   // Which chunks have creep in reach, and which of those changed since the last look. The window is
-  // the chunk grown by one tile on every side, because the coverage below reads a tile past the chunk
-  // edge and the lumpy outline can push creep about a quarter of a tile further -- a chunk with no
-  // creep of its own still shows its neighbour's border bleeding in, and has to be rebuilt when that
-  // neighbour changes. 100 tiles per chunk over the whole map is about 0.05 ms and runs twice a second.
+  // the chunk grown by CREEP_REACH tiles on every side: a chunk with no creep of its own still shows its
+  // neighbour's border bleeding in, and has to be rebuilt when that neighbour changes. The classic coverage
+  // below reads one tile past the chunk edge; the detailed creep's blur and B-spline read three
+  // (creepBakeSteps). 196 tiles per chunk over the whole map is about a millisecond on The Long March, twice a second.
   syncCreep() {
-    const m = G.map, CH = this.CH, nx = this.creepNx(), ny = Math.ceil(m.h / CH), n = nx * ny;
-    if (!this.creepSig || this.creepSig.length !== n) { this.creepSig = new Int32Array(n); this.creepAny = new Uint8Array(n); this.creepChunks.clear(); }
+    const m = G.map, CH = this.CH, nx = this.creepNx(), ny = Math.ceil(m.h / CH), n = nx * ny, R = this.CREEP_REACH;
+    if (!this.creepSig || this.creepSig.length !== n) { this.creepSig = new Int32Array(n); this.creepAny = new Uint8Array(n); this.dropCreepChunks(); }
     let any = false;
     for (let cy = 0; cy < ny; cy++) for (let cx = 0; cx < nx; cx++) {
-      let s = 0; const t0x = cx * CH - 1, t0y = cy * CH - 1, t1x = cx * CH + CH, t1y = cy * CH + CH;
+      let s = 0; const t0x = cx * CH - R, t0y = cy * CH - R, t1x = cx * CH + CH - 1 + R, t1y = cy * CH + CH - 1 + R;
       for (let ty = t0y; ty <= t1y; ty++) {
         if (ty < 0 || ty >= m.h) continue; const row = ty * m.w;
         for (let tx = t0x; tx <= t1x; tx++) if (tx >= 0 && tx < m.w && m.creep[row + tx]) s = (Math.imul(s, 31) + (tx - t0x) * 131 + (ty - t0y) + 1) | 0;
@@ -1390,15 +1403,18 @@ const Terrain = {
   // A chunk that is stale but already drawn is returned as it is rather than rebuilt, once the frame's
   // build budget is gone. A hatchery finishing invalidates a dozen chunks at once and rebuilding them
   // all in one frame is a visible hitch; showing creep that is a fifth of a second out of date is not.
+  // With detailed creep (creepTex) nothing is baked here: creepWork bakes and swaps, and this answers what is on screen now.
   creepChunk(cx, cy) {
     const nx = this.creepNx(), i = cy * nx + cx;
     if (!this.creepAny || cx < 0 || cy < 0 || cx >= nx || i >= this.creepAny.length || !this.creepAny[i]) return null;
     const key = cx + ',' + cy, sig = this.creepSig[i]; let e = this.creepChunks.get(key);
-    if (e && e.sig === sig) return e.cv;
+    if (e) { this.creepChunks.delete(key); this.creepChunks.set(key, e); }   // to the back of the eviction order; see creepTrim
+    if (this.creepTex()) return e ? e.cv : null;
+    if (e && e.sig === sig && !e.tex) return e.cv;
     if (this.creepBudget <= 0) return e ? e.cv : null;
     this.creepBudget--;
     const cv = this.renderCreepChunk(cx, cy);
-    if (e) { e.cv = cv; e.sig = sig; } else this.creepChunks.set(key, { cv, sig });
+    if (e) { this.releaseChunk(e.cv); if (e.next) this.releaseChunk(e.next.cv); e.cv = cv; e.sig = sig; e.tex = false; e.k = 1; e.next = null; } else this.creepChunks.set(key, { cv, sig, tex: false, k: 1, next: null });
     return cv;
   },
   // Creep is baked at 232/255 rather than drawn at globalAlpha 0.9, so the draw pass is a plain blit
@@ -1432,6 +1448,246 @@ const Terrain = {
     let cv = this._creepScratch;
     if (!cv || cv.width !== px) { cv = this._creepScratch = document.createElement('canvas'); cv.width = cv.height = px; }
     return cv;
+  },
+  // ---- creep on detailed terrain ------------------------------------------------------------------------------------------------
+  // CREEP IS ONE CONTINUOUS MASS (the looks queue, item 2 -- the user, 2026-09-14: "Zerg creep has a tiled look to it with defined
+  // edges. We need to make those edges undefined so the creep looks like a continuous mass with no lines or tiles."). Measured first,
+  // Blood Pit with a Hatchery, two Creep Colonies and two Tumours grown out (.claude/review/terrain/shots/creep-before-z1): the material
+  // below is a 192 px tile of noise that does not wrap, so its veins and blotches stop at a straight line every 192 px -- a grid of
+  // squares over every field of creep (a colour jump of 45.5 across its wrap, 32.5 between its other columns); posterised with a 4x4
+  // ordered dither, a dot grid inside the squares; cut at its edge by a hard dither with a dark rim inside; mottled and blistered at
+  // tile positions; and baked at 1x beside ground baked at the display's ratio. That look stays with the Classic ground, whose dither
+  // it matches.
+  //
+  // With detailed terrain a creep chunk is a pixel bake of its own (creepBakeSteps), as the ground's is:
+  //  - THE MATERIAL is made once a session: wet, folded flesh from gradient noise whose lattice wraps with the texture, so it tiles with
+  //    no seam, lit from the upper left like everything else (creepMatSteps). StarCraft II's creep, in Blizzard's own guide screenshots,
+  //    is a dark fibrous wet mass with a ragged edge. It is laid twice, the second sample transposed and rescaled and mixed in by broad
+  //    noise, as the ground is, so its sixteen-tile repeat never lines up; and read from a level of detail near one texel a pixel, so a
+  //    zoomed-out chunk does not shimmer.
+  //  - THE SHAPE is the creep bits blurred 3x3 and read through a cubic B-spline: a smooth curve through the tile boundaries rather than a
+  //    staircase. Noise and the material's own strands push it about, so the edge is ragged and fibrous; it thins over CREEP_EDGE.lo to
+  //    .hi of coverage, about two thirds of a tile, over a faint dark stain on the ground, and where it thins it is lit as a raised
+  //    layer. The noise and the strands fade in and out with the coverage: switched on where the coverage passed a threshold, each drew
+  //    a dark line along that contour (.claude/review/terrain/shots/creep-line-creeponly).
+  //  - NO SEAMS: every value is a function of the world position and the bits within CREEP_REACH tiles, and a chunk carries CREEP_APRON
+  //    pixels of itself round it, drawn over its neighbours at any zoom but 1 (Render.drawCreep). Drawn edge to edge, the device pixel on
+  //    a boundary was half covered by each chunk and let the ground through: a line 1.3 to 2.5 times the material's own variation at 0.6.
+  //  - NO LINE WHILE IT GROWS: a chunk whose creep changed keeps its old picture while the new one is baked a few milliseconds a frame,
+  //    and the new pictures go in together once every changed chunk in view has one (creepWork).
+  CREEP_REACH: 3,     // tiles past a chunk whose creep bits reach its pixels: the blur's one and the B-spline's two
+  CREEP_APRON: 2,     // pixels of a detailed chunk drawn round it: half a device pixel or more at every zoom down to 0.25 (creepK)
+  CREEP_MS: 6,        // milliseconds a frame for detailed creep: the material, then chunks in view with no picture, then changed ones
+  CREEP_CAP: 160,     // detailed creep chunks kept, the least recently drawn dropped first, and never fewer than twice those in view
+  // A chunk's ratio (creepK): the least of CREEP_KS that, stretched by up to CREEP_SOFT, covers the device pixels a world pixel spans.
+  // The material is soft: at a 150% display and zoom 1, chunks at 1 and at 1.5 side by side could not be told apart
+  // (.claude/review/terrain/shots/creep-k1-vs-k15), and a chunk at 1.5 cost 18.1 ms to bake against 6.9.
+  CREEP_KS: [0.25, 0.5, 1, 2], CREEP_SOFT: 1.5,
+  CREEP_TEX_N: 1024, CREEP_TEX_W: 512,   // the material: N texels over W world px (sixteen tiles), two a world pixel at the finest
+  // The material's recipe, chosen on screenshots from four (.claude/review/terrain/shots/creep-proto-mat4, -mat5): w1, w2 how far the
+  // folds wander and w3 the strands, all under the warp that folds the pattern over itself (at 0.09 it did, and every fold was a hard
+  // dark crease); f1, f2 the strands' lattice, in cells across the texture; dark and lumpK the flesh's tone over its folds; toneA the
+  // broad light and dark patches; lit the strands' sheen; S the relief; spE, spA, spB the wet highlight; col a last grade.
+  CREEP_MAT: { w1: 0.07, w2: 0.02, w3: 0.025, round: 0.02, f1: 11, f2: 24, dark: 0.3, lumpK: 0.46, toneA: 0.22, lit: 34, S: 3.0, spE: 20, spA: 0.9, spB: 0.1, col: [0.92, 0.9, 0.86] },
+  // The edge, in coverage -- 0 bare ground, 1 deep in creep, 0.5 on the tile boundary the simulation drew: the creep thins from lo to
+  // hi; its strands push it out by up to fib; noise of 70 px (n1) and 22 px (n2) moves it; a stain of stainA darkens the ground from
+  // stainLo to stainHi; amax is the creep's opacity where it is whole (the old creep's 232/255 was 0.91); bulge the height, in world
+  // pixels, the thinning edge is lit at.
+  CREEP_EDGE: { lo: 0.34, hi: 0.66, fib: 0.32, n1: 0.5, n2: 0.25, stainLo: 0.06, stainHi: 0.5, stainA: 0.35, amax: 0.96, bulge: 9 },
+  // Gradient noise, about -0.7 to 0.7, on a lattice of P cells that wraps: a texture made of it repeats with no seam. One table of
+  // gradients a lattice and salt, made on first use. Drawing only.
+  pgrad(x, y, P, s) {
+    const tabs = this._pgTabs || (this._pgTabs = new Map()), key = P * 1000 + s;
+    let g = tabs.get(key);
+    if (!g) {
+      g = new Float32Array(P * P * 2);
+      for (let j = 0; j < P; j++) for (let i = 0; i < P; i++) { let h = (Math.imul(i, 374761393) + Math.imul(j, 668265263) + Math.imul(s, 1013904223)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); const a = ((h ^ (h >>> 16)) >>> 0) / 4294967296 * Math.PI * 2; g[(j * P + i) * 2] = Math.cos(a); g[(j * P + i) * 2 + 1] = Math.sin(a); }
+      tabs.set(key, g);
+    }
+    const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, x0 = ((xi % P) + P) % P, y0 = ((yi % P) + P) % P, x1 = x0 + 1 === P ? 0 : x0 + 1, y1 = y0 + 1 === P ? 0 : y0 + 1;
+    const a = (y0 * P + x0) * 2, b = (y0 * P + x1) * 2, c = (y1 * P + x0) * 2, d = (y1 * P + x1) * 2;
+    const na = g[a] * fx + g[a + 1] * fy, nb = g[b] * (fx - 1) + g[b + 1] * fy, nc = g[c] * fx + g[c + 1] * (fy - 1), nd = g[d] * (fx - 1) + g[d + 1] * (fy - 1);
+    const u = fx * fx * fx * (fx * (fx * 6 - 15) + 10), v = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
+    return na + (nb - na) * u + (nc - na) * v + (na - nb - nc + nd) * u * v;
+  },
+  creepK(zoom) { const need = zoom * ((typeof Render !== 'undefined' && Render.dpr) || 1), ks = this.CREEP_KS; for (const k of ks) if (k * this.CREEP_SOFT >= need - 1e-6) return k; return ks[ks.length - 1]; },
+  // The material, where the creep is detailed: detailed terrain on, its textures in, the material made.
+  creepTex() { return this._creepTex && this.texSet() ? this._creepTex : null; },
+  // The material, a row at a time (the boot, a loading screen or creepWork runs it in slices): N x N texels of colour with the strands'
+  // strength in the fourth channel, and levels of detail at a half, a quarter and an eighth, each the box average of the one above.
+  *creepMatSteps(N) {
+    const P = this.CREEP_MAT, pg = (x, y, p, s) => this.pgrad(x, y, p, s), sm = (a, b, t) => { t = (t - a) / (b - a); t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); };
+    const ridge = v => { const r = 1 - Math.sqrt(v * v + P.round * P.round) * 1.5; return r > 0 ? r : 0; };   // rounded on top: a strand, not a crease
+    const hgt = new Float32Array(N * N), wet = new Float32Array(N * N), fib = new Float32Array(N * N), alb = new Float32Array(N * N * 3);
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        const x = i / N, y = j / N, o = j * N + i;
+        const wx = x + pg(x * 3, y * 3, 3, 1) * P.w1 + pg(x * 8, y * 8, 8, 2) * P.w2, wy = y + pg(x * 3 + 0.5, y * 3 + 0.5, 3, 3) * P.w1 + pg(x * 8 + 0.5, y * 8 + 0.5, 8, 4) * P.w2;
+        const lump = 0.5 + pg(wx * 4, wy * 4, 4, 5) * 0.9 + pg(wx * 10, wy * 10, 10, 6) * 0.45;   // the folds, a few tiles across
+        const sx = wx + pg(wx * 12, wy * 12, 12, 10) * P.w3, sy = wy + pg(wx * 12 + 0.5, wy * 12 + 0.5, 12, 11) * P.w3;
+        const r1 = ridge(pg(sx * P.f1, sy * P.f1, P.f1, 12)), r2 = ridge(pg(sx * P.f2, sy * P.f2, P.f2, 13)), s1 = r1 * r1 * r1, s2 = r2 * r2 * r2 * r2;
+        const lit = Math.min(1, s1 * 0.6 + s2 * 0.4), tone = 0.5 + pg(x * 3, y * 3, 3, 15) * 0.8 + pg(x * 6, y * 6, 6, 16) * 0.3, broad = 0.5 + pg(x * 2, y * 2, 2, 14) * 0.9;
+        hgt[o] = lump * 0.7 + s1 * 0.45 + s2 * 0.25; wet[o] = lit * sm(0.3, 0.8, tone); fib[o] = lit;
+        const k = (P.dark + lump * P.lumpK) * (1 - P.toneA + P.toneA * 2 * Math.min(1, Math.max(0, tone)));
+        alb[o * 3] = ((48 + broad * 14) * k + lit * P.lit) * P.col[0]; alb[o * 3 + 1] = (28 * k + lit * P.lit * 0.53) * P.col[1]; alb[o * 3 + 2] = ((54 - broad * 8) * k + lit * P.lit * 1.06) * P.col[2];
+      }
+      if ((j & 7) === 7) yield;
+    }
+    // lit from the upper left, as the ground: its slope against the sun, and a highlight where the strands are wet
+    const Ln = Math.hypot(0.5, 0.6, 0.62), lx = -0.5 / Ln, ly = -0.6 / Ln, lz = 0.62 / Ln, hn = Math.hypot(lx, ly, lz + 1), hx = lx / hn, hy = ly / hn, hz = (lz + 1) / hn;
+    const L0 = new Uint8ClampedArray(N * N * 4), S = P.S * N / 512;
+    for (let j = 0; j < N; j++) {
+      const row = j * N, up = ((j + N - 1) % N) * N, dn = ((j + 1) % N) * N;
+      for (let i = 0; i < N; i++) {
+        const o = row + i, dx = (hgt[row + (i + 1) % N] - hgt[row + (i + N - 1) % N]) * S, dy = (hgt[dn + i] - hgt[up + i]) * S, nl = Math.sqrt(dx * dx + dy * dy + 1), nx = -dx / nl, ny = -dy / nl, nz = 1 / nl;
+        const lam = nx * lx + ny * ly + nz * lz, sh = 0.5 + 0.5 * (lam > 0 ? lam / lz : 0), dot = nx * hx + ny * hy + nz * hz, spec = dot > 0 ? Math.pow(dot, P.spE) * (P.spB + wet[o] * P.spA) : 0;
+        L0[o * 4] = alb[o * 3] * sh + spec * 110; L0[o * 4 + 1] = alb[o * 3 + 1] * sh + spec * 90; L0[o * 4 + 2] = alb[o * 3 + 2] * sh + spec * 120; L0[o * 4 + 3] = fib[o] * 255;
+      }
+      if ((j & 31) === 31) yield;
+    }
+    const levels = [L0];
+    for (let n = N; n > 8 && levels.length < 4; n >>= 1) {
+      const src = levels[levels.length - 1], h = n >> 1, dst = new Uint8ClampedArray(h * h * 4);
+      for (let j = 0; j < h; j++) for (let i = 0; i < h; i++) { const a = (j * 2 * n + i * 2) * 4, b = a + 4, c = a + n * 4, e = c + 4, o = (j * h + i) * 4; for (let k = 0; k < 4; k++) dst[o + k] = (src[a + k] + src[b + k] + src[c + k] + src[e + k]) / 4; }
+      levels.push(dst); yield;
+    }
+    return { N, W: this.CREEP_TEX_W, levels };
+  },
+  // A detailed creep chunk at ratio K from material M, a row at a time: a canvas of the chunk and CREEP_APRON pixels round it (cv.apron),
+  // transparent where there is neither creep nor its stain. ns names the scratch memory, as for the ground's bake.
+  *creepBakeSteps(cx, cy, M, K, ns) {
+    const m = G.map, CH = this.CH, E = this.CREEP_EDGE, A = this.CREEP_APRON, W = Math.round(CH * TILE * K), OW = W + 2 * A, PD = A + 1, CW = W + 2 * PD;
+    K = W / (CH * TILE);
+    const ox = cx * CH * TILE, oy = cy * CH * TILE, sm = (a, b, t) => { t = (t - a) / (b - a); t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); };
+    const cv = document.createElement('canvas'); cv.width = OW; cv.height = OW; cv.k = K; cv.apron = A; cv.tex = true;
+    const x = cv.getContext('2d'), img = x.createImageData(OW, OW), d = img.data;
+    // the level of detail nearest one texel a chunk pixel
+    let lv = 0; while (lv < M.levels.length - 1 && M.N / M.W / K / (1 << lv) > 1.5) lv++;
+    const MP = M.levels[lv], MN = M.N >> lv, ms = MN / M.W, S4 = [0, 0, 0, 0], T4 = [0, 0, 0, 0];
+    const samp = (wx, wy, out) => {
+      let u = wx * ms, v = wy * ms; u -= Math.floor(u / MN) * MN; v -= Math.floor(v / MN) * MN;
+      const i0 = (u | 0) % MN, j0 = (v | 0) % MN, fu = u - Math.floor(u), fv = v - Math.floor(v), i1 = i0 + 1 === MN ? 0 : i0 + 1, j1 = j0 + 1 === MN ? 0 : j0 + 1;
+      const a = (j0 * MN + i0) * 4, b = (j0 * MN + i1) * 4, c = (j1 * MN + i0) * 4, e = (j1 * MN + i1) * 4, w0 = (1 - fu) * (1 - fv), w1 = fu * (1 - fv), w2 = (1 - fu) * fv, w3 = fu * fv;
+      for (let k = 0; k < 4; k++) out[k] = MP[a + k] * w0 + MP[b + k] * w1 + MP[c + k] * w2 + MP[e + k] * w3;
+    };
+    // the creep bits round the chunk, blurred 3x3 (a tile past the window counts as its edge)
+    const R = this.CREEP_REACH, GW = CH + 2 * R, t0x = cx * CH - R, t0y = cy * CH - R, G1 = new Float32Array(GW * GW), G2 = new Float32Array(GW * GW), B = new Float32Array(GW * GW);
+    for (let j = 0; j < GW; j++) for (let i = 0; i < GW; i++) { const tx = t0x + i, ty = t0y + j; G1[j * GW + i] = tx >= 0 && ty >= 0 && tx < m.w && ty < m.h && m.creep[ty * m.w + tx] ? 1 : 0; }
+    for (let j = 0; j < GW; j++) for (let i = 0; i < GW; i++) { const o = j * GW + i, c = G1[o]; G2[o] = ((i > 0 ? G1[o - 1] : c) + 2 * c + (i < GW - 1 ? G1[o + 1] : c)) / 4; }
+    for (let j = 0; j < GW; j++) for (let i = 0; i < GW; i++) { const o = j * GW + i, c = G2[o]; B[o] = ((j > 0 ? G2[o - GW] : c) + 2 * c + (j < GW - 1 ? G2[o + GW] : c)) / 4; }
+    // read through a cubic B-spline between the tile centres: the weights of every column once, of every row as it comes
+    const bs = (t, w, o) => { const t2 = t * t, t3 = t2 * t, it = 1 - t; w[o] = it * it * it / 6; w[o + 1] = (3 * t3 - 6 * t2 + 4) / 6; w[o + 2] = (-3 * t3 + 3 * t2 + 3 * t + 1) / 6; w[o + 3] = t3 / 6; };
+    const colI = new Int32Array(CW), colW = new Float32Array(CW * 4), rowW = [0, 0, 0, 0], rowv = new Float32Array(GW);
+    for (let p = 0; p < CW; p++) { const gx = (ox + (p - PD + 0.5) / K) / TILE - 0.5 - t0x, ix = Math.floor(gx); colI[p] = ix; bs(gx - ix, colW, p * 4); }
+    // pass 1: the coverage, moved by noise and strands, over the chunk, its apron and a pixel more (for the light's slope)
+    const C = this.scratch(ns + 'creep' + CW, CW * CW);
+    for (let q = 0; q < CW; q++) {
+      const wy = oy + (q - PD + 0.5) / K, gy = wy / TILE - 0.5 - t0y, jy = Math.floor(gy); bs(gy - jy, rowW, 0);
+      const r0 = (jy - 1) * GW, r1 = jy * GW, r2 = (jy + 1) * GW, r3 = (jy + 2) * GW, row = q * CW;
+      for (let i = 0; i < GW; i++) rowv[i] = rowW[0] * B[r0 + i] + rowW[1] * B[r1 + i] + rowW[2] * B[r2 + i] + rowW[3] * B[r3 + i];
+      for (let p = 0; p < CW; p++) {
+        const ix = colI[p], w4 = p * 4, F = colW[w4] * rowv[ix - 1] + colW[w4 + 1] * rowv[ix] + colW[w4 + 2] * rowv[ix + 1] + colW[w4 + 3] * rowv[ix + 2];
+        const wgt = (F <= 0 ? 0 : F >= 0.12 ? 1 : sm(0, 0.12, F)) * (F >= 1 ? 0 : F <= 0.88 ? 1 : 1 - sm(0.88, 1, F));   // faded in and out: see above
+        if (wgt <= 0) { C[row + p] = F; continue; }
+        const wx = ox + (p - PD + 0.5) / K; samp(wx, wy, S4);
+        C[row + p] = F + wgt * ((this.vnoise(wx / 70 + 3.1, wy / 70 + 7.7) - 0.5) * E.n1 + (this.vnoise(wx / 22 + 50.3, wy / 22 + 50.9) - 0.5) * E.n2 + E.fib * (S4[3] / 255 - 0.35));
+      }
+      if ((q & 7) === 7) yield;
+    }
+    // pass 2: the colour -- two samples of the material mixed by broad noise -- lit where the mass thins, over its stain
+    const Ln = Math.hypot(0.5, 0.6, 0.62), lx = -0.5 / Ln, ly = -0.6 / Ln, lz = 0.62 / Ln, bul = E.bulge * K * 0.5, thick = v => sm(E.lo, 0.95, v);
+    const QN = Math.ceil(OW / 8) + 1, qrow = new Float32Array(QN + 1);
+    for (let q = 0; q < OW; q++) {
+      const wy = oy + (q - A + 0.5) / K, row = (q + PD - A) * CW;
+      // the broad noise mixing the two samples, every eight pixels along the row and straight between: it changes over 230 world px
+      for (let s = 0; s <= QN; s++) qrow[s] = sm(0.3, 0.7, this.vnoise((ox + (s * 8 - A + 0.5) / K) / 230, wy / 230));
+      for (let p = 0; p < OW; p++) {
+        const o = row + p + PD - A, c = C[o];
+        if (c <= E.stainLo) continue;
+        const ac = sm(E.lo, E.hi, c) * E.amax, st = sm(E.stainLo, E.stainHi, c) * E.stainA, al = ac + st * (1 - ac), oo = (q * OW + p) * 4;
+        let r = 0, g = 0, b = 0;
+        if (ac > 0) {
+          const wx = ox + (p - A + 0.5) / K;
+          samp(wx, wy, S4); samp(wy * 0.83 + 331, wx * 0.83 + 173, T4);
+          const qs = p / 8, qi = qs | 0, mq = qrow[qi] + (qrow[qi + 1] - qrow[qi]) * (qs - qi);
+          r = S4[0] + (T4[0] - S4[0]) * mq; g = S4[1] + (T4[1] - S4[1]) * mq; b = S4[2] + (T4[2] - S4[2]) * mq;
+          // the thickness is flat (1) wherever it and its four neighbours are past 0.95: only the thinning edge is lit
+          if (c < 0.95 || C[o - 1] < 0.95 || C[o + 1] < 0.95 || C[o - CW] < 0.95 || C[o + CW] < 0.95) {
+            const tx = (thick(C[o + 1]) - thick(C[o - 1])) * bul, ty = (thick(C[o + CW]) - thick(C[o - CW])) * bul;
+            if (tx || ty) { let sh = (-tx * lx - ty * ly + lz) / Math.sqrt(tx * tx + ty * ty + 1) / lz; sh = sh < 0.55 ? 0.55 : sh > 1.3 ? 1.3 : sh; r *= sh; g *= sh; b *= sh; }
+          }
+        }
+        const k = ac / al;   // the creep over its stain, a dark wet tint on the ground
+        d[oo] = r * k + 14 * (1 - k); d[oo + 1] = g * k + 8 * (1 - k); d[oo + 2] = b * k + 14 * (1 - k); d[oo + 3] = al * 255;
+      }
+      if ((q & 7) === 7) yield;
+    }
+    x.putImageData(img, 0, 0);
+    return cv;
+  },
+  // Detailed creep's work for a frame, given the chunks in view (Render.drawCreep calls it before it draws them), CREEP_MS in all: the
+  // material, where detailed terrain was switched on in a game (the classic creep is drawn meanwhile); then chunks in view with no
+  // picture, at once, nearest the middle first and at least one a frame; then chunks whose creep changed, or coarser than the zoom can
+  // show, one at a time in steps carried from frame to frame, their old pictures on screen meanwhile; and once no chunk in view is
+  // waiting for a picture, every new picture goes in, in the same frame. True where the creep is detailed.
+  creepWork(cx0, cx1, cy0, cy1) {
+    if (!this.textured || !this.texSet()) return false;
+    const t0 = performance.now(), spent = () => performance.now() - t0 >= this.CREEP_MS;
+    if (!this._creepTex) {
+      const job = this._creepMatJob || (this._creepMatJob = this.creepMatSteps(this.CREEP_TEX_N));
+      for (;;) { const r = job.next(); if (r.done) { this._creepTex = r.value; this._creepMatJob = null; break; } if (spent()) return false; }
+    }
+    if (!this.creepAny) return true;
+    const M = this._creepTex, K = this.creepK((typeof Render !== 'undefined' && Render.zoom) || 1), nx = this.creepNx(), mx = (cx0 + cx1) / 2, my = (cy0 + cy1) / 2;
+    const near = (a, b) => (a[0] - mx) * (a[0] - mx) + (a[1] - my) * (a[1] - my) - (b[0] - mx) * (b[0] - mx) - (b[1] - my) * (b[1] - my);
+    const waits = (cx, cy) => { const e = this.creepChunks.get(cx + ',' + cy), s = this.creepSig[cy * nx + cx]; return !!e && !(e.tex && e.sig === s && e.k >= K) && !(e.next && e.next.sig === s && e.next.k >= K); };
+    const missing = [], stale = [];
+    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
+      if (cx < 0 || cy < 0 || cx >= nx || !this.creepAny[cy * nx + cx]) continue;
+      if (!this.creepChunks.has(cx + ',' + cy)) missing.push([cx, cy]); else if (waits(cx, cy)) stale.push([cx, cy]);
+    }
+    let baked = 0;
+    for (const [cx, cy] of missing.sort(near)) {
+      if (baked && spent()) break;
+      const it = this.creepBakeSteps(cx, cy, M, K, 'now'); let r; do r = it.next(); while (!r.done);
+      this.creepChunks.set(cx + ',' + cy, { cv: r.value, sig: this.creepSig[cy * nx + cx], k: K, tex: true, next: null }); baked++;
+    }
+    stale.sort(near);
+    for (let first = true; first || !spent(); first = false) {   // a step at least, as missing chunks get one at least
+      let j = this._creepJob;
+      if (j && (j.cx < cx0 || j.cx > cx1 || j.cy < cy0 || j.cy > cy1 || !this.creepChunks.has(j.cx + ',' + j.cy) || this.creepSig[j.cy * nx + j.cx] !== j.sig || j.k < K)) j = this._creepJob = null;
+      if (!j) {
+        const s = stale.find(([cx, cy]) => waits(cx, cy)); if (!s) break;
+        j = this._creepJob = { cx: s[0], cy: s[1], sig: this.creepSig[s[1] * nx + s[0]], k: K, it: this.creepBakeSteps(s[0], s[1], M, K, 'job') };
+      }
+      let r; do r = j.it.next(); while (!r.done && !spent());
+      if (!r.done) break;
+      const e = this.creepChunks.get(j.cx + ',' + j.cy);
+      if (e.next) this.releaseChunk(e.next.cv);
+      e.next = { cv: r.value, sig: j.sig, k: j.k }; this._creepJob = null;
+    }
+    if (!stale.some(([cx, cy]) => waits(cx, cy)))
+      for (const e of this.creepChunks.values()) if (e.next) { this.releaseChunk(e.cv); e.cv = e.next.cv; e.sig = e.next.sig; e.k = e.next.k; e.tex = true; e.next = null; }
+    return true;
+  },
+  // The creep chunks kept: CREEP_CAP, or twice those in view where that is more; the least recently drawn go first (creepChunk).
+  creepTrim(inView) {
+    const c = this.creepChunks, cap = Math.max(this.CREEP_CAP, 2 * (inView || 0));
+    while (c.size > cap) { const k = c.keys().next().value; if (k === undefined) break; const e = c.get(k); this.releaseChunk(e.cv); if (e.next) this.releaseChunk(e.next.cv); if (this._creepJob && this._creepJob.cx + ',' + this._creepJob.cy === k) this._creepJob = null; c.delete(k); }
+  },
+  // The material, made while the player is in the menus, when the browser is idle (a loading screen finishes it if START comes first).
+  preloadCreep() {
+    if (!this.canPrepare() || this._creepTex || this._creepMatBoot) return false;
+    this._creepMatBoot = true;
+    const later = f => (typeof requestIdleCallback === 'function' ? requestIdleCallback(f, { timeout: 200 }) : setTimeout(f, 16));
+    const step = () => {
+      if (this._creepTex) return;
+      const job = this._creepMatJob || (this._creepMatJob = this.creepMatSteps(this.CREEP_TEX_N)), t0 = performance.now();
+      for (;;) { const r = job.next(); if (r.done) { this._creepTex = r.value; this._creepMatJob = null; return; } if (performance.now() - t0 >= 6) break; }
+      later(step);
+    };
+    later(step);
+    return true;
   },
   renderCreepChunk(cx, cy) {
     const m = G.map, CH = this.CH, px = CH * TILE, ox = cx * CH * TILE, oy = cy * CH * TILE;

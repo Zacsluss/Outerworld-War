@@ -255,14 +255,22 @@ const Render = {
     const CH = Terrain.CH * TILE, nx = Terrain.creepNx(), z = this.zoom;
     const x0 = Math.max(0, Math.floor(this.camX / CH)), y0 = Math.max(0, Math.floor(this.camY / CH));
     const x1 = Math.min(nx - 1, Math.floor((this.camX + this.viewWorldW()) / CH)), y1 = Math.min(Math.ceil(G.map.h / Terrain.CH) - 1, Math.floor((this.camY + this.viewWorldH()) / CH));
-    Terrain.creepBudget = 2;   // at most two chunk bakes a frame; see Terrain.creepChunk
+    Terrain.creepBudget = 2;   // the classic look: at most two chunk bakes a frame; see Terrain.creepChunk
+    Terrain.creepWork(x0, x1, y0, y1);   // detailed terrain: its bakes and its swap, a few milliseconds a frame; see Terrain.creepWork
     // Whole pixels, or the filter eats the dither -- see Terrain.draw. Only at zoom 1: at any other
     // zoom the blit is resampled anyway and rounding the camera would just make the creep crawl
     // against the terrain under it by up to a pixel as you scroll.
     const dq = z === 1 ? this.dpr : 0, ox = dq ? Math.round(this.camX * dq) / dq : this.camX, oy = dq ? Math.round(this.camY * dq) / dq : this.camY;   // to a device pixel, as Terrain.draw
     for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
-      const cv = Terrain.creepChunk(cx, cy); if (cv) ctx.drawImage(cv, cx * CH - ox, cy * CH - oy);
+      const cv = Terrain.creepChunk(cx, cy); if (!cv) continue;
+      const a = cv.apron;
+      if (!a) ctx.drawImage(cv, cx * CH - ox, cy * CH - oy);
+      // A detailed chunk (Terrain.creepBakeSteps) carries an apron of its own pixels: at zoom 1 its inside is drawn exactly on its
+      // square; at any other zoom all of it, over the edges of the chunks beside it, so the device pixel on their boundary is covered.
+      else if (z === 1) ctx.drawImage(cv, a, a, cv.width - 2 * a, cv.height - 2 * a, cx * CH - ox, cy * CH - oy, CH, CH);
+      else { const e = a / cv.k; ctx.drawImage(cv, cx * CH - ox - e, cy * CH - oy - e, CH + 2 * e, CH + 2 * e); }
     }
+    Terrain.creepTrim((x1 - x0 + 1) * (y1 - y0 + 1));
     this.drawCreepLife(ctx, ox, oy);
   },
   // FIXLIST-M15 A3: creep that looks alive.

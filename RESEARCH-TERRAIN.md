@@ -361,3 +361,23 @@ Licence: CC0, no credit needed ([polyhaven.com/license](https://polyhaven.com/li
 - **Measured** (Blood Pit, 1600 x 900): before, the classic ground was on screen from 130 ms to about 930 ms and the first seconds' worst
   frame was 91.6 ms; after, no classic chunk, the worst frame 15.9 ms, the loading screen 0.9 s cold on a 100% display and 1.7 s on a
   150% one. The Long March at 150%: loading 35 ms, preparing the textures 53, the far view 233, the sharp set 59, the start view 962.
+- **Found after (PLAYTEST-M18 120): a page not on screen settles no decode and gets no animation frame.** "requestAnimationFrame() calls
+  are paused in most browsers when running in background tabs" ([MDN, requestAnimationFrame](https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame));
+  in a Browser pane not on screen a decode was still pending twenty seconds on. So a decode is waited for DECODE_WAIT_MS at most, and a
+  hidden page runs its loading screen from the simulation's timer, which a hidden page does not throttle (a Worker's, UI.makeTicker).
+
+### 8.12 Creep as one continuous mass *(the looks queue, item 2, 2026-09-14; PLAYTEST-M18 119)*
+
+- **StarCraft II's creep**, in Blizzard's own guide screenshots ([Game Guide: Zerg: Creep](https://news.blizzard.com/en-us/article/5838584/game-guide-zerg-creep),
+  images creep01 and creep03), is a dark, fibrous, wet mass whose edge is ragged and soft -- no tile shows in it. The old creep here was a
+  192 px tile of noise that did not wrap (a straight seam every six tiles), posterised with an ordered dither, cut at a dithered edge.
+- **A texture that tiles needs noise whose lattice wraps with it**: gradient noise on a lattice of P cells, indices taken modulo P, repeats
+  exactly every P cells, so a texture of whole periods has no seam (the standard periodic Perlin noise; `Terrain.pgrad`). Warped, the
+  warp must stay under the amount that folds the pattern over itself -- in the prototype a warp of 0.09 folded it, and every fold was a
+  hard dark crease (`.claude/review/terrain/shots/creep-proto-mat2` to `-mat5` for the four recipes judged).
+- **A smooth border from a grid of bits**: a 3x3 blur and a cubic B-spline between tile centres give a contour through the tile edges on a
+  straight run and rounded at the corners, with no staircase; three tiles of reach, which is the signature window. Noise that moves the
+  border has to fade in with the coverage -- switched on at a threshold, it drew a line along that contour.
+- **Chunks with transparency cannot use the ground's one-pixel overlap alone**: drawn over, a half-transparent pixel is laid twice. A chunk
+  carries an apron of its own true pixels instead, drawn inside at zoom 1 and whole at any other zoom, so the pixel on a boundary is
+  covered by the same colour from both sides.

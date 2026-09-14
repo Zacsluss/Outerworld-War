@@ -1812,3 +1812,84 @@ are the only thing that's rendered. Brainstorm the best option and execute." Dra
   without a hitch, and it costs one to two seconds at the start of a game.
 - **A restart prepares the ground again** rather than keeping it: the same map with another seed is different ground, and keeping
   chunks across games is a separate change for a second saved.
+
+## 119. Creep is one continuous mass: no tiles, no lines, a soft edge
+
+*(The looks queue, item 2 -- the user, 2026-09-14: "Zerg creep has a tiled look to it with defined edges. We need to make those edges
+undefined so the creep looks like a continuous mass with no lines or tiles." And: "Can you find any free textures online that would work
+for creep? We don't have to use that, but if we can, we should for greater realism." Drawing only -- `js/terrain.js` (`creepMatSteps`,
+`creepBakeSteps`, `creepWork`), `js/render.js` (`Render.drawCreep`); the build stamp stays `ca141a3b7ffcb528`.)*
+
+**What changed for a player:**
+1. **With detailed terrain, creep is one wet, folded mass of dark purple flesh**, lit from the upper left like the ground and the units.
+   Measured first: the old creep was a 192-pixel square of pattern that did not wrap, so its veins stopped at a straight line every six
+   tiles -- a grid of squares over every field of creep -- filled with a pattern of dots, and cut off at a hard dotted edge with a dark rim.
+   None of that is left: no squares, no dots, no seams, and no repeat you can pick out.
+2. **Its edge is soft and ragged**: the creep thins over about a tile, in stringy fingers, over a faint dark stain on the ground, and wanders
+   in and out rather than following the tiles.
+3. **When creep grows** (a Hatchery finishing, a Creep Colony or a tumour spreading) the new creep appears on the whole screen at once, never
+   a square at a time.
+4. **At any zoom** the creep has no lines between its pieces, and far out it is drawn at a lower detail, so it costs less.
+5. **Classic look** (Settings -> Terrain) keeps the old creep, which matches its dotted ground.
+
+**How to see it by hand:**
+1. **Single Player -> Skirmish** as **Zerg**, any map. Look at the creep round your Hatchery. *Working:* a dark, glossy, folded mass; no
+   squares, no straight lines, no dot pattern; its edge fades out in ragged fingers.
+2. **Grow it.** Build a Creep Colony at the edge of the creep (or plant a tumour with a Queen) and watch. *Working:* the creep spreads in
+   rounded lobes, the whole visible change at once, no square of creep popping in beside an old one.
+3. **Zoom.** Roll the mouse wheel out and in over the creep. *Working:* no grid lines through it at any zoom.
+4. **Classic.** Esc -> Settings -> Terrain: Classic. *Working:* the old creep. Back to Detailed: the new creep again.
+
+**Invisible from normal play, and where to look instead:**
+- Measured in the browser, Blood Pit with a Hatchery, two Creep Colonies and two tumours grown out, at 1600 x 900 on a 150% display:
+
+| What | Before | After |
+|---|---|---|
+| The creep's pattern | a 192 px square that does not wrap: a colour jump of 45.5 across its edge, 32.5 inside | made to wrap: 4.0 across its edge, 4.5 inside |
+| Its edge | a hard dotted cut with a dark rim | thins over 36 world px (a tile), half there 9.5 px past the tile's edge |
+| A piece of creep baked, a 150% display | -- | 256 px at 1x: 6.9 ms (18.1 ms at 1.5x, which could not be told apart) |
+| Forty seconds of creep growing (22 changes) | -- | creep work at most 8.2 ms in a frame; frames p99 7.1 ms, one over 33 ms, none over 50 |
+| The material, made once | -- | 373 ms, in slices while the menus are idle (the loading screen finishes it if needed) |
+| Lines between pieces of creep at zoom 0.6 | 1.3 to 2.5 times the pattern's own variation | none above it (an apron of two pixels drawn over the neighbour) |
+
+- `test/terraintex.js` 8 (9 new checks): the pattern wraps with no seam and is not posterised; a piece of creep has no dotted edge and no
+  posterising, its edge thins over at least 12 world px and is half there within half a tile of the tile's edge; the coverage it is cut
+  from never steps (a noise switched on at a threshold drew a line along that contour in a prototype); where two pieces meet, each one's
+  apron is the other's edge to the level; a field a pattern repeat apart does not repeat (correlation 0.26); a creep tile three tiles
+  away is in a piece's signature; pieces with no picture are baked at once; and growing creep swaps every changed piece in view on the same
+  frame, the old pictures freed. `test/terrainview.js` 12 (3) and 11 (1): the apron drawn inside at zoom 1 and over the neighbours at 0.6;
+  zooming in bakes finer creep; switching the look switches the creep; at a Zerg start every piece of creep in view is detailed before the
+  first frame. Negative controls in `.claude/review/creep/controls-creep.log`, all red.
+
+**Deliberately different from what was asked, or not done:**
+- **No downloaded texture.** The creep's pattern is made in code (wet folded flesh from noise that wraps, lit like the ground), which
+  tiles with no seam at any size and costs no download; the free textures found (ambientCG, 3dtextures.me) remain an option if you would
+  rather have a photographed one -- say which.
+- **Creep is drawn at 1x on a 150% display**, not at the display's full resolution as the ground is: side by side the two could not be
+  told apart, and the sharper one costs two and a half times as much to make.
+- **The creep's slow bubbling overlay is unchanged** (FIXLIST-M15 A3).
+
+## 120. A game started while its tab is in the background starts, with its detailed ground
+
+*(Found while measuring 119 in a browser tab that was not on screen. Interface only -- `js/terrain.js` (`DECODE_WAIT_MS`),
+`js/ui.js` (`UI.simStep`); the build stamp stays `ca141a3b7ffcb528`.)*
+
+**What changed for a player:**
+1. **A game that starts while its window or tab is not on screen** -- minimised, behind another tab -- no longer sits on its loading screen
+   for twenty seconds and then gives up to the classic ground. Measured in a tab not on screen: the loading screen took 21.3 s and the
+   ground came out classic; now 1.2 s and detailed. A browser never finishes decoding an image for a page that is hidden, and the loading
+   screen waited for it; it now waits a quarter of a second at most once the files are in.
+2. **In a multiplayer game, a player whose tab is in the background at START no longer holds everyone at the first frame until they come
+   back.** A hidden tab gets no animation frames, which is where the loading screen ran; it now runs from the game's own timer there.
+
+**How to see it by hand:**
+1. **Two browser tabs in one lobby.** Press START in one tab and switch straight to the other tab. *Working:* the game in the tab you are
+   looking at starts after its loading screen and does not wait long on "Waiting for other players..."; switch back to the first tab after
+   ten seconds -- its game is running too, on detailed ground.
+2. **A skirmish in a background tab.** Start a skirmish and switch tabs at once; come back after five seconds. *Working:* the game has
+   started (its clock is running) and the ground is detailed, not the flat painted look.
+
+**Invisible from normal play, and where to look instead:**
+- `test/terrainview.js` 11 (2 new checks): a decode that never settles holds the loading screen DECODE_WAIT_MS at most and the ground is
+  detailed; a page hidden during its loading screen runs it from the simulation's timer, draws no frame, and starts the game. Two negative
+  controls, red (`.claude/review/creep/controls-creep.log`, 11 and 12).

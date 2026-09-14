@@ -23,7 +23,11 @@
 //     starts behind a loading screen -- no world frame drawn, no chunk baked, the simulation held, input ignored -- while the textures
 //     load; then the far view, the minimap and every chunk of the start view at the display's ratio are made before the first frame,
 //     which replaces none of them; a texture that never comes gives up the wait; the classic look is ready at once; the boot fetches
-//     every set's files; a texture of another set arriving drops nothing; the loading screen shows the map's painted picture.
+//     every set's files; a texture of another set arriving drops nothing; the loading screen shows the map's painted picture; a decode
+//     that never settles (a page not on screen) holds it DECODE_WAIT_MS at most; a page hidden under it runs it from the simulation's
+//     timer; the start view's creep is detailed before the first frame too.
+// 12. CREEP ON SCREEN (the looks queue, item 2): a detailed creep chunk is drawn inside its apron at zoom 1 and with it at any other
+//     zoom; zooming in bakes the creep again at a finer ratio; switching the look draws the creep in the other look.
 // 10. SHARP GROUND: a chunk in view is refined to the least of 1, 1.5 and 2 covering the device pixels a world pixel spans; only once
 //     nothing in view is missing; REFINE_MS of a frame at a time -- a row a draw at 0, one chunk a draw with no limit, never two --
 //     nearest the middle first; swapped in whole, the old canvas freed; a job dropped with its chunk; nothing refined on a 1x display
@@ -447,32 +451,37 @@ ok(refine.oneX.sharpened === 0 && refine.oneX.allAtOne, 'sharp: on a 1x display 
   vm.runInContext(`
     // an Image that can decode, as a browser's can: Terrain.canPrepare is true while it is there
     Image.prototype.decode = function () { return Promise.resolve(); };
-    TT.spy = { frames: 0, bakes: 0, palette: 0, drawPrep: 0, first: null };
+    Terrain.CREEP_TEX_N = 64;   // the creep's material, small: made inside a vm, a 1024 one is seconds
+    TT.spy = { frames: 0, bakes: 0, palette: 0, drawPrep: 0, first: null, creepBakes: 0 };
     TT.real = { frame: Render.frame, chunk: Terrain.renderChunk, steps: Terrain.texBakeSteps, drawPrep: UI.drawPrep, texSet: Terrain.texSet };
     // texture data only once every file of the set is in, as the real texSet: the gate the loading screen waits on
     Terrain.texSet = function () { if (!this.textured || !TERRAIN_TEX[this.setId]) return null; return Object.values(TERRAIN_TEX[this.setId]).every(u => this._tex[u] && this._tex[u].ok) ? TT.T : null; };
     Terrain.renderChunk = function (...a) { TT.spy.bakes++; if (!this.texSet()) TT.spy.palette++; return TT.real.chunk.apply(this, a); };
     Terrain.texBakeSteps = function* (...a) { TT.spy.bakes++; return yield* TT.real.steps.apply(this, a); };
+    TT.real.creepSteps = Terrain.creepBakeSteps;
+    Terrain.creepBakeSteps = function* (...a) { TT.spy.creepBakes++; return yield* TT.real.creepSteps.apply(this, a); };
     UI.drawPrep = function (...a) { TT.spy.drawPrep++; return TT.real.drawPrep.apply(this, a); };
     TT.real.paint = Terrain.paintOverviewTex;
     Terrain.paintOverviewTex = function (T, img, tx0, ty0, tx1, ty1) { if (UI.prep) TT.spy.maxRows = Math.max(TT.spy.maxRows || 0, ty1 - ty0); return TT.real.paint.apply(this, arguments); };
     Render.frame = function (...a) {
       const s = TT.spy; s.frames++;
       if (!s.first) {
-        const v = TT.view(), before = v.keys.map(k => Terrain.chunks.get(k)), K = Terrain.sharpK(Render.zoom);
-        s.first = { keys: v.keys.length, baked: before.filter(Boolean).length, textured: before.filter(c => c && c.tex).length, sharp: before.filter(c => c && c.tex && (c.k || 1) >= K).length, K, overTex: !!Terrain._overTex, mini: !!Render.mini, sim: G.frame };
-        const r = TT.real.frame.apply(this, a);
-        s.first.replaced = v.keys.filter((k, i) => Terrain.chunks.get(k) !== before[i]).length;
+        const v = TT.view(), before = v.keys.map(k => Terrain.chunks.get(k)), K = Terrain.sharpK(Render.zoom), nx = Terrain.creepNx();
+        const creepKeys = v.keys.filter(k => { const [x, y] = k.split(',').map(Number); return !!Terrain.creepAny && !!Terrain.creepAny[y * nx + x]; });
+        s.first = { keys: v.keys.length, baked: before.filter(Boolean).length, textured: before.filter(c => c && c.tex).length, sharp: before.filter(c => c && c.tex && (c.k || 1) >= K).length, K, overTex: !!Terrain._overTex, mini: !!Render.mini, sim: G.frame,
+          creep: creepKeys.length, creepDetailed: creepKeys.filter(k => { const e = Terrain.creepChunks.get(k); return e && e.tex && e.cv.apron > 0; }).length };
+        const cb = s.creepBakes, r = TT.real.frame.apply(this, a);
+        s.first.replaced = v.keys.filter((k, i) => Terrain.chunks.get(k) !== before[i]).length; s.first.creepBaked = s.creepBakes - cb;
         return r;
       }
       return TT.real.frame.apply(this, a);
     };
-    TT.go = (layout, textured) => {
+    TT.go = (layout, textured, race) => {
       TT.spy.frames = 0; TT.spy.bakes = 0; TT.spy.palette = 0; TT.spy.drawPrep = 0; TT.spy.first = null; TT.spy.maxRows = 0;
       Terrain._tex = {}; Terrain._bakedAt = undefined; Terrain.textured = textured !== false;
       // a small view (four to six chunks): a bake at 1.5 is slow inside a vm harness, and the rule is the same for any number
       Render.W = 520; Render.H = 440; Render.viewW = 520; Render.viewH = 300; Render.dpr = 1.5;
-      UI.start({ players: [{ race: 'T', human: true, name: 'A', team: 1 }, { race: 'Z', human: false, name: 'B', team: 2 }], seed: 4, layout });
+      UI.start({ players: [{ race: race || 'T', human: true, name: 'A', team: 1 }, { race: race === 'Z' ? 'T' : 'Z', human: false, name: 'B', team: 2 }], seed: 4, layout });
       UI.menu = null; G.paused = false; for (const p of G.players) p.ai = null;
       Render.W = 520; Render.H = 440; Render.viewW = 520; Render.viewH = 300; Render.dpr = 1.5;
       TT.urls = Object.values(TERRAIN_TEX[Terrain.setId] || {});
@@ -551,7 +560,51 @@ ok(refine.oneX.sharpened === 0 && refine.oneX.allAtOne, 'sharp: on a 1x display 
   const bootCalls = bootAt >= 0 && /Terrain\.preloadTextures\(\)/.test(uiSrc.slice(bootAt, bootAt + 600));
   ok(boot.all && boot.unique >= 13 && boot.headless === 0 && !boot.headlessPrep && bootCalls, 'first frame: the boot fetches every set\'s ' + boot.unique + ' texture files while the player is in the menus; where no image can load (these suites) nothing is fetched and a game starts at once', JSON.stringify(Object.assign({ bootCalls }, boot)));
 
-  vm.runInContext(`Render.frame = TT.real.frame; Terrain.renderChunk = TT.real.chunk; Terrain.texBakeSteps = TT.real.steps; UI.drawPrep = TT.real.drawPrep; Terrain.texSet = TT.real.texSet; Terrain.paintOverviewTex = TT.real.paint; delete Image.prototype.decode; Render.dpr = 1;`, ctx);
+  // a decode that never settles, as in a page that is not on screen: the loading screen waits DECODE_WAIT_MS for it at most
+  R("TT.decodeWas = Image.prototype.decode; Image.prototype.decode = function () { return new Promise(() => { }); }; Terrain.DECODE_WAIT_MS = 30; TT.go('temple'); for (const u of TT.urls) Terrain.texEntry(u).img.onload();");
+  let hungIn = -1;
+  for (let i = 0; i < 3000; i++) { if (!R('UI.loop(performance.now()); return !!UI.prep;')) { hungIn = i + 1; break; } await new Promise(r => setTimeout(r, 2)); }
+  const hung = R('const s = TT.spy.first || {}; Image.prototype.decode = TT.decodeWas; Terrain.DECODE_WAIT_MS = 250; return Object.assign({}, s, { prep: !!UI.prep });');
+  ok(hungIn > 0 && !hung.prep && hung.keys >= 4 && hung.textured === hung.keys, 'first frame: a decode that never settles -- a page not on screen -- holds the loading screen DECODE_WAIT_MS at most once the files are in (' + hungIn + ' frames at 30 ms), and the ground is detailed all the same', JSON.stringify(hung));
+  // a page hidden under its loading screen gets no animation frames: the simulation's timer runs the job
+  R("TT.go('temple'); document.hidden = true; for (const u of TT.urls) Terrain.texEntry(u).img.onload();");
+  let hiddenTicks = -1;
+  for (let i = 0; i < 3000; i++) { if (!R('TT.tick(); return !!UI.prep;')) { hiddenTicks = i + 1; break; } await flush(); }
+  const hid = R('const r = { frames: TT.spy.frames, chunks: Terrain.chunks.size }; TT.tick(); TT.tick(); r.sim = G.frame; document.hidden = false; return r;');
+  ok(hiddenTicks > 0 && hid.frames === 0 && hid.chunks >= 4 && hid.sim > 0, 'first frame: a page hidden during its loading screen, which gets no animation frames, runs the loading screen from the simulation\'s timer (' + hiddenTicks + ' ticks) and starts the game', JSON.stringify(hid));
+  // the start view's creep, detailed before the first frame: a Zerg start
+  R("TT.go('temple', true, 'Z'); for (const u of TT.urls) Terrain.texEntry(u).img.onload();");
+  const zergIn = await loopUntilDone(3000);
+  const zerg = R('return Object.assign({}, TT.spy.first || {}, { prep: !!UI.prep });');
+  ok(zergIn > 0 && zerg.creep >= 2 && zerg.creepDetailed === zerg.creep && zerg.creepBaked === 0, 'first frame: at a Zerg start all ' + zerg.creep + ' chunks of creep in view are baked detailed before the first frame, which bakes none', JSON.stringify(zerg));
+
+  // ---------------------------------------------------------------------------------------------------------------------------
+  // 12. Creep on screen
+  // ---------------------------------------------------------------------------------------------------------------------------
+  const creepDraw = R(`
+    const out = { CH: Terrain.CH * TILE }, CH = out.CH, settle = () => { for (let i = 0; i < 400; i++) { Render.drawCreep(Render.ctx); let busy = !!Terrain._creepJob; for (const e of Terrain.creepChunks.values()) if (e.next) busy = true; if (!busy && i > 3) break; } };
+    const drawn = () => { _rec.reset(); _rec.on = true; Render.drawCreep(Render.ctx); _rec.on = false; return _rec.ops.filter(o => o.op === 'drawImage' && o.src && typeof o.src === 'object' && 'img' in o.src); };
+    Terrain.CREEP_MS = 50;
+    for (const z of [1, 0.6]) {
+      Render.zoom = z; Render.creepOn = undefined; Render.creepFrame = -1; settle();
+      out['z' + String(z).replace('.', '')] = drawn().map(o => o.src.apron ? (o.a.length === 9 ? { n: 9, inset: o.a[1] === o.src.apron && o.a[2] === o.src.apron && o.a[3] === o.src.width - 2 * o.src.apron, dw: o.a[7] } : { n: o.a.length, dw: +o.a[3].toFixed(4), want: +(CH + 2 * o.src.apron / o.src.k).toFixed(4) }) : { n: o.a.length, classic: true });
+    }
+    // zoomed out, then in: the creep in view is baked again at the finer ratio
+    Terrain.dropCreepChunks(); Render.zoom = 0.3; Render.creepOn = undefined; Render.creepFrame = -1; settle();
+    const ks = () => [...Terrain.creepChunks.values()].filter(e => e.tex).map(e => e.k);
+    out.kFar = [...new Set(ks())]; Render.zoom = 0.6; settle(); settle(); out.kNear = [...new Set(drawn().map(o => o.src.k))];
+    // the classic look, and back
+    Terrain.setTextured(false); for (let i = 0; i < 40; i++) Render.drawCreep(Render.ctx); out.classic = drawn().map(o => !o.src.apron);
+    Terrain.setTextured(true); settle(); out.back = drawn().map(o => !!o.src.apron);
+    Terrain.CREEP_MS = 6; Render.zoom = 1;
+    return out;
+  `);
+  ok(creepDraw.z1.length >= 2 && creepDraw.z1.every(d => d.n === 9 && d.inset && d.dw === creepDraw.CH) && creepDraw.z06.length >= 2 && creepDraw.z06.every(d => d.n === 5 && d.dw === d.want),
+    'creep: a detailed chunk is drawn inside its apron, exactly on its square, at zoom 1 (' + creepDraw.z1.length + ' chunks), and with its apron over its neighbours\' edges at 0.6 (' + creepDraw.z06.length + ')', JSON.stringify({ z1: creepDraw.z1.slice(0, 2), z06: creepDraw.z06.slice(0, 2) }));
+  ok(creepDraw.kFar.join() === '0.5' && creepDraw.kNear.join() === '1', 'creep: zoomed out to 0.3 the creep is baked at ratio 0.5; zoomed in to 0.6, what is drawn is baked again at 1', JSON.stringify(creepDraw));
+  ok(creepDraw.classic.length >= 2 && creepDraw.classic.every(Boolean) && creepDraw.back.length >= 2 && creepDraw.back.every(Boolean), 'creep: switched to Classic the creep is drawn in the classic look, and switched back, detailed again', JSON.stringify({ classic: creepDraw.classic, back: creepDraw.back }));
+
+  vm.runInContext(`Render.frame = TT.real.frame; Terrain.renderChunk = TT.real.chunk; Terrain.texBakeSteps = TT.real.steps; Terrain.creepBakeSteps = TT.real.creepSteps; UI.drawPrep = TT.real.drawPrep; Terrain.texSet = TT.real.texSet; Terrain.paintOverviewTex = TT.real.paint; delete Image.prototype.decode; Render.dpr = 1;`, ctx);
   ok(errors.length === 0, 'no console errors', JSON.stringify(errors.slice(0, 3)));
   summary();
 })();

@@ -254,6 +254,10 @@ const UI = {
     // A menu is a local overlay. In a network game the lockstep runs behind it: a client with the pause
     // menu open, or an eliminated player looking at the result screen, used to stop sending batches and
     // every peer froze on "Waiting for other players". (REVIEW-M17)
+    // A page hidden during its loading screen gets no animation frames, so UI.loop never runs the job, and a network game's lockstep
+    // held every player until that tab came back: the job runs from this timer instead, which a hidden page does not throttle. The
+    // ground it bakes is kept; nobody is looking at a loading screen to draw.
+    if (this.prep && typeof document !== 'undefined' && document.hidden && typeof Terrain !== 'undefined') { if (Terrain.prepRun(this.prep, Terrain.PREP_MS)) { this.prep = null; this.lastT = this.lastR = performance.now(); this.accum = 0; } return; }
     if (G.paused || this.loading || this.prep || (this.menu && !this.net)) return;
     if (this.mode === 'play' && G.frame > 0 && G.frame % (TPS * 120) === 0 && !(typeof Net !== 'undefined' && Net.active) && !this._autosaved) { this._autosaved = true; Replay.save(false); } else if (G.frame % (TPS * 120) !== 0) this._autosaved = false;
     const step = 1 / (TPS * this.SPEEDS[this.speedIndex()]); this.accum += dt; let n = 0;
