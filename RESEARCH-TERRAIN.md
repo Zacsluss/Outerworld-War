@@ -381,3 +381,14 @@ Licence: CC0, no credit needed ([polyhaven.com/license](https://polyhaven.com/li
 - **Chunks with transparency cannot use the ground's one-pixel overlap alone**: drawn over, a half-transparent pixel is laid twice. A chunk
   carries an apron of its own true pixels instead, drawn inside at zoom 1 and whole at any other zoom, so the pixel on a boundary is
   covered by the same colour from both sides.
+
+### 8.13 Cliffs that look twice as tall *(the looks queue, item 3, 2026-09-14; PLAYTEST-M18 121)*
+
+- **Seen from straight above, height shows as the width of a face and the reach of a shadow**: a cast shadow's length is the height over the
+  tangent of the sun's elevation, so under one sun a shadow twice as long is a wall twice as tall; the face's width is the other cue, and
+  the one the grid limits (a cliff is one tile of unwalkable ground). The game's sun (0.5, 0.6, 0.62) stands about 38 degrees high.
+- **What was measured and chosen** (a probe on a straight edge, then twenty variants judged on screenshots of four tilesets): the shadow
+  read twice as far towards the sun; the drop's width in the blurred height from 0.36 to 0.5 with 40% of it an even slope; the light's rise
+  doubled, with ramps at the old rise and the old shadow reach (at twice both a ramp facing away from the sun went dark); a shade floor of
+  0.62 so a shaded face shows its rock. Rejected: a south-facing face stretched as a northward-tilted camera would see it, whose facing,
+  read from the height field's slope, drew spikes at ramp walls and lines between tiles.

@@ -32,6 +32,9 @@
 //     along that contour); a chunk's apron is the very pixels of its neighbour's edge; a material repeat apart the creep does not
 //     repeat; a creep bit CREEP_REACH tiles away is in a chunk's signature; and when creep grows, the changed chunks keep their old
 //     pictures until every one has its new one, then all change together.
+//  9. CLIFFS THAT LOOK TWICE AS TALL (the looks queue, item 3: "Can we make them look about twice as tall"): on a plateau with a straight
+//     east-facing and a straight south-facing edge, the drop is half as wide again as before, the shadow past an east-facing cliff reaches
+//     twice as far and past a south-facing one half as far again, and a ramp is lit as it was.
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path');
 const { makeCtx, ok, summary, root } = require('./_harness');
@@ -524,5 +527,50 @@ ok(creepSwap.reach, 'creep: a creep bit CREEP_REACH tiles outside a chunk is in 
 ok(creepSwap.firstCall >= 1 && creepSwap.keys >= 2 && creepSwap.allBaked, 'creep: chunks in view with no picture are baked at once -- one at least on a call with no time at all -- until all ' + creepSwap.keys + ' have one', JSON.stringify(creepSwap));
 ok(creepSwap.changed >= 2 && creepSwap.swapped && creepSwap.mixed === 0 && creepSwap.calls > creepSwap.changed && creepSwap.oldFreed && creepSwap.current, 'creep: when it grows, the ' + creepSwap.changed + ' changed chunks keep their old pictures while the new ones are baked a step a call (' + creepSwap.calls + ' calls), and all change on the same call -- never half old and half new; the old pictures freed', JSON.stringify(creepSwap));
 
+// ---------------------------------------------------------------------------------------------------------------------------
+// 9. Cliffs that look twice as tall
+// ---------------------------------------------------------------------------------------------------------------------------
+// The scene of .claude/review/cliffs/probe-cliff.js: every tile left of x 24 and above y 40 high, a ramp down its south side at x 8-11, the
+// rest open floor, baked at ratio 1 from flat textures. Measured with the code before the change (CLIFF_W 0.36, RISE 22, the shadow read
+// 9 and 11 px towards the sun, at most 0.32 dark, the shade's floor 0.5): the drop 22.2 px wide on Badlands and 17 on Space Platform (whose
+// height is not blurred); the darkening past an east-facing cliff's tile 6.6 and 4.3 px, past a south-facing one 18.9 and 14.9; a ramp's
+// foot against the floor 1.594 and 3.496.
+const CLIFF_BEFORE = { badlands: { drop: 22.2, east: 6.6, south: 18.9, ramp: 1.594 }, space: { drop: 17, east: 4.3, south: 14.9, ramp: 3.496 } };
+const cliffs = R(`
+  const S = Terrain.TEX_PX, tex = (base, amp, seed) => { const d = new Uint8ClampedArray(S * S * 4), f = 2 * Math.PI / S; for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { const blob = Math.sin(x * f * 3 + seed) * Math.cos(y * f * 2 + seed * 1.7), v = blob * amp, p = (y * S + x) * 4; d[p] = base[0] + v; d[p + 1] = base[1] + v; d[p + 2] = base[2] + v; d[p + 3] = 255; } return d; };
+  const T = { low: tex([110, 100, 90], 6, 1), high: tex([200, 190, 170], 6, 2), ramp: tex([150, 140, 120], 6, 3), rock: tex([120, 100, 90], 6, 4) }, res = {};
+  for (const set of ['badlands', 'space']) {
+    const m = TT.map(set, 7), W = m.w;
+    m.height.fill(0); m.cliff.fill(0); m.walk.fill(1); m.blocked.fill(-1); m.resources = []; m.features = []; m.wrecks = [];
+    for (let y = 0; y < 40; y++) for (let x = 0; x < 24; x++) m.height[y * W + x] = 2;
+    for (let y = 0; y < m.h; y++) for (let x = 0; x < W; x++) { const i = y * W + x; if (m.height[i] !== 2) continue; let edge = false; for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const xx = x + a, yy = y + b; if (xx >= 0 && yy >= 0 && xx < W && yy < m.h && m.height[yy * W + xx] === 0) edge = true; } if (edge) { m.cliff[i] = 1; m.walk[i] = 0; } }
+    for (let y = 39; y < 43; y++) for (let x = 8; x < 12; x++) { const i = y * W + x; m.height[i] = 1; m.cliff[i] = 0; m.walk[i] = 1; }
+    Terrain.reset(7);
+    const bake = (cx, cy) => { const it = Terrain.texBakeSteps(cx, cy, T, 1, 'cliff'); let r; do r = it.next(); while (!r.done); return r.value; };
+    const lum = (d, x, y) => { const o = (y * 256 + x) * 4; return d[o] * 0.3 + d[o + 1] * 0.59 + d[o + 2] * 0.11; };
+    const PW = 256 + 2 * 24; bake(2, 2); const hf = Terrain._scratch['cliffhf' + PW].slice(), bd = bake(3, 2).img.data;
+    let drop = 0, rows = 0; for (let py = 40; py < 216; py += 8) { for (let px = 0; px < 256; px++) { const h = hf[(py + 24) * PW + px + 24]; if (h > 0.05 && h < 0.95) drop++; } rows++; }
+    let floor = 0, fn = 0; for (let py = 40; py < 216; py++) for (let px = 160; px < 256; px++) { floor += lum(bd, px, py); fn++; } floor /= fn;
+    let east = 0; for (let py = 40; py < 216; py += 8) { let r = 0; for (let px = 0; px < 256; px++) { if (lum(bd, px, py) < 0.93 * floor) r = px + 1; else if (px > r + 3) break; } east += r; }
+    const cd = bake(2, 5).img.data; let south = 0, cols = 0; for (let px = 8; px < 180; px += 8) { let r = 0; for (let py = 0; py < 256; py++) { if (lum(cd, px, py) < 0.93 * floor) r = py + 1; else if (py > r + 3) break; } south += r; cols++; }
+    const rd = bake(1, 5).img.data; let ramp = 0, rn = 0; for (let py = 0; py < 16; py++) for (let px = 8; px < 88; px++) { ramp += lum(rd, px, py); rn++; }
+    res[set] = { drop: +(drop / rows).toFixed(1), east: +(east / rows).toFixed(1), south: +(south / cols).toFixed(1), ramp: +(ramp / rn / floor).toFixed(3) };
+  }
+  return res;
+`);
+// ...and the far view draws them from the same constants: its match with the chunks, tile by tile, cannot see a shadow or a drop left as
+// it was (it moved by a level or two, inside the far view's own coarser grain), so the two functions are read for them.
+const cliffSrc = R(`
+  const names = ['CLIFF_W', 'CLIFF_EVEN', 'CLIFF_RISE', 'CLIFF_SHADOW', 'CLIFF_SHADE', 'CLIFF_FLOOR'], old = ['/ 0.36 + 0.5', 'RISE = 22', '9 / D', '11 * K', 'Math.min(0.32'];
+  const read = f => { const s = String(f); return { uses: names.filter(n => s.includes('this.' + n)), old: old.filter(o => s.includes(o)) }; };
+  return { bake: read(Terrain.texBakeSteps), far: read(Terrain.paintOverviewTex) };
+`);
+ok(cliffSrc.bake.uses.length === 6 && !cliffSrc.bake.old.length && cliffSrc.far.uses.length === 6 && !cliffSrc.far.old.length, 'cliffs: the chunks and the far view both draw cliffs from all six CLIFF_ constants, and neither keeps an old literal', JSON.stringify(cliffSrc));
+for (const set of ['badlands', 'space']) {
+  const a = cliffs[set], b = CLIFF_BEFORE[set];
+  ok(!!a && a.drop >= 1.4 * b.drop, 'cliffs: on ' + set + ' a cliff\'s drop is ' + (a && a.drop) + ' world px wide, half as wide again as the ' + b.drop + ' before', JSON.stringify(a));
+  ok(!!a && a.east >= 2 * b.east && a.south >= 1.5 * b.south, 'cliffs: on ' + set + ' its shadow darkens the floor ' + (a && a.east) + ' px past an east-facing cliff (' + b.east + ' before) and ' + (a && a.south) + ' past a south-facing one (' + b.south + ')', JSON.stringify(a));
+  ok(!!a && Math.abs(a.ramp - b.ramp) <= 0.02, 'cliffs: on ' + set + ' a ramp is lit as it was -- ' + (a && a.ramp) + ' of the floor\'s light at its foot, ' + b.ramp + ' before -- where twice the rise and twice the shadow put every ramp facing away from the sun in the dark', JSON.stringify(a));
+}
 ok(errors.length === 0, 'no console errors', JSON.stringify(errors.slice(0, 3)));
 summary();

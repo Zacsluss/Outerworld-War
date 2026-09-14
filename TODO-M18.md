@@ -42,10 +42,14 @@ for greater realism." and "can you show me the links for the textures so I can s
    CC0 texture from the links posted in chat (ambientCG Lava001/002/003/005, Ground054, Sponge003, Moss002, Bark008; 3dtextures.me Alien
    Flesh 001/002, Alien Muscle 001, Abstract Organic 002) -- **download nothing until they pick, and name the file and its size first**;
    the soft continuous edge does not wait for the pick.
-3. **Cliffs that look about twice as tall** -- **OPEN, next.** Read so far: the textured bake's cliff is one drop the width of the cliff tile,
+3. **Cliffs that look about twice as tall** -- **DONE** (PLAYTEST-M18 121): the drop 1.5 times as wide (CLIFF_W 0.5 with 40% of it an even
+   slope), the rise in the light doubled (a ramp keeps the old), the shadow read twice as far and 0.45 dark at most (a ramp's own at the old
+   reach), a shaded face never below 0.62; the far view the same. On a straight edge: the drop 22.2 -> 33.2 px, the shadow past an
+   east-facing cliff 6.6 -> 16.4 and a south-facing one 18.9 -> 30, a ramp's light unchanged. Golden re-pinned (only rough chunks moved).
+   Before the change: the textured bake's cliff is one drop the width of the cliff tile,
    lit with `RISE` 22 (its faces already at the shade clamps) and a cast shadow read 11 px up and 9 px left (`SHY`/`SHX`), the same
    in `paintOverviewTex`; the pinned chunks in `test/terrain-golden.json` will have to be re-pinned on purpose.
-4. **Every map redesigned to StarCraft II's structure** -- **OPEN.** The research brief is `.claude/review/maps/research-brief.md`
+4. **Every map redesigned to StarCraft II's structure** -- **OPEN, next.** The research brief is `.claude/review/maps/research-brief.md`
    (opposite spawns with rotational symmetry, a main on high ground with one ramp into a natural, a linear and a triangle third, 7-8
    bases a player, a centre of 2-3 lanes, rocks on back doors). A stamped change (`js/map.js`): the build stamp moves, and
    `node test/net_many.js` and `node .claude/review/aipace/run-after.js <tag>` follow.

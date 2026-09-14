@@ -329,6 +329,21 @@ const Terrain = {
   // measured was 47 ms (.claude/review/terrain/p5-toggle-probe.js).
   setTextured(on) { on = !!on; if (on !== this.textured) { this.textured = on; this.clearChunks(); this.overRev = (this.overRev || 0) + 1; } return on; },
   TEX_PX: 512,   // texels in one repeat of a ground texture: sixteen tiles, which puts a metre of a 20 m aerial scan at about 25 px, a Marine's width
+  // CLIFFS THAT LOOK TWICE AS TALL (the looks queue, item 3 -- the user, 2026-09-14: "Cliffs look a little short. Can we make them look
+  // about twice as tall to really show the change in elevation?"). Seen from straight above, a cliff's height shows in two things: how
+  // wide its face is, and how far its shadow falls. Measured first on a straight plateau edge (.claude/review/cliffs/probe-cliff.js), and
+  // chosen on screenshots of Lost Ruins' first main and of Jungle, Ice and Desert from twenty variants (.claude/review/terrain/shots/
+  // cliff-variants-1 to -5, cliff-sets-1 to -3):
+  //  - CLIFF_W, the drop's width in the blurred height (0.36 before: its steep part about two thirds of the cliff tile), and CLIFF_EVEN,
+  //    the part of it that is an even slope rather than the smoothstep's, whose soft shoulders hid half the face;
+  //  - CLIFF_RISE, the height a unit of the field stands at in the light (22 before); a ramp keeps the old 22 and the old reach of its
+  //    own shadow -- at twice both, every ramp facing away from the sun went dark;
+  //  - CLIFF_SHADOW, how far towards the sun, in world px left and up, the shadow of higher ground is read from (9 and 11 before), and
+  //    CLIFF_SHADE, how dark it is at its darkest (0.32 before);
+  //  - CLIFF_FLOOR, the least light a slope gets (0.5 before): a face in shade shows its rock rather than a black band.
+  // Not taken: a face facing south drawn further down than one facing north, as a view from the south would show it -- the facing read
+  // from the height field drew spikes where a ramp's wall meets a plateau's edge, and lines where it changed from tile to tile.
+  CLIFF_W: 0.5, CLIFF_EVEN: 0.4, CLIFF_RISE: 44, CLIFF_SHADOW: [18, 22], CLIFF_SHADE: 0.45, CLIFF_FLOOR: 0.62,
   _tex: {},
   // One load per texture file, whoever asks first: the boot (preloadTextures), a game's loading screen (prepSteps) or a bake (texSet). ok
   // once the file is in; failed if it cannot be (logged once, and the ground stays classic rather than a game waiting for ever). A texture
@@ -432,8 +447,9 @@ const Terrain = {
     // How HIGH each tile centre is -- low 0, a ramp or a cliff tile halfway, high 1 -- with where the rock zones and the ramps
     // are, softened by a 3x3 blur so a diagonal cliff is a slope and not a staircase of tile corners (the first pass traced
     // the grid exactly). It is read LINEARLY between centres and then pushed through a steep curve, so a cliff is one drop
-    // about two thirds of a tile wide at the cliff tile -- the smoothstep of the second pass made two small steps with a
-    // shelf between them, which read as a trench -- while a ramp keeps the linear value and climbs evenly from end to end.
+    // about a tile and a third wide at the cliff tile (CLIFF_W; two thirds of a tile until the looks queue made cliffs taller) -- the
+    // smoothstep of the second pass made two small steps with a shelf between them, which read as a trench -- while a ramp keeps the
+    // linear value and climbs evenly from end to end.
     //
     // A ramp tile is not "halfway" any more: it sits at its own place on the climb (rampLevels), so a three-tile ramp reads as a
     // slope from the plateau down to the floor instead of a flat slab with a drop at each end -- which is what every ramp looked
@@ -459,7 +475,7 @@ const Terrain = {
     // a cliff or a wall tile. With the sharp mask alone the curve took over half a tile before each end of the ramp and put a
     // dark kink across its top and its foot; walls and cliffs keep their one crisp drop.
     const gk = blur(rpz); for (let o = 0; o < GW * GW; o++) if (wal[o]) gk[o] = 0;
-    const sm = t => t * t * (3 - 2 * t), PAD = Math.round(24 * K), PW = W + 2 * PAD;
+    const sm = t => t * t * (3 - 2 * t), PAD = Math.round(24 * K), PW = W + 2 * PAD, CLW = this.CLIFF_W, CLE = this.CLIFF_EVEN;
     const hf = this.scratch(ns + 'hf' + PW, PW * PW), rk = this.scratch(ns + 'rk' + PW, PW * PW), rp = this.scratch(ns + 'rp' + PW, PW * PW);   // reused: every cell is written below
     const celled = look.cells || [], cLow = celled.includes('low'), cHigh = celled.includes('high'), cRamp = celled.includes('ramp');
     const wn1 = celled.length ? this.scratch(ns + 'wn1' + PW, PW * PW) : null, wn2 = celled.length ? this.scratch(ns + 'wn2' + PW, PW * PW) : null;
@@ -480,11 +496,12 @@ const Terrain = {
       if (i1 < 0) { i1 = 0; u1 = 0; } else if (i1 > GW - 2) { i1 = GW - 2; u1 = 1; } if (j1 < 0) { j1 = 0; v1 = 0; } else if (j1 > GW - 2) { j1 = GW - 2; v1 = 1; }
       const a1 = j1 * GW + i1; rp[o] = gp[a1] * (1 - u1) * (1 - v1) + gp[a1 + 1] * u1 * (1 - v1) + gp[a1 + GW] * (1 - u1) * v1 + gp[a1 + GW + 1] * u1 * v1;
       const kk = gk[a1] * (1 - u1) * (1 - v1) + gk[a1 + 1] * u1 * (1 - v1) + gk[a1 + GW] * (1 - u1) * v1 + gk[a1 + GW + 1] * u1 * v1;
-      const kRamp = sm(Math.min(1, Math.max(rp[o], kk) * 1.5)), cliffH = sm(Math.min(1, Math.max(0, (lin - 0.5) / 0.36 + 0.5)));
+      const kRamp = sm(Math.min(1, Math.max(rp[o], kk) * 1.5)), ct = Math.min(1, Math.max(0, (lin - 0.5) / CLW + 0.5)), cs = sm(ct), cliffH = cs + (ct - cs) * CLE;
       // rock zones stand a little above the high ground and are lumpy, so the light finds boulders and hollows in them
       hf[o] = cliffH * (1 - kRamp) + lin * kRamp + (rock > 0.05 ? (0.22 + (this.fbm(wx / 26, wy / 26, 2) - 0.5) * 0.6) * rock : 0);
     } yield; }
-    const Ln = Math.hypot(0.5, 0.6, 0.62), lx = -0.5 / Ln, ly = -0.6 / Ln, lz = 0.62 / Ln, RISE = 22, BUMP = 4;   // the sun: upper left and above; RISE world px of height per unit
+    const Ln = Math.hypot(0.5, 0.6, 0.62), lx = -0.5 / Ln, ly = -0.6 / Ln, lz = 0.62 / Ln, RISE = this.CLIFF_RISE, BUMP = 4;   // the sun: upper left and above; RISE world px of height per unit
+    const FLOOR = this.CLIFF_FLOOR, SHADE = this.CLIFF_SHADE;
     const A = [0, 0, 0], B = [0, 0, 0], col = [0, 0, 0], tmp = [0, 0, 0], one = [1, 1, 1];
     const tex = (t, u, v, o) => { u *= sc; v *= sc; const p = ((((v | 0) % S) + S) % S * S + ((((u | 0) % S) + S) % S)) * 4; o[0] = t[p]; o[1] = t[p + 1]; o[2] = t[p + 2]; };   // u, v in world px
     // A material is two samples of its texture -- the second transposed and rescaled -- mixed by broad noise, so the
@@ -511,7 +528,8 @@ const Terrain = {
     };
     const gLow = grade.low || one, gHigh = grade.high || one, gRamp = grade.ramp || one, gRock = grade.rock || one;
     const PL = this.propLayer(cx, cy, T, K, ns), PSH = this.PROP_SHADOW;   // props on open ground: null where none reaches this chunk
-    const SHY = Math.round(11 * K), SHX = Math.round(9 * K);   // where the shadow of higher ground is read from: 11 and 9 world px towards the sun
+    // where the shadow of higher ground is read from: CLIFF_SHADOW world px towards the sun, and half as far on a ramp (PAD covers it)
+    const SHY = Math.round(this.CLIFF_SHADOW[1] * K), SHX = Math.round(this.CLIFF_SHADOW[0] * K), SHY2 = Math.round(SHY / 2), SHX2 = Math.round(SHX / 2);
     for (let py = 0; py < W; py++) { for (let pxx = 0; pxx < W; pxx++) {
       const wx = ox + pxx / K, wy = oy + py / K, o = (py + PAD) * PW + pxx + PAD, h = hf[o];
       const q = sm(Math.min(1, Math.max(0, (this.vnoise(wx / 230, wy / 230) - 0.3) / 0.4)));
@@ -538,9 +556,10 @@ const Terrain = {
         col[0] += (tmp[0] * gRock[0] - col[0]) * kr; col[1] += (tmp[1] * gRock[1] - col[1]) * kr; col[2] += (tmp[2] * gRock[2] - col[2]) * kr;
       }
       // the light: the height field's slope plus the rock's relief against the sun, so flat ground is exactly 1
-      const sx = dxh * RISE + bx * BUMP, sy = dyh * RISE + by * BUMP;
-      let shade = (-sx * lx - sy * ly + lz) / Math.sqrt(sx * sx + sy * sy + 1) / lz; shade = shade < 0.5 ? 0.5 : shade > 1.35 ? 1.35 : shade;
-      let env = 1; const up = hf[o - SHY * PW - SHX] - h; if (up > 0.08) env = 1 - Math.min(0.32, (up - 0.08) * 0.7);   // the shadow of higher ground towards the sun
+      const onRamp = pr > 0.667 ? 1 : pr * 1.5, rz = RISE * (1 - 0.5 * onRamp), sx = dxh * rz + bx * BUMP, sy = dyh * rz + by * BUMP;   // a ramp at half the rise
+      let shade = (-sx * lx - sy * ly + lz) / Math.sqrt(sx * sx + sy * sy + 1) / lz; shade = shade < FLOOR ? FLOOR : shade > 1.35 ? 1.35 : shade;
+      let env = 1; const upF = hf[o - SHY * PW - SHX] - h, up = onRamp > 0 ? upF + (hf[o - SHY2 * PW - SHX2] - h - upF) * onRamp : upF;
+      if (up > 0.08) env = 1 - Math.min(SHADE, (up - 0.08) * 0.9);   // the shadow of higher ground towards the sun
       env *= 0.94 + (this.vnoise(wx / 150 + 40, wy / 150 + 40) - 0.5) * 0.18;   // broad light and dark patches, as clouds or wear
       shade *= env;
       const oo = (py * W + pxx) * 4; let r = col[0] * shade, g = col[1] * shade, b = col[2] * shade;
@@ -1086,18 +1105,18 @@ const Terrain = {
     const gk = blur(rpz); for (let o = 0; o < N; o++) if (wal[o]) gk[o] = 0;
     const bil = (g, fx, fy) => { let i0 = Math.floor(fx), j0 = Math.floor(fy), u = fx - i0, v = fy - j0; if (i0 < 0) { i0 = 0; u = 0; } else if (i0 > GW - 2) { i0 = GW - 2; u = 1; } if (j0 < 0) { j0 = 0; v = 0; } else if (j0 > GHt - 2) { j0 = GHt - 2; v = 1; } const a = j0 * GW + i0; return g[a] * (1 - u) * (1 - v) + g[a + 1] * u * (1 - v) + g[a + GW] * (1 - u) * v + g[a + GW + 1] * u * v; };
     const sm = t => t * t * (3 - 2 * t);
-    // the height field, per overview pixel, over the rectangle and P pixels round it
-    const P = 2, px0 = tx0 * K - P, py0 = ty0 * K - P, PW = (tx1 - tx0) * K + 2 * P, PHt = (ty1 - ty0) * K + 2 * P, NP = PW * PHt;
+    // the height field, per overview pixel, over the rectangle and P pixels round it: enough for the cast shadow's reach and its bilinear read
+    const P = Math.ceil(Math.max(this.CLIFF_SHADOW[0], this.CLIFF_SHADOW[1]) / D) + 1, px0 = tx0 * K - P, py0 = ty0 * K - P, PW = (tx1 - tx0) * K + 2 * P, PHt = (ty1 - ty0) * K + 2 * P, NP = PW * PHt;
     const hf = new Float32Array(NP), rk = new Float32Array(NP), rp = new Float32Array(NP), wn1 = new Float32Array(NP), wn2 = new Float32Array(NP);
     for (let py = 0; py < PHt; py++) for (let px = 0; px < PW; px++) {
       const o = py * PW + px, wx = (px0 + px + 0.5) * D, wy = (py0 + py + 0.5) * D;
       const n1 = this.vnoise(wx / 37, wy / 37) - 0.5, n2 = this.vnoise(wx / 37 + 17, wy / 37 + 29) - 0.5; wn1[o] = n1; wn2[o] = n2;
       const fx = (wx + n1 * look.warp) / TILE - 0.5 - gx0, fy = (wy + n2 * look.warp) / TILE - 0.5 - gy0, ex = wx / TILE - 0.5 - gx0, ey = wy / TILE - 0.5 - gy0;
       const lin = bil(gh, fx, fy), rock = bil(gr, fx, fy), pr = bil(rpz, ex, ey), kk = bil(gk, ex, ey);
-      const kRamp = sm(Math.min(1, Math.max(pr, kk) * 1.5)), cliffH = sm(Math.min(1, Math.max(0, (lin - 0.5) / 0.36 + 0.5)));
+      const kRamp = sm(Math.min(1, Math.max(pr, kk) * 1.5)), ct = Math.min(1, Math.max(0, (lin - 0.5) / this.CLIFF_W + 0.5)), cs = sm(ct), cliffH = cs + (ct - cs) * this.CLIFF_EVEN;
       hf[o] = cliffH * (1 - kRamp) + lin * kRamp + (rock > 0.05 ? 0.22 * rock : 0); rk[o] = rock; rp[o] = pr;
     }
-    const Ln = Math.hypot(0.5, 0.6, 0.62), lx = -0.5 / Ln, ly = -0.6 / Ln, lz = 0.62 / Ln, RISE = 22;
+    const Ln = Math.hypot(0.5, 0.6, 0.62), lx = -0.5 / Ln, ly = -0.6 / Ln, lz = 0.62 / Ln, RISE = this.CLIFF_RISE, FLOOR = this.CLIFF_FLOOR, SHADE = this.CLIFF_SHADE, CSX = this.CLIFF_SHADOW[0], CSY = this.CLIFF_SHADOW[1];
     const gLow = grade.low || one, gHigh = grade.high || one, gRamp = grade.ramp || one, gRock = grade.rock || one, mix = look.mix || 0;
     const celled = look.cells || [], cLow = celled.includes('low'), cHigh = celled.includes('high'), cRamp = celled.includes('ramp');
     const CW = this.CELL_TILES * TILE, CB = this.CELL_BAND, cellU = [0, 0, 0, 0], cellV = [0, 0, 0, 0], cellW = [0, 0, 0, 0];
@@ -1128,12 +1147,12 @@ const Terrain = {
       const pr = rp[o]; if (pr > 0.02) { mat(SR, gRamp, cRamp, wx, wy, q, tmp); const kp = sm(Math.min(1, pr * 1.3)) * (look.tracks === undefined ? this.RAMP_TRACKS : look.tracks); for (let k = 0; k < 3; k++) col[k] += (tmp[k] - col[k]) * kp; }
       const kr = Math.max(sm(Math.min(1, Math.max(0, (steep - 0.016) / 0.02))) * (pr > 0.35 ? 0 : 1), sm(Math.min(1, rk[o] * 1.3)));
       if (kr > 0.02) { const p = at(SK, wx, wy * look.squeeze); for (let k = 0; k < 3; k++) col[k] += (SK.px[p + k] * gRock[k] - col[k]) * kr; }
-      const sx = dxh * RISE, sy = dyh * RISE;
-      let shade = (-sx * lx - sy * ly + lz) / Math.sqrt(sx * sx + sy * sy + 1) / lz; shade = shade < 0.5 ? 0.5 : shade > 1.35 ? 1.35 : shade;
-      // the cast shadow reads the height 9 px left and 11 px up of the pixel, as a chunk does
-      const sxp = px - 9 / D, syp = py - 11 / D, i0 = Math.floor(sxp), j0 = Math.floor(syp), u = sxp - i0, v = syp - j0, a0 = j0 * PW + i0;
+      const onRamp = pr > 0.667 ? 1 : pr * 1.5, rz = RISE * (1 - 0.5 * onRamp), sx = dxh * rz, sy = dyh * rz;
+      let shade = (-sx * lx - sy * ly + lz) / Math.sqrt(sx * sx + sy * sy + 1) / lz; shade = shade < FLOOR ? FLOOR : shade > 1.35 ? 1.35 : shade;
+      // the cast shadow reads the height CLIFF_SHADOW px left and up of the pixel (half that on a ramp), as a chunk does
+      const sk = 1 - 0.5 * onRamp, sxp = px - CSX * sk / D, syp = py - CSY * sk / D, i0 = Math.floor(sxp), j0 = Math.floor(syp), u = sxp - i0, v = syp - j0, a0 = j0 * PW + i0;
       const upH = hf[a0] * (1 - u) * (1 - v) + hf[a0 + 1] * u * (1 - v) + hf[a0 + PW] * (1 - u) * v + hf[a0 + PW + 1] * u * v, up = upH - h;
-      if (up > 0.08) shade *= 1 - Math.min(0.32, (up - 0.08) * 0.7);
+      if (up > 0.08) shade *= 1 - Math.min(SHADE, (up - 0.08) * 0.9);
       shade *= 0.94 + (this.vnoise(wx / 150 + 40, wy / 150 + 40) - 0.5) * 0.18;
       const oo = ((py0 + py) * W + px0 + px) * 4, r = col[0] * shade, g = col[1] * shade, b = col[2] * shade;
       d[oo] = r > 255 ? 255 : r; d[oo + 1] = g > 255 ? 255 : g; d[oo + 2] = b > 255 ? 255 : b; d[oo + 3] = 255;

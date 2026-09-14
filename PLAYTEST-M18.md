@@ -1893,3 +1893,51 @@ for creep? We don't have to use that, but if we can, we should for greater reali
 - `test/terrainview.js` 11 (2 new checks): a decode that never settles holds the loading screen DECODE_WAIT_MS at most and the ground is
   detailed; a page hidden during its loading screen runs it from the simulation's timer, draws no frame, and starts the game. Two negative
   controls, red (`.claude/review/creep/controls-creep.log`, 11 and 12).
+
+## 121. Cliffs look about twice as tall
+
+*(The looks queue, item 3 -- the user, 2026-09-14: "Cliffs look a little short. Can we make them look about twice as tall to really show the
+change in elevation?" Drawing only -- `js/terrain.js` (`CLIFF_W`, `CLIFF_EVEN`, `CLIFF_RISE`, `CLIFF_SHADOW`, `CLIFF_SHADE`,
+`CLIFF_FLOOR`, in the bake and the far view); the build stamp stays `ca141a3b7ffcb528`.)*
+
+**What changed for a player:**
+1. **A cliff's rock face is wider**: about a tile and a third from the plateau's lip to the ground below, where it was two thirds of a tile,
+   and more of it an even, steep slope rather than soft shoulders.
+2. **Plateaus and rock formations throw their shadows about twice as far** onto the ground below them -- down and to the right, away from
+   the sun, like every unit's shadow -- and a little darker.
+3. **A cliff face in shadow shows its rock** instead of going nearly black.
+4. **Ramps look as they did**: their slope and their own shadow are unchanged, so a ramp still reads as a gentle way up.
+5. **The zoomed-out view and the minimap follow** the same cliffs.
+6. **Unchanged:** where units can walk and build; the Classic look.
+
+**How to see it by hand:**
+1. **Single Player -> Skirmish** on **Lost Ruins**, any race. Look at the edge of your main's plateau beside its ramp. *Working:* a broad
+   band of rock face along the plateau's edge, with a long shadow below and to the right of it; the plateau clearly stands above the floor.
+2. **The ramp.** Look at the ramp itself. *Working:* lit as before, not dark.
+3. **Rock formations.** Look at a rock formation in the open. *Working:* a longer shadow to its lower right.
+4. **Zoom out** with the mouse wheel. *Working:* plateaus in the far view carry the same longer shadows.
+5. **Other tilesets.** Skirmish on a Jungle, Ice or Desert map. *Working:* the same taller look, no odd spikes or lines at ramps.
+
+**Invisible from normal play, and where to look instead:**
+- Measured on a straight plateau edge at ratio 1 (`.claude/review/cliffs/probe-cliff.js`, the scene of `test/terraintex.js` 9):
+
+| What | Before | After |
+|---|---|---|
+| The drop, Badlands / Space Platform | 22.2 / 17 world px | 33.2 / 27 |
+| The floor darkened past an east-facing cliff | 6.6 / 4.3 px | 16.4 / 14.7 |
+| ...past a south-facing cliff | 18.9 / 14.9 px | 30 / 24.9 |
+| A ramp's foot against the open floor | 1.594 / 3.496 | 1.593 / 3.489 |
+| The far view against the chunks, tile by tile round Lost Ruins' main | -- | correlation 0.994 |
+
+- `test/terraintex.js` 9 (7 new checks): the chunks and the far view both draw cliffs from the six CLIFF_ constants; on Badlands and Space Platform the drop is at least 1.4 times as wide as before, the shadow reaches
+  at least twice as far past an east-facing cliff and 1.5 times past a south-facing one, and a ramp's light is within 0.02 of before. The
+  pinned chunks (`test/terrain-golden.json`) were written again on purpose: the ten with cliffs, ramps and rock moved, the ten of open
+  ground with props did not change a byte. Seven negative controls, all red -- two only once the far view's constants were checked: its tile-by-tile match with the chunks moved by a level or two with its shadow or drop left as they were (`.claude/review/cliffs/controls-cliffs.log`, `controls-cliffs2.log`).
+
+**Deliberately different from what was asked, or not done:**
+- **"About twice as tall" is the shadow and the face, not a view from the side.** A top-down picture shows height by the width of a cliff's
+  face and the reach of its shadow: the shadow is twice as long and the face half as wide again. A face drawn taller on south-facing
+  cliffs only, as a camera tilted towards the north would see it, was tried: the facing read from the ground's height drew spikes where a
+  ramp's wall meets a plateau and lines where it changed from tile to tile (`.claude/review/terrain/shots/cliff-variants-3`, `cliff-sets-1`).
+- **The wider face reaches about a sixth of a tile onto the walkable ground either side of the cliff tile.** Only the picture: where units
+  walk and build is unchanged.
