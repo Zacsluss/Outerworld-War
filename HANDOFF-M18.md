@@ -13,11 +13,13 @@ requests, no other branches, no extra worktrees.** Trust `git log -1` for HEAD, 
 ## The state
 
 - **THE TERRAIN QUEUE, phases 1-4 are DONE and committed**: walled ramps (PLAYTEST-M18 110), detailed terrain on all five tilesets
-  (111), props on open ground (112), and the far view, the minimap and speed (113); TODO-M18, THE TERRAIN QUEUE, has the whole account
-  of each. **The next action is phase 5: detailed terrain on by default, the classic look in Settings.**
-- **The gate is 100 suites, ALL GREEN** (about two minutes; `ramps`, `terraintex` and `terrainview` are new). **Build stamp `eff84c60f4bc9cf2`** -- phase 1 moved it
-  (`js/map.js`, `js/build.js`); phases 2-5 are drawing only and must not move it again. No known reds in the gate. By hand,
-  `aistyles` seed 5 fails its weakest check (7 vs 10; recorded in PLAYTEST-M18 110; not a gate suite).
+  (111), props on open ground (112), and the far view, the minimap and speed (113); and phase 1's leftovers -- a mined-out mineral
+  patch never opens a way through a cliff or onto a ramp's side (114). TODO-M18, THE TERRAIN QUEUE, has the whole account of each.
+  **The next action is phase 5: detailed terrain on by default, the classic look in Settings.**
+- **The gate is 100 suites, ALL GREEN** (about two minutes; `ramps`, `terraintex` and `terrainview` are new). **Build stamp `ca141a3b7ffcb528`** -- phase 1
+  moved it to `eff84c60f4bc9cf2` (`js/map.js`, `js/build.js`) and the mined-out patches (114, `js/map.js`) moved it again; phase 5 is
+  drawing only and must not move it. No known reds in the gate. By hand, `aistyles` fails some check on about half of sixteen seeds
+  other than the gate's, before the ramp walls and after (PLAYTEST-M18 114): the AI rebalance's business (7b, deferred).
 - **Detailed terrain is committed and OFF unless `?hd=1` is in the address** (`7f8cf40` and phase 2; PLAYTEST-M18 109, 111). Every
   tileset is painted from Poly Haven CC0 textures, lit from the upper left like the sprites, with rocks, debris and plants on its
   open ground (PLAYTEST-M18 112); the strategic zoom and the minimap are painted from the same textures (113). The user, of the Badlands test run: **"this looks amazing so far - exactly the direction i want."**
@@ -29,9 +31,11 @@ requests, no other branches, no extra worktrees.** Trust `git log -1` for HEAD, 
   Windows installer, built locally with the CI's command, installed silently, passed `desktop/window-check.js` 23/23 as installed,
   and uninstalled clean. **The Desktop builds workflow does not rebuild for changes to `js/` or `assets/`** -- a terrain change reaches
   the installers only through Actions -> Desktop builds -> Run workflow (or a change under `desktop/` or to `test/serve.js`).
+  **`SHIPPING.md`** holds that for the day the final build ships, with opening the Mac app on a real Mac (never done: no Mac here).
 - **The repository is PUBLIC** (the user made it private briefly on 2026-09-13 and public again). Bought art stays out of it.
-- **Deferred by the user until they say:** the AI rebalance (TODO-M18 7b). **Optional:** a look-and-feel pass of PLAYTEST-M18 101-108.
-  **Closed:** the research stall (the user: fixed).
+- **Deferred by the user until they say:** the AI rebalance (TODO-M18 7b; "defer until i say", again on 2026-09-13). **Skipped by the
+  user:** a look-and-feel pass of PLAYTEST-M18 101-108. **Closed:** the research stall (the user: fixed). **Accepted by the user:** the
+  terrain calls made without them (TODO-M18, THE USER'S ANSWERS DURING THE TERRAIN QUEUE).
 - **Nothing is left running** (the `terrain-shot` preview server was stopped at the close).
 
 ## What changed this session, in a player's language
@@ -88,6 +92,12 @@ and minimap, the speed work on The Long March, and switching it on for everyone.
     not: frames of 40-159 ms with no drawing work in them were the collector, fixed by reusing a bake's scratch memory and freeing a
     retired chunk's canvas (`Terrain.scratch`, `imageFor`, `releaseChunk`). Never wrap `Terrain.vnoise` or `hash` to profile: the
     wrapper makes a bake 30 times slower.
+15. **Judge a map rule on screenshots too, not only on its counts.** `GameMap.wallMinedGround`'s first version passed every count --
+    nothing reached changed, no ramp side opened, no slope left, on 1,037 maps -- and its before/after screenshot showed a block of
+    wall standing in open ground on Chokepoint Valley. The count that catches it ("every wall is joined to a cliff") came after the
+    picture.
+16. **`net_many`'s hashes change on every run**: the relay picks a random seed for every game (`test/serve.js`). Compare them only
+    across the clients of one run.
 
 ## Diagnostics added this session
 
@@ -120,8 +130,8 @@ run (docs/terrain/*.jpg, PLAYTEST-M18 109, on with ?hd=1): "this looks amazing s
   5. Switch it on by default and commit.
 BUILD ORDER: 2 (ramps -- the only SIMULATION change, so props and art land on final geometry and the stamp moves once), then 3,
 then 1, then 4, then 5. TODO-M18.md, THE TERRAIN QUEUE, gives the reasons and each phase's acceptance. PHASES 1-4 (item 2, ramps;
-item 3, the four tilesets; item 1, props; item 4, the far view, the minimap and speed) ARE DONE (PLAYTEST-M18 110-113, build stamp
-eff84c60f4bc9cf2): start at phase 5 (item 5, on by default), and do not move the build stamp again.
+item 3, the four tilesets; item 1, props; item 4, the far view, the minimap and speed) ARE DONE, with phase 1's leftovers
+(PLAYTEST-M18 110-114, build stamp ca141a3b7ffcb528): start at phase 5 (item 5, on by default), and do not move the build stamp again.
 
 READ, in this order, before touching anything:
   1. CLAUDE.md                -- the working agreement; every rule in it is non-negotiable.
@@ -141,6 +151,7 @@ no editor work. NOT approved: anything paid, anything not CC0.
 ALREADY MEASURED (re-measure only to compare):
   - Ramps (DONE in phase 1): 132 of 158 were walkable from a side; GameMap.wallRamps walls them, at most RAMP_LEN 3 tiles long, and
     measures itself (test/ramps.js). The textured bake reads ramp heights and wall heights from Terrain.rampLevels().
+    GameMap.wallMinedGround keeps a mined-out mineral patch from opening a cliff or a ramp's side (PLAYTEST-M18 114).
   - Props (DONE in phase 3): TERRAIN_PROPS, Terrain.propMask/propAt/propLayer/drawProp; about 1.4 ms a chunk (7.5%); The Long March
     has 7,408. They are baked into the chunks, so the strategic view and the minimap do not show them unless phase 4 decides to.
   - Speed (DONE in phase 4; V8 or the browser, never inside a vm harness -- that is ten times slower): the bake is budgeted at every

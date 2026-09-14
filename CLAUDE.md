@@ -2,7 +2,7 @@
 
 Loaded automatically every session. Kept short on purpose; the detail lives in `HANDOFF-M18.md` (**current
 state, the decisions waiting on the user, known reds, traps, the kickoff prompt**), `TODO-M18.md` (the open
-list with every measurement), `PLAYTEST-M18.md` (items 64 onward, by hand), `RESEARCH-LOBBY.md` (the lobby research), `RESEARCH-TERRAIN.md` (terrain: OpenRA's way, the Badlands test run, the terrain queue's research), `docs/terrain/` (the approved look), `HANDOFF-M17.md` and
+list with every measurement), `SHIPPING.md` (**what must be done before the final build ships**), `PLAYTEST-M18.md` (items 64 onward, by hand), `RESEARCH-LOBBY.md` (the lobby research), `RESEARCH-TERRAIN.md` (terrain: OpenRA's way, the Badlands test run, the terrain queue's research), `docs/terrain/` (the approved look), `HANDOFF-M17.md` and
 `PLAYTEST-M17.md` (everything before), `REVIEW-M17.md` (the full codebase review) and `DESIGN-M13.md`.
 
 ---

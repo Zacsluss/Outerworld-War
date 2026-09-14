@@ -759,6 +759,7 @@ class GameMap {
     // the two: "a plateau no ramp touches is an island" is only true once the holes are shut.
     this.sealElevations(); this.flattenStrandedHeight();
     this.wallRamps();        // after the seal, on heights that are final: see "ramps" below
+    this.wallMinedGround();  // after the walls: the ground a mined-out patch leaves must obey them too
     this.placeNeutrals(L);   // after the seal: a site must sit on ground whose height is final
     this.resById = new Map(this.resources.map(r => [r.id, r]));
     for (const f of this.features) this.resById.set(f.id, f);   // see the MAP_FEATURES comment: this is what snapshots them
@@ -1745,6 +1746,69 @@ class GameMap {
     }
     return out.slice(0, 24);
   }
+  // THE GROUND A MINED-OUT PATCH LEAVES (the terrain queue's leftovers, after phase 4). Placing a mineral patch forces its tiles
+  // walkable and un-cliffed -- "a resource that straddles a cliff edge is a staircase" (the seal's comment above) -- and every rule
+  // after that, the seal's scan aside, reads a resource as never walkable. So what a patch leaves behind when G.removeResource
+  // unblocks it was ground no rule had looked at. Measured over every shipped layout and the four archetypes at four sizes on 64 seeds
+  // (1,037 maps; .claude/review/terrain/mineout-before.log, mineral-slope-probe.log, mined-classes.log): 5,524 patch tiles on 338
+  // maps stand on a slope, of two kinds. 3,140 of them, on 210 maps (Vertical Cliffs small and medium, Chokepoint Valley small and
+  // medium, Island Chain small), are a cliff edge the seal made a slope of -- each a way through a main's or a natural's cliff once
+  // mined out. The other 2,384, on 147 maps (Chokepoint Valley medium and large and its shipped sample, a few Island Chain), are a
+  // slab in open low ground: a ramp rectangle that ran under a natural's mineral row, cut back to low ground by wallRamps everywhere
+  // but under the patches, because a resource is never part of a ramp. And 8 patch tiles beside a ramp's side reopened the side a
+  // wall closes (rampProblems found 22 side entries on 7 maps with every patch removed).
+  //
+  // So the slope tiles under patches are taken a group at a time -- 8-connected, so no two groups touch and no order can matter --
+  // and judged by the most walkable height of the ground round the group. Touching high ground and low ground, the group is a cliff
+  // edge and becomes a wall (walk 0, cliff 1, its height kept; the patch still blocks it). Touching one level only, it is levelled to
+  // that level, and is plain ground once mined out: the first version of this walled those too, and every one was a block of wall
+  // left standing in the open (2,376 tiles on 147 maps joined to no cliff; .claude/review/terrain/mined-compare.log and
+  // shots/mined-choke7m-natural.jpg). Touching neither, a wall; none does. Then every other patch tile beside a ramp tile that is not
+  // itself under a patch becomes a wall. Nothing a unit can reach changes while a patch stands, since the patch blocks the tile
+  // either way, and levelling never puts high ground beside low, since a group only takes the one level round it; the map is
+  // regenerated identically on a load, so a snapshot's walk grid and these grids agree. A rule for high ground beside low under a
+  // patch was measured and dropped: after the seal it walls nothing on any of the 1,037. Geysers are left alone: a geyser is never
+  // removed. Returns the number of tiles walled.
+  wallMinedGround() {
+    const W = this.w, mine = new Set(), slope = new Set();
+    for (const r of this.resources) {
+      if (r.type !== 'mineral') continue;
+      for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) {
+        if (!this.inb(x, y)) continue;
+        const i = this.idx(x, y); if (this.walk[i] !== 1) continue;
+        mine.add(i); if (this.height[i] === 1) slope.add(i);
+      }
+    }
+    const walls = [], level = [], seen = new Set();   // decided on the grids as they arrived, applied after
+    for (const s of slope) {
+      if (seen.has(s)) continue;
+      const group = [s]; let low = false, high = false; seen.add(s);
+      for (let k = 0; k < group.length; k++) {
+        const i = group[k], x = i % W, y = (i / W) | 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          if ((!dx && !dy) || !this.inb(x + dx, y + dy)) continue;
+          const j = this.idx(x + dx, y + dy);
+          if (slope.has(j)) { if (!seen.has(j)) { seen.add(j); group.push(j); } continue; }
+          const h = this._elevOpenH(j); if (h === 0) low = true; else if (h === 2) high = true;
+        }
+      }
+      if (low !== high) for (const i of group) level.push([i, low ? 0 : 2]);   // a slab in open ground: the ground round it
+      else for (const i of group) walls.push(i);                              // a cliff edge: a wall
+    }
+    for (const [i, h] of level) this.height[i] = h;
+    const walled = new Set(walls);
+    for (const i of mine) {
+      if (walled.has(i)) continue;
+      const x = i % W, y = (i / W) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        if (!this.inb(x + dx, y + dy)) continue;
+        const j = this.idx(x + dx, y + dy);
+        if (!mine.has(j) && this.blocked[j] !== -3 && this._elevOpenH(j) === 1) { walls.push(i); break; }   // beside a ramp tile
+      }
+    }
+    for (const i of walls) { this.walk[i] = 0; this.cliff[i] = 1; }
+    return walls.length;
+  }
 
   // ---------------- custom (editor-made) maps ----------------
   // A custom layout stores the painted height grid and rock grid run-length encoded, plus explicit
@@ -1789,6 +1853,7 @@ class GameMap {
     // painted on the lip of a plateau is exactly the Twilight Valley hole with a person behind it.
     this.sealElevations(); this.flattenStrandedHeight();
     this.wallRamps();        // an editor map's ramps get the same walls as a generated map's
+    this.wallMinedGround();  // and the same ground under its mineral patches
     this.placeNeutrals(L);   // after the seal: a site must sit on ground whose height is final
     this.resById = new Map(this.resources.map(r => [r.id, r]));
   }

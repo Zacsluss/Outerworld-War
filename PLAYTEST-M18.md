@@ -1287,7 +1287,9 @@ with them, so the seed, not the walls, decided it; at twelve all 24 games have e
   rebalance is deferred by the user, so nothing was tuned for it.
 - `queens` 25/25 (with the twelve-minute check above); `eightplayer` 19/19 -- every player alive at 10:00, 16 of 16 bases claimed
   (14 before), 634 units (523), tick 2.48 ms/frame mean (2.61), worst segment 4.74 ms (5.62).
-- `net_many` 51/51, no desync; phase 1's four hashes agree at frame 3552 (820315027; 995386952 before -- the ground changed).
+- `net_many` 51/51, no desync; phase 1's four hashes agree at frame 3552 (820315027). *(Corrected in item 114: this first said
+  "995386952 before -- the ground changed". The relay picks a new seed for every game, so the hash differs on every run and says
+  nothing about the ground; what counts is that the clients agree.)*
 
 ## 111. Detailed terrain on Jungle, Ice, Desert and Space Platform, and no repeating pattern on any of them
 
@@ -1497,3 +1499,73 @@ TODO-M18, THE TERRAIN QUEUE, phase 4. Drawing only -- `js/terrain.js`, `js/rende
 - **Three existing suites were changed** because they counted on the whole screen being drawn in one frame: `zoom` fills the view
   before counting, `seldraw` lets the terrain settle before its before-and-after frame pair, `review17ui`'s source check looks further
   into the minimap function. The reason is written in each.
+
+## 114. A mined-out mineral patch never opens a way through a cliff or onto a ramp's side
+
+*(The terrain queue's leftovers, after phase 4. Phase 1 (item 110) left "latent side contacts" open -- places where something beside
+a ramp could open its side once gone. Measuring them found a bigger hole under the mineral patches. TODO-M18, THE TERRAIN QUEUE.
+The rule is `GameMap.wallMinedGround` in `js/map.js`; `test/ramps.js` section 2b holds it to its word.)*
+
+**THE BUILD STAMP MOVES** (`js/map.js` is stamped; the new stamp is `ca141a3b7ffcb528`, it was `eff84c60f4bc9cf2`). Saves and
+replays made before this commit are refused: the ground under some mineral lines has changed.
+
+**What changed for a player:**
+1. **Mining out a patch that stood on a cliff edge no longer leaves a way through the cliff.** Placing a mineral patch has always
+   made the ground under it walkable, and where the patch sat on the edge of a plateau that ground was a step down the cliff --
+   hidden while the patch stood, open once it was mined out. On every small Vertical Cliffs map, for one, each main's mineral line
+   stands on its plateau's edge above a narrow lane along the map's edge: mined out, it became five back doors into the main.
+   Measured over 1,037 maps: 3,140 such tiles on 210 maps (Vertical Cliffs small and medium, Chokepoint Valley small and medium,
+   Island Chain small). The ground under those patches is cliff now, so the cliff stays whole when they are gone.
+2. **A patch beside a ramp no longer reopens the ramp's side** when it is mined out (the walls of item 110 stay closed).
+3. **A patch standing on a leftover piece of ramp in open ground leaves plain ground.** On Chokepoint Valley medium and large an old
+   ramp ran under the natural's top mineral row; mined out, the row left a raised slab in the middle of the floor. The ground under
+   those patches is now level with the ground round them (2,384 tiles on 147 maps).
+4. **Nothing changes while the patches stand**: every unit, worker and building reaches exactly what it reached before, measured on
+   all 1,037 maps. What you may notice is the drawing: the cliff edge under a mineral line is one unbroken edge now, where the old
+   ground showed little notches between the crystals.
+
+**How to see it by hand** (a patch has to run out, which takes a long game -- two ways):
+1. **In a real game.** **Single Player -> Skirmish**, map **Vertical Cliffs**, size **Small**, START. Your main's mineral line runs
+   along the edge of your plateau, above a narrow lane at the map's edge. Mine it out: nine patches of 1,500, about fifteen
+   minutes of game time with a full line of workers (press **=** a few times to speed the game up). Then select a unit in your
+   main and right-click the lane just past where the crystals were. *Working:* it walks out of your main by the ramp and round --
+   never straight down through the old mineral line -- and the cliff edge there is unbroken.
+2. **Quicker, in a browser, single player only.** Open the game in a browser (PLAY.bat), start the same skirmish, press **F12** and
+   run `for (const r of G.map.resources.slice()) if (r.type === 'mineral') G.removeResource(r)` in the console: every mineral patch
+   on the map disappears as if mined out (the console is not the command log, so never do this in a network game or a replay you
+   mean to keep). Then do the same right-click. *Working:* as above. For item 3, the same on **Chokepoint Valley, Medium**: where
+   the natural's top mineral row stood is plain floor, not a raised block.
+
+**Invisible from normal play, and where to look instead:** `test/ramps.js` section 2b (in the gate, 31 checks now): on 57 maps
+(every shipped layout, the archetypes at every size, an editor-made map) with every patch removed no ramp can be entered from a side
+and no patch leaves a slope, where without the pass 3 open a ramp's side and 22 leave a slope; while the patches stand nothing a
+unit or a 3x3 body reaches changes; every wall a patch leaves is joined to a cliff, none standing alone in the open; a patch on a
+slab is levelled and no high ground is put beside low. Ten negative controls turn it red
+(`.claude/review/terrain/controls-mined2.log`). Measured on all 1,037 maps: `.claude/review/terrain/mined-compare.log`,
+`mined-live-v2.log`. Before/after screenshots: `.claude/review/terrain/shots/mined2-*`.
+
+**Deliberately different, and found on the way:**
+- **The first version walled every step under a patch**, and its before/after screenshots showed the flaw: on Chokepoint Valley the
+  mined-out top row left a block of wall standing in the open (2,376 tiles on 147 maps joined to no cliff). A step is walled only
+  where it is a cliff edge -- high ground on one side, low on the other -- and levelled where it is not.
+- **Phase 1's "212 latent side contacts" were 190 geyser tiles and 22 mineral patch tiles** -- not spires or rock formations, as
+  item 110's note guessed. A geyser is never removed, so those 190 can never open.
+- **`aistyles` seed 5** (7 vs 10 in item 110): measured on sixteen seeds, on the code before the ramp walls and on today's. The check
+  "harasser fields more of the fast units its table favours than turtle" passes on 13 of 16 in both, and only 7 of 16 seeds (before)
+  and 8 of 16 (today) pass every aistyles check -- ten minutes on one seed separates the styles unreliably, as the suite's own
+  comment says. It is that suite's noise, not the walls. It belongs to the AI rebalance (TODO-M18 7b), deferred by the user.
+- **`test/editor.js`** (by hand, not in the gate) timed out in its network half: the relay counts five seconds down before a game
+  and the test waited five seconds for the game to start. It now starts its relay with no countdown, as every other suite that
+  starts a game does; with a six-second count its negative control goes red.
+- **A correction to item 110:** `net_many`'s hashes differ from run to run because the relay picks a new seed for every game, so
+  phase 1's hash differing from the one before said nothing about the ground. What the suite checks is that every client agrees.
+
+**Numbers recorded (by-hand runs after the change):**
+- `aistyles` seed 1: 132/132; seed 11: 132/132; seed 5: 131/132 (7 vs 10, the same as item 110). Sixteen seeds before and after the
+  ramp walls: `.claude/review/terrain/seed-sweep.log`.
+- `queens` 25/25; `eightplayer` 19/19 -- every player alive at 10:00, 16 of 16 bases claimed, 634 units, tick 2.46 ms a frame mean and
+  4.50 worst segment (run beside four other suites, so slower than item 110's).
+- `net_many` 51/51, no desync.
+- Over the 1,037 maps (`mined-compare.log`): 3,156 tiles walled on 210 maps, 2,384 levelled on 147; 0 cells changed anywhere but under a
+  patch, 0 maps with anything reached, a hall, a mirror symmetry, an elevation or a ramp problem worse; with every patch mined out 0 ramp
+  problems and 0 slopes; 0 walls standing alone.

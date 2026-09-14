@@ -110,6 +110,69 @@ ok(maps.every(r => r.reach.wideShut >= r.bareReach.wideShut && r.reach.wideOpen 
 ok(!maps.some(r => worse(r.reach, r.bareReach)), 'so no map is worse for walls in any of the five ways');
 
 // ============================================================================
+// 2b. Mining a patch out opens nothing (GameMap.wallMinedGround)
+// ============================================================================
+// Every mineral patch removed the way G.removeResource removes one -- blocked back to free, walk left as it is. Then no ramp may be
+// entered from a side and no former patch tile may be a walkable slope: a patch on a cliff edge used to leave a way through the cliff
+// (3,140 tiles on 210 of 1,037 maps), a patch on a leftover ramp slab a slope in open ground (2,384 on 147), and one beside a ramp
+// reopened its side. The same maps built with the pass as a no-op do all three -- the control is inside the check -- and while the
+// patches stand nothing reached changes. Every wall the pass makes must be part of a cliff: joined, through walls, to a wall or cliff
+// that is not under a patch. Walling the slabs too left 2,376 tiles of wall standing alone in the open once mined out; they are
+// levelled to the ground round them instead, and that must put no high ground beside low. An editor-made map goes through the pass
+// too: a 64x64 with a main whose mineral column stands on its plateau's west edge.
+vm.runInContext(`
+  RT.mineOut = m => { const was = []; for (const r of m.resources) if (r.type === 'mineral') m.rect(r.x, r.y, r.w, r.h, (x, y) => { const i = m.idx(x, y); if (m.blocked[i] === -2) { m.blocked[i] = -1; was.push(i); } }); return { problems: m.rampProblems().length, slopes: was.filter(i => m.walk[i] === 1 && m.height[i] === 1).length, patches: was.length }; };
+  RT.withoutPass = (id, seed) => { const real = GameMap.prototype.wallMinedGround; GameMap.prototype.wallMinedGround = function () { return 0; }; try { return new GameMap(seed, id); } finally { GameMap.prototype.wallMinedGround = real; } };
+  // Against the same map without the pass: the walls it made under patches that no chain of walls (8 neighbours) joins to a wall or
+  // cliff outside a patch, the patch tiles it levelled, and the elevation problems it added.
+  RT.shape = (m, off) => {
+    const W = m.w, N = W * m.h, under = new Uint8Array(N), made = []; let levelled = 0, loose = 0;
+    for (const r of m.resources) if (r.type === 'mineral') m.rect(r.x, r.y, r.w, r.h, (x, y) => { under[m.idx(x, y)] = 1; });
+    for (let i = 0; i < N; i++) if (under[i]) { if (m.height[i] !== off.height[i]) levelled++; if (off.walk[i] === 1 && m.walk[i] === 0) made.push(i); }
+    for (const t of made) {
+      const seen = new Set([t]), q = [t]; let joined = false;
+      for (let k = 0; k < q.length && !joined; k++) {
+        const x = q[k] % W, y = (q[k] / W) | 0;
+        for (let dy = -1; dy <= 1 && !joined; dy++) for (let dx = -1; dx <= 1 && !joined; dx++) {
+          if ((!dx && !dy) || !m.inb(x + dx, y + dy)) continue;
+          const j = m.idx(x + dx, y + dy); if (seen.has(j) || m.walk[j] !== 0) continue;
+          if (!under[j]) joined = true; else { seen.add(j); q.push(j); }
+        }
+      }
+      if (!joined) loose++;
+    }
+    return { walls: made.length, loose, levelled, elev: m.elevationProblems().length - off.elevationProblems().length };
+  };
+  (() => {
+    const W = 64, H = 64, height = new Uint8Array(W * H), rocks = new Uint8Array(W * H);
+    for (let y = 10; y <= 33; y++) for (let x = 10; x <= 33; x++) height[y * W + x] = 2;
+    for (let y = 34; y <= 36; y++) for (let x = 20; x <= 23; x++) height[y * W + x] = 1;
+    MAP_LAYOUTS['custom:RampsMinedEdge'] = { name: 'Mined edge', players: 2, custom: true, tileset: 'badlands', w: W, h: H, height: MapCodec.encode(height), rocks: MapCodec.encode(rocks),
+      bases: [{ x: 14, y: 16, main: true, minerals: [[10, 13], [10, 15], [10, 17], [10, 19], [10, 21]], geyser: [20, 11] }, { x: 46, y: 48, main: true, minerals: [[41, 45], [41, 47], [41, 49], [41, 51], [41, 53]], geyser: [51, 43] }] };
+  })();
+`, ctx);
+const MINED = IDS.concat(['arch:islands:12:small', 'arch:islands:13:small', 'arch:chokepoint:1:medium', 'custom:RampsMinedEdge']);
+const mined = MINED.map(id => R(`
+  const id = ${JSON.stringify(id)}, m = new GameMap(7, id), off = RT.withoutPass(id, 7), a = RT.reach(m), b = RT.reach(off);
+  const same = [a.bases, a.res, a.halls, a.wideShut, a.wideOpen].join() === [b.bases, b.res, b.halls, b.wideShut, b.wideOpen].join();
+  const shape = RT.shape(m, off);
+  return { id, shape, on: RT.mineOut(m), off: RT.mineOut(off), same };
+`));
+const custom = mined.find(r => r.id === 'custom:RampsMinedEdge');
+ok(mined.every(r => r.on.problems === 0 && r.on.slopes === 0), 'with every mineral patch mined out, no ramp on any of ' + mined.length + ' maps -- an editor-made one among them -- can be entered from a side, and no patch leaves a slope behind',
+  mined.filter(r => r.on.problems || r.on.slopes).map(r => r.id + ' ' + JSON.stringify(r.on)).slice(0, 3).join(' | '));
+ok(mined.filter(r => r.off.problems).length >= 1 && mined.filter(r => r.off.slopes).length >= 3 && custom.off.slopes > 0,
+  '...where without GameMap.wallMinedGround ' + mined.filter(r => r.off.problems).length + ' of them open a ramp side and ' + mined.filter(r => r.off.slopes).length + ' leave a slope behind (the editor-made map ' + custom.off.slopes + ')',
+  mined.filter(r => r.off.problems || r.off.slopes).map(r => r.id + ' ' + JSON.stringify(r.off)).slice(0, 4).join(' | '));
+ok(mined.every(r => r.same), 'and while the patches stand nothing a unit or a 3x3 body reaches changes, nor any hall', mined.filter(r => !r.same).map(r => r.id).join(' '));
+ok(mined.every(r => r.shape.loose === 0) && mined.filter(r => r.shape.walls).length >= 3 && custom.shape.walls > 0,
+  'every wall a patch leaves is part of a cliff -- ' + mined.reduce((s, r) => s + r.shape.walls, 0) + ' on ' + mined.filter(r => r.shape.walls).length + ' maps, none standing alone in the open once mined out',
+  mined.filter(r => r.shape.loose).map(r => r.id + ' ' + JSON.stringify(r.shape)).slice(0, 3).join(' | '));
+ok(mined.filter(r => r.shape.levelled).length >= 1 && mined.every(r => r.shape.elev <= 0),
+  '...and a patch on a slab in open ground is levelled to the ground round it instead (' + mined.reduce((s, r) => s + r.shape.levelled, 0) + ' tiles on ' + mined.filter(r => r.shape.levelled).length + ' maps), putting no high ground beside low',
+  mined.filter(r => r.shape.elev > 0).map(r => r.id + ' ' + JSON.stringify(r.shape)).slice(0, 3).join(' | '));
+
+// ============================================================================
 // 3. The map is still the map: symmetric, sealed, and the rule is a fixpoint
 // ============================================================================
 ok(maps.every(r => (r.bareSym.x || !r.sym.x) && (r.bareSym.y || !r.sym.y) && (r.bareSym.t || !r.sym.t)),

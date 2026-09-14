@@ -1,15 +1,14 @@
 # TODO-M18 — the user's thirteen-item list from the first internet game
 
 Started when the fifth session paused for the night (2026-09-12) and kept since. `HANDOFF-M18.md` has the state, the
-traps and the kickoff prompt; this file is the open list. **Its first section, THE TENTH SESSION'S QUEUE, is what to do
-next** (the user's playtest findings and the build path); THE WORK QUEUE after it is the ninth session's, all done. The
-sessions' lists follow (what each did,
-with commits), then the older open items with their measurements, then what is closed. There are no worktrees.
+traps and the kickoff prompt; this file is the open list. **Its first section, THE TERRAIN QUEUE, is the work in hand**; the
+user's answers and the earlier queues follow (THE TENTH SESSION'S QUEUE and THE WORK QUEUE are all done), then the sessions'
+lists (what each did, with commits), the older items with their measurements, and what is closed. There are no worktrees.
+`SHIPPING.md` is what must be done before the final build ships.
 
-The gate is **90 suites** (`node test/all.js`, ~5 min) and **ALL GREEN** since queue item G (ninth session) -- the first
-time since `136b1b0`. Every rule in `CLAUDE.md`
-applies to every item here: measure before fixing, a negative control that goes cleanly RED, `tools/patch.js`
-for edits, and the gate green before the commit.
+The gate is **100 suites** (`node test/all.js`, about two minutes) and **ALL GREEN**. Every rule in `CLAUDE.md` applies to every
+item here: measure before fixing, a negative control that goes cleanly RED, `tools/patch.js` for edits, and the gate green before
+the commit.
 
 ---
 
@@ -70,10 +69,21 @@ controls in `.claude/review/terrain/controls-ramps.log`) is in the gate, now 98 
   walled ramp exactly, footprint checked first), `verticality` (the stranded-terrace regression rebuilt on open ground now the
   ellipse is gone), `queens` (one Queen per hall at twelve minutes, not ten: over seeds 1-12 the ten-minute check passed 7/12 without
   walls and 8/12 with them; at twelve, 24/24 exactly one per hall).
-- **Not done / open:** latent side contacts -- 212 over the 1,037 maps, where a spire or a rock formation stands beside a ramp, or a
-  mineral patch that could be mined out; they open only if destroyed or mined. `aistyles` seed 5 (by hand, not the gate) fails its
-  weakest check, 7 vs 10 (PLAYTEST 110 has the numbers). `test/editor.js` (not in the gate) times out in its LAN half -- at HEAD
-  before this change too.
+- **Left open by phase 1, CLOSED after phase 4** (PLAYTEST-M18 114; build stamp `ca141a3b7ffcb528`):
+  - *Latent side contacts* -- 212 over the 1,037 maps: 190 geyser tiles (a geyser is never removed, so they never open) and 22 mineral
+    patch tiles; no spire or rock formation (this note had guessed those). Measuring the patches found a bigger hole: placing a patch
+    forces its tiles walkable, and 5,524 of them on 338 maps stood on a slope -- 3,140 a cliff edge the seal had made a step of (a way
+    through a main's or a natural's cliff once mined out; every small Vertical Cliffs main has five), 2,384 a leftover ramp slab in open
+    ground (Chokepoint Valley medium and large). `GameMap.wallMinedGround` walls the cliff edges, levels the slabs and walls a patch
+    tile beside a ramp; while the patches stand nothing reached changes (1,037 maps). Its first version walled the slabs too, and the
+    before/after screenshots showed a block of wall left in the open (2,376 tiles on 147 maps), so they are levelled.
+    `test/ramps.js` section 2b (31 checks), ten negative controls (`.claude/review/terrain/controls-mined2.log`).
+  - *`aistyles` seed 5* -- measured on sixteen seeds on the code before the walls (`af6e56a`) and on today's
+    (`.claude/review/terrain/seed-sweep.log`): the harasser check passes on 13 of 16 in both, and every aistyles check passes on
+    only 7 of 16 seeds before and 8 of 16 today. The suite's noise away from the gate's seed, not the walls: it belongs to 7b, which
+    the user deferred again ("defer until i say", 2026-09-13).
+  - *`test/editor.js`* -- its LAN half raced the relay's five-second countdown against a five-second wait for the start; it sets
+    `BW_COUNTDOWN=0` like every other suite that starts a game (its control goes red at a six-second count).
 
 **PHASE 2 (item 3, the four tilesets) -- DONE** (PLAYTEST-M18 111; drawing only, the stamp stays `eff84c60f4bc9cf2`). Every tileset
 has a set in `js/terrain.js` (`TERRAIN_TEX`, `TERRAIN_GRADE`, and `TERRAIN_LOOK` for how each is laid); thirteen Poly Haven CC0
@@ -118,8 +128,9 @@ What it took:
   the block allows). A hulk's tiles read as the ground under them, so no prop pops in or out during play or across a save.
 - **Cost:** about 1.4 ms a chunk (7.5%), measured side by side in the browser. Seams: a prop crossing a chunk edge is drawn from the
   same hashes by both chunks (`PROP_R` 24 px of reach; at 6 they disagree).
-- **Not done / open:** props are not in the strategic view or the minimap (phase 4 decides; Supreme Commander drops them with distance,
-  RESEARCH-TERRAIN 8.3). Space Platform's props are the least convincing of the five -- subtle floor details rather than scenery.
+- **Left open by phase 3, CLOSED:** props in the strategic view and the minimap -- phase 4 decided against (at 4 px a tile they are
+  specks; Supreme Commander drops them with distance, RESEARCH-TERRAIN 8.3). Space Platform's props are subtle floor details rather
+  than scenery -- the user accepted that ("OK", 2026-09-13).
 
 **PHASE 4 (item 4, the far view, the minimap, speed) -- DONE** (PLAYTEST-M18 113; drawing only, the stamp stays `eff84c60f4bc9cf2`).
 `test/terrainview.js` (new, 24 checks, sixteen negative controls in `.claude/review/terrain/controls-terrainview.log`) is in the gate,
@@ -192,12 +203,25 @@ before/after screenshot sent to the user for every visible change (they judge th
 
 ---
 
+## THE USER'S ANSWERS DURING THE TERRAIN QUEUE (2026-09-13, after phase 4)
+
+Asked what was left and what needed their decision, the user answered: **"1. defer until i say 2. skip 3. OK 4. Note it in
+Documents that when I go to ship the final build, we need to make sure this is done. Please finish all the to-dos on the to-do
+list. When you report back to me next, there should be no open items remaining."** Against the questions asked:
+- **1, the AI rebalance (7b): DEFERRED until the user says**, again. `aistyles` seed 5 is part of it (measured, phase 1 above).
+- **2, a look-and-feel pass of PLAYTEST-M18 101-108: SKIPPED** by the user. Closed, not done.
+- **3, the terrain calls made without them: ACCEPTED** -- a dark rim under the minimap's unit dots (113), soft ground for a moment
+  after a big camera jump instead of a freeze (113), Space Platform's props as subtle floor details (112).
+- **4, the desktop installers: `SHIPPING.md`** -- before the final build ships, run Actions -> Desktop builds -> Run workflow (it does
+  not rebuild for `js/` or `assets/`), and open the Mac app on a real Mac (never done: there is none here).
+- The pull request the user asked to merge: none was open (the work goes straight to `main`).
+
 ## THE USER'S DECISIONS AFTER THE TENTH SESSION (2026-09-13)
 
 - **The research stall is CLOSED** (Open, item 4) -- the user: "this bug is fixed - remove from tasks/todos list". The stall
   watcher stays in the game (PLAYTEST-M18 99); a `[stall]` report from it would reopen this.
 - **DEFERRED until the user says:** the AI rebalance (7b).
-- **OPTIONAL, whenever the user likes:** a look-and-feel pass of PLAYTEST-M18 101-108. Every item in them is tested
+- **SKIPPED by the user (2026-09-13, "skip"):** a look-and-feel pass of PLAYTEST-M18 101-108. Every item in them is tested
   automatically (their suites, 46 negative controls, and 103-106 clicked through in two browser tabs); what no test judges is
   how they look and feel on screen.
 - **DECIDED:** the terrain art path is THE TERRAIN QUEUE above -- the user wants great-looking maps and no editor, and approved
@@ -208,7 +232,7 @@ before/after screenshot sent to the user for every visible change (they judge th
   INSTALLED app (a real window: host, a second player joins by the code, stop, close, hard kill), uninstalled leaving nothing
   (`.claude/review/tenth/install-test.js`). `desktop/window-check.js` had drifted from the page since the eighth session and
   was brought up to date first (`f68e8f3`). **Not tested: a Mac** -- there is none here; the CI's Mac jobs build the app and
-  check its relay and page, and nothing opens it.
+  check its relay and page, and nothing opens it. `SHIPPING.md` step 2: open it on a Mac before the final build ships.
 - **The repository is PUBLIC.** The user made it private for a while on 2026-09-13 and public again the same day. Private
   would cost the Desktop builds: 2,000 free Actions minutes a month and 500 MB of artifact storage instead of free (three
   installers are ~210 MB a run, kept 90 days), blocked rather than billed once used (docs.github.com, GitHub Actions billing).
