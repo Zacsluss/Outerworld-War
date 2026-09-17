@@ -167,11 +167,13 @@ const FX = {
   // the same reason everything else in this file is defensive about Terrain and Atlas: fx.js is loaded
   // before render.js in more than one harness, and a bare reference would take the draw pass with it.
   zoomNow() { const z = (typeof Render !== 'undefined' && Render) ? Render.zoom : 1; return (typeof z === 'number' && z > 0 && isFinite(z)) ? z : 1; },
-  // Below this the decals stop being pictures and start being stains. It matches the zoom at which
-  // js/render.js swaps sprites for icons, deliberately: the two are the same judgement about what is
-  // still worth drawing, and having them disagree would put a fully detailed corpse under a nine-pixel
-  // icon of the unit that killed it.
-  LOD_Z: 0.5,
+  // Below this the decals stop being pictures and start being stains. It IS the zoom at which js/render.js
+  // swaps sprites for icons -- the two are the same judgement about what is still worth drawing, and having
+  // them disagree would put a fully detailed corpse under a nine-pixel icon of the unit that killed it. It
+  // was 0.5 written here and 0.5 written there with a comment between them (SCAN-M18 B4); now it reads
+  // ZOOM_ICON. A getter and not a plain value because js/fx.js loads BEFORE js/render.js, and the 0.5
+  // fallback is for the headless harnesses that load fx without render.
+  get LOD_Z() { return typeof ZOOM_ICON !== 'undefined' ? ZOOM_ICON : 0.5; },
   drawDecals(ctx, inView, visNow) {
     // Strategic zoom multiplies the world in view by up to twenty, so every decal on the field clears
     // the cull at once -- and a corpse is a full SPRITE BLIT while a scorch builds a fresh radial

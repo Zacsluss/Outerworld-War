@@ -1503,10 +1503,10 @@ const UI = {
     // immediately on any non-left button, so the card had no right-click behaviour at all.
     const cr = this.cardRect();
     if (button === 2) {
+      // THE SAME RECTANGLE THE CARD DRAWS, asked for rather than recomputed: see UI.cardSlotRect. A click box
+      // that is derived separately from the button it lands on is a wrong click waiting for a layout change.
       for (const b of this.currentCard()) {
-        const gap = cr.gap !== undefined ? cr.gap : 4, pad = cr.pad !== undefined ? cr.pad : 4;   // pad: the card's inner margin, which scales with the HUD (TODO-M18 item 5)
-        const bx = cr.x + pad + (b.slot % this.CARD_COLS) * (cr.bw + gap), by = cr.y + pad + Math.floor(b.slot / this.CARD_COLS) * (cr.bh + gap);
-        if (x < bx || x >= bx + cr.bw || y < by || y >= by + cr.bh) continue;
+        if (!this.cardSlotHit(cr, b.slot, x, y)) continue;
         const id = b.abil; const ab = id && DATA.abilities[id];
         if (!ab || !ab.autocast) return;
         const units = this.ownSel().filter(u => (u.def.abil || []).includes(id) || (u.def.produces || []).includes(ab.unit));
@@ -1521,7 +1521,7 @@ const UI = {
       return;
     }
     if (button !== 0) return;
-    for (const b of this.currentCard()) { const gap = cr.gap !== undefined ? cr.gap : 4, pad = cr.pad !== undefined ? cr.pad : 4; const bx = cr.x + pad + (b.slot % this.CARD_COLS) * (cr.bw + gap), by = cr.y + pad + Math.floor(b.slot / this.CARD_COLS) * (cr.bh + gap); if (x >= bx && x < bx + cr.bw && y >= by && y < by + cr.bh) { this.press(b); return; } }
+    for (const b of this.currentCard()) if (this.cardSlotHit(cr, b.slot, x, y)) { this.press(b); return; }
     // info panel: selection wireframes / queue / cargo
     for (const h of this.hotspots) if (x >= h.x && x < h.x + h.w && y >= h.y && y < h.y + h.h) { h.fn(); Sound.click(); return; }
   },

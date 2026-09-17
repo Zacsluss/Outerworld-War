@@ -209,7 +209,9 @@ class AI {
     // (20 Hydralisks and 2 Lurkers) in Blizzard's AI script FAQ (classic.battle.net/scc/faq/aiscripts.shtml). Measured:
     // 0.65, 0.7 and 0.75 each turn aistyles green on seeds 1, 5 and 11 together with the worker floor in economy() and
     // the expansion clock in macro(); 0.7 alone leaves it red (the AI had no army to send), and so do those two alone.
-    this.diff = diff; this.step = 0; this.pending = {}; this.lastThink = 0; this.lastArmy = 0; this.state = 'gather'; this.target = null; this.attackN = 0; this.attackThreshold = Math.max(10, Math.round(((diff === 'easy' ? 40 : diff === 'hard' ? 24 : 30) + 4 + (st.atk || 0)) * 0.7)); this.waves = 0; this.scouted = false; this.dropOp = null; this.lastDrop = 0;
+    // `step`, `lastArmy` and `attackN` used to be initialised here and never read by anything, in js/ or in
+    // test/ (SCAN-M18 B10; attackN was written twice and read nowhere).
+    this.diff = diff; this.pending = {}; this.lastThink = 0; this.state = 'gather'; this.target = null; this.attackThreshold = Math.max(10, Math.round(((diff === 'easy' ? 40 : diff === 'hard' ? 24 : 30) + 4 + (st.atk || 0)) * 0.7)); this.waves = 0; this.scouted = false; this.dropOp = null; this.lastDrop = 0;
     this.thinkEvery = diff === 'easy' ? 72 : diff === 'hard' ? 20 : 32; this.scriptIdx = 0; this.lastExpand = 0; this.rally = null; this.startedAttack = 0; this.commitMin = 0; this.commitGas = 0; this.claims = []; this.researchDef = null; this.topDef = null; this.headDef = null; this.workerDef = null; this.expandDef = null; this.queenDef = null;
   }
   // ---------------- play styles ----------------
@@ -689,12 +691,14 @@ class AI {
   }
   // how many buildings are being built or walked to right now (a human never starts five things at once)
   underway() { return this.mine(u => (u.isBuilding && !u.done && u.def.tier !== 'addon') || (u.def.worker && u.order.type === 'build' && u.order.def)).length; }
-  // how many of a scripted building we already own; a morph counts as the thing it grew out of
-  // ...and 'command_center' joined that list in M12: an Orbital Command and a Planetary Fortress are
-  // both still Command Centers for the purpose of "do we owe another one". Without this clause the two
-  // scripted `command_center` steps become permanently unmet the moment either morph happens, and the
-  // build order stalls on an expansion it already has for the whole 200 s give-up timer.
-  scriptHave(cnt, id) { return (cnt[id] || 0) + (id === 'hatchery' ? (cnt.lair || 0) + (cnt.hive || 0) : id === 'lair' ? (cnt.hive || 0) : id === 'spire' ? (cnt.greater_spire || 0) : id === 'creep_colony' ? (cnt.sunken_colony || 0) + (cnt.spore_colony || 0) : id === 'command_center' ? (cnt.orbital_command || 0) + (cnt.planetary_fortress || 0) : 0); }
+  // How many of a scripted building we already own; A MORPH COUNTS AS THE THING IT GREW OUT OF, which is
+  // exactly what EQUIV in js/sim.js is for. This used to be a second copy of that table written as a
+  // five-way ternary, and the two had already drifted apart -- creep_colony was here and not there, and the
+  // M12 fix that taught the game an Orbital is still a Command Center had to be made twice (SCAN-M18 B10).
+  // Without the rule at all, the two scripted `command_center` steps become permanently unmet the moment
+  // either morph happens and the build order stalls on an expansion it already has for the whole 200 s
+  // give-up timer, which is how the drift was found the first time.
+  scriptHave(cnt, id) { let n = cnt[id] || 0; for (const k of (EQUIV[id] || [])) n += cnt[k] || 0; return n; }
   // A build order is not a queue. It used to be run strictly at the head: one step that could not be
   // started froze everything behind it until a 200-second timer threw the step away for good, and the
   // steps that needed it were then thrown away in turn on `req`. Over nine games that abandoned 29 steps
@@ -881,9 +885,25 @@ class AI {
     if (r === 'P' && p.minerals > 200 && this.afford(100, 0) && this.count('pylon') < 3 + this.mine(u => u.isBuilding && !u.def.psi && !u.def.depot).length / 2) this.build('pylon');
     // Zerg: lair/hive/greater spire upgrades are in script; hatchery tech at 2 hatch
   }
+  // THE THREE THINGS BOTH UNIT-PICKERS NEED. production() and warpIn() choose from the same table by the
+  // same rule, and each derived the matchup key, took the census and wrote the score itself -- three copies
+  // of three lines, which is how one of them ends up counting something the other does not (SCAN-M18 B10).
+  // What is NOT shared stays where it belongs: production()'s counter multipliers and its `pair` doubling
+  // are its own, and are passed in.
+  //
+  // compKey: the matchup table to build from -- this race against the first enemy's, falling back to this
+  // race's own table when the pair has no entry.
+  compKey() { const foe = this.enemies()[0]; return foe && AI_COMP[this.race + 'v' + foe.race] ? this.race + 'v' + foe.race : this.race; }
+  // unitCensus: every unit this player owns OR has in production, by def id. In production counts, or the
+  // AI orders five of the same thing while the first is still being built.
+  unitCensus() { const c = {}; for (const u of G.units) if (u.alive && u.owner === this.p.id) { c[u.def.id] = (c[u.def.id] || 0) + 1; for (const it of u.prod) if (it.kind === 'unit') c[it.id] = (c[it.id] || 0) + 1; } return c; }
+  // compScore: how badly one more of `id` is wanted -- the army supply already held of it plus the one
+  // under consideration, over its weight. LOWER IS WANTED MORE. Supply and not unit count, so a cheap unit
+  // cannot crowd the expensive ones out of a composition that asks for both.
+  compScore(counts, id, sup, w) { return ((counts[id] || 0) * sup + sup) / w; }
   production() {
-    const p = this.p; const foe = this.enemies()[0]; const key = foe && AI_COMP[this.race + 'v' + foe.race] ? this.race + 'v' + foe.race : this.race; const comp = this.styleComp(key, this.style); const cands = []; // the style multiplies weights, so a per-matchup composition stays per-matchup
-    const counts = {}; for (const u of G.units) if (u.alive && u.owner === p.id) { counts[u.def.id] = (counts[u.def.id] || 0) + 1; for (const it of u.prod) if (it.kind === 'unit') counts[it.id] = (counts[it.id] || 0) + 1; }
+    const p = this.p; const foe = this.enemies()[0]; const key = this.compKey(); const comp = this.styleComp(key, this.style); const cands = []; // the style multiplies weights, so a per-matchup composition stays per-matchup
+    const counts = this.unitCensus();
     // Was a raw scan of G.units with no vision test -- the AI knew about air it had never seen. It goes
     // through the intel model now, so hiding your air tech actually hides it.
     const enemyAir = this.sawAir(), needAA = enemyAir, needDet = this.sawCloak(), read = this.readEnemy();
@@ -901,7 +921,7 @@ class AI {
       if (read === 'teching' && (ud.min + ud.gas) <= 125 && !ud.worker) w *= 1.5;        // they are buying something expensive: be there before it arrives
       if (needDet && ud.det) w *= 2.5;   // `det`, the key the data uses; this read `detector` and never fired (REVIEW-M17, q8)                                              // something we saw needs a detector to shoot at
       if (ud.from !== 'larva' && !this.mine(b => b.isBuilding && b.done && b.def.produces.includes(id)).length) continue;
-      const sup = (ud.sup || 1) * (ud.pair ? 2 : 1); cands.push([((counts[id] || 0) * sup + sup) / w, id, w, sup]); // weights are a share of army supply, so cheap units cannot crowd out the rest; w and sup ride along so the score can be recomputed after a train
+      const sup = (ud.sup || 1) * (ud.pair ? 2 : 1); cands.push([this.compScore(counts, id, sup, w), id, w, sup]); // weights are a share of army supply, so cheap units cannot crowd out the rest; w and sup ride along so the score can be recomputed after a train
     }
     cands.sort((a, b) => a[0] - b[0]);
     if (!cands.length) return;
@@ -1386,7 +1406,7 @@ class AI {
         this.state = 'attack'; this.waves++; this.startedAttack = G.frame;
         const wave = army.filter(u => distPt(u.x, u.y, rally.x, rally.y) < 14 * TILE || this.waves > 1);
         for (const u of wave) u.wave = this.waves;
-        this.attackN = wave.length; this.waveSup0 = wave.reduce((a, u) => a + (u.def.sup || 0), 0);
+        this.waveSup0 = wave.reduce((a, u) => a + (u.def.sup || 0), 0);
         this.target = this.pickTarget(rally);
       }
     }
@@ -1683,16 +1703,13 @@ class AI {
     const p = this.p;
     const gates = this.mine(u => u.def.id === 'warp_gate' && u.done && !u.unpowered && u.cooldown <= 0);
     if (!gates.length) return;
-    const foe = this.enemies()[0];
-    const key = foe && AI_COMP[this.race + 'v' + foe.race] ? this.race + 'v' + foe.race : this.race;
-    const counts = {};
-    for (const u of G.units) if (u.alive && u.owner === p.id) { counts[u.def.id] = (counts[u.def.id] || 0) + 1; for (const it of u.prod) if (it.kind === 'unit') counts[it.id] = (counts[it.id] || 0) + 1; }
+    const counts = this.unitCensus();
     let best = null, bs = 1e9;
-    for (const [id, wgt] of this.styleComp(key, this.style)) {
+    for (const [id, wgt] of this.styleComp(this.compKey(), this.style)) {
       if (!wgt || !DATA.abilities['warp_' + id]) continue;
       const ud = DATA.units[id]; if (!p.hasReq(ud) || !this.afford(ud.min, ud.gas)) continue;
       const sup = ud.sup || 1; if (p.supUsed + sup > p.supMax) continue;
-      const s = ((counts[id] || 0) * sup + sup) / wgt;
+      const s = this.compScore(counts, id, sup, wgt);
       if (s < bs) { bs = s; best = id; }
     }
     if (!best) return;

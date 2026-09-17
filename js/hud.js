@@ -828,6 +828,17 @@ Object.assign(UI, {
   // nine-slot one was -- the console is the same height and the unit panel beside it keeps its room.
   cardRectC() { const ch = this.consoleBase, k = Math.min(1, (ch - 16) / 182); const bw = Math.round(54 * k), bh = Math.round(54 * k), gap = Math.max(2, Math.round(4 * k)), pad = 4; const w = UI.CARD_COLS * (bw + gap) + pad * 2, h = UI.CARD_ROWS * (bh + gap) + pad * 2; return { x: this.conW - w - 12, y: this.conH - ch + 8, w, h, bw, bh, gap, pad, k }; },
   cardRect() { return this.scaleRect(this.cardRectC()); },
+  // ONE RECTANGLE FOR ONE CARD SLOT. It was computed in three places -- the draw pass here, and the
+  // right-click arm and the left-click press in js/ui.js -- and the two click copies hedged with
+  // `cr.gap !== undefined ? cr.gap : 4` defaults the drawing copy did not have, so a cardRect that ever
+  // stopped carrying gap or pad would move every click box off the button it draws and nothing would say
+  // so. Drift between these three is a wrong click, which is the one interface bug a player cannot work
+  // around (SCAN-M18 B9). The defaults are gone with the duplication: cardRectC always sets both, and
+  // scaleRect copies every key it is given.
+  cardSlotRect(cr, slot) {
+    return { x: cr.x + cr.pad + (slot % UI.CARD_COLS) * (cr.bw + cr.gap), y: cr.y + cr.pad + Math.floor(slot / UI.CARD_COLS) * (cr.bh + cr.gap), w: cr.bw, h: cr.bh };
+  },
+  cardSlotHit(cr, slot, x, y) { const r = this.cardSlotRect(cr, slot); return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; },
   // THE HUD'S SCALE, applied in one place (TODO-M18 item 5). The body below is written in CONSOLE UNITS
   // -- the coordinates it has always used, in which the band is consoleBase tall -- and this runs it
   // under scale(hudK). Nothing inside it changed: every font, gap, icon, tile and bar was already in
@@ -901,7 +912,7 @@ Object.assign(UI, {
     HUD.inset(ctx, cr.x, cr.y, cr.w, cr.h);
     const btns = this.currentCard(); this.tooltip = null;
     for (const b of btns) {
-      const bx = cr.x + cr.pad + (b.slot % UI.CARD_COLS) * (cr.bw + cr.gap), by = cr.y + cr.pad + Math.floor(b.slot / UI.CARD_COLS) * (cr.bh + cr.gap);
+      const sr = UI.cardSlotRect(cr, b.slot), bx = sr.x, by = sr.y;
       const hov = mx >= bx && mx < bx + cr.bw && my >= by && my < by + cr.bh;
       const active = this.pending && ((this.pending.kind === 'ability' && b.label === (DATA.abilities[this.pending.abil] || {}).name) || (this.pending.kind !== 'ability' && b.label.toLowerCase().startsWith(this.pending.kind)));
       HUD.bevel(ctx, bx, by, cr.bw, cr.bh, !active, active ? '#2f4a2f' : hov ? sk.btnHov : b.dim ? sk.btnDim : sk.btn);

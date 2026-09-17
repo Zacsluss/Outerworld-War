@@ -1186,13 +1186,14 @@ const DATA = (() => {
   L3('shields', 'Plasma Shields', 'P', 'forge', 'S', 'cybernetics_core');
   L3('airW', 'Air Weapons', 'P', 'cybernetics_core', 'W', 'fleet_beacon');
   L3('airA', 'Air Armor', 'P', 'cybernetics_core', 'A', 'fleet_beacon');
-  // Level 2/3 costs for vehicle/ship/etc
-  ['vehW', 'vehA', 'shipW', 'shipA', 'meleeW', 'missW', 'carapace', 'flyW', 'flyA', 'gW', 'gA', 'shields', 'airW', 'airA'].forEach(k => { upgrades[k].min = [100, 175, 250]; upgrades[k].gas = [100, 175, 250]; });
+  // THE FOUR THAT ARE NOT L3's DEFAULT. Fourteen lines used to sit here writing [100, 175, 250] over the
+  // fourteen keys L3 had just given [100, 175, 250] to, and then four more with the real exceptions
+  // (SCAN-M18 B10). A block that restates a default is worse than no block: read it and you cannot tell
+  // which of the numbers is the decision. These four are the decisions -- armour and shields cost more per
+  // level than weapons do -- and everything else takes L3's price.
   upgrades.carapace.min = [150, 225, 300]; upgrades.carapace.gas = [150, 225, 300];
   upgrades.shields.min = [200, 300, 400]; upgrades.shields.gas = [200, 300, 400];
-  upgrades.vehW.min = [100, 175, 250]; upgrades.shipW.min = [100, 175, 250];
-  upgrades.airW.min = [100, 175, 250]; upgrades.airA.min = [150, 225, 300]; upgrades.airA.gas = [150, 225, 300];
-  upgrades.gA.min = [100, 175, 250]; upgrades.gW.min = [100, 175, 250];
+  upgrades.airA.min = [150, 225, 300]; upgrades.airA.gas = [150, 225, 300];
   upgrades.flyA.min = [150, 225, 300]; upgrades.flyA.gas = [150, 225, 300];
 
   // ============================ TECH (single research) ============================

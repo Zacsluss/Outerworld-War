@@ -6,9 +6,10 @@ refactor debt, then four for defects. Every claim below was re-checked by hand, 
 
 **A1 (all nine player-visible defects) is FIXED** -- PLAYTEST-M18 125, twelve negative controls red.
 **A2 is FIXED except 10** -- 11, 12, 13, 14 and 15, PLAYTEST-M18 126, eleven negative controls red. **A3 is FIXED** --
-16 to 22, PLAYTEST-M18 127, eleven negative controls red. **A2.10 is the one defect that waits for the user's word and
-the gated balance run.** B (1-11) is what is left. The gate was green (101/101) before the scan and is green after
-each batch.
+16 to 22, PLAYTEST-M18 127, eleven negative controls red. **B is FIXED** -- all eleven, PLAYTEST-M18 128, eighteen
+negative controls red, and a new gate suite (`test/onecopy.js`) whose job is to keep each rule a single copy.
+**A2.10 IS THE ONLY THING LEFT IN THIS FILE**, and it waits for the user's word and the gated balance run. The gate
+was green (101/101) before the scan and is green after every batch (102/102 now).
 
 ---
 
@@ -112,7 +113,7 @@ each batch.
 
 ---
 
-## B. Refactor debt worth paying  -- OPEN, and next
+## B. Refactor debt worth paying  -- ALL ELEVEN FIXED (PLAYTEST-M18 128; test/onecopy.js pins them)
 
 The same failure mode keeps recurring: **a number copied out of the place that owns it**, and **a rule
 written twice because a second code path grew up beside the first**.

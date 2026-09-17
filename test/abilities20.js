@@ -75,7 +75,7 @@ const ctx = makeCtx();
 // The list is the measurement, kept here so the count guards the sweep: a regex that matched nothing
 // would leave eighty, one that matched everything would leave none, and either is a red. When another
 // suite starts naming one of these, delete it from the list -- this check will say which.
-const NEVER = ['build_basic', 'build_adv', 'morph_menu', 'restoration', 'optical_flare', 'lockdown', 'defensive_matrix', 'emp', 'yamato', 'parasite', 'ensnare', 'nydus_exit', 'feedback', 'maelstrom', 'build_scarab', 'build_interceptor', 'disruption_web'];
+const NEVER = ['build_basic', 'build_adv', 'morph_menu', 'restoration', 'optical_flare', 'defensive_matrix', 'emp', 'yamato', 'parasite', 'ensnare', 'nydus_exit', 'maelstrom', 'build_scarab', 'build_interceptor', 'disruption_web'];
 {
   const ids = R(ctx, 'return Object.keys(DATA.abilities);');
   const allSrc = fs.readFileSync(path.join(__dirname, 'all.js'), 'utf8');
@@ -84,7 +84,7 @@ const NEVER = ['build_basic', 'build_adv', 'morph_menu', 'restoration', 'optical
   const quoted = id => new RegExp("['\"`]" + id + "['\"`]");
   const never = ids.filter(id => !texts.some(t => quoted(id).test(t)));
   ok('DATA.abilities holds eighty-one ids and test/all.js names at least seventy-five suites (scene check for the sweep; the eighty-first is the Supply Depot\'s Lower / Raise, seventh session)', ids.length === 81 && files.length >= 75, ids.length + ' ids, ' + files.length + ' suites');
-  ok('the other gate suites never name exactly these seventeen as a quoted string (was 18 before review17.js took cloak_ghost)', never.length === NEVER.length && never.every(id => NEVER.includes(id)), 'measured ' + never.length + ': ' + never.join(', '));
+  ok('the other gate suites never name exactly these fifteen as a quoted string (18 at the sweep; review17.js took cloak_ghost, and onecopy.js took lockdown and feedback when SCAN-M18 B1 drove their refunds)', never.length === NEVER.length && never.every(id => NEVER.includes(id)), 'measured ' + never.length + ': ' + never.join(', '));
   const self = fs.readFileSync(__filename, 'utf8');
   ok('...and this file names every one of them', NEVER.every(id => quoted(id).test(self)), NEVER.filter(id => !quoted(id).test(self)).join(', '));
   const menus = R(ctx, `

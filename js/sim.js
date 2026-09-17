@@ -11,7 +11,11 @@ const SIEGE_W = { dmg: 70, type: 'explosive', range: 12, minRange: 2, cd: 75, hi
 // From M12 to M17 the two ids were pushed into this array at load from js/abilities.js, because that wave's three
 // race branches edited in parallel and the Terran one did not own this file; the branches merged at M13, so the
 // entry lives where the table is (REVIEW-M17 task 22). test/terran12.js section 11 pins it.
-const EQUIV = { hatchery: ['lair', 'hive'], lair: ['hive'], spire: ['greater_spire'], command_center: ['orbital_command', 'planetary_fortress'], nexus: [] };
+// ...and creep_colony, which AI.scriptHave had in its own copy of this table and this table did not (SCAN-M18
+// B10). A Sunken and a Spore are what a Creep Colony grew into, exactly as a Hive is what a Hatchery grew
+// into, so the row belongs here; measured before adding it, nothing in DATA or in any mission requires a
+// creep_colony, so the only reader whose answer changes is the one that already believed it.
+const EQUIV = { hatchery: ['lair', 'hive'], lair: ['hive'], spire: ['greater_spire'], creep_colony: ['sunken_colony', 'spore_colony'], command_center: ['orbital_command', 'planetary_fortress'], nexus: [] };
 // A body wider than this needs a path with CLEARANCE rather than one found for a point -- see the
 // comment on Pathfinder.find (FIXLIST-M14 C6). Half a tile: a unit standing dead centre in a tile
 // pokes (r - 16) px into its neighbour, so 16 is exactly the radius at which that stops being zero.

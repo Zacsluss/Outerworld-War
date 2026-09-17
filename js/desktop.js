@@ -24,13 +24,11 @@ const Desktop = {
   $(id) { return document.getElementById(id); },
   // The address a player types into Server, made into the relay's URL. It accepts what people actually
   // paste: "192.168.1.5:51234", "ws://192.168.1.5:51234/ws", a tunnel's "https://x.trycloudflare.com".
-  url(s) {
-    s = String(s == null ? '' : s).trim(); if (!s) return '';
-    s = s.replace(/^http(s?):\/\//i, 'ws$1://');
-    if (!/^wss?:\/\//i.test(s)) s = 'ws://' + s;
-    s = s.replace(/\/+$/, ''); if (!/\/ws$/i.test(s)) s += '/ws';
-    return s;
-  },
+  // The rule itself is Net.normUrl's -- js/net.js loads before this file -- because these were two
+  // byte-identical copies of it, and an address the page accepted and the app did not would be a bug
+  // nobody could reproduce on the machine that found it (SCAN-M18 B10). The method stays: it is the name
+  // the two call sites below and desktop/page-check.js use.
+  url(s) { return Net.normUrl(s); },
   // The line under the button telling the host what to read out.
   share() {
     const el = this.$('netShare'); if (!el) return; const h = this.hosting;

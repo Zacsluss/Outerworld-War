@@ -14,6 +14,11 @@
 //       about: a queued gather carries a map RESOURCE, whose x/y are tile coordinates, so the line has
 //       to read cx/cy or every gather line points at the top-left of the map.
 //
+//  8.   A SELECTED BUILDING'S RALLY IS DRAWN ONCE (SCAN-M18 B8). Render.frame drew it twice for a selection
+//       of exactly one: drawRallies covers every selected building, and a second block below it covered the
+//       single-selection case again in a different visual language -- a solid triangle pennant over
+//       drawRallies' circle and pole, with both dashed lines on top of each other.
+//
 //  7.   THE SELECTION PANEL DRAWS THE OWNER'S COLOUR (SCAN-M18 A2.15). Sprites.tinted keys its cache by
 //       def, size and tint and left the PLAYER COLOUR out, while every other entry in the same cache
 //       carries it. The tint is 80% alpha over the icon, not paint over it, so a fifth of the colour
@@ -422,6 +427,34 @@ frame();   // warm: terrain chunks and sprite canvases bake on the first frame
   ok('the two players really are different colours and the icon cache already tells them apart (scene check)', out.twoColours === true && out.iconsDiffer === true, JSON.stringify(out.twoColours + '/' + out.iconsDiffer));
   ok('an ENEMY unit\'s tinted portrait is not your own colour handed back out of the cache', out.same === false && out.repainted === true, JSON.stringify({ same: out.same, asked: out.asked, keys: out.keys }));
   ok('...and the cache still caches: the same unit, colour, size and tint asked for twice is one canvas, painted once', out.cached === true && out.noExtraForRepeat === true, JSON.stringify({ cached: out.cached, asked: out.asked }));
+}
+
+// ============================================================================
+// 8. a selected building's rally is drawn ONCE (SCAN-M18 B8)
+// ============================================================================
+// Two markers on one rally point is not a cosmetic complaint: they were drawn in two different visual
+// languages -- drawRallies' circle-and-pole and a solid triangle pennant -- so the same rally looked like
+// two different things depending on how many buildings you had selected, and the two dashed lines lay on
+// top of each other at slightly different alphas. The count is the check, at one selected and at two.
+{
+  const setup = n => R(ctx, `
+    UI.selection = []; UI.hover = null; UI.markers = [];
+    const halls = G.units.filter(u => u.alive && u.owner === 0 && u.isBuilding && u.def.produces && u.def.produces.length);
+    const bs = halls.slice(0, ${n});
+    if (bs.length < ${n}) { const h = G._hall; for (let i = bs.length; i < ${n}; i++) { const b = G.placeBuilding(DATA.buildings.barracks, h.tx + 6 + i * 4, h.ty + 6, 0); G.completeBuilding(b); bs.push(b); } }
+    for (const b of bs) b.rally = { x: b.x + 9 * TILE, y: b.y + 5 * TILE };
+    UI.selection = bs.slice();
+    return bs.map(b => [Math.round(b.x), Math.round(b.y), Math.round(b.rally.x), Math.round(b.rally.y)]);
+  `);
+  // a dashed stroke that runs from a building to its own rally point, however it is drawn
+  const lines = (ps, bs) => ps.filter(p => p.kind === 'stroke' && p.pts.length >= 4 &&
+    bs.some(([bx, by, rx, ry]) => Math.abs(p.pts[0] - bx) < 2 && Math.abs(p.pts[1] - by) < 2 && Math.abs(p.pts[2] - rx) < 2 && Math.abs(p.pts[3] - ry) < 2));
+  const one = setup(1); const p1 = lines(frame(), one);
+  const two = setup(2); const p2 = lines(frame(), two);
+  ok('one and then two producers, each with a rally on open ground (scene check)', one.length === 1 && two.length === 2, JSON.stringify([one.length, two.length]));
+  ok('ONE selected building draws ONE line to its rally (was two, in two different visual languages)', p1.length === 1, p1.length + ' lines: ' + JSON.stringify(p1.map(p => p.style)));
+  ok('...and two selected buildings draw one each, which is what the second copy never did', p2.length === 2, p2.length + ' lines: ' + JSON.stringify(p2.map(p => p.style)));
+  ok('...in the same visual language whichever way you select them', p1.every(p => p.style === p2[0].style), JSON.stringify([p1.map(p => p.style), p2.map(p => p.style)]));
 }
 
 console.log('\n' + (fail ? 'FAIL  ' : 'ALL PASS  ') + pass + ' passed, ' + fail + ' failed');

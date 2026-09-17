@@ -414,19 +414,11 @@ const Render = {
     if (UI.hoverRes) this.drawResourceRing(ctx, UI.hoverRes, 0.5);
     if (UI.selRes) this.drawResourceRing(ctx, UI.selRes, 0.9);
     if (!icons) for (const u of list) if (u.hp < u.maxHp && !UI.selection.includes(u) && (u.owner === G.human || G.frame - u.lastHit < 72)) this.drawBars(ctx, u);
-    if (UI.selection.length === 1 && UI.selection[0].rally && UI.selection[0].owner === G.human) {
-      const b = UI.selection[0], r = b.rally;
-      // A rally onto a resource is drawn as a ring around the patch, not as a flag planted in it.
-      // Brood War does it this way because the two mean different things: a flag is "walk here and
-      // wait", a ring is "go and work this". Showing the flag for both is what made it look as though
-      // the rally had been set to a bare point in the middle of the minerals.
-      if (r.res) { this.drawResourceRing(ctx, r.res, 0.75); }
-      else {
-        const rx = r.target ? r.target.x : r.x, ry = r.target ? r.target.y : r.y;
-        ctx.strokeStyle = 'rgba(80,255,80,0.6)'; ctx.setLineDash([6, 6]); ctx.lineWidth = 1.5 / z; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(rx, ry); ctx.stroke(); ctx.setLineDash([]);
-        ctx.fillStyle = '#5f5'; ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx, ry - 16); ctx.lineTo(rx + 10, ry - 12); ctx.lineTo(rx, ry - 8); ctx.closePath(); ctx.fill();
-      }
-    }
+    // A SELECTED BUILDING'S RALLY IS DRAWN ONCE, by drawRallies above. There used to be a second block here
+    // that drew it again for a selection of exactly one, in a different visual language -- a solid triangle
+    // pennant against drawRallies' circle and pole, both on the same line -- so selecting one Barracks drew
+    // two different rally markers on top of each other and selecting two drew one (SCAN-M18 B8). drawRallies
+    // already covers everything this did, the resource ring included, and covers the worker rally besides.
     if (UI.placing) this.drawPlacement(ctx);
     this.drawFog(ctx, vis, cx, cy);
     // Sensor Tower contacts (FIXLIST-M14 C2), deliberately AFTER the fog. A blip is knowledge about

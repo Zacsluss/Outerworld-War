@@ -580,7 +580,12 @@ const Abilities = {
     switch (id) {
       case 'restoration': for (const k of ['ensnare', 'plague', 'irradiate', 'lockdown', 'blind', 'maelstrom']) t.fx[k] = 0; t.fx.parasite = undefined; t.acidSpores = 0; ring(0.5, '#8f8'); break;
       case 'optical_flare': t.fx.blind = 1e9; ring(0.5, '#fff'); break;
-      case 'lockdown': if (!t.def.mech || t.isBuilding) { p.msg('Lockdown only affects mechanical units.', 'error'); u.energy += 100; break; } t.fx.lockdown = 1000; t.path = null; ring(0.6, '#f88'); break;
+      // EVERY REFUND IS `ab.energy`, NEVER THE NUMBER. Six of these sixteen refused casts paid back a literal --
+      // 100, 150, 75, 100, 50, 150 -- and every one of them agreed with js/data.js on the day it was written,
+      // which is the whole problem: re-tune an ability's cost and the refusal quietly hands back the old price,
+      // for nothing, on a path no one tests. The ten newer cases in this same switch already read the def's own energy
+      // (SCAN-M18 B1). Measured before the change: all six matched, so this moves no number today.
+      case 'lockdown': if (!t.def.mech || t.isBuilding) { p.msg('Lockdown only affects mechanical units.', 'error'); u.energy += abd.energy; break; } t.fx.lockdown = 1000; t.path = null; ring(0.6, '#f88'); break;
       case 'spider_mine': { const m = G.spawnUnit('spider_mine', u.owner, x, y); m.burrowed = true; m.armT = 0; u.mines--; break; }
       case 'defensive_matrix': t.fx.matrix = { hp: 250, t: 1440 }; ring(0.6, '#8cf'); break;
       case 'emp': for (const o of G.near(x, y, 3 * TILE)) { o.energy = 0; o.sh = 0; } ring(3, '#adf'); break;
@@ -619,14 +624,14 @@ const Abilities = {
       // The audit the item asked for turned up an eighth, which was worse than generic: Psionic Storm
       // refunded its 75 energy and said NOTHING when the spot was already burning, so the click looked
       // like it had been swallowed by the game.
-      case 'spawn_broodling': if (t.fly || t.isBuilding || NO_BROODLING.has(t.def.id) || t.def.race === 'P' && t.def.mech) { p.msg(t.isBuilding ? 'Spawn Broodlings cannot target buildings.' : t.fly ? 'Spawn Broodlings cannot target air units.' : 'Spawn Broodlings only works on organic ground units -- not robotic ones.', 'error'); u.energy += 150; break; } G.kill(t, u); for (let i = 0; i < 2; i++) { const b = G.spawnUnit('broodling', u.owner, t.x + (i ? 10 : -10), t.y); b.lifetime = 1800; } break;
+      case 'spawn_broodling': if (t.fly || t.isBuilding || NO_BROODLING.has(t.def.id) || t.def.race === 'P' && t.def.mech) { p.msg(t.isBuilding ? 'Spawn Broodlings cannot target buildings.' : t.fly ? 'Spawn Broodlings cannot target air units.' : 'Spawn Broodlings only works on organic ground units -- not robotic ones.', 'error'); u.energy += abd.energy; break; } G.kill(t, u); for (let i = 0; i < 2; i++) { const b = G.spawnUnit('broodling', u.owner, t.x + (i ? 10 : -10), t.y); b.lifetime = 1800; } break;
       case 'dark_swarm': G.fields.push({ kind: 'swarm', x, y, r: 3, t: 900, owner: u.owner }); break;
       case 'plague': for (const o of G.near(x, y, 2 * TILE)) o.fx.plague = 600; ring(2, '#f80'); break;
       case 'consume': if (!t || t.owner !== u.owner || t.isBuilding || t.def.larva || t.def.egg || t === u) { p.msg(!t || t.owner !== u.owner ? 'Consume only works on your own units.' : t === u ? 'The Defiler cannot consume itself.' : t.isBuilding ? 'Consume cannot eat a building.' : 'Consume cannot eat larvae or eggs.', 'error'); break; } G.kill(t, null, true); u.energy = Math.min(u.maxEnergy, u.energy + 50); break;
-      case 'psi_storm': if (this.inField(x, y, 'storm')) { p.msg('A Psionic Storm is already burning there.', 'error'); u.energy += 75; break; } G.fields.push({ kind: 'storm', x, y, r: 1.5, t: 64, owner: u.owner, tickT: 0 }); break;
-      case 'hallucination': if (t.isBuilding || t.def.larva || t.def.egg || t.def.notUnit) { p.msg(t.isBuilding ? 'Hallucination cannot copy a building.' : 'Hallucination can only copy a unit.', 'error'); u.energy += 100; break; } for (let i = 0; i < 2; i++) { const h = G.spawnUnit(t.def.id, u.owner, t.x + (i ? 20 : -20), t.y); h.halluc = true; h.lifetime = 1000; h.hp = t.maxHp; h.sh = t.maxSh; h.energy = 0; h.maxEnergy = 0; } break;
-      case 'feedback': if (!t.maxEnergy) { p.msg('Target has no energy.', 'error'); u.energy += 50; break; } { const e = t.energy; t.energy = 0; G.damageRaw(t, e, u); ring(0.5, '#f4f'); } break;
-      case 'mind_control': if (t.isBuilding || t.owner === u.owner || t.def.larva || t.def.egg) { p.msg(t.isBuilding ? 'Mind Control cannot take a building.' : t.owner === u.owner ? 'Mind Control only works on enemy units.' : 'Mind Control cannot take larvae or eggs.', 'error'); u.energy += 150; break; } this.changeOwner(t, u.owner); u.sh = 0; ring(0.6, '#f4f'); break;
+      case 'psi_storm': if (this.inField(x, y, 'storm')) { p.msg('A Psionic Storm is already burning there.', 'error'); u.energy += abd.energy; break; } G.fields.push({ kind: 'storm', x, y, r: 1.5, t: 64, owner: u.owner, tickT: 0 }); break;
+      case 'hallucination': if (t.isBuilding || t.def.larva || t.def.egg || t.def.notUnit) { p.msg(t.isBuilding ? 'Hallucination cannot copy a building.' : 'Hallucination can only copy a unit.', 'error'); u.energy += abd.energy; break; } for (let i = 0; i < 2; i++) { const h = G.spawnUnit(t.def.id, u.owner, t.x + (i ? 20 : -20), t.y); h.halluc = true; h.lifetime = 1000; h.hp = t.maxHp; h.sh = t.maxSh; h.energy = 0; h.maxEnergy = 0; } break;
+      case 'feedback': if (!t.maxEnergy) { p.msg('Target has no energy.', 'error'); u.energy += abd.energy; break; } { const e = t.energy; t.energy = 0; G.damageRaw(t, e, u); ring(0.5, '#f4f'); } break;
+      case 'mind_control': if (t.isBuilding || t.owner === u.owner || t.def.larva || t.def.egg) { p.msg(t.isBuilding ? 'Mind Control cannot take a building.' : t.owner === u.owner ? 'Mind Control only works on enemy units.' : 'Mind Control cannot take larvae or eggs.', 'error'); u.energy += abd.energy; break; } this.changeOwner(t, u.owner); u.sh = 0; ring(0.6, '#f4f'); break;
       case 'maelstrom': for (const o of G.near(x, y, 1.5 * TILE)) if (o.def.bio && !o.isBuilding) { o.fx.maelstrom = 144; o.path = null; } ring(1.5, '#f4f'); break;
       case 'disruption_web': G.fields.push({ kind: 'dweb', x, y, r: 2.5, t: 576, owner: u.owner }); break;
       case 'stasis_field': for (const o of G.near(x, y, 1.5 * TILE)) if (!o.isBuilding) { o.fx.stasis = 720; o.path = null; } ring(1.5, '#8cf'); break;

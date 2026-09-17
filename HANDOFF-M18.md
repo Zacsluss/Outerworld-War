@@ -20,7 +20,7 @@ Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
 Branch: m10-overnight, which IS origin/main (https://github.com/Zacsluss/Outerworld-War -- PUBLIC: git push publishes).
 HEAD: <run git log -1 --format=%h>. Working tree clean, nothing unpushed, no open PRs, no other branches, no extra worktrees.
 Machine: Windows 11; PowerShell 5.1 and Git Bash; Node 24; Rust + the Tauri CLI under desktop/; no gh CLI, no Blender.
-The gate (node test/all.js) is 101 suites, about four minutes, ALL GREEN; no known reds. Build stamp 3ef30371e649b543.
+The gate (node test/all.js) is 102 suites, about four and a half minutes, ALL GREEN; no known reds. Build stamp b99d85676e68ff36.
 test/balance.js and test/proxy.js are GATED: never start them without an explicit, double-checked instruction.
 
 STATE: THE LOOKS QUEUE is DONE (the user's four items of 2026-09-14; PLAYTEST-M18 118-122): 1. a loading screen, so a game opens on
@@ -40,8 +40,10 @@ and the selection panel draws an enemy's own colour. And so is ALL of A3 (PLAYTE
 mineral patch is sealed in rock on a generated map, no patch is drawn on the geyser, editor undo restores the map's
 size, the editor template keeps its resources out of the border and its validator now looks, the help panel and the
 network banners are centred at every HUD size, the Sentinel's description tells the truth, and a dead hatchery takes
-all of its larvae. ONE DEFECT (A2.10) AND ELEVEN REFACTOR ITEMS (B) ARE OPEN. A2.10, the stale 150/190 supply
-literals in js/ai.js, moves AI behaviour and so waits for the gated balance run AND the user's word.
+all of its larvae. AND SO IS ALL OF B, the eleven refactor items (PLAYTEST-M18 128, eighteen controls red): one copy
+of each rule, with a new gate suite -- test/onecopy.js -- whose whole job is to keep it that way. **THE SCAN IS DOWN
+TO ONE ITEM: A2.10**, the stale 150/190 supply literals in js/ai.js, which move AI behaviour and so wait for the
+gated balance run AND the user's word.
 LOOK AT THIS BY EYE: A3 item 16 costs a small Open Basin most of the rock in its middle (4 blobs of 36 survive on
 small, 20/31/35 on medium/large/huge) because the blobs were landing on the centre base's mineral line, which is what
 sealed the patches. Before/after pictures: .claude/review/scan/shots/basin2small-before.png and -after.png.
@@ -56,11 +58,10 @@ DEFERRED by the user until they say: the AI rebalance (TODO-M18 7b); it now also
 new Lost Ruins (PLAYTEST-M18 122; test/aistyles.js runs its style games on the old ground as a fixture). SKIPPED by the user: a
 look-and-feel pass of PLAYTEST-M18 101-108.
 
-THE NEXT ACTION: SCAN-M18.md section B, the eleven refactor items, as its own commits -- mostly "a number copied out
-of the place that owns it" and "a rule written twice because a second code path grew up beside the first". B6 is the
-one with teeth: three implementations of "how high does this tile present" (js/map.js 1458, 1617, 1827) that already
-disagree, one of them omitting the blocked test, so the seal pass counts a mineral tile as open ground and the ramp
-pass does not. A2.10 is LAST and only with the user's word: it changes when every AI attacks.
+THE NEXT ACTION: ASK THE USER. SCAN-M18 is finished apart from A2.10, which needs their word because it changes when
+every computer opponent commits its army and therefore belongs with the gated balance run. The two things already
+waiting on them are their playtest (start the recorder, preview_start "playtest", port 8870, and give them the link)
+and the AI rebalance (TODO-M18 7b). Nothing in the repository is queued.
 
 STILL WAITING ON THE USER: their playtest (the recorder on their word), and the AI rebalance (TODO-M18 7b).
 
@@ -70,7 +71,7 @@ READ, in this order, before touching anything:
   3. SCAN-M18.md        -- THE QUEUE: every open defect and refactor item, ranked, with the measurement that found it
                            and, for each, which suite should have caught it and why it did not. Section C is what the
                            suite structurally cannot see.
-  3b. PLAYTEST-M18.md 125, 126 and 127 -- how the three finished batches were fixed, tested and written up; match that shape.
+  3b. PLAYTEST-M18.md 125 to 128 -- how the four finished batches were fixed, tested and written up; match that shape.
   4. TODO-M18.md        -- THE LOOKS QUEUE (all four items, measured), then THE TERRAIN QUEUE.
   5. SHIPPING.md        -- before any release: Actions -> Desktop builds -> Run workflow (it ignores js/ and assets/), and open
                            the Mac app on a real Mac (never done: there is no Mac here).
@@ -105,12 +106,12 @@ HARD RULES:
 - **THE LOOKS QUEUE IS DONE** (the user, 2026-09-14; TODO-M18's first section), each item committed and pushed: 1. a loading screen
   makes a game's first frame its finished ground (PLAYTEST-M18 118); 2. creep as a continuous mass (119; and 120, a game started in a
   background tab); 3. cliffs that look about twice as tall (121); 4. every map redesigned to StarCraft II's structure (122).
-- **The gate is 101 suites, ALL GREEN**, about four minutes (`maplayouts` is new). **Build stamp `3ef30371e649b543`** --
-  the looks queue's item 4 (`js/map.js`) moved it from `ca141a3b7ffcb528` to `678387e310c2c3fe`, the scan's A1 batch to
-  `c6d7084ba9f97299`, its A2 batch (`js/build.js`, `js/ai.js`, `js/sim.js`) to `48fa8a7ee8442c14`, and its A3 batch
-  (`js/map.js`, `js/data.js`, `js/game.js`) to this one. Older saves and replays are refused. **A2 also widened what the
-  stamp can see**: static members are hashed now, so a change to `GameMap.assignStarts` or `GameMap.quadrantsOf` moves it
-  where it used to slip past.
+- **The gate is 102 suites, ALL GREEN**, about four and a half minutes (`maplayouts` and `onecopy` are new). **Build
+  stamp `b99d85676e68ff36`** -- the looks queue's item 4 (`js/map.js`) moved it from `ca141a3b7ffcb528` to
+  `678387e310c2c3fe`, the scan's A1 batch to `c6d7084ba9f97299`, its A2 batch to `48fa8a7ee8442c14`, its A3 batch to
+  `3ef30371e649b543`, and its B batch -- which changed no behaviour at all -- to this one. Older saves and replays are
+  refused. **A2 also widened what the stamp can see**: static members are hashed now, so a change to
+  `GameMap.assignStarts` or `GameMap.quadrantsOf` moves it where it used to slip past.
 - **By hand after item 4:** `net_many` 51/51; `aistyles` on its pinned ground 132 / 131 / 132 on seeds 1 / 5 / 11 (seed 5's red is the
   known harasser line, 7b) with every style row identical to before the item; `queens` 25/25; `eightplayer` 19/19;
   `desktop/page-check.js` 22/22 (`desktop/dist` refreshed). Seventeen negative controls for item 4, every one red

@@ -440,42 +440,59 @@ const Terrain = {
   // names the scratch memory it uses, since a bake spread over frames must not share its grids with the bakes that run in between.
   // Every length is written in world pixels and turned into chunk pixels by K, and at K 1 each expression reduces exactly to what it
   // was before sharp chunks: the chunks the look was approved on are byte for byte what they were (.claude/review/terrain/bake-golden.js).
+  // THE TILE GRIDS A DETAILED-TERRAIN PASS READS, over a rectangle of tiles: the raw height, the rock mask, the ramp
+  // mask, the wall flags, and the blurred copies the height field is actually sampled from.
+  //
+  // ONE METHOD, TWO CALLERS, since SCAN-M18 B5. All of it used to be written out TWICE -- once in texBakeSteps and
+  // once in paintOverviewTex -- byte for byte apart from the chunk's rectangle being square and the overview's not.
+  // Two copies of the rule that decides what the ground LOOKS like is the one duplication a golden test cannot catch:
+  // edit one of them and both suites stay green while the far view quietly stops matching the near one.
+  //
+  // How HIGH each tile centre is -- low 0, a ramp or a cliff tile halfway, high 1 -- with where the rock zones and the ramps
+  // are, softened by a 3x3 blur so a diagonal cliff is a slope and not a staircase of tile corners (the first pass traced
+  // the grid exactly). It is read LINEARLY between centres and then pushed through a steep curve, so a cliff is one drop
+  // about a tile and a third wide at the cliff tile (CLIFF_W; two thirds of a tile until the looks queue made cliffs taller) -- the
+  // smoothstep of the second pass made two small steps with a shelf between them, which read as a trench -- while a ramp keeps the
+  // linear value and climbs evenly from end to end.
+  //
+  // A ramp tile is not "halfway" any more: it sits at its own place on the climb (rampLevels), so a three-tile ramp reads as a
+  // slope from the plateau down to the floor instead of a flat slab with a drop at each end -- which is what every ramp looked
+  // like while they were all 0.5. And a wall beside a ramp (GameMap.wallRamps) stands above the ramp at that point, drawn as
+  // the cliff it is -- the plateau's edge folding down both sides of the ramp -- rather than as a slab wider than where you can
+  // walk. (Drawn as a lumpy rock zone first, RAMP_WALL_ROCK 0.6, the walls read as two boulders.)
+  //
+  // (gx0, gy0) is the top-left TILE of the rectangle, MARGIN INCLUDED; GW x GH is its size in tiles. Returns the grids
+  // by name; everything downstream reads them and nothing writes them back.
+  tileGrids(gx0, gy0, GW, GH) {
+    const m = G.map, look = this.look(), N = GW * GH;
+    const raw = new Float32Array(N), rz = new Float32Array(N), rpz = new Float32Array(N), wal = new Uint8Array(N);
+    const RL = this.rampLevels(), GHg = this.groundGrids().height;
+    for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) {
+      const tx = gx0 + i, ty = gy0 + j, o = j * GW + i;
+      if (tx < 0 || ty < 0 || tx >= m.w || ty >= m.h) { raw[o] = 1.25; rz[o] = 1; continue; }
+      const q = ty * m.w + tx, cl = m.cliff[q], h = GHg[q];
+      raw[o] = cl === 2 ? 1 : cl === 1 ? 0.5 : h === 2 ? 1 : h === 1 ? 0.5 : 0; rz[o] = cl === 2 ? 1 : 0; rpz[o] = !cl && h === 1 ? 1 : 0;
+      if (RL[q] >= 0) { if (rpz[o]) raw[o] = RL[q]; else if (cl === 1) { raw[o] = RL[q]; rz[o] = this.RAMP_WALL_ROCK; wal[o] = 1; } }
+      if (cl === 1) wal[o] |= 2;
+    }
+    const blur = g => { const out = new Float32Array(N); for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) { let s = 0, ws = 0; for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const ii = i + a, jj = j + b; if (ii < 0 || jj < 0 || ii >= GW || jj >= GH) continue; const w = (a ? 1 : 2) * (b ? 1 : 2); s += g[jj * GW + ii] * w; ws += w; } out[j * GW + i] = s / ws; } return out; };
+    const gh = look.blur === 0 ? raw.slice() : blur(raw), gr = blur(rz);   // the ramp mask stays sharp: a ramp is a passage and has to read as one
+    // ...and so does a ramp wall: blurred with the floor on one side and the ramp on the other, a one-tile parapet averages down
+    // to a soft bump no one reads as a wall (tried first). Its own cell keeps its height and its rock; its neighbours still blur.
+    for (let o = 0; o < N; o++) if (wal[o] & 1) { gh[o] = raw[o]; gr[o] = rz[o]; }
+    // Where the climb is read linearly rather than through the cliff curve: the ramp and one tile round it, blurred, but never on
+    // a cliff or a wall tile. With the sharp mask alone the curve took over half a tile before each end of the ramp and put a
+    // dark kink across its top and its foot; walls and cliffs keep their one crisp drop.
+    const gk = blur(rpz); for (let o = 0; o < N; o++) if (wal[o]) gk[o] = 0;
+    return { raw, rz, rpz, wal, gh, gr, gk };
+  },
   *texBakeSteps(cx, cy, T, K, ns) {
     const m = G.map, CH = this.CH, W = Math.round(CH * TILE * K), look = this.look(), S = Math.round(Math.sqrt(T.low.length / 4)), sc = S / (16 * TILE), grade = TERRAIN_GRADE[this.setId] || {};
     K = W / (CH * TILE);
     const cv = document.createElement('canvas'); cv.width = W; cv.height = W; cv.k = K; cv.tex = true; const x = cv.getContext('2d');
     const img = this.imageFor(x, W, ns), d = img.data, ox = cx * CH * TILE, oy = cy * CH * TILE;   // reused: every pixel is written below
-    // How HIGH each tile centre is -- low 0, a ramp or a cliff tile halfway, high 1 -- with where the rock zones and the ramps
-    // are, softened by a 3x3 blur so a diagonal cliff is a slope and not a staircase of tile corners (the first pass traced
-    // the grid exactly). It is read LINEARLY between centres and then pushed through a steep curve, so a cliff is one drop
-    // about a tile and a third wide at the cliff tile (CLIFF_W; two thirds of a tile until the looks queue made cliffs taller) -- the
-    // smoothstep of the second pass made two small steps with a shelf between them, which read as a trench -- while a ramp keeps the
-    // linear value and climbs evenly from end to end.
-    //
-    // A ramp tile is not "halfway" any more: it sits at its own place on the climb (rampLevels), so a three-tile ramp reads as a
-    // slope from the plateau down to the floor instead of a flat slab with a drop at each end -- which is what every ramp looked
-    // like while they were all 0.5. And a wall beside a ramp (GameMap.wallRamps) stands above the ramp at that point, drawn as
-    // the cliff it is -- the plateau's edge folding down both sides of the ramp -- rather than as a slab wider than where you can
-    // walk. (Drawn as a lumpy rock zone first, RAMP_WALL_ROCK 0.6, the walls read as two boulders.)
-    const M = 3, GW = CH + 2 * M + 1, raw = new Float32Array(GW * GW), rz = new Float32Array(GW * GW), rpz = new Float32Array(GW * GW), t0x = cx * CH - M, t0y = cy * CH - M;
-    const RL = this.rampLevels(), wal = new Uint8Array(GW * GW), GH = this.groundGrids().height;
-    for (let j = 0; j < GW; j++) for (let i = 0; i < GW; i++) {
-      const tx = t0x + i, ty = t0y + j, o = j * GW + i;
-      if (tx < 0 || ty < 0 || tx >= m.w || ty >= m.h) { raw[o] = 1.25; rz[o] = 1; continue; }
-      const q = ty * m.w + tx, cl = m.cliff[q], h = GH[q];
-      raw[o] = cl === 2 ? 1 : cl === 1 ? 0.5 : h === 2 ? 1 : h === 1 ? 0.5 : 0; rz[o] = cl === 2 ? 1 : 0; rpz[o] = !cl && h === 1 ? 1 : 0;
-      if (RL[q] >= 0) { if (rpz[o]) raw[o] = RL[q]; else if (cl === 1) { raw[o] = RL[q]; rz[o] = this.RAMP_WALL_ROCK; wal[o] = 1; } }
-      if (cl === 1) wal[o] |= 2;
-    }
-    const blur = src => { const out = new Float32Array(GW * GW); for (let j = 0; j < GW; j++) for (let i = 0; i < GW; i++) { let s = 0, wsum = 0; for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const ii = i + a, jj = j + b; if (ii < 0 || jj < 0 || ii >= GW || jj >= GW) continue; const w = (a ? 1 : 2) * (b ? 1 : 2); s += src[jj * GW + ii] * w; wsum += w; } out[j * GW + i] = s / wsum; } return out; };
-    const gh = look.blur === 0 ? raw.slice() : blur(raw), gr = blur(rz), gp = rpz;   // the ramp mask stays sharp: a ramp is a passage and has to read as one
-    // ...and so does a ramp wall: blurred with the floor on one side and the ramp on the other, a one-tile parapet averages down
-    // to a soft bump no one reads as a wall (tried first). Its own cell keeps its height and its rock; its neighbours still blur.
-    for (let o = 0; o < GW * GW; o++) if (wal[o] & 1) { gh[o] = raw[o]; gr[o] = rz[o]; }
-    // Where the climb is read linearly rather than through the cliff curve: the ramp and one tile round it, blurred, but never on
-    // a cliff or a wall tile. With the sharp mask alone the curve took over half a tile before each end of the ramp and put a
-    // dark kink across its top and its foot; walls and cliffs keep their one crisp drop.
-    const gk = blur(rpz); for (let o = 0; o < GW * GW; o++) if (wal[o]) gk[o] = 0;
+    const M = 3, GW = CH + 2 * M + 1, t0x = cx * CH - M, t0y = cy * CH - M;
+    const { rpz, gh, gr, gk } = this.tileGrids(t0x, t0y, GW, GW), gp = rpz;   // see Terrain.tileGrids: this whole block used to be written out here
     const sm = t => t * t * (3 - 2 * t), PAD = Math.round(24 * K), PW = W + 2 * PAD, CLW = this.CLIFF_W, CLE = this.CLIFF_EVEN;
     const hf = this.scratch(ns + 'hf' + PW, PW * PW), rk = this.scratch(ns + 'rk' + PW, PW * PW), rp = this.scratch(ns + 'rp' + PW, PW * PW);   // reused: every cell is written below
     const celled = look.cells || [], cLow = celled.includes('low'), cHigh = celled.includes('high'), cRamp = celled.includes('ramp');
@@ -1090,20 +1107,9 @@ const Terrain = {
     const m = G.map, K = this.OVER_PX, D = TILE / K, W = m.w * K, d = img.data, look = this.look(), grade = TERRAIN_GRADE[this.setId] || {}, one = [1, 1, 1];
     const SL = this.texSmall(T.low, D), SH = this.texSmall(T.high, D), SR = this.texSmall(T.ramp, D), SK = this.texSmall(T.rock, D), s = SL.s, S = this.TEX_PX;
     // the tile grids over the rectangle and M tiles round it, exactly as a chunk builds them
+    // the tile grids over the rectangle and M tiles round it, exactly as a chunk builds them -- the same method
     const M = 3, gx0 = tx0 - M, gy0 = ty0 - M, GW = tx1 - tx0 + 2 * M, GHt = ty1 - ty0 + 2 * M, N = GW * GHt;
-    const raw = new Float32Array(N), rz = new Float32Array(N), rpz = new Float32Array(N), wal = new Uint8Array(N), RL = this.rampLevels(), GH = this.groundGrids().height;
-    for (let j = 0; j < GHt; j++) for (let i = 0; i < GW; i++) {
-      const tx = gx0 + i, ty = gy0 + j, o = j * GW + i;
-      if (tx < 0 || ty < 0 || tx >= m.w || ty >= m.h) { raw[o] = 1.25; rz[o] = 1; continue; }
-      const q = ty * m.w + tx, cl = m.cliff[q], h = GH[q];
-      raw[o] = cl === 2 ? 1 : cl === 1 ? 0.5 : h === 2 ? 1 : h === 1 ? 0.5 : 0; rz[o] = cl === 2 ? 1 : 0; rpz[o] = !cl && h === 1 ? 1 : 0;
-      if (RL[q] >= 0) { if (rpz[o]) raw[o] = RL[q]; else if (cl === 1) { raw[o] = RL[q]; rz[o] = this.RAMP_WALL_ROCK; wal[o] = 1; } }
-      if (cl === 1) wal[o] |= 2;
-    }
-    const blur = g => { const out = new Float32Array(N); for (let j = 0; j < GHt; j++) for (let i = 0; i < GW; i++) { let sum = 0, ws = 0; for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const ii = i + a, jj = j + b; if (ii < 0 || jj < 0 || ii >= GW || jj >= GHt) continue; const w = (a ? 1 : 2) * (b ? 1 : 2); sum += g[jj * GW + ii] * w; ws += w; } out[j * GW + i] = sum / ws; } return out; };
-    const gh = look.blur === 0 ? raw.slice() : blur(raw), gr = blur(rz);
-    for (let o = 0; o < N; o++) if (wal[o] & 1) { gh[o] = raw[o]; gr[o] = rz[o]; }
-    const gk = blur(rpz); for (let o = 0; o < N; o++) if (wal[o]) gk[o] = 0;
+    const { rpz, gh, gr, gk } = this.tileGrids(gx0, gy0, GW, GHt);
     const bil = (g, fx, fy) => { let i0 = Math.floor(fx), j0 = Math.floor(fy), u = fx - i0, v = fy - j0; if (i0 < 0) { i0 = 0; u = 0; } else if (i0 > GW - 2) { i0 = GW - 2; u = 1; } if (j0 < 0) { j0 = 0; v = 0; } else if (j0 > GHt - 2) { j0 = GHt - 2; v = 1; } const a = j0 * GW + i0; return g[a] * (1 - u) * (1 - v) + g[a + 1] * u * (1 - v) + g[a + GW] * (1 - u) * v + g[a + GW + 1] * u * v; };
     const sm = t => t * t * (3 - 2 * t);
     // the height field, per overview pixel, over the rectangle and P pixels round it: enough for the cast shadow's reach and its bilinear read

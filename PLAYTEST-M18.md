@@ -2331,6 +2331,95 @@ Saves and replays made before this are refused with a message, as they always ar
   supply literals, which moves when every computer opponent commits its army and so waits for the gated
   balance run and the user's word.
 
+## 128. Eleven pieces of copied code, made one -- and a new test whose whole job is to keep them that way
+
+*(The user's queue, 2026-09-17: section B of SCAN-M18, the refactor batch. `js/abilities.js`, `js/ai.js`,
+`js/build.js`, `js/data.js`, `js/desktop.js`, `js/fx.js`, `js/game.js`, `js/hud.js`, `js/map.js`,
+`js/render.js`, `js/sim.js`, `js/terrain.js`, `js/ui.js`. Eighteen negative controls, every one red
+(`.claude/review/scan/controls-b.log`); the gate is 102/102 -- there is a new suite.)*
+
+**THE BUILD STAMP MOVES** (seven stamped files changed; the new stamp is `b99d85676e68ff36`, from
+`3ef30371e649b543`). Saves and replays made before this are refused, as they always are when the
+simulation's code changes -- **even though nothing about how the game plays changed here.** That is the
+stamp doing its job rather than being clever: it hashes the source, so a rename moves it.
+
+**What changed for a player: almost nothing, on purpose -- and that is the thing to check.** Every item
+here is the same rule written once instead of twice. Two whole 6,000-frame games, every map's grid, every
+upgrade's price and every ability's energy cost come out bit for bit identical before and after
+(`.claude/review/scan/probe-b-invariants.js`). The three that did change anything are these:
+
+1. **A selected building's rally point is drawn once.** Select ONE Barracks with a rally and the game drew
+   two markers on top of each other in two different styles -- a circle with a pole, and a solid triangle
+   pennant -- with two dashed lines between them. Select two and you got one each. Now it is always the
+   circle and pole.
+2. **The computer opponent counts a Sunken or Spore Colony as the Creep Colony it grew from**, in the one
+   place that decides what a morph still counts as, rather than in a second copy of that table it kept to
+   itself. It already believed this; now everything else does too.
+3. **The app and the web page turn a typed server address into a connection the same way**, because there
+   is one rule instead of two identical ones. An address the page accepted and the app did not would have
+   been a bug nobody could reproduce on the machine that found it.
+
+**What was made one, and why it matters:**
+1. Six refused spell casts refunded a **literal** energy number (100, 150, 75, 100, 50, 150) while ten
+   newer ones read the ability's own cost. All sixteen read the cost now -- so re-pricing a spell can no
+   longer hand back yesterday's price on the refusal path.
+2. "Too far from your base to alert you" was `16 * TILE` written twice, as the two complementary halves
+   of one boundary. Move one and a ring of ground either gets no alert at all or gets two.
+3. The grid codes for a mineral patch and a geyser were bare `-2` and `-3` in seven places while the
+   three codes beside them had names. That is exactly how bug 9 of item 125 happened.
+4. The zoom at which corpses become stains and the zoom at which units become icons were two `0.5`s with
+   a comment between them saying they must agree.
+5. The chunk bake and the far view built the **same** height grid, blur, wall fix-up and ramp mask in
+   byte-identical copies -- the one duplication the golden pixel test cannot catch, because editing one
+   copy leaves both suites green while the far view stops matching the near one.
+6. Three answers to "how high does this tile present", which already disagreed. There is one now, and
+   its single real difference is a named flag with its reason beside it: the seal pass counts the ground
+   under a mineral patch (it becomes walkable when the patch runs dry), the ramp passes do not.
+7. An editor map now finishes exactly the way a generated one does.
+8. The rally, above.
+9. **The command card's button rectangle was computed in three places**, and the two click copies hedged
+   with defaults the drawing copy did not have. Drift there is a wrong click, which is the one interface
+   bug a player cannot work around.
+10. The morph table restated inside the AI; two byte-identical address parsers; the composition score
+    copy-pasted between normal production and Protoss warp-in; three AI fields written and never read;
+    and fourteen lines of upgrade prices rewriting the fourteen defaults set two lines above them.
+11. Dead code: an `&& false` that could never be true, and an `if` with five conditions and an empty body
+    evaluated on every hit in the game.
+
+**How to playtest it by hand:**
+1. **The rally:** in a game, select ONE Barracks (or Gateway or Hatchery), right-click a spot on the map
+   to rally it, and look at the marker. *Working:* one dashed green line and one circle with a small pole.
+   *Was:* the line drawn twice and a solid triangle flag over the circle. Select two producers and rally
+   them: each gets its own, in the same style.
+2. **Everything else is a not-changed:** play a normal game and look for anything different. There should
+   be nothing. The specific things worth a glance, because they are what the rewritten code decides: the
+   ground and cliffs at full zoom AND zoomed right out (they are drawn by the same code now -- press the
+   zoom keys and check the far view matches the near one); the command card (every button clicks the thing
+   it draws -- try the bottom-right slot, which is furthest from the card's origin); a spell refused on a
+   bad target (Lockdown on a Marine, say) gives all its energy back; and "your base is under attack" still
+   fires for a building near your start and not for a lone expansion far from it.
+3. **The map editor:** open it, place a base, Validate, Save, and play the map. *Working:* exactly as
+   before.
+
+**Invisible from normal play, and where to look instead:**
+- **A new suite, `test/onecopy.js`** (50 checks), whose whole job is this batch: it reads the SOURCE and
+  asserts the second copy is gone, and then drives what is left to prove the single copy still works.
+  A source check alone is weak, which is why every one of them is paired with a live one. Plus
+  `test/seldraw.js` section 8 (4 checks) for the rally, which needs the draw pass. **Eighteen negative
+  controls, every one red** (`.claude/review/scan/controls-b.log`).
+- **The gate is 102 suites now**, not 101.
+- **One existing check had to be updated, and it asked for it in writing:** `test/abilities20.js` keeps a
+  list of abilities no other suite names, with the instruction "when another suite starts naming one of
+  these, delete it from the list -- this check will say which". `test/onecopy.js` drives Lockdown and
+  Feedback by name, so the list went from seventeen to fifteen.
+- **What is deliberately different:** `AI.script()`'s not-due-yet exit still keeps its head claim (that is
+  A2.11's decision, not this batch's); the three grid rules that look alike but answer different questions
+  are kept apart with the difference named rather than forced together; and a rock blob that has nowhere
+  legal to go is still skipped rather than re-rolled.
+- **What is left of the scan: one item.** A2.10, the AI's stale 150/190 supply literals, which date from
+  the old 200 supply cap and change when every computer opponent commits its army. It waits for the gated
+  balance run and the user's word.
+
 ## 124. Nothing stands on the rock -- checked, and the screenshot that said otherwise explained
 
 *(The user, 2026-09-17, looking at the creep picture in item 123: "no units or buildings should be able to go on the big rock - i see

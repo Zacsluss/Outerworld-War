@@ -342,8 +342,14 @@ MAP_LAYOUTS.nightfall = MapModes.layout('large', { name: 'Nightfall', tileset: '
 // regenerated identically by `new GameMap(seed, layout)` on any client, which is what a rejoining one
 // does before it restores anything.
 const FEATURE_ID0 = 100000;   // feature ids sit above every resource id, in the same id space as them
-const FEAT_BLOCKED = -4;      // blocked[]: -1 free, -2 mineral, -3 geyser, -4 a map feature is standing here
-const WRECK_BLOCKED = -5;     // ...and -5 a wreck. See the CRATERS block for why it is not a feature.
+// blocked[]: -1 free, then one code per thing that owns a tile without being a building. The first two were
+// written as bare -2 and -3 in seven places while the three below them had names, which is how defect A1.9
+// happened: GameMap.unblock hands a dead building's footprint back and had to write "-3 if a geyser is under
+// it, else -2" from memory. A name is the difference between reading the grid and remembering it (SCAN-M18 B3).
+const MIN_BLOCKED = -2;       // a mineral patch stands here
+const GAS_BLOCKED = -3;       // ...and a vespene geyser
+const FEAT_BLOCKED = -4;      // ...and a map feature
+const WRECK_BLOCKED = -5;     // ...and a wreck. See the CRATERS block for why it is not a feature.
 // ...and -6 a LOWERED Supply Depot (seventh session, item 8). The one value in blocked[] that is walkable but not
 // buildable: GameMap.walkable -- which movement, G.passable and the Pathfinder all go through -- lets a ground
 // unit onto it, and canPlace still reads "not -1" and refuses to build there. Written into the grid rather than
@@ -868,13 +874,13 @@ class GameMap {
         const amt0 = bd.amount || (bd.rich ? 5000 : 1500);
         const res = { type: 'mineral', x: mx, y: my, w: 2, h: 1, amount: amt0, start: amt0, cx: (mx + 1) * TILE, cy: (my + 0.5) * TILE, miner: null, id: this.resources.length };
         this.resources.push(res); base.minerals.push(res);
-        this.rect(mx, my, 2, 1, (x, y) => { this.blocked[this.idx(x, y)] = -2; this.walk[this.idx(x, y)] = 1; this.cliff[this.idx(x, y)] = 0; });
+        this.rect(mx, my, 2, 1, (x, y) => { this.blocked[this.idx(x, y)] = MIN_BLOCKED; this.walk[this.idx(x, y)] = 1; this.cliff[this.idx(x, y)] = 0; });
       }
       if (bd.geyser) {
         const [gx, gy] = tr(bd.geyser[0], bd.geyser[1], 4, 2);
         const g = { type: 'geyser', x: gx, y: gy, w: 4, h: 2, amount: bd.gas || 5000, cx: (gx + 2) * TILE, cy: (gy + 1) * TILE, building: null, id: this.resources.length };
         this.resources.push(g); base.geyser = g;
-        this.rect(gx, gy, 4, 2, (x, y) => { this.blocked[this.idx(x, y)] = -3; this.walk[this.idx(x, y)] = 1; this.cliff[this.idx(x, y)] = 0; });
+        this.rect(gx, gy, 4, 2, (x, y) => { this.blocked[this.idx(x, y)] = GAS_BLOCKED; this.walk[this.idx(x, y)] = 1; this.cliff[this.idx(x, y)] = 0; });
       }
       this.rect(hx - 1, hy - 1, 6, 5, (x, y) => { if (this.height[this.idx(x, y)] !== 2 || !this.cliff[this.idx(x, y)]) { this.walk[this.idx(x, y)] = 1; this.cliff[this.idx(x, y)] = 0; } });
       this.bases.push(base);
@@ -1523,12 +1529,34 @@ class GameMap {
   // blocking one: a feature tile counts as walkable at the height it presents when it is open, whether
   // or not it is open now. So a rock formation standing on a cliff lip is sealed at generation, and
   // the seal is still there in the 2^n combination where someone has cleared it.
-  _elevOpenH(i) {
+  // THE HEIGHT A TILE PRESENTS IN ITS MOST WALKABLE STATE: -1 for anything that is never ground -- a cliff,
+  // rock, off the map -- and 0, 1 or 2 otherwise. THREE passes asked this and each wrote its own answer, and
+  // the three had already drifted apart (SCAN-M18 B6). There is exactly one real difference between them and
+  // it is `mined`, which is now a parameter with its reason beside it instead of a clause missing from one
+  // body:
+  //
+  //   mined = true  -- THE SEAL PASS. A mineral patch is ground that has not been mined yet: the tile under
+  //     it becomes plain walkable the moment the patch runs dry, so a cliff lip under a mineral line has to
+  //     be sealed NOW or it is a hole in a plateau later. (wallMinedGround walls what it can afterwards; the
+  //     seal is what stops it having to.) This is the same doctrine as `worstWalk` read the other way round.
+  //   mined = false -- THE RAMP PASSES. A tile you cannot walk on is not a way onto a ramp, and counting one
+  //     turns a mineral line beside a ramp into a side entrance that does not exist.
+  //
+  // `baseH` is a feature's remembered ground and wallRamps MOVES it as it works, so that pass hands in the
+  // snapshot it took before it started; every other caller reads it live.
+  openHeightAt(i, mined, baked) {
+    if (i < 0 || i >= this.walk.length) return -1;
     const fi = this.featTile ? this.featTile[i] : -1;
-    if (fi < 0) return this.walk[i] === 1 ? this.height[i] : -1;
-    const f = this.features[fi], K = MAP_FEATURES[f.kind], k = f.tiles.indexOf(i);
-    return K.openHeight === null ? (k >= 0 ? f.baseH[k] : this.height[i]) : K.openHeight;
+    if (fi >= 0) {
+      if (baked) return baked[i];
+      const f = this.features[fi], K = MAP_FEATURES[f.kind], k = f.tiles.indexOf(i);
+      return K.openHeight === null ? (k >= 0 ? f.baseH[k] : this.height[i]) : K.openHeight;
+    }
+    if (this.walk[i] !== 1) return -1;
+    if (!mined && this.blocked[i] !== -1) return -1;
+    return this.height[i];
   }
+  _elevOpenH(i) { return this.openHeightAt(i, true); }
   // Every 4-adjacent (high, low) pair of ever-walkable tiles, in row-major order. cb(iHigh, iLow).
   _elevEdges(cb) {
     const W = this.w, H = this.h;
@@ -1681,8 +1709,10 @@ class GameMap {
     const openH = new Int8Array(N).fill(-1);
     for (const f of this.features) { const K = MAP_FEATURES[f.kind]; f.tiles.forEach((t, k) => { openH[t] = K.openHeight === null ? f.baseH[k] : K.openHeight; }); }
     const at = (i, d) => { if (i < 0) return -1; const x = i % W + DX[d], y = ((i / W) | 0) + DY[d]; return x < 0 || y < 0 || x >= W || y >= H ? -1 : y * W + x; };
-    // -1 never walkable (cliff, rock, a resource, off the map), else the height the tile has in its most walkable state
-    const cls = i => i < 0 ? -1 : this.featTile && this.featTile[i] >= 0 ? openH[i] : this.walk[i] === 1 && this.blocked[i] === -1 ? this.height[i] : -1;
+    // -1 never walkable (cliff, rock, a resource, off the map), else the height the tile has in its most walkable state.
+    // `false`: a resource is not a way onto a ramp -- see GameMap.openHeightAt. `openH` is the snapshot this pass took
+    // above, because the pass itself moves a feature's remembered ground as it walls the ramps.
+    const cls = i => this.openHeightAt(i, false, openH);
     const side = d => d < 2 ? [2, 3] : [0, 1];
     // ---- the ramps, their axes and their mirror groups, from the map as it arrived ----
     const up0 = new Int8Array(N).fill(-1), lab = new Int32Array(N).fill(-1), comps = [];
@@ -1892,7 +1922,7 @@ class GameMap {
   // or a resource, is not a way on.
   rampProblems() {
     const W = this.w, H = this.h, N = W * H, DX = [0, 0, -1, 1], DY = [-1, 1, 0, 0], OPP = [1, 0, 3, 2], out = [];
-    const openH = i => { const fi = this.featTile ? this.featTile[i] : -1; if (fi < 0) return this.walk[i] === 1 && this.blocked[i] === -1 ? this.height[i] : -1; const f = this.features[fi], K = MAP_FEATURES[f.kind]; return K.openHeight === null ? f.baseH[f.tiles.indexOf(i)] : K.openHeight; };
+    const openH = i => this.openHeightAt(i, false);   // the same answer wallRamps judges the axis by: see GameMap.openHeightAt
     const live = i => this.walk[i] === 1 && this.blocked[i] === -1 ? this.height[i] : -1;
     const at = (i, d) => { const x = i % W + DX[d], y = ((i / W) | 0) + DY[d]; return x < 0 || y < 0 || x >= W || y >= H ? -1 : y * W + x; };
     const axis = new Int8Array(N).fill(-1), seen = new Uint8Array(N);
@@ -1979,7 +2009,7 @@ class GameMap {
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         if (!this.inb(x + dx, y + dy)) continue;
         const j = this.idx(x + dx, y + dy);
-        if (!mine.has(j) && this.blocked[j] !== -3 && this._elevOpenH(j) === 1) { walls.push(i); break; }   // beside a ramp tile
+        if (!mine.has(j) && this.blocked[j] !== GAS_BLOCKED && this._elevOpenH(j) === 1) { walls.push(i); break; }   // beside a ramp tile
       }
     }
     for (const i of walls) { this.walk[i] = 0; this.cliff[i] = 1; }
@@ -2013,12 +2043,12 @@ class GameMap {
       for (const m of (bd.minerals || [])) {
         const res = { type: 'mineral', x: m[0], y: m[1], w: 2, h: 1, amount: bd.amount || (bd.rich ? 5000 : 1500), cx: (m[0] + 1) * TILE, cy: (m[1] + 0.5) * TILE, miner: null, id: this.resources.length };
         this.resources.push(res); base.minerals.push(res);
-        this.rect(m[0], m[1], 2, 1, (x, y) => { this.blocked[this.idx(x, y)] = -2; this.walk[this.idx(x, y)] = 1; this.cliff[this.idx(x, y)] = 0; });
+        this.rect(m[0], m[1], 2, 1, (x, y) => { this.blocked[this.idx(x, y)] = MIN_BLOCKED; this.walk[this.idx(x, y)] = 1; this.cliff[this.idx(x, y)] = 0; });
       }
       if (bd.geyser) {
         const g = { type: 'geyser', x: bd.geyser[0], y: bd.geyser[1], w: 4, h: 2, amount: bd.gas || 5000, cx: (bd.geyser[0] + 2) * TILE, cy: (bd.geyser[1] + 1) * TILE, building: null, id: this.resources.length };
         this.resources.push(g); base.geyser = g;
-        this.rect(g.x, g.y, 4, 2, (x, y) => { this.blocked[this.idx(x, y)] = -3; this.walk[this.idx(x, y)] = 1; this.cliff[this.idx(x, y)] = 0; });
+        this.rect(g.x, g.y, 4, 2, (x, y) => { this.blocked[this.idx(x, y)] = GAS_BLOCKED; this.walk[this.idx(x, y)] = 1; this.cliff[this.idx(x, y)] = 0; });
       }
       this.rect(bd.x - 1, bd.y - 1, 6, 5, (x, y) => { const i = this.idx(x, y); if (!rk[i]) { this.walk[i] = 1; this.cliff[i] = 0; } });
       this.bases.push(base); if (bd.main) this.starts.push(base);
@@ -2027,11 +2057,13 @@ class GameMap {
     // An editor map gets the same seal as a generated one, and needs it more: the brush paints heights
     // freely and the base clearing above opens a 6x5 wherever the author put a hall, so a town hall
     // painted on the lip of a plateau is exactly the Twilight Valley hole with a person behind it.
+    this.openSealedResources();   // and the same promise that every patch can be walked up to
     this.sealElevations(); this.flattenStrandedHeight();
     this.wallRamps();        // an editor map's ramps get the same walls as a generated map's
     this.wallMinedGround();  // and the same ground under its mineral patches
     this.placeNeutrals(L);   // after the seal: a site must sit on ground whose height is final
     this.resById = new Map(this.resources.map(r => [r.id, r]));
+    for (const f of this.features) this.resById.set(f.id, f);   // the same registration `generate` does: a feature is snapshotted through resById
   }
 
   // ---------------- queries ----------------
@@ -2114,7 +2146,7 @@ class GameMap {
   heightBonus(fromPx, fromPy, toPx, toPy) { return this.heightBonusTable()[this.heightAdvantage(fromPx, fromPy, toPx, toPy) + 1]; }
   hasCreep(tx, ty) { return this.inb(tx, ty) && this.creep[this.idx(tx, ty)] > 0; }
   hasPsi(pid, tx, ty) { const p = this.psi[pid]; return !!p && this.inb(tx, ty) && p[this.idx(tx, ty)] > 0; }
-  resourceAt(tx, ty) { if (!this.inb(tx, ty)) return null; const b = this.blocked[this.idx(tx, ty)]; if (b !== -2 && b !== -3) return null; return this.resources.find(r => tx >= r.x && tx < r.x + r.w && ty >= r.y && ty < r.y + r.h) || null; }
+  resourceAt(tx, ty) { if (!this.inb(tx, ty)) return null; const b = this.blocked[this.idx(tx, ty)]; if (b !== MIN_BLOCKED && b !== GAS_BLOCKED) return null; return this.resources.find(r => tx >= r.x && tx < r.x + r.w && ty >= r.y && ty < r.y + r.h) || null; }
   geyserAt(tx, ty) { return this.resources.find(r => r.type === 'geyser' && r.x === tx && r.y === ty) || null; }
 
   block(tx, ty, w, h, id) { this.rect(tx, ty, w, h, (x, y) => { this.blocked[this.idx(x, y)] = id; }); }
@@ -2133,7 +2165,7 @@ class GameMap {
     this.rect(tx, ty, w, h, (x, y) => {
       const i = this.idx(x, y); if (this.blocked[i] !== id) return;
       const r = this.resources.find(q => x >= q.x && x < q.x + q.w && y >= q.y && y < q.y + q.h);
-      this.blocked[i] = r ? (r.type === 'geyser' ? -3 : -2) : -1;
+      this.blocked[i] = r ? (r.type === 'geyser' ? GAS_BLOCKED : MIN_BLOCKED) : -1;
     });
   }
 

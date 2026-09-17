@@ -114,6 +114,7 @@ const TESTS = [
   { name: 'codex', args: ['codex.js'], what: 'the manual draws for every unit, and its damage numbers match real shots' },
   { name: 'mapfeatures', args: ['mapfeatures.js'], what: 'destructibles move pathing and vision, and the archetypes are seeded and legal' },
   { name: 'maplayouts', args: ['maplayouts.js'], what: 'every map has the structure StarCraft II maps have, the layout language (rot2, poly, line, faces) does what it says, and the rock is closed ground -- nothing walks on it, builds on it or creeps over it' },
+  { name: 'onecopy', args: ['onecopy.js'], what: 'ONE COPY OF EACH RULE (SCAN-M18 section B): no number copied out of the place that owns it, and no rule written twice -- the second copy is gone from the source, and what is left is driven to prove it still works' },
   { name: 'verticality', args: ['verticality.js'], what: 'the height query the sim reads, and a ramp as the only way up' },
   { name: 'ramps', args: ['ramps.js'], what: 'ramps are entered at their two ends, never from a side, and nothing reachable before is out of reach now' },
   { name: 'terrainview', args: ['terrainview.js'], what: 'detailed terrain far off and fast: the overview and minimap from the textures, the bake budget, a feature change, a hulk, the minimap rims' },

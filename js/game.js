@@ -23,6 +23,14 @@ const SEP_SLACK = 16;
 // direction -- a long game should end on a stripped map with two ruined armies, not two capped ones.
 // Referenced rather than inlined because the supply-block alert and the refusal message both have to
 // agree with it, and they did not used to.
+// HOW FAR FROM YOUR START IS "NOT YOUR BASE" for the purpose of an attack alert. ONE number, because the
+// two places that read it are the two halves of one boundary and were written as two literals: onHit says
+// "a building further out than this is left to tickAlerts" (>=) and tickAlerts says "a building nearer in
+// than this is not an outlying base" (<). Move one and a ring of ground either falls through both arms or
+// is alerted by both. Sixteen tiles because that is about a screen at zoom 1, and the alert it replaced --
+// "your base is under attack" for a lone undefended expansion -- is the one that taught players to ignore
+// alerts (SCAN-M18 B2).
+const HOME_R = 16 * TILE;
 const SUPPLY_CAP = 500;
 // Full pathfinder searches allowed per tick; a unit past the budget keeps its old path and asks again
 // next frame (Unit.moveTo). This was a literal 40 in two places -- G's initial value, which tick()
@@ -418,7 +426,7 @@ const G = {
     for (const p of this.players) {
       if (p.defeated && !p.human) continue; // a defeated computer player has nothing to see
       const v = p.vis; for (let i = 0; i < v.length; i++) if (v[i] === 2) v[i] = 1;
-      const mark = (ux, uy, r, uh) => { const tx = Math.floor(ux / TILE), ty = Math.floor(uy / TILE); for (const [dx, dy] of this.circle(r)) { const x = tx + dx, y = ty + dy; if (x < 0 || y < 0 || x >= m.w || y >= m.h) continue; const i = y * m.w + x; if (m.height[i] <= uh || (m.height[i] === 2 && uh === 1 && false)) v[i] = 2; } };
+      const mark = (ux, uy, r, uh) => { const tx = Math.floor(ux / TILE), ty = Math.floor(uy / TILE); for (const [dx, dy] of this.circle(r)) { const x = tx + dx, y = ty + dy; if (x < 0 || y < 0 || x >= m.w || y >= m.h) continue; const i = y * m.w + x; if (m.height[i] <= uh) v[i] = 2; } };   // the `|| (height === 2 && uh === 1 && false)` arm that used to sit here was unreachable by construction (SCAN-M18 B11)
       for (const u of this.units) { if (!u.alive || u.inside) continue; if (this.allied(u.owner, p.id) || u.fx.parasite === p.id) mark(u.x, u.y, u.sight, u.heightLevel()); }
       for (const f of this.fields) if (f.kind === 'scan' && this.allied(f.owner, p.id)) mark(f.x, f.y, 10, 2);
       if (p.human && (this.cheats.reveal || this.cheats.nofog)) v.fill(2);
@@ -663,7 +671,7 @@ const G = {
     }
     return n;
   },
-  removeResource(r) { r.amount = 0; this.map.unblock(r.x, r.y, r.w, r.h, -2); this.map.rect(r.x, r.y, r.w, r.h, (x, y) => { if (this.map.blocked[this.map.idx(x, y)] === -2) this.map.blocked[this.map.idx(x, y)] = -1; }); const i = this.map.resources.indexOf(r); if (i >= 0) this.map.resources.splice(i, 1); this.repointRallies(r); },
+  removeResource(r) { r.amount = 0; this.map.unblock(r.x, r.y, r.w, r.h, MIN_BLOCKED); this.map.rect(r.x, r.y, r.w, r.h, (x, y) => { if (this.map.blocked[this.map.idx(x, y)] === MIN_BLOCKED) this.map.blocked[this.map.idx(x, y)] = -1; }); const i = this.map.resources.indexOf(r); if (i >= 0) this.map.resources.splice(i, 1); this.repointRallies(r); },
   // A rally set onto a mineral patch keeps a reference to the patch, and this is the one place a patch
   // stops existing. Every rally aimed at it moves to the nearest remaining patch of the same kind --
   // what a player would do by hand -- and if there is none left the rally clears, which puts new units
@@ -752,14 +760,16 @@ const G = {
     // A building out at an expansion is left to tickAlerts, which can see whether anything is defending
     // it and say so; saying "your base is under attack" about a lone undefended nexus is the alert that
     // taught players to ignore alerts.
-    const far = t.isBuilding && distPt(t.x, t.y, p.startX, p.startY) >= 16 * TILE;
+    const far = t.isBuilding && distPt(t.x, t.y, p.startX, p.startY) >= HOME_R;
     if (p.human && src && src.owner !== t.owner && !far) { if (this.frame - (p.lastAttackAlert || -9999) > 24 * 20) { p.lastAttackAlert = this.frame; p.msg(t.isBuilding || t.def.worker ? 'Your base is under attack.' : 'Your forces are under attack.', 'attack'); if (typeof UI !== 'undefined' && t.owner === this.human) UI.ping(t.x, t.y); } }
     // auto-retaliate: idle units that get hit attack back -- but never at their own side. A unit your own force-attack hits
     // (UI.execPending, tenth session item 1) stands and takes it, as in StarCraft; answering it would turn one order into a
     // brawl inside your own army.
     if (src && t.idle && !t.isBuilding && t.hasWeapon() && !t.def.worker && src.owner !== t.owner && !this.allied(t.owner, src.owner) && t.weaponFor(src) && this.targetable(t, src)) t.applyOrder({ type: 'attack', target: src, auto: true });
-    // workers flee when attacked (mining)
-    if (src && t.def.worker && t.owner !== src.owner && t.order.type === 'gather' && t.hp < t.maxHp * 0.5 && !p.human) { /* AI workers ignore */ }
+    // A five-condition `if` with an EMPTY BODY used to sit here, labelled "workers flee when attacked" and
+    // doing nothing at all -- five tests evaluated on every hit for a feature that was never written
+    // (SCAN-M18 B11). A computer player's workers DO fight back when their base is attacked, and that is
+    // AI.micro's business, not this function's: see the worker-defence block there.
   },
   kill(u, killer, silent) {
     if (!u.alive) return; u.alive = false; const p = this.players[u.owner];
@@ -1404,7 +1414,7 @@ const G = {
       let bare = null, held = null;
       for (const u of this.units) {
         if (!u.alive || u.owner !== p.id || !u.isBuilding || this.frame - u.lastHit > 48) continue;
-        if (distPt(u.x, u.y, p.startX, p.startY) < 16 * TILE) continue;
+        if (distPt(u.x, u.y, p.startX, p.startY) < HOME_R) continue;   // the other half of onHit's boundary: see HOME_R
         let guarded = false;
         for (const o of this.near(u.x, u.y, 10 * TILE)) {
           if (!o.alive || o.owner !== p.id) continue;
