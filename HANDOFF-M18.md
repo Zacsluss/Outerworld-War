@@ -32,9 +32,10 @@ THE CREEP'S TEXTURE is DONE too (PLAYTEST-M18 123): the user picked Abstract Org
 is made from them, kept purple, and falls back to the creep made in code where they cannot load. The user then called it "a bit too
 aggressive" and it was toned down (relief 12 -> 5, gloss 1.8 -> 0.8).
 A WHOLE-CODEBASE SCAN was run on the user's word and is written up in SCAN-M18.md: 22 defects and 11 refactor items,
-each with the file, the line and what it does to a player. The A1 batch -- the eight player-visible ones -- is FIXED
-(PLAYTEST-M18 125); the other fourteen are open and ranked there. Two of them wait on the gated balance run because
-they move AI behaviour (the stale 150/190 supply literals in js/ai.js).
+each with the file, the line, a measurement and what it does to a player. The A1 batch -- all nine player-visible
+defects -- is FIXED (PLAYTEST-M18 125, twelve negative controls red). THIRTEEN DEFECTS (A2, A3) AND ELEVEN REFACTOR
+ITEMS (B) ARE OPEN and are the queue. One of them, the stale 150/190 supply literals in js/ai.js (A2.10), moves AI
+behaviour and so waits for the gated balance run.
 THE ROCK IS CLOSED GROUND and is now checked (PLAYTEST-M18 124): the user saw a Creep Colony standing on the rock in item 123's
 picture and called it a bug. It was the PICTURE: that scene was staged with G.placeBuilding, which does not ask GameMap.canPlace.
 TRAP: a screenshot script that places buildings must go through canPlace, or it will show the game doing what the game refuses.
@@ -43,14 +44,22 @@ DEFERRED by the user until they say: the AI rebalance (TODO-M18 7b); it now also
 new Lost Ruins (PLAYTEST-M18 122; test/aistyles.js runs its style games on the old ground as a fixture). SKIPPED by the user: a
 look-and-feel pass of PLAYTEST-M18 101-108.
 
-THE NEXT ACTION: nothing is queued. When the user says they are ready to playtest, set up the recorder; then work what they report
-from PLAYTEST-M18 118-123 the way every item here was worked.
+THE NEXT ACTION: work SCAN-M18.md from the top of what is open -- A2 (12: the build stamp not covering static methods;
+11: AI.headDef never cleared; 13: Siege Mode firing during its transition; 14: alt-click through an open menu; 15: the
+sprite tint cache missing the player colour), then A3 (16-22: the map generator's buried mineral patches, the patch
+drawn on the geyser on every small map, the two editor bugs, the mis-centred help panel, the Sentinel's description,
+the larva splice), then B (the refactor debt) as its own commits. A2.10 is LAST and only with the user's word: it
+changes when every AI attacks.
+
+STILL WAITING ON THE USER: their playtest (the recorder on their word), and the AI rebalance (TODO-M18 7b).
 
 READ, in this order, before touching anything:
   1. CLAUDE.md          -- the working agreement; every rule in it is non-negotiable.
   2. HANDOFF-M18.md     -- this top section, then the traps in the sections under it.
-  3. TODO-M18.md        -- THE LOOKS QUEUE (all four items, measured), then THE TERRAIN QUEUE.
-  4. SHIPPING.md        -- before any release: Actions -> Desktop builds -> Run workflow (it ignores js/ and assets/), and open
+  3. SCAN-M18.md        -- THE QUEUE: every open defect and refactor item, ranked, with the measurement that found it
+                           and, for each, which suite should have caught it and why it did not.
+  4. TODO-M18.md        -- THE LOOKS QUEUE (all four items, measured), then THE TERRAIN QUEUE.
+  5. SHIPPING.md        -- before any release: Actions -> Desktop builds -> Run workflow (it ignores js/ and assets/), and open
                            the Mac app on a real Mac (never done: there is no Mac here).
 
 HOW TO WORK, every finding:
@@ -178,7 +187,7 @@ READ, in this order, before touching anything:
   1. CLAUDE.md          -- the working agreement; every rule in it is non-negotiable.
   2. HANDOFF-M18.md     -- this top section, then the traps in the terrain queue's section under it.
   3. TODO-M18.md        -- THE TERRAIN QUEUE (every phase, measured) and THE USER'S ANSWERS DURING THE TERRAIN QUEUE.
-  4. SHIPPING.md        -- before any release: Actions -> Desktop builds -> Run workflow (it ignores js/ and assets/), and open
+  5. SHIPPING.md        -- before any release: Actions -> Desktop builds -> Run workflow (it ignores js/ and assets/), and open
                            the Mac app on a real Mac (never done: there is no Mac here).
 
 HOW TO WORK, every finding:
