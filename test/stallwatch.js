@@ -71,7 +71,12 @@ console.log('--- 4. every reason the rules give ---');
     const r = R(`const p = scene(${J(label.race)}); ${setup}; const told = run(400); return { told, report: UI.stallReport, held: ${post || 'true'} };`);
     ok(r.told === 0 && !r.report && r.held === true, label.text, J(r));
   };
-  quiet({ race: 'T', text: 'a Marine waiting for supply is not a stall' }, `const b = put('barracks', 6, 0); const h = hallOf(); for (let i = 0; i < 6; i++) G.spawnUnit('marine', 0, h.x - 60 + i * 24, h.y + 120); G.recomputeSupply(); if (p.supUsed < p.supMax) throw new Error('setup: supply not full ' + p.supUsed + '/' + p.supMax); b.prod.push({ kind: 'unit', id: 'marine', progress: 0, total: DATA.units.marine.time });`, `b.prod.length >= 1 && b.prod[0].progress === 0`);
+  // The push is followed by recomputeSupply() on purpose (SCAN-M18 A1.2): a queued unit's supply is booked the moment
+  // it is queued, and the production gate now asks whether that booking still fits rather than adding the unit's supply
+  // on top of its own reservation. Pushing straight into `prod` without the booking is a state the game cannot reach --
+  // G.queueUnit and G.larvaMorph both call recomputeSupply -- and without it the Marine simply starts, because there IS
+  // room for it. With it, this is exactly the shape a queued unit takes when a depot dies under it: booked, over the cap.
+  quiet({ race: 'T', text: 'a Marine waiting for supply is not a stall' }, `const b = put('barracks', 6, 0); const h = hallOf(); for (let i = 0; i < 6; i++) G.spawnUnit('marine', 0, h.x - 60 + i * 24, h.y + 120); G.recomputeSupply(); if (p.supUsed < p.supMax) throw new Error('setup: supply not full ' + p.supUsed + '/' + p.supMax); b.prod.push({ kind: 'unit', id: 'marine', progress: 0, total: DATA.units.marine.time }); G.recomputeSupply();`, `b.prod.length >= 1 && b.prod[0].progress === 0`);
   // The real way a slot waits on an add-on: the Machine Shop is started first (G.queueAddon refuses a busy building), then a
   // Vulture is queued, and the Factory holds it until the shop is finished. (A first version wrote a fake `addon` onto the
   // Factory, which the game overwrote, and the check reported a stall that was the test's own doing.)
@@ -92,7 +97,7 @@ console.log('--- 4b. a pause the rules explain, said out loud ---');
     'an upgrade on a Forge with no power is explained once it has waited twenty seconds -- once, and it is not reported as a stall', J(dark));
   const lifted = R(`scene('T'); const a = put('academy', 6, 0); G.queueTech(a, 'stim'); a.tickProduction = () => {}; a.lifted = true; run(600); return msgs().filter(m => /stopped researching/.test(m));`);
   ok(lifted.length === 1 && /Academy has stopped researching Stim Packs: it is lifted off the ground\./.test(lifted[0]), 'a research on a lifted building is explained the same way', J(lifted));
-  const supply = R(`const p = scene('T'); const b = put('barracks', 6, 0); const h = hallOf(); for (let i = 0; i < 6; i++) G.spawnUnit('marine', 0, h.x - 60 + i * 24, h.y + 120); G.recomputeSupply(); b.prod.push({ kind: 'unit', id: 'marine', progress: 0, total: DATA.units.marine.time }); run(700); return { said: msgs().filter(m => /stopped/.test(m)), held: b.prod.length === 1 && b.prod[0].progress === 0 };`);
+  const supply = R(`const p = scene('T'); const b = put('barracks', 6, 0); const h = hallOf(); for (let i = 0; i < 6; i++) G.spawnUnit('marine', 0, h.x - 60 + i * 24, h.y + 120); G.recomputeSupply(); b.prod.push({ kind: 'unit', id: 'marine', progress: 0, total: DATA.units.marine.time }); G.recomputeSupply(); run(700); return { said: msgs().filter(m => /stopped/.test(m)), held: b.prod.length === 1 && b.prod[0].progress === 0 };`);
   ok(supply.said.length === 0 && supply.held === true, 'a unit waiting on supply is left to the supply alert that already exists', J(supply));
 }
 

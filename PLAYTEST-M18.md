@@ -2096,6 +2096,76 @@ implement now", and "yes" to downloading its two files. `js/terrain.js` (`CREEP_
 - **The desktop installers do not have it yet** -- SHIPPING.md: rebuild them before shipping.
 - **One of this item's screenshots lied** and item 124 is the answer to it.
 
+## 125. Nine bugs found by a scan of the whole codebase, and fixed
+
+*(The user, 2026-09-17: "do a large scan refactor scan then bug scan", then "fix the A1 batch". Eight reading passes over
+`js/` produced SCAN-M18.md -- 22 defects and 11 refactor items -- and this is its first and most player-visible batch.
+`js/sim.js`, `js/game.js`, `js/combat.js`, `js/commands.js`, `js/ui.js`, `js/hud.js`, `js/render.js`, `js/audio.js`.)*
+
+**THE BUILD STAMP MOVES** (five stamped files changed; the new stamp is `c6d7084ba9f97299`, from `678387e310c2c3fe`).
+Saves and replays made before this are refused with a message, as they always are when the simulation changes.
+
+**What changed for a player:**
+1. **A worker caught inside a Refinery when it is destroyed comes out.** She used to stay sealed in the wreck -- alive,
+   invisible, unclickable and untargetable, still counting against your supply -- for the rest of the game. She now
+   walks to your other gas building and keeps mining.
+2. **The last unit before the supply cap actually gets built.** At 9/10 supply a Marine was accepted, charged 50
+   minerals, and then sat in the Barracks at zero progress for ever, because its supply was counted twice: once when
+   you queued it and again when production asked whether there was room. Your money bought nothing.
+3. **Your ally's splash, flame and glaive no longer hurt your units.** A teammate's Firebat took your Marine 40 -> 24
+   while sparing his own; thirteen splash weapons, both line weapons and the Mutalisk's bounce all asked "is it mine"
+   where the rest of the game asks "is it ours". Your own units were never affected -- only an ally's.
+4. **Clicking one passenger's portrait unloads that one.** A Dropship over a defended base used to empty itself: four
+   marines on the ground when you asked for one. A Bunker always behaved; now both do.
+5. **Changing the HUD size mid-game redraws the world to fit.** Dropping from 1.4x to 1.0x left a black band above the
+   console -- and clicks in that band were treated as world clicks, ordering units onto ground you could not see.
+6. **A fogged enemy building no longer tells you its live hit points.** You could scout a building, fly away, click its
+   remembered outline and watch its shields regenerate in real time. The panel now shows the hit points you last saw,
+   marked *(last seen)*, and no shields or energy at all; a remembered building no longer sprouts a health bar when
+   something shoots it out of your sight.
+7. **Set Rally on the command card rallies every selected building.** Ten Gateways selected, one press -- nine used to
+   keep their old rally point, while right-clicking the same spot rallied all ten.
+8. **A fight no longer resets the music volume.** The combat swell wrote the master gain directly, so the first battle
+   of a game threw the music to full whatever the slider said -- six times the asked-for level at 25% -- and left it
+   there for the session.
+9. **A destroyed Refinery gives the geyser back.** The ground a gas building stood on was returned to open ground
+   rather than to the geyser: once the hulk rotted, units walked over the geyser, a Supply Depot could be built on it
+   *and* a Refinery at the same time -- two buildings on one footprint. On the small generated maps (Island Chain,
+   Vertical Cliffs) the main's geyser sits on the plateau's edge, so this was also a second, undrawn way into a main.
+
+**How to playtest each by hand:**
+1. **Gas worker:** Terran, build two Refineries, put an SCV in one, then destroy that Refinery (Esc -> Settings ->
+   cheats off is fine; use a second player or `power overwhelming` on the other side). *Working:* the SCV walks out and
+   goes to the other Refinery. *Was:* she vanished from the game but kept eating a supply.
+2. **Last supply slot:** get to exactly one supply free with the money for a Marine, queue it. *Working:* it builds.
+   *Was:* it sat at zero progress until you built a depot, minerals gone.
+3. **Allied splash:** a 2v2 (you + a computer ally). Stand your Marines next to your ally's Firebat while it burns
+   something. *Working:* they take nothing.
+4. **Transport:** load four Marines into a Dropship, click the second portrait in the console. *Working:* one gets out.
+5. **HUD size:** in a game, Esc -> Settings -> HUD size, click it down to 1.0x, Resume. *Working:* the map fills the
+   space above the console with no black band, and clicking just above the console selects units rather than ordering
+   them somewhere.
+6. **Fog memory:** scout an enemy building, leave, then click its faded outline. *Working:* "HP ... (last seen)" and no
+   Shields line. Have it attacked while you cannot see it: no bar appears.
+7. **Rally:** box-select several Barracks or Gateways, press the card's Set Rally, click a spot. *Working:* every one
+   of them rallies there (check by selecting each).
+8. **Music:** Esc -> Settings -> Volume to 25%, resume, start a fight. *Working:* the music swells a little and stays
+   proportionate; it does not jump to full and stay there.
+9. **Geyser:** build a Refinery, destroy it, wait for the hulk to rot, then try to walk a Marine over the geyser and
+   to build a Supply Depot on it. *Working:* both are refused, and a new Refinery is accepted.
+
+**Invisible from normal play, and where to look instead:**
+- `test/review17.js` 18b and 18c (7 checks), `test/line.js` 5b (4), `test/ferry.js` (3), `test/settings.js` (6),
+  `test/qol.js` (2), `test/review17ui.js` 12b (4), `test/clearance.js` (4). Twelve negative controls, every one red
+  (`.claude/review/scan/controls-a1.log`, `controls-a1ui.log`).
+- **Two existing suites had to be corrected rather than satisfied.** `test/stallwatch.js` pushed a unit straight into a
+  production queue without booking its supply -- a state the engine cannot reach, since queueUnit always books -- and
+  `test/tumour.js` counted the AI's Overlords at the FINAL frame, where a hard Terran has already wiped the hard Zerg
+  out on two of its three seeds, so the whole suite hung on one game surviving. It now counts them while the game runs.
+- **What is not fixed yet:** the other fourteen defects in SCAN-M18.md, including the AI's stale supply literals (they
+  move balance, so they wait for the gated balance run), the build stamp not covering static methods, and the map
+  generator's buried mineral patches.
+
 ## 124. Nothing stands on the rock -- checked, and the screenshot that said otherwise explained
 
 *(The user, 2026-09-17, looking at the creep picture in item 123: "no units or buildings should be able to go on the big rock - i see

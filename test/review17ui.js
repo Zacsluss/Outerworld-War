@@ -260,6 +260,62 @@ R(ctx, `G.init({ players: [{ race: 'T', human: true, name: 'H' }, { race: 'Z', h
 }
 
 // ============================================================================
+// 12b. ...AND THE PANEL READS THE MEMORY TOO (SCAN-M18 A1.6)
+// ============================================================================
+// Section 12 proves the GHOST is drawn from memory. The numbers beside it were not. UI.unitAt deliberately lets an
+// enemy BUILDING on explored ground be clicked -- the remembered outline is a thing you can point at -- but it hands
+// back the LIVE unit, and HUD.drawUnitInfo printed hp, shields and energy off it for any owner. So you could scout a
+// Nexus, fly away, click it under the fog and watch its shields regenerate in real time, reading a fight you had no
+// vision of. The same leak reached the ghost itself: Render.remembered builds a prototype over the live unit and
+// overrode only x/y/tx/ty/owner/hp/done, so drawBars' `G.frame - u.lastHit < 72` and the shield bar beside it still
+// read the present. p.seen carries hp and nothing else, and that is the whole of what may be shown.
+{
+  const out = R(ctx, `
+    G.init({ players: [{ race: 'P', human: true, name: 'H' }, { race: 'P', human: false, difficulty: 'easy', name: 'C' }], seed: 3, layout: 'temple' }); G.human = 0; G.players[1].ai = null;
+    const hp = G.players[0];
+    const def = DATA.buildings.pylon; let bld = null;
+    const cx = Math.floor(G.map.w / 2), cy = Math.floor(G.map.h / 2);
+    for (let r = 0; r < 40 && !bld; r++) for (let k = 0; k < 16 && !bld; k++) { const a = k / 16 * Math.PI * 2; const tx = Math.round(cx + Math.cos(a) * r), ty = Math.round(cy + Math.sin(a) * r);
+      if (!G.map.canPlace(def, tx, ty, null, G.units, null)) { bld = G.placeBuilding(def, tx, ty, 1); G.completeBuilding(bld); } }
+    if (!bld) return { noBuilding: true };
+    const scout = G.spawnUnit('zealot', 0, bld.x + 3 * TILE, bld.y);
+    for (let i = 0; i < 6; i++) G.tick();
+    const memHp = hp.seen && hp.seen.get(bld.id) && hp.seen.get(bld.id).hp;
+    const clickable = UI.unitAt(bld.x, bld.y) === bld;
+    // the scout leaves; the building is hurt and its shields start coming back while nobody is watching
+    G.kill(scout, null, true); for (let i = 0; i < 6; i++) G.tick();
+    bld.hp = Math.round(bld.maxHp * 0.4); bld.sh = 0; bld.lastHit = G.frame;
+    for (let i = 0; i < 12; i++) G.tick();
+    const fogged = UI.unitAt(bld.x, bld.y) === bld;
+    UI.selection = [bld];
+    const said = [];
+    const realText = HUD.text; HUD.text = (c, s) => { said.push(String(s)); };
+    const realBevel = HUD.bevel, realSprite = HUD.sprite, realBar = HUD.bar;
+    HUD.bevel = () => {}; HUD.sprite = () => {}; HUD.bar = () => {};
+    const stub = { save() {}, restore() {}, beginPath() {}, rect() {}, clip() {}, translate() {}, scale() {}, drawImage() {}, fillRect() {}, fill() {}, stroke() {}, arc() {}, moveTo() {}, lineTo() {}, closePath() {}, createRadialGradient: () => ({ addColorStop() {} }), createLinearGradient: () => ({ addColorStop() {} }), measureText: () => ({ width: 1 }), setLineDash() {} };
+    // the portrait needs the sprite bank, which this suite does not load; the panel's TEXT is what is under test
+    const GL = typeof globalThis !== 'undefined' ? globalThis : window;
+    const realSprites = GL.Sprites; GL.Sprites = { building: () => ({ cv: { width: 10, height: 10 } }) };
+    let threw = null;
+    try { UI.drawUnitInfo(stub, bld, 0, 0, 400, 200); } catch (e) { threw = String(e); }
+    GL.Sprites = realSprites;
+    HUD.text = realText; HUD.bevel = realBevel; HUD.sprite = realSprite; HUD.bar = realBar;
+    const line = said.find(s => /^HP /.test(s)) || '';
+    const m = G.map, vis = hp.vis;
+    const seen = (x, y) => { const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); return m.inb(tx, ty) && vis[ty * m.w + tx] > 0; };
+    const visNow = (x, y) => { const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); return m.inb(tx, ty) && vis[ty * m.w + tx] === 2; };
+    const gh = Render.remembered(seen, visNow, () => true)[0];
+    return { threw, clickable, fogged, memHp, liveHp: Math.round(bld.hp), liveSh: Math.round(bld.sh), line,
+      ghost: gh ? { hp: Math.round(gh.hp), sh: gh.sh, maxSh: gh.maxSh, recentHit: G.frame - gh.lastHit < 72 } : null };
+  `);
+  ok('the scene stands: an enemy Pylon was seen, then left under the fog and hurt while nobody watched', !out.noBuilding && !out.threw && out.clickable && out.fogged && out.liveHp < out.memHp, JSON.stringify(out));
+  ok('THE PANEL SHOWS WHAT WAS LAST SEEN, NOT WHAT IS TRUE: the hit points are the remembered ones and the line says so',
+    new RegExp('^HP ' + Math.ceil(out.memHp) + '/').test(out.line) && /last seen/.test(out.line), JSON.stringify(out.line));
+  ok('...and it does not print shields or energy for it at all -- the memory carries neither', !/Shields|Energy/.test(out.line), JSON.stringify(out.line));
+  ok('...and the ghost carries no live combat state either: no shield bar, and no "just been hit" bar', out.ghost && out.ghost.maxSh === 0 && out.ghost.recentHit === false, JSON.stringify(out.ghost));
+}
+
+// ============================================================================
 // 13. a settled corpse costs no filter per frame; the editor minimap is one blit, rebuilt only on a change
 // ============================================================================
 // Measured before (.claude/review/perf-probe.js, 1920x1080, the perf_render battle after 300 ticks with

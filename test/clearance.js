@@ -168,5 +168,34 @@ ok(det.a === det.b, 'an eight-minute game re-runs bit-identically -- the clearan
   ok(!/Math\.random|Date\.now|performance\./.test(fn), 'and the search uses no randomness and no clock');
   ok(/const fits = wide/.test(fn), 'the clearance test is a parameter of the search, not a unit-id branch inside it'); }
 
+// =============================================================================
+// A DEAD REFINERY GIVES THE GEYSER BACK, NOT THE GROUND (SCAN-M18 A1.5)
+// =============================================================================
+// blocked[] says who owns a tile: -2 a mineral patch, -3 a geyser, -4 a feature, -5 a wreck, -6 a lowered depot, else
+// a unit id. GameMap.unblock returned a dead building's whole footprint to -1, and a Refinery stands ON a geyser, so
+// killing one opened the geyser's own tiles for good. Measured before the fix: once the hulk had rotted the tiles
+// were walkable and canPlace accepted a Supply Depot there -- while still accepting a Refinery, because that branch
+// only asks geyserAt -- so two live buildings could share one footprint. On the small generated maps the main's
+// geyser sits on the plateau's cliff row, which made this a second way into the main across ground drawn as rock.
+const gy = J(`(() => {
+  G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'Z', human: false, difficulty: 'easy', name: 'B' }], seed: 1, layout: 'medium' });
+  G.players[1].ai = null; const m = G.map, p = G.players[0]; p.minerals = 9000; p.gas = 9000;
+  const g = m.resources.find(r => r.type === 'geyser');
+  const read = () => ({ blocked: m.blocked[m.idx(g.x, g.y)], walk: m.walkable(g.x, g.y),
+    depot: m.canPlace(DATA.buildings.supply_depot, g.x, g.y, null, [], null), refinery: m.canPlace(DATA.buildings.refinery, g.x, g.y, null, [], null) });
+  const before = read();
+  const b = G.placeBuilding(DATA.buildings.refinery, g.x, g.y, 0); G.completeBuilding(b);
+  const onIt = read();
+  G.kill(b, null);
+  for (let i = 0; i < 4000; i++) G.tick();     // and let the hulk rot: it is the wreck's release that used to leak
+  return { before, onIt, after: read(), mined: m.resources.filter(r => r.type === 'mineral').length };
+})()`);
+ok(gy.before.blocked === -3 && gy.before.walk === false && !!gy.before.depot && gy.before.refinery === null,
+  'a bare geyser is the geyser\'s own ground: nothing walks on it, nothing but a Refinery is built on it', JSON.stringify(gy.before));
+ok(gy.onIt.refinery !== null, 'with a Refinery standing on it, a second one is refused', JSON.stringify(gy.onIt));
+ok(gy.after.blocked === -3 && gy.after.walk === false && !!gy.after.depot,
+  'AND WHEN THAT REFINERY DIES THE GEYSER IS A GEYSER AGAIN -- not open, walkable ground anyone may build a depot on', JSON.stringify(gy.after));
+ok(gy.after.refinery === null, '...and a new Refinery may be built there, which is the whole point of giving it back', JSON.stringify(gy.after));
+
 ok(errors.length === 0, 'no JS errors were logged along the way', errors.slice(0, 3).join(' | '));
 summary({ nl: true });

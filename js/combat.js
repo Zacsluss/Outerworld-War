@@ -13,7 +13,7 @@ const Combat = {
     if (w.suicide) { this.explode(a, t, w); return; }
     if (w.scarab) { if (a.scarabs <= 0) { a.cooldown = 8; return; } a.scarabs--; const s = G.spawnUnit('scarab', a.owner, a.x + DMath.cos(a.facing) * a.r, a.y + DMath.sin(a.facing) * a.r); s.parent = a; s.lifetime = 110; s.facing = a.facing; s.applyOrder({ type: 'scarab', target: t }); return; }
     if (w.interceptor) { a.launched = a.launched || []; for (const ic of a.launched) if (ic.alive) { ic.order.target = t; if (ic.order.type === 'dock') ic.applyOrder({ type: 'intercept', target: t }); } if (a.interceptors > 0 && !(a.launchCd > 0)) { const ic = G.spawnUnit('interceptor', a.owner, a.x, a.y + 6); ic.parent = a; ic.facing = a.facing; ic.applyOrder({ type: 'intercept', target: t }); a.interceptors--; a.launched.push(ic); a.launchCd = 8; } a.cooldown = 6; return; }
-    if (w.glaive) { this.visual(a, t, 'glaive'); let cur = t, d = dmg; const hit = [t]; for (let b = 0; b < 3 && cur; b++) { G.damage(cur, d, w.type, a);   /* a glaive is never `swarmed` (the test above excludes w.glaive), so every bounce lands */ d = Math.max(1, Math.floor(d / 3)); let nx = null, nd = 1e9; for (const o of G.near(cur.x, cur.y, 3 * TILE)) { if (hit.includes(o) || o.owner === a.owner || !G.targetable(a, o)) continue; const dd = dist(o, cur); if (dd < nd) { nd = dd; nx = o; } } if (nx) { hit.push(nx); G.effects.push({ kind: 'line', x: cur.x, y: cur.y, tx: nx.x, ty: nx.y, t: 6, color: '#8f8' }); } cur = nx; } return; }
+    if (w.glaive) { this.visual(a, t, 'glaive'); let cur = t, d = dmg; const hit = [t]; for (let b = 0; b < 3 && cur; b++) { G.damage(cur, d, w.type, a);   /* a glaive is never `swarmed` (the test above excludes w.glaive), so every bounce lands */ d = Math.max(1, Math.floor(d / 3)); let nx = null, nd = 1e9; for (const o of G.near(cur.x, cur.y, 3 * TILE)) { if (hit.includes(o) || G.allied(o.owner, a.owner) || !G.targetable(a, o)) continue;   /* an ALLY is not a bounce target either: see the note under the splash below */ const dd = dist(o, cur); if (dd < nd) { nd = dd; nx = o; } } if (nx) { hit.push(nx); G.effects.push({ kind: 'line', x: cur.x, y: cur.y, tx: nx.x, ty: nx.y, t: 6, color: '#8f8' }); } cur = nx; } return; }
     // A LINE HITS EVERYTHING ALONG IT AT ONCE. Two weapons use this: the Lurker's spines and the
     // Hellion's flame. FIXLIST-M14 C5 (item 20) reported the Hellion's as broken; it was measured
     // first, and it was not -- one Hellion into a row of five marines hit FIVE of five for 9 each. The
@@ -45,7 +45,7 @@ const Combat = {
       G.effects.push({ kind: w.fx || 'spines', x: a.x, y: a.y, tx: a.x + DMath.cos(ang) * len, ty: a.y + DMath.sin(ang) * len, t: 12 });
       const hitsAir = w.targets === 'air' || w.targets === 'both';
       for (const o of G.near(a.x + DMath.cos(ang) * len / 2, a.y + DMath.sin(ang) * len / 2, len / 2 + 16)) {
-        if (o.owner === a.owner || !o.alive || o.inside) continue;
+        if (G.allied(o.owner, a.owner) || !o.alive || o.inside) continue;   // G.allied, not o.owner === a.owner: see the note under the splash below
         if (o.fly ? !hitsAir : w.targets === 'air') continue;
         const rx = o.x - a.x, ry = o.y - a.y;
         const proj = rx * DMath.cos(ang) + ry * DMath.sin(ang); if (proj < 0 || proj > len) continue;
@@ -64,7 +64,13 @@ const Combat = {
     if (primary && primary.alive) G.damage(primary, dmg, w.type, a);
     for (const o of G.near(x, y, r3 * TILE + 8)) {
       if (o === primary || !o.alive || o.inside) continue;
-      if (!w.ff && o.owner === a.owner) continue;
+      // AN ALLY IS NOT A TARGET OF YOUR OWN SPLASH (SCAN-M18 A1.3). All three of these exclusions -- the glaive's
+      // bounce, the line weapons and this -- tested `o.owner === a.owner`, while every other friendly test in the
+      // engine goes through G.allied (Abilities.volatileBurst, guardian_shield, Unit.findTarget). So a teammate's
+      // Firebat took your Marine 40 -> 24 while his own identical Marine at the same distance stayed at 40, on
+      // thirteen splash weapons plus the Lurker and Hellion lines; the Mutalisk's glaive would even CHOOSE an ally
+      // as its next bounce. G.allied(a, a) is true, so nothing about your own units changes.
+      if (!w.ff && G.allied(o.owner, a.owner)) continue;
       if (air ? !o.fly : (o.fly && !(w.targets === 'both'))) continue;
       const d = Math.max(0, distPt(o.x, o.y, x, y) - o.r) / TILE;
       const m = d <= r1 ? 1 : d <= r2 ? 0.5 : d <= r3 ? 0.25 : 0; if (!m) continue;

@@ -1049,7 +1049,13 @@ Object.assign(UI, {
     // name + stats
     let ly = y + 24; const tx = x + 100; HUD.text(ctx, u.def.name + (u.halluc ? ' (Hallucination)' : ''), tx, ly, u.owner === G.human ? HUD.accent() : p.color, 14); ly += 16;
     const line = (s, col = '#c8d0d8') => { HUD.text(ctx, s, tx, ly, col, 11, false); ly += 14; };
-    let stats = `HP ${Math.ceil(u.hp)}/${u.maxHp}`; if (u.maxSh) stats += `   Shields ${Math.ceil(u.sh)}/${u.maxSh}`; if (u.maxEnergy) stats += `   Energy ${Math.floor(u.energy)}/${u.maxEnergy}`; line(stats);
+    // WHAT YOU REMEMBER, NOT WHAT IS TRUE, for anything you cannot currently see (SCAN-M18 A1.6). UI.unitAt lets an
+    // enemy BUILDING on explored ground be clicked, which is deliberate -- the remembered outline is a thing you can
+    // point at -- but the panel then read the live unit: you could scout a Nexus, fly away, click it under the fog
+    // and watch its shields regenerate in real time, reading a fight you had no vision of. The player's own memory
+    // (G.rememberSeen, p.seen) carries hp and nothing else, which is exactly what may be shown.
+    const hp0 = G.players[G.human], mem = u.owner !== G.human && !G.allied(u.owner, G.human) && !G.canSee(G.human, u) && hp0 && hp0.seen ? hp0.seen.get(u.id) : null;
+    let stats = `HP ${Math.ceil(mem ? (mem.hp == null ? u.maxHp : mem.hp) : u.hp)}/${u.maxHp}${mem ? ' (last seen)' : ''}`; if (!mem && u.maxSh) stats += `   Shields ${Math.ceil(u.sh)}/${u.maxSh}`; if (!mem && u.maxEnergy) stats += `   Energy ${Math.floor(u.energy)}/${u.maxEnergy}`; line(stats);
     if (!u.isBuilding || u.def.gw || u.def.aw) { const parts = []; const wpn = u.sieged ? SIEGE_W : u.def.gw; if (wpn) parts.push(`Ground ${u.wDmg(wpn)}${wpn.hits > 1 ? 'x' + wpn.hits : ''} (${wpn.type[0].toUpperCase()}) range ${u.wRange(wpn)}`); if (u.def.aw) parts.push(`Air ${u.wDmg(u.def.aw)}${u.def.aw.hits > 1 ? 'x' + u.def.aw.hits : ''} range ${u.wRange(u.def.aw)}`); parts.push(`Armor ${u.armor}`); if (u.kills) parts.push(`Kills ${u.kills}`); line(parts.join('   ')); }
     if (u.owner === G.human) {
       const st = { idle: 'Idle', move: 'Moving', attack: 'Attacking', attackmove: 'Attack-moving', gather: u.order.phase === 'mine' ? 'Mining' : u.order.phase === 'inside' ? 'Harvesting gas' : 'Moving to resource', return: 'Returning cargo', build: 'Moving to build', construct: 'Constructing', hold: 'Holding position', patrol: 'Patrolling', ability: 'Casting ' + (u.order.abil ? DATA.abilities[u.order.abil].name : ''), repair: 'Repairing', follow: 'Following', load: 'Boarding', unload: 'Unloading', merge: 'Merging', land: 'Landing' }[u.order.type] || u.order.type;

@@ -373,7 +373,7 @@ class Unit {
   tickProduction() {
     if (!this.prod.length) return;
     const it = this.prod[0]; const d = this.def;
-    if (it.kind === 'unit' && !d.egg && !it.started) { const ud = DATA.units[it.id]; if (!it.reserved && G.supplyBlocked(this.player, ud)) return; /* G.tickAlerts says this once on its own cooldown, rather than every 72 frames until a depot goes up */ it.started = true; }
+    if (it.kind === 'unit' && !d.egg && !it.started) { if (!it.reserved && G.supplyOver(this.player)) return; /* G.tickAlerts says this once on its own cooldown, rather than every 72 frames until a depot goes up */ it.started = true; }
     it.progress += (G.cheats.cwal && this.player.human) ? 10 : 1;
     if (it.progress >= it.total) { this.prod.shift(); G.finishProduction(this, it); }
   }
@@ -392,7 +392,7 @@ class Unit {
     if (this.prod[0].kind !== 'unit' || this.prod[1].kind !== 'unit') return;
     const it = this.prod[1], p = this.player, ud = DATA.units[it.id];
     if (!it.started) {
-      if (!it.reserved && G.supplyBlocked(p, ud)) return;
+      if (!it.reserved && G.supplyOver(p)) return;   // the reactor's second item, gated exactly as the first (G.supplyOver)
       it.started = true;
     }
     it.progress += (G.cheats.cwal && p.human) ? 10 : 1;
@@ -750,7 +750,14 @@ class Unit {
     // not a line, and walking to another of your own refineries is the only sensible answer.
     if (!res || (res.type === 'mineral' && res.amount <= 0) || (res.type === 'gas' && !res.alive)) {
       const n = (res && res.type === 'mineral') ? G.nextPatchInBase(this, res) : G.findNearestResource(this, res && res.type === 'gas' ? 'gas' : 'mineral');
-      if (!n) { this.nextOrder(); return; } o.target = n; o.phase = 'goto'; return;
+      // THROUGH applyOrder, NOT BY EDITING THE ORDER (SCAN-M18 A1.1). This used to write `o.target = n; o.phase =
+      // 'goto'`, which skips the teardown applyOrder exists for -- above all the one that clears `inside`. A worker
+      // in a Refinery when it died therefore kept `inside` pointing at the wreck, and tick() returns at the
+      // `inside` guard for anything not mid-gather: measured, the SCV was still alive, still inside, order
+      // gather/goto and motionless 600 frames later, out of the grid (unclickable, untargetable) and still counted
+      // in supply. It needs a SECOND gas building to exist, or `n` is null and nextOrder() frees it -- which is
+      // why the suites never saw it.
+      if (!n) { this.nextOrder(); return; } this.applyOrder(Object.assign({}, o, { target: n, phase: 'goto' })); return;
     }
     if (this.carrying) { this.applyOrder({ type: 'return', then: res }); return; }
     this.lastRes = res;

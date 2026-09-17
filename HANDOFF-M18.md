@@ -20,7 +20,7 @@ Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
 Branch: m10-overnight, which IS origin/main (https://github.com/Zacsluss/Outerworld-War -- PUBLIC: git push publishes).
 HEAD: <run git log -1 --format=%h>. Working tree clean, nothing unpushed, no open PRs, no other branches, no extra worktrees.
 Machine: Windows 11; PowerShell 5.1 and Git Bash; Node 24; Rust + the Tauri CLI under desktop/; no gh CLI, no Blender.
-The gate (node test/all.js) is 101 suites, about four minutes, ALL GREEN; no known reds. Build stamp 678387e310c2c3fe.
+The gate (node test/all.js) is 101 suites, about four minutes, ALL GREEN; no known reds. Build stamp c6d7084ba9f97299.
 test/balance.js and test/proxy.js are GATED: never start them without an explicit, double-checked instruction.
 
 STATE: THE LOOKS QUEUE is DONE (the user's four items of 2026-09-14; PLAYTEST-M18 118-122): 1. a loading screen, so a game opens on
@@ -31,6 +31,10 @@ corners filled. The terrain queue before it is DONE too (PLAYTEST-M18 110-117).
 THE CREEP'S TEXTURE is DONE too (PLAYTEST-M18 123): the user picked Abstract Organic 002 (CC0) and said yes to its two files; the creep
 is made from them, kept purple, and falls back to the creep made in code where they cannot load. The user then called it "a bit too
 aggressive" and it was toned down (relief 12 -> 5, gloss 1.8 -> 0.8).
+A WHOLE-CODEBASE SCAN was run on the user's word and is written up in SCAN-M18.md: 22 defects and 11 refactor items,
+each with the file, the line and what it does to a player. The A1 batch -- the eight player-visible ones -- is FIXED
+(PLAYTEST-M18 125); the other fourteen are open and ranked there. Two of them wait on the gated balance run because
+they move AI behaviour (the stale 150/190 supply literals in js/ai.js).
 THE ROCK IS CLOSED GROUND and is now checked (PLAYTEST-M18 124): the user saw a Creep Colony standing on the rock in item 123's
 picture and called it a bug. It was the PICTURE: that scene was staged with G.placeBuilding, which does not ask GameMap.canPlace.
 TRAP: a screenshot script that places buildings must go through canPlace, or it will show the game doing what the game refuses.

@@ -86,4 +86,33 @@ ok(r.notATransport === 'idle', 'something that cannot carry anything drops the o
 ok(r.snap.type === 'ferry' && r.snap.leg === 'b' && r.snap.since === 12, 'a snapshot carries the whole route, including which leg it is on', JSON.stringify(r.snap));
 ok(r.snap.bx > 0, '...and the far end');
 
+// ONE PORTRAIT IS ONE PASSENGER. The HUD draws a hotspot per cargo unit and sends the click to G.unloadCargo, which
+// sent everything that was not a BUILDING to unloadAll: clicking the second marine's portrait in a full Dropship put
+// all four on the ground, wherever the ship happened to be. Measured before the fix: bunker 4 -> 3 (right), dropship
+// 4 -> 1 (wrong). test/abilities20.js drives the same call on an Overlord carrying exactly ONE zergling, where
+// unload-all and unload-one cannot be told apart.
+const one = vm.runInContext(`(() => {
+  G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'T', human: false, difficulty: 'easy', name: 'B' }], seed: 4, layout: 'temple' });
+  G.players[1].ai = null;
+  const p = G.players[0], x = p.startX + 8 * TILE, y = p.startY + 8 * TILE;
+  const ship = G.spawnUnit('dropship', 0, x, y);
+  const ms = []; for (let k = 0; k < 4; k++) ms.push(G.spawnUnit('marine', 0, x + k * 24, y + 24));
+  for (const m of ms) G.loadUnit(ship, m);
+  const loaded = ship.cargo.length, picked = ship.cargo[1];
+  G.unloadCargo(ship, picked);
+  for (let i = 0; i < 30; i++) G.tick();
+  const bunk = G.placeBuilding(DATA.buildings.bunker, Math.floor(x / TILE) + 6, Math.floor(y / TILE) + 6, 0);
+  bunk.done = true; bunk.progress = bunk.def.time; bunk.hp = bunk.maxHp;
+  const bs = []; for (let k = 0; k < 4; k++) bs.push(G.spawnUnit('marine', 0, bunk.x + k * 20, bunk.y + 30));
+  for (const m of bs) G.loadUnit(bunk, m);
+  const bLoaded = bunk.cargo.length;
+  G.unloadCargo(bunk, bunk.cargo[1]);
+  for (let i = 0; i < 30; i++) G.tick();
+  return JSON.stringify({ loaded, left: ship.cargo.length, out: !picked.inside && picked.alive, stillIn: ship.cargo.includes(picked), bLoaded, bLeft: bunk.cargo.length });
+})()`, ctx);
+{ const u = JSON.parse(one);
+  ok(u.loaded === 4 && u.bLoaded === 4, 'a dropship and a bunker each hold four marines', one);
+  ok(u.left === 3 && !u.stillIn && u.out, 'CLICKING ONE PASSENGER UNLOADS THAT ONE -- the other three stay aboard (all four used to be dumped)', one);
+  ok(u.bLeft === 3, '...and a bunker is unchanged: it always unloaded one, and still does', one); }
+
 summary({ word: 'FAILURES' });

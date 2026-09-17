@@ -117,7 +117,12 @@ const UI = {
     try { this.gridKeys = localStorage.getItem('bw_hotkeys') === 'grid'; } catch (e) { this.gridKeys = false; }
   },
   setGridKeys(on) { this.gridKeys = !!on; try { localStorage.setItem('bw_hotkeys', this.gridKeys ? 'grid' : 'bw'); } catch (e) { } return this.gridKeys; },
-  setHudScale(v) { const n = Number(v); this.hudScale = isFinite(n) ? Math.round(Math.max(HUD_SCALE_MIN, Math.min(HUD_SCALE_MAX, n)) * 10) / 10 : HUD_SCALE; this.savePref('bw_hud_scale', this.hudScale); return this.hudScale; },
+  // ...AND THE WORLD IS RE-MEASURED, exactly as setTerrainLook below does it (SCAN-M18 A1.7). consoleH is a function
+  // of hudScale and Render.viewH is a function of consoleH, but viewH is only ever written by Render.resize(), which
+  // this never called: dropping the HUD from 1.4 to 1.0 mid-game at 1920x1080 left the world clipped to the taller
+  // console's height -- a 78-pixel black band above the console -- while onMove and onDown used the NEW consoleH, so
+  // clicks in that band were treated as world clicks and ordered units onto ground that was never drawn.
+  setHudScale(v) { const n = Number(v); this.hudScale = isFinite(n) ? Math.round(Math.max(HUD_SCALE_MIN, Math.min(HUD_SCALE_MAX, n)) * 10) / 10 : HUD_SCALE; if (typeof Render !== 'undefined' && Render.canvas) Render.resize(); this.savePref('bw_hud_scale', this.hudScale); return this.hudScale; },
   setScrollSpeed(v) { const n = Number(v); this.scrollSpeed = isFinite(n) ? Math.max(0.5, Math.min(2, n)) : 1; this.savePref('bw_scroll', this.scrollSpeed); return this.scrollSpeed; },
   setEdgeScroll(v) { this.edgeScroll = v !== false; this.savePref('bw_edge', this.edgeScroll); return this.edgeScroll; },
   setTerrainLook(v) { const on = v !== 'classic'; if (typeof Terrain !== 'undefined') Terrain.setTextured(on); if (typeof Render !== 'undefined' && Render.canvas) Render.resize(); this.savePref('bw_terrain', on ? 'detailed' : 'classic'); return on ? 'detailed' : 'classic'; },   // the canvas's ratio follows the look (Render.resize)
@@ -1151,7 +1156,15 @@ const UI = {
   },
   execPending(t, wx, wy, shift) {
     const p = this.pending; let sel = this.ownSel(); this.pending = null; if (!sel.length) return;
-    if (p.kind === 'rally') { const b = sel[0]; G.setRally(b, wx, wy, t); return; }
+    // EVERY SELECTED PRODUCER TAKES IT, as the right-click path above already does (SCAN-M18 A1.9). This took
+    // sel[0] and nothing else, so ten Gateways selected and the card's Set Rally pressed rallied ONE of them and
+    // left nine pointing at their old spot -- while right-clicking the same place with the same selection rallied
+    // all ten. The filter is the one the right-click path uses, so the two gestures cannot disagree again.
+    if (p.kind === 'rally') {
+      const halls = sel.filter(b => b.isBuilding && !b.lifted && (b.def.produces.length || b.def.spawnsLarva));
+      for (const b of (halls.length ? halls : [sel[0]])) G.setRally(b, wx, wy, t);
+      return;
+    }
     if (p.caster && p.caster.alive) sel = [p.caster]; // ability offered on a parent's card but cast by its add-on (Comsat on a Command Center)
     // SMART CASTING (M12 item 5). This loop casts from EVERY selected unit, so eight templar with
     // storm selected produced eight storms on one spot -- eight times the energy for one storm's worth
@@ -1643,7 +1656,7 @@ const UI = {
     if (u.inside) return 'inside';
     if (u.addon && !u.addon.done) return 'addon';
     if (u.fx && (u.fx.stasis || u.fx.lockdown || u.fx.maelstrom)) return 'disabled';
-    if (it.kind === 'unit' && !it.started && !it.reserved && typeof DATA !== 'undefined' && DATA.units[it.id] && G.supplyBlocked(u.player, DATA.units[it.id])) return 'supply';
+    if (it.kind === 'unit' && !it.started && !it.reserved && G.supplyOver(u.player)) return 'supply';
     return '';
   },
   explainPause(u, it, why) {

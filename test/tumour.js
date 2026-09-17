@@ -141,12 +141,20 @@ const bound = J(`(() => {
     let peak = 0;
     for (let f = 0; f < 24 * 60 * 18; f++) {
       G.tick();
-      if (f % 240 === 0) peak = Math.max(peak, G.units.filter(u => u.alive && u.owner === 0 && u.def.tumour).length);
+      if (f % 240 === 0) {
+        peak = Math.max(peak, G.units.filter(u => u.alive && u.owner === 0 && u.def.tumour).length);
+        // COUNTED WHILE THE GAME RUNS, not at the end (SCAN-M18). These two are non-vacuity checks -- "the AI really
+        // was playing Zerg" -- and they used to read the final frame only. Measured: on these three seeds the hard
+        // Terran wipes the hard Zerg out on two of them even before any of this milestone's fixes, so the check hung
+        // entirely on seed 6 leaving seventeen units alive, and any change anywhere in the simulation that shifted
+        // that one game by a hair flipped the whole suite red. What the sentence means is that Overlords and Queens
+        // existed during the game, which is what this now measures.
+        out.overlordsSeen += G.units.filter(u => u.alive && u.owner === 0 && u.def.id === 'overlord').length;
+        out.queensSeen += G.units.filter(u => u.alive && u.owner === 0 && u.def.id === 'queen').length;
+      }
     }
     peak = Math.max(peak, G.units.filter(u => u.alive && u.owner === 0 && u.def.tumour).length);
     out.seeds.push({ seed, peak });
-    out.queensSeen += G.units.filter(u => u.alive && u.owner === 0 && u.def.id === 'queen').length;
-    out.overlordsSeen += G.units.filter(u => u.alive && u.owner === 0 && u.def.id === 'overlord').length;
   }
   out.cap = 8;
   return out;

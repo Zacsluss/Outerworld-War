@@ -425,6 +425,67 @@ function DATA_NAME(c, id) { return R(c, 'return DATA.units[' + JSON.stringify(id
 }
 
 // ============================================================================
+// 18b. ...AND THE SAME WORKER WHEN THE GAS BUILDING IS DESTROYED UNDER HER (SCAN-M18 A1.1)
+// ============================================================================
+// Section 18 fixed the case where a worker inside an extractor is RE-ORDERED. The other way out of a gas building
+// -- the building dying while she is in it -- went through a different line, tickGather's "my resource is gone,
+// find another", which edited the order in place instead of calling applyOrder, so the `inside` teardown never
+// ran. Measured before the fix: 600 frames after the Refinery died the SCV was alive, still `inside` the wreck,
+// order gather/goto, motionless for the rest of the game -- out of G.rebuildGrid (so unclickable, unrenderable and
+// untargetable) yet still counted by recomputeSupply. It needs a SECOND gas building to exist, because with none
+// `n` is null and nextOrder() frees her, which is why every suite that kills a refinery missed it.
+{
+  const out = R(ctx, `
+    const p = this.fresh('T', 'Z'); p.minerals = 5000; p.gas = 0;
+    const hall = G.units.find(u => u.alive && u.owner === 0 && u.isBuilding);
+    const gz = G.map.resources.filter(r => r.type === 'geyser').sort((a, b) => distPt(a.cx, a.cy, hall.x, hall.y) - distPt(b.cx, b.cy, hall.x, hall.y)).slice(0, 2);
+    // through G.completeBuilding, not by hand: it is the line that gives a finished gas building its \`type = 'gas'\`,
+    // and without that mark tickGather never takes the branch this section is about
+    const ref = gz.map(g => { const b = G.placeBuilding(DATA.buildings.refinery, g.x, g.y, 0); G.completeBuilding(b); return b; });
+    const scv = this.sp('scv', 0, ref[0].x, ref[0].y + 90);
+    scv.applyOrder({ type: 'gather', target: ref[0], phase: 'goto' });
+    let entered = null; for (let i = 0; i < 400 && entered === null; i++) { G.tick(); if (scv.inside === ref[0]) entered = G.frame; }
+    G.kill(ref[0], null);
+    const x0 = scv.x, y0 = scv.y; this.run(600);
+    return { entered: entered !== null, alive: scv.alive, inside: scv.inside ? scv.inside.alive : null,
+      moved: distPt(scv.x, scv.y, x0, y0) > 8, order: scv.order.type, target: scv.order.target === ref[1],
+      atSecond: distPt(scv.x, scv.y, ref[1].x, ref[1].y) < 3 * TILE, deadOccupant: ref[0].occupant !== null, gas: p.gas };
+  `);
+  ok('a worker is inside a refinery when it is destroyed under her', out.entered, JSON.stringify(out));
+  ok('SHE COMES OUT AND GOES TO THE OTHER ONE: not still sealed inside a wreck (she stayed there for the rest of the game, alive and frozen)',
+    out.alive && out.inside !== false && out.moved, JSON.stringify(out));
+  ok('...and the wreck keeps nothing of her: she is at the second refinery and the dead one holds no occupant', out.atSecond && !out.deadOccupant, JSON.stringify(out));
+  ok('...and she mines the second refinery, so the gas is not lost with the worker', out.order === 'gather' && out.gas > 0, JSON.stringify(out));
+}
+
+// ============================================================================
+// 18c. A UNIT QUEUED INTO THE LAST SLOT OF SUPPLY IS ACTUALLY BUILT (SCAN-M18 A1.2)
+// ============================================================================
+// recomputeSupply books a queued unit's supply the moment it is queued; tickProduction then asked supplyBlocked
+// about the same item again, which added its supply on top of its own booking. Measured at 9/10: queueUnit
+// accepted the Marine and charged 50 minerals, supply went to 10/10, and 400 frames later the item was still at
+// progress 0 with started false -- the money gone and the unit never coming. Nothing caught it because the
+// suites assert that REFUSED commands are refused, never that an ACCEPTED one completes.
+{
+  const out = R(ctx, `
+    const p = this.fresh('T', 'Z'); p.minerals = 5000; p.gas = 5000;
+    const hall = G.units.find(u => u.alive && u.owner === 0 && u.isBuilding);
+    const br = G.placeBuilding(DATA.buildings.barracks, hall.tx + 8, hall.ty + 8, 0); br.done = true; br.progress = br.def.time; br.hp = br.maxHp;
+    let guard = 0; while (p.supMax - p.supUsed > 1 && guard++ < 60) { this.sp('marine', 0, hall.x + 200, hall.y + 200); G.recomputeSupply(); }
+    const free = p.supMax - p.supUsed, before = { used: p.supUsed, max: p.supMax, min: p.minerals, marines: G.units.filter(u => u.alive && u.owner === 0 && u.def.id === 'marine').length };
+    const accepted = G.queueUnit(br, 'marine');
+    const paid = before.min - p.minerals;
+    this.run(400);
+    return { free, before, accepted, paid, queued: br.prod.length,
+      marines: G.units.filter(u => u.alive && u.owner === 0 && u.def.id === 'marine').length, used: p.supUsed, max: p.supMax };
+  `);
+  ok('the arena really is one supply short of the cap with the money to spend', out.free === 1 && out.accepted && out.paid === 50, JSON.stringify(out));
+  ok('THE LAST UNIT UNDER THE CAP IS BUILT: it started, finished and walked out (it used to sit at progress 0 for ever, paid for)',
+    out.queued === 0 && out.marines === out.before.marines + 1, JSON.stringify(out));
+  ok('...and it is not double-booked: supply lands exactly on the cap, not over it', out.used === out.max, JSON.stringify(out));
+}
+
+// ============================================================================
 // 19. three AI faults: the Hive's techs, the Raven and the Disruptor, the morph and add-on claims
 // ============================================================================
 // Measured before the fix (.claude/review/ai578-probe.js): a Zerg AI with a Hive and no Lair, 5000/5000,

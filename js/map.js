@@ -2050,7 +2050,24 @@ class GameMap {
   geyserAt(tx, ty) { return this.resources.find(r => r.type === 'geyser' && r.x === tx && r.y === ty) || null; }
 
   block(tx, ty, w, h, id) { this.rect(tx, ty, w, h, (x, y) => { this.blocked[this.idx(x, y)] = id; }); }
-  unblock(tx, ty, w, h, id) { this.rect(tx, ty, w, h, (x, y) => { if (this.blocked[this.idx(x, y)] === id) this.blocked[this.idx(x, y)] = -1; }); }
+  // A TILE GOES BACK TO WHAT WAS UNDER IT, WHICH IS NOT ALWAYS OPEN GROUND (SCAN-M18 A1.5). blocked[] has an ownership
+  // convention -- -2 a mineral patch, -3 a geyser, -4 a map feature, -5 a wreck, -6 a lowered depot, anything else a
+  // unit id -- and this returned every tile of a dead building's footprint to -1 regardless. A Refinery is built ON a
+  // geyser, so killing one handed the geyser's own four-by-two to open ground for good: measured, after the hulk
+  // rotted the tiles were WALKABLE and canPlace accepted a Supply Depot there -- and still accepted a Refinery, since
+  // that branch only asks geyserAt -- so two live buildings could share one footprint and killing either unblocked
+  // ground the other stood on. On the small generated maps (islands, cliffs) the main's geyser sits on the plateau's
+  // cliff row, so it also opened a second way into the main across ground the terrain draws as rock, and neither
+  // rampProblems() nor elevationProblems() could see it: both skip tiles whose blocked is not -1.
+  //   The resource list is the authority and it is short (a few dozen entries), so this asks it directly rather than
+  // keeping a parallel grid that could drift.
+  unblock(tx, ty, w, h, id) {
+    this.rect(tx, ty, w, h, (x, y) => {
+      const i = this.idx(x, y); if (this.blocked[i] !== id) return;
+      const r = this.resources.find(q => x >= q.x && x < q.x + q.w && y >= q.y && y < q.y + q.h);
+      this.blocked[i] = r ? (r.type === 'geyser' ? -3 : -2) : -1;
+    });
+  }
 
   // Building placement validation. Returns null if ok, else reason string.
   canPlace(def, tx, ty, player, units, ignoreUnit) {

@@ -61,6 +61,23 @@ const R = (c, src) => vm.runInContext('(() => {' + src + '})()', c);
   ok(d.s === 1.4 && d.ch === 274, 'with nothing stored the HUD is 1.4x: the 274 px band at 1080p that test/qol.js pins', J(d));
   const one = band(1), max = band(1.6), over = band(9), junk = band('big');
   ok(one.ch === 196 && one.k === 1 && max.ch === 314 && over.s === 1.6 && junk.s === 1.4, '1.0x is the original 196 px console, 1.6x is the largest (314), past it is 1.6, and nonsense is the default', J({ one, max, over, junk }));
+  // THE WORLD IS RE-MEASURED TOO (SCAN-M18 A1.7). consoleH is a function of hudScale and Render.viewH is a function of
+  // consoleH, but only Render.resize() ever writes viewH -- and setHudScale did not call it, while setTerrainLook one
+  // line below did. Dropping 1.4 -> 1.0 mid-game at 1920x1080 left the world clipped to the taller console's height:
+  // a 78-pixel black band above the console that the hit tests (which read the NEW consoleH) treated as world, so a
+  // click there ordered units onto ground that had never been drawn. Everything above pins consoleH; nothing pinned
+  // the number the renderer actually clips to.
+  {
+    const v = R(c, `Render.W = 1920; Render.H = 1080; Render.canvas = { width: 1920, height: 1080, style: {} };
+      Render.resize = function () { this.viewW = this.W; this.viewH = Math.max(1, this.H - UI.consoleH); };
+      UI.setHudScale(1.4); Render.resize(); const big = { ch: UI.consoleH, viewH: Render.viewH };
+      UI.setHudScale(1); const small = { ch: UI.consoleH, viewH: Render.viewH };
+      UI.setHudScale(1.6); const max = { ch: UI.consoleH, viewH: Render.viewH };
+      return { big, small, max };`);
+    ok(v.big.viewH === 1080 - v.big.ch && v.small.viewH === 1080 - v.small.ch && v.max.viewH === 1080 - v.max.ch,
+      'CHANGING THE HUD SIZE RE-MEASURES THE WORLD: the drawn height follows the console, so no band of undrawn ground is left clickable', J(v));
+    ok(v.small.viewH > v.big.viewH && v.max.viewH < v.big.viewH, '...in both directions', J(v));
+  }
   band(1.2);
   ok(c.__store.bw_hud_scale === '1.2', 'the size chosen is remembered', J(c.__store));
   const c2 = mkCtx({ bw_hud_scale: '1.2', bw_scroll: '1.5', bw_edge: 'false', bw_volume: '0.5' });
@@ -106,6 +123,28 @@ const R = (c, src) => vm.runInContext('(() => {' + src + '})()', c);
   ok(heard.voice.length === 1 && heard.voice[0] === 0.45, 'a voice line is spoken at its level times the volume', J(heard.voice));
   ok(Math.abs(heard.rampTarget - 0.08) < 1e-9 && Math.abs(heard.after - 0.16) < 1e-9, 'the music rises to its level times the volume, and a change while it plays applies at once', J(heard));
   ok(heard.stored === '1', 'the volume is remembered (mute, on purpose, still is not)', J(heard.stored));
+  // AND THE COMBAT SWELL OBEYS IT (SCAN-M18 A1.8). Music.start and Music.setVolume both ramp the master gain to
+  // LEVEL * level(); Music.swell -- the third and only other writer of that gain -- ramped to bare 0.26 going into a
+  // fight and bare 0.16 coming out, 0.16 being LEVEL written as a literal. So the first fight of a game threw the
+  // music to full whatever the slider said, and left it at full for the rest of the session: at 25% volume, six
+  // times what was asked for. The suite drove start() and setVolume() and never swell().
+  {
+    const sw = R(c, `const sink = [];
+      const gn = () => ({ gain: { set value(v) { sink.push(v); }, get value() { return 0; }, exponentialRampToValueAtTime() {}, linearRampToValueAtTime: (v) => sink.push(+v.toFixed(6)), cancelScheduledValues() {}, setValueAtTime: (v) => sink.push(+v.toFixed(6)) }, connect() {}, disconnect() {} });
+      G.human = 0; G.players = [{ race: 'T' }];
+      Music.ctx = { state: 'running', currentTime: 0, destination: {}, createGain: gn, createOscillator: () => ({ connect() {}, start() {}, stop() {}, frequency: { value: 0, setValueAtTime() {}, linearRampToValueAtTime() {} }, type: '' }), createBiquadFilter: () => ({ connect() {}, frequency: { value: 0 }, Q: { value: 0 }, type: '' }) };
+      Music.master = gn(); Music.on = true; Music.bar = () => {}; Music.pad = () => {}; Music.timer = 1;
+      UI.setVolume(0.25); Music.setVolume(); const quiet = sink.slice(-1)[0];
+      Music.swell(true); const into = sink.slice(-1)[0];
+      Music.swell(false); const out = sink.slice(-1)[0];
+      UI.setVolume(1); Music.setVolume(); Music.swell(true); const loudIn = sink.slice(-1)[0];
+      return { quiet, into, out, loudIn, LEVEL: Music.LEVEL, SWELL: Music.SWELL };`);
+    ok(Math.abs(sw.quiet - 0.04) < 1e-9, 'at a quarter volume the bed plays at a quarter of its level', J(sw));
+    ok(Math.abs(sw.into - sw.LEVEL * 0.25 * sw.SWELL) < 1e-6 && sw.into > sw.quiet,
+      'A FIGHT MAKES IT LOUDER BUT NEVER LOUDER THAN THE PLAYER ASKED: the swell goes through the volume (it used to jump to 0.26 whatever the slider said)', J(sw));
+    ok(Math.abs(sw.out - 0.04) < 1e-9, '...and coming out of the fight it returns to the quarter, not to full', J(sw));
+    ok(Math.abs(sw.loudIn - sw.LEVEL * sw.SWELL) < 1e-9, '...while at full volume the swell is still the full-volume swell', J(sw));
+  }
 }
 
 // ---- 5. THE IN-GAME SETTINGS SCREEN ----

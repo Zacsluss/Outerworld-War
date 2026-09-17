@@ -509,5 +509,31 @@ ok(r.hashUnchanged, 'a signal does NOT change the simulation hash -- a cosmetic 
 ok(r.expired, 'signals expire');
 ok(r.bounded, '...and spamming them is bounded');
 
+// SET RALLY FROM THE CARD IS THE SAME GESTURE AS THE RIGHT-CLICK (SCAN-M18 A1.9). UI.execPending's rally branch took
+// sel[0] and nothing else, while the right-click path above it fans out over every selected producer under a comment
+// that says so ("ten gateways, one click"). So box-selecting ten Gateways and pressing the card's Set Rally rallied
+// one of them and left nine pointing at their old spot -- the two gestures for one intent disagreed, and the card was
+// the one that silently did a tenth of the job. test/wrongthing.js presses the real button, but always with a single
+// building selected, where sel[0] IS the selection.
+{
+  const rally = JSON.parse(vm.runInContext('JSON.stringify((() => {' + `
+    G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'Z', human: false, difficulty: 'easy', name: 'B' }], seed: 5, layout: 'temple' });
+    G.players[1].ai = null; G.human = 0; UI.mode = 'play';
+    const p = G.players[0]; p.minerals = 9000; p.gas = 9000;
+    const hall = G.units.find(u => u.alive && u.owner === 0 && u.isBuilding);
+    const bs = [0, 1, 2].map(i => { const b = G.placeBuilding(DATA.buildings.barracks, hall.tx + 6 + i * 4, hall.ty + 8, 0); G.completeBuilding(b); return b; });
+    UI.selection = bs.slice(); UI.pending = null;
+    const btn = (UI.currentCard() || []).find(x => x.label === 'Set Rally');
+    if (!btn) return { skipped: true };
+    UI.press(btn);
+    const rx = (hall.tx + 14) * TILE, ry = (hall.ty + 14) * TILE;
+    UI.execPending(null, rx, ry, false);
+    const at = b => b.rally ? Math.round(b.rally.x) + ',' + Math.round(b.rally.y) : null;
+    return { want: Math.round(rx) + ',' + Math.round(ry), got: bs.map(at), every: bs.every(b => b.rally && Math.round(b.rally.x) === Math.round(rx) && Math.round(b.rally.y) === Math.round(ry)) };
+  ` + '})())', ctx));
+  ok(!rally.skipped, 'the command card of three selected Barracks offers Set Rally', JSON.stringify(rally));
+  ok(rally.every, 'EVERY SELECTED PRODUCER TAKES THE RALLY, not just the first one in the selection', JSON.stringify(rally));
+}
+
 console.log((fail ? 'FAILURES ' : 'ALL PASS  ') + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

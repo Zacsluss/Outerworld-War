@@ -1308,6 +1308,11 @@ const Render = {
       const g = Object.create(u);
       g.x = mem.x; g.y = mem.y; g.tx = mem.tx; g.ty = mem.ty; g.owner = mem.o; g.hp = mem.hp == null ? u.maxHp : mem.hp; g.done = mem.done !== false;
       g.alive = true; g.inside = null; g.lifted = false; g._x = mem.x; g._y = mem.y; g._alpha = 0.75; g.remembered = true;
+      // The ghost is a prototype over the LIVE unit, so every field this does not override still reads the present.
+      // hp and done were overridden and the rest were not, which leaked the same knowledge the panel leaked
+      // (SCAN-M18 A1.6): a remembered building being shot under fog sprouted a health bar, because drawBars asks
+      // `G.frame - u.lastHit < 72`, and a Protoss one drew a live shield bar beside it. The memory carries neither.
+      g.lastHit = -1e9; g.sh = 0; g.maxSh = 0; g.energy = 0; g.maxEnergy = 0;
       out.push(g);
     }
     return out;

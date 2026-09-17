@@ -199,6 +199,7 @@ const Music = {
   },
   // The music's own level, times the master volume (Settings, Audio). setVolume applies a change to music already playing.
   LEVEL: 0.16,
+  SWELL: 1.625,   // how much louder the bed gets while a fight is on: 0.26 against LEVEL 0.16, the ratio those two literals used to be
   level() { return typeof Sound !== 'undefined' && typeof Sound.volume === 'number' ? Sound.volume : 1; },
   setVolume() { if (!this.master || !this.ctx || !this.timer) return; this.master.gain.cancelScheduledValues(this.ctx.currentTime); this.master.gain.setValueAtTime(this.LEVEL * this.level(), this.ctx.currentTime); },
   stop() { if (this.timer) { clearInterval(this.timer); this.timer = null; } if (this.master && this.ctx) { this.master.gain.cancelScheduledValues(this.ctx.currentTime); this.master.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 1.5); } },
@@ -233,7 +234,12 @@ const Music = {
   swell(into) {
     const t = this.ctx.currentTime, g = this.master.gain;
     g.cancelScheduledValues(t); g.setValueAtTime(g.value, t);
-    g.linearRampToValueAtTime(into ? 0.26 : 0.16, t + (into ? 0.7 : 2.5));
+    // THROUGH THE PLAYER'S VOLUME, like every other write to this gain (SCAN-M18 A1.8). Music.start and
+    // Music.setVolume both ramp to LEVEL * level(); this ramped to bare 0.26 and 0.16 -- 0.16 being LEVEL written as
+    // a literal -- so the first fight of a game threw the master gain to full whatever the slider said, and left it
+    // at full afterwards for the rest of the session. At 25% volume that is six times what was asked for.
+    const L = this.LEVEL * this.level();
+    g.linearRampToValueAtTime(into ? L * this.SWELL : L, t + (into ? 0.7 : 2.5));
     const race = G.players[G.human].race, sc = this.scales[race] || this.scales.T, root = this.roots[race] || 41.2;
     const deg = into ? [0, 2, 4] : [4, 2, 0];
     deg.forEach((d, i) => this.pad(root * Math.pow(2, (sc[d % sc.length] + (into ? 24 : 12)) / 12), t + i * 0.16, into ? 0.9 : 1.6, into ? 0.42 : 0.24, race === 'Z' ? 'sawtooth' : race === 'P' ? 'sine' : 'triangle', into ? 1400 : 300));

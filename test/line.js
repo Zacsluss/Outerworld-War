@@ -165,5 +165,53 @@ ok(who.offLine === 0, 'nor is something standing beside the line rather than in 
   const br = src.slice(src.indexOf('if (w.line) {'), src.indexOf('this.visual(a, t, w);'));
   ok(/w\.targets/.test(br), 'and the flyer rule is read off the weapon, not hardcoded as `o.fly` in the branch'); }
 
+// =============================================================================
+// 5b. AN ALLY IS NOT YOUR TARGET EITHER (SCAN-M18 A1.3)
+// =============================================================================
+// Section 5's "ally" is spawned under the FIRER'S OWN owner, so it only ever proved the half that worked. The three
+// friendly-fire exclusions in js/combat.js -- the glaive's bounce, the line weapons and the splash -- all asked
+// `o.owner === a.owner`, while every other friendly test in the engine asks G.allied. Measured before the fix, in a
+// 2v2: a teammate's Firebat took my Marine 40 -> 24 while his own identical Marine at the same distance stayed at
+// 40, and the Mutalisk's glaive would pick an ally as its next bounce. This arena has a real third player on the
+// firer's team, which is the only way to tell the two predicates apart.
+const TEAM = `
+  G.init({ players: [{ race: 'T', human: false, name: 'A', team: 1 }, { race: 'Z', human: false, name: 'E', team: 2 }, { race: 'T', human: false, name: 'M', team: 1 }], seed: 3, layout: 'temple' });
+  for (const p of G.players) p.ai = null;
+  for (const u of [...G.units]) G.kill(u, null, true);
+  G.units = G.units.filter(u => u.alive);
+  G.checkVictory = () => { };
+  const T = TILE, m = G.map, ly = Math.floor(m.h / 2), lx = Math.floor(m.w / 2) - 12;
+  const ready = () => { G.updateVision(); G.rebuildGrid(); };
+  const tough = (id, own, tx, ty) => { const u = G.spawnUnit(id, own, (lx + tx) * T, (ly + (ty || 0)) * T); u.hp = 9999; u.maxHp = 9999; return u; };
+  const lost = u => Math.round((9999 - u.hp) * 10) / 10;
+`;
+const team = J(`(() => { ${TEAM}
+  const out = {};
+  out.allied = G.allied(0, 2) && !G.allied(0, 1);
+  // the line: an ally standing in the Hellion's flame
+  { const me = G.spawnUnit('hellion', 0, lx * T, ly * T), mate = tough('marine', 2, 2), mine = tough('marine', 0, 1), enemy = tough('zergling', 1, 4);
+    ready(); Combat.fire(me, enemy, me.def.gw);
+    out.line = { mate: lost(mate), own: lost(mine), enemy: lost(enemy) };
+    for (const u of [me, mate, mine, enemy]) G.kill(u, null, true); G.units = G.units.filter(u => u.alive); }
+  // the splash: an ally standing beside the Firebat's target
+  { const me = G.spawnUnit('firebat', 0, lx * T, ly * T), enemy = tough('zergling', 1, 3), mate = tough('marine', 2, 3, 1), mine = tough('marine', 0, 3, -1);
+    ready(); Combat.fire(me, enemy, me.def.gw);
+    out.splash = { mate: lost(mate), own: lost(mine), enemy: lost(enemy) };
+    for (const u of [me, mate, mine, enemy]) G.kill(u, null, true); G.units = G.units.filter(u => u.alive); }
+  // the glaive: the only thing within bounce range of the target is an ally
+  { const me = G.spawnUnit('mutalisk', 0, lx * T, ly * T), enemy = tough('zergling', 1, 3), mate = tough('marine', 2, 4);
+    ready(); Combat.fire(me, enemy, me.def.aw || me.def.gw);
+    out.glaive = { mate: lost(mate), enemy: lost(enemy) };
+    for (const u of [me, mate, enemy]) G.kill(u, null, true); G.units = G.units.filter(u => u.alive); }
+  return out;
+})()`);
+ok(team.allied, 'the arena really is an alliance: players 0 and 2 share a team and player 1 does not', JSON.stringify(team.allied));
+ok(team.line.enemy > 0 && team.line.mate === 0 && team.line.own === 0,
+  'a Hellion\'s flame spares an ALLY\'s marine, not just its owner\'s', JSON.stringify(team.line));
+ok(team.splash.enemy > 0 && team.splash.mate === 0 && team.splash.own === 0,
+  'and a Firebat\'s splash spares an ally\'s marine standing beside its target', JSON.stringify(team.splash));
+ok(team.glaive.enemy > 0 && team.glaive.mate === 0,
+  'and a Mutalisk\'s glaive does not BOUNCE onto an ally -- the bounce picks its next hop itself', JSON.stringify(team.glaive));
+
 ok(errors.length === 0, 'no JS errors were logged along the way', errors.slice(0, 3).join(' | '));
 summary({ nl: true });

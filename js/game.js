@@ -1347,6 +1347,14 @@ const G = {
     if (this.cheats.food && p.human) return false;
     return p.supUsed + need > p.supMax;
   },
+  // WHAT THE PRODUCTION GATE MUST ASK, and it is not supplyBlocked (SCAN-M18 A1.2). recomputeSupply books a queued
+  // unit's supply the moment it is queued -- every `prod` item that is not `reserved` is counted -- so asking
+  // supplyBlocked about that same item again adds its supply on top of its own reservation. Measured at 9/10 supply:
+  // queueUnit accepted a Marine, charged 50 minerals and took the player to 10/10; tickProduction then computed
+  // 10 + 1 > 10 and never set `started`, so 400 frames later the item sat at progress 0 with the money gone. The
+  // question for an item already booked is only whether the booking still fits -- which is false unless supMax has
+  // since FALLEN (a depot destroyed, a pylon unpowered), and that is exactly when production should hold.
+  supplyOver(p) { if (this.cheats.food && p.human) return false; return p.supUsed > p.supMax; },
   supplyRefused(p) {
     const A = p.alertAt || (p.alertAt = {});
     if (this.frame - (A.supply || -9999) < ALERTS.supply.cool) return false;
@@ -1357,15 +1365,13 @@ const G = {
   tickAlerts() {
     for (const p of this.players) {
       if (!p.human || p.defeated) continue;
-      // "blocked" is not only sitting on the cap: a queued unit that needs two supply with one free is
-      // stalled just as hard, and that is the case the production tick used to announce over and over.
-      let stalled = false;
-      if (p.supMax < SUPPLY_CAP && p.supUsed < p.supMax) for (const u of this.units) {
-        if (!u.alive || u.owner !== p.id || !u.prod.length) continue;
-        const it = u.prod[0]; if (it.kind !== 'unit' || it.started || it.reserved) continue;
-        const ud = DATA.units[it.id]; if (ud && this.supplyBlocked(p, ud)) { stalled = true; break; }
-      }
-      const blocked = p.supMax < SUPPLY_CAP && (p.supUsed >= p.supMax || stalled);
+      // "blocked" is sitting on the cap, and that is now the whole of it. There used to be a second test here that
+      // walked every production queue looking for an item supplyBlocked() refused -- "a queued unit that needs two
+      // supply with one free is stalled just as hard". That state cannot arise: queueUnit and larvaMorph both refuse
+      // an item there is no room for, and recomputeSupply books the room the moment they accept it, so a queued item
+      // is always already paid for in supply. The walk only ever fired because the production gate was counting that
+      // booking twice (SCAN-M18 A1.2, G.supplyOver) -- it was the alert agreeing with the bug rather than reporting it.
+      const blocked = p.supMax < SUPPLY_CAP && p.supUsed >= p.supMax;
       // 1. supply blocked. Checked first because it also explains away idle production: a barracks with
       //    the money but no supply room is not the player forgetting to click it.
       this.alert(p, 'supply', blocked, RACE_INFO[p.race].supplyMsg, 'error');

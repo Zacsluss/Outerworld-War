@@ -124,7 +124,12 @@ G.stateHash = function () {
 };
 // Execute a command now (records it when recording). Used for local play, replay playback and network delivery.
 G.exec = function (c) { if (this.recording) this.log.push({ f: this.frame, c }); this.applying = true; try { return CMD.apply(c); } finally { this.applying = false; } };
-G.unloadCargo = function (b, c) { const k = b.cargo.indexOf(c); if (k < 0) return; if (b.isBuilding) { b.cargo.splice(k, 1); b.cargo.unshift(c); this.unloadOne(b); } else this.unloadAll(b); };
+// ONE PORTRAIT IS ONE PASSENGER, in a transport as in a bunker (SCAN-M18 A1.4). The HUD draws a hotspot per cargo
+// unit, and this sent everything but a building to unloadAll: clicking the second marine's portrait in a loaded
+// Dropship put all four on the ground, over whatever the transport happened to be flying above. unloadOne already
+// handles a flyer (it looks for a free tile under it and refuses if there is none), so both halves are the same
+// move now: bring the clicked unit to the front of the queue and let one out.
+G.unloadCargo = function (b, c) { const k = b.cargo.indexOf(c); if (k < 0) return; b.cargo.splice(k, 1); b.cargo.unshift(c); this.unloadOne(b); };
 // Cheat codes (single player only)
 G.cheat = function (code, p) {
   const pl = this.players[p]; if (!pl) return false; const c = code.trim().toLowerCase(); const ch = this.cheats;
