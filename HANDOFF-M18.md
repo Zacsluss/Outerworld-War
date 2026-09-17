@@ -86,8 +86,8 @@ HARD RULES:
 - **The creep's texture is DONE** (PLAYTEST-M18 123): Abstract Organic 002, the user's pick; ten negative controls red. Drawing only,
   so the build stamp did not move. **Waiting on the user:** their playtest (the recorder on their word). **Deferred by the user until
   they say:** the AI rebalance (TODO-M18 7b). **Skipped by the user:** a look-and-feel pass of PLAYTEST-M18 101-108.
-- **The repository is PUBLIC.** **The playtest recorder is left running for the user** (`playtest` in `.claude/launch.json`,
-  `tools/playtest-listen.js`, port 8870); the screenshot servers were stopped at the close.
+- **The repository is PUBLIC.** **Nothing is left running.** The playtest recorder (`playtest` in `.claude/launch.json`,
+  `tools/playtest-listen.js`, port 8870) is started when the user says they are ready to playtest.
 
 ## What changed, in a player's language
 
