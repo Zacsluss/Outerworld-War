@@ -94,6 +94,54 @@ for (const [file, edit] of edits) {
   ok('every hashed name resolves in a full simulation context', unresolved.length === 0, unresolved.join(', '));
 }
 
+// 2c. STATIC members are hashed too. BUILD.parts() used to walk `c.prototype` only, so
+// GameMap.assignStarts -- which picks every player's start -- and GameMap.quadrantsOf -- which decides
+// which corners a layout's bases and features are copied into -- were invisible to the stamp: editing
+// either left the hash where it was, so a replay made before the edit loaded happily and re-simulated a
+// DIFFERENT map in silence, the one failure this whole file exists to refuse (SCAN-M18 A2.12). 2b above
+// cannot see it: it audits top-level declarations, and a static member is not one. The statics are found
+// by text here, so a static written tomorrow is checked tomorrow without anyone listing it.
+{
+  const found = [];
+  for (const f of SIM) {
+    let cls = null;
+    fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8').split(/\r?\n/).forEach((line, i) => {
+      const c = /^class\s+([A-Za-z_$][\w$]*)/.exec(line); if (c) { cls = c[1]; return; }
+      const s = /^  static\s+([A-Za-z_$][\w$]*)\s*\(/.exec(line); if (s && cls) found.push({ f, line: i + 1, cls, n: s[1] });
+    });
+  }
+  ok('the audit finds the statics (negative control for the parser)', found.length >= 3 && found.some(s => s.cls === 'GameMap' && s.n === 'assignStarts'),
+    found.map(s => s.cls + '.' + s.n).join(', ') || 'none found');
+  const B2 = vm.runInContext('BUILD', a);
+  const notSim2 = new Set(Object.keys(B2.NOT_SIM || {}));
+  const orphan = found.filter(s => !(B2.CLASSES || []).includes(s.cls) && !notSim2.has(s.cls + '.' + s.n));
+  ok('every static hangs off a class BUILD hashes, or says in NOT_SIM why not', orphan.length === 0, orphan.map(s => s.f + '.js:' + s.line + ' ' + s.cls + '.' + s.n).join(', '));
+  // A STATIC THAT SHARES A NAME WITH A COMMAND WRAPPER is hashed by its OWN source. CMD.install wraps
+  // prototype and singleton methods and BUILD.unwrap substitutes CMD.orig for them BY NAME, so applied to
+  // a class object it would hash every static called `stop` as CMD.orig.stop and make two different ones
+  // identical. No static is named that way today, so one is planted here rather than the guard being
+  // asserted by reading it: two bodies, two hashes.
+  {
+    const NL = String.fromCharCode(10);
+    const plant = body => makeCtx((f, s) => f === 'map' ? s.replace('  static quadrantsOf(L) {', '  static stop() { ' + body + ' }' + NL + '  static quadrantsOf(L) {') : s);
+    const h1 = vm.runInContext('BUILD.hash()', plant('return 1;')), h2 = vm.runInContext('BUILD.hash()', plant('return 2;'));
+    ok('a static named like a command wrapper is hashed by its own source, not by CMD.orig', h1 !== ha && h2 !== ha && h1 !== h2, h1 + ' vs ' + h2 + ' (base ' + ha + ')');
+  }
+  for (const s of found) {
+    const key = s.cls + '.' + s.n, excluded = notSim2.has(key);
+    let applied = false;
+    const c2 = makeCtx((f, src) => {
+      if (f !== s.f) return src;
+      const s2 = src.replace(new RegExp('^(  static\\s+' + s.n + '\\s*\\()', 'm'), '$1/* edited */');
+      applied = s2 !== src; return s2;
+    });
+    const h = vm.runInContext('BUILD.hash()', c2);
+    const vacuous = 'the edit matched nothing -- the anchor is stale, so this check is vacuous';
+    if (excluded) ok('editing ' + key + ', which NOT_SIM leaves out on purpose, does NOT change the hash', applied && h === ha, applied ? h + ' vs ' + ha : vacuous);
+    else ok('editing the static ' + key + ' changes the hash', applied && h !== ha, applied ? h + ' vs ' + ha : vacuous);
+  }
+}
+
 // 3. a save carries the stamp, and a foreign one is refused with a reason
 const c = makeCtx();
 vm.runInContext(`

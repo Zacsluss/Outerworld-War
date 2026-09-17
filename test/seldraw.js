@@ -14,6 +14,12 @@
 //       about: a queued gather carries a map RESOURCE, whose x/y are tile coordinates, so the line has
 //       to read cx/cy or every gather line points at the top-left of the map.
 //
+//  7.   THE SELECTION PANEL DRAWS THE OWNER'S COLOUR (SCAN-M18 A2.15). Sprites.tinted keys its cache by
+//       def, size and tint and left the PLAYER COLOUR out, while every other entry in the same cache
+//       carries it. The tint is 80% alpha over the icon, not paint over it, so a fifth of the colour
+//       shows through: select your own healthy Marines, then Ctrl-click an enemy Marine at the same
+//       size and health, and the cache handed back YOUR colour for theirs.
+//
 //  6.   A DEAD UNIT DRAWS NO HEALTH BAR (item 9), and its corpse still does. This was reported as a
 //       bug -- "when units die their health bar stays for a moment" -- and MEASURED before anything was
 //       changed (.claude/review/agent-draw/death-probe.js): across 1,500 drawn frames of a 40-unit
@@ -386,6 +392,36 @@ frame();   // warm: terrain chunks and sprite canvases bake on the first frame
     return { order: q.scv.order.type, tx: q.scv.order.tx, ty: q.scv.order.ty, queue: q.scv.queue.length, A: q.A };`);
   ok('...but the SAME worker placing WITHOUT shift may reuse its own old site: that order replaces its whole queue',
     replace.order === 'build' && replace.tx === replace.A[0] && replace.ty === replace.A[1] && replace.queue === 0, JSON.stringify(replace));
+}
+
+// ============================================================================
+// 7. the selection panel draws the OWNER's colour, not the last colour asked for (SCAN-M18 A2.15)
+// ============================================================================
+// Measured before the fix: one cache entry, 't|marine|32|rgba(60,230,60,0.8)', shared by both players --
+// the enemy's blue Marine came back as the canvas painted in the human's red, and icon() was never even
+// asked for the second colour. The last check is the one that stops the fix being "do not cache": the
+// same def, colour, size and tint asked for twice must still be one canvas.
+{
+  const out = R(ctx, `
+    G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'T', human: false, name: 'B' }], seed: 4, layout: 'temple' });
+    const mine = G.players[0].color, theirs = G.players[1].color;
+    const TINT = 'rgba(60,230,60,0.8)';                     // HUD.tintOf at full health
+    Sprites.cache.clear();
+    const realIcon = Sprites.icon.bind(Sprites); const asked = [];
+    Sprites.icon = (id, col, sz) => { asked.push(col); return realIcon(id, col, sz); };
+    const a = Sprites.tinted('marine', mine, 32, TINT);
+    const n1 = asked.length;
+    const b = Sprites.tinted('marine', theirs, 32, TINT);
+    const aAgain = Sprites.tinted('marine', mine, 32, TINT);
+    const n2 = asked.length;
+    Sprites.icon = realIcon;
+    return { twoColours: mine !== theirs, iconsDiffer: realIcon('marine', mine, 32) !== realIcon('marine', theirs, 32),
+      same: a === b, asked, repainted: asked.length > n1, cached: a === aAgain, noExtraForRepeat: n2 === n1 + 1,
+      keys: [...Sprites.cache.keys()].filter(k => k[0] === 't') };
+  `);
+  ok('the two players really are different colours and the icon cache already tells them apart (scene check)', out.twoColours === true && out.iconsDiffer === true, JSON.stringify(out.twoColours + '/' + out.iconsDiffer));
+  ok('an ENEMY unit\'s tinted portrait is not your own colour handed back out of the cache', out.same === false && out.repainted === true, JSON.stringify({ same: out.same, asked: out.asked, keys: out.keys }));
+  ok('...and the cache still caches: the same unit, colour, size and tint asked for twice is one canvas, painted once', out.cached === true && out.noExtraForRepeat === true, JSON.stringify({ cached: out.cached, asked: out.asked }));
 }
 
 console.log('\n' + (fail ? 'FAIL  ' : 'ALL PASS  ') + pass + ' passed, ' + fail + ' failed');

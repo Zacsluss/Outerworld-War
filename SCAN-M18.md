@@ -4,8 +4,10 @@ The user: "do a large scan refactor scan then bug scan". Four reading passes ove
 refactor debt, then four for defects. Every claim below was re-checked by hand, and the ones marked
 **measured** were reproduced with a probe kept in `.claude/review/scan/` (local scratch, gitignored).
 
-**A1 (all nine player-visible defects) is FIXED** -- PLAYTEST-M18 125, twelve negative controls red. Everything below
-A1 is still open. The gate was green (101/101) before the scan and is green after the A1 batch.
+**A1 (all nine player-visible defects) is FIXED** -- PLAYTEST-M18 125, twelve negative controls red.
+**A2 is FIXED except 10** -- 11, 12, 13, 14 and 15, PLAYTEST-M18 126, eleven negative controls red. **A2.10 is the
+one item that waits for the user's word and the gated balance run.** A3 (16-22) and B (1-11) are still open. The gate
+was green (101/101) before the scan and is green after each batch.
 
 ---
 
@@ -50,7 +52,7 @@ A1 is still open. The gate was green (101/101) before the scan and is green afte
 9. **"Set Rally" on the command card rallies only the first selected building** -- `js/ui.js:1154`
    (`sel[0]`), while the right-click path deliberately fans out over every producer (`js/ui.js:1112`).
 
-### A2. Correctness, but needs a judgement call
+### A2. Correctness, but needs a judgement call  -- 11, 12, 13, 14, 15 FIXED (PLAYTEST-M18 126); 10 still open
 
 10. **The AI's attack gate still reads the old 200 supply cap** -- `js/ai.js:1374` (`supUsed > 150`) and
     `js/ai.js:1377` (`supUsed >= 190`); `SUPPLY_CAP` has been 500 since M11 and `AI.supply()` was fixed for
@@ -58,30 +60,30 @@ A1 is still open. The gate was green (101/101) before the scan and is green afte
     ladder and the scouted-army floor. Measured by the scan: 611 of 611 launches after that point had
     `sup < threshold`, and `waves` ran to 623 against 21 with the clause removed -- same seed, same kills,
     same winner. **Fixing it changes AI behaviour, so it belongs with the gated balance run.**
-11. **`AI.headDef` is never cleared when the build script runs out** -- `js/ai.js:719` returns before the
+11. **FIXED.** **`AI.headDef` is never cleared when the build script runs out** -- `js/ai.js:719` returns before the
     only line that writes it, and the comment three lines down says "Cleared when the script runs out",
     describing a line that does not exist. Measured: for the last 11 minutes of a 30-minute game the head
     claim holds ~196 minerals / ~100 gas on every think, gas free is <= 0 on 54% of them, and the AI ends on
     829/871 floating against 219/258 with the field cleared.
-12. **The build stamp does not cover static methods** -- `js/build.js:155` hashes `c.prototype` only.
+12. **FIXED.** **The build stamp does not cover static methods** -- `js/build.js:155` hashes `c.prototype` only.
     `GameMap.assignStarts` (which picks every player's start) and `GameMap.quadrantsOf` (which places bases
     and features) are static and therefore invisible to it. **Measured:** with the hash cache cleared,
     changing a prototype method moves the stamp `678387e310c2c3fe -> e1793521f13a63e8`; changing
     `assignStarts` leaves it at `678387e310c2c3fe`, so an old replay would load and re-simulate a different
     game in silence. `test/version.js` cannot see this: its audit matches top-level declarations only.
-13. **Siege Mode's 40-frame transition costs nothing going in** -- `js/sim.js:205` returns `SIEGE_W` when
+13. **FIXED.** **Siege Mode's 40-frame transition costs nothing going in** -- `js/sim.js:205` returns `SIEGE_W` when
     `sieged` is true, shadowing the `transT > 0` lockout on the next line. **Measured:** the tank fires on
     frame 3 of a 40-frame transition. Un-sieging correctly pays the full cost.
-14. **Alt-click/drag and an in-progress right-drag fire through an open menu or codex** -- the alt branch is
+14. **FIXED.** **Alt-click/drag and an in-progress right-drag fire through an open menu or codex** -- the alt branch is
     first in `onDown` (`js/ui.js:532`), before the modal guards, and `onUp` (`js/ui.js:552`) has no modal
     guard at all. In a network game the lockstep runs behind the pause menu, so allies see you draw on the
     map while your menu is open, and the replay keeps it.
-15. **`Sprites.tinted` leaves the player colour out of its cache key** -- `js/sprites.js:97`. Select your own
+15. **FIXED.** **`Sprites.tinted` leaves the player colour out of its cache key** -- `js/sprites.js:97`. Select your own
     healthy Marines, then Ctrl-click an enemy Marine at the same tile size and health tint: the cache hits
     and the enemy's units are drawn in your team colour, in the one panel whose job is to say whose units
     you have.
 
-### A3. Map quality and the editor
+### A3. Map quality and the editor  -- OPEN, and next
 
 16. **Mineral patches sealed inside rock on generated maps** -- the basin generator paints its rock ellipses
     before placing bases and `rockClear` (`js/map.js:498`) protects ramps only. **Measured:**

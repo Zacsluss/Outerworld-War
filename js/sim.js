@@ -202,8 +202,14 @@ class Unit {
   // ---------------- weapons ----------------
   weaponFor(t) {
     const d = this.def;
-    if (d.id === 'siege_tank' && this.sieged) return t.fly ? null : SIEGE_W;
+    // THE TRANSITION IS CHECKED FIRST, and that order is the whole point. Siege Mode sets `sieged` and
+    // `transT = MODE_TRANS` in the same statement, so with the sieged line first it shadowed the lockout
+    // going IN: the tank fired on frame 3 of its own 40-frame deployment (SCAN-M18 A2.13, measured -- 37
+    // frames still on the clock, 143 damage already done). Going out was always right, because standing
+    // up clears `sieged` and only the lockout is left to match -- which is why half a bug this size can
+    // sit in two adjacent lines and look symmetrical. Both halves now cost the same 40 frames.
     if (d.id === 'siege_tank' && this.transT > 0) return null;
+    if (d.id === 'siege_tank' && this.sieged) return t.fly ? null : SIEGE_W;
     if (d.gw && d.gw.burrowOnly && !this.burrowed) return null;
     // Still digging in, or dug in and not yet armed. One chokepoint for the whole game: everything that
     // fires goes through weaponFor, so a mine mid-arm is invisible to the targeting pass, to Combat and

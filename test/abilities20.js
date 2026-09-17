@@ -36,6 +36,7 @@
 // 18. a worker whose patch mines out moves to another, and one sent to a dead patch turns away
 // 19. Infest Command Center: a damaged, landed hall changes hands and def; a healthy one is refused
 // 20. Personnel Cloaking: unseen without a detector, seen with one, energy draining while cloaked
+// 21. Siege Mode costs its forty frames going IN as well as coming out
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path'); const root = path.join(__dirname, '..');
 let pass = 0, fail = 0;
@@ -535,6 +536,41 @@ const NEVER = ['build_basic', 'build_adv', 'morph_menu', 'restoration', 'optical
   ok('A MORPH IS REFUSED FOR A UNIT INSIDE A TRANSPORT, and nothing is charged for it -- the egg would have sat at progress 0 until it was unloaded, because Unit.tick returns at its inside guard before an egg ever reaches tickProduction (measured: two frozen baneling cocoons in 75 minutes of AI games)', out.refused === false && out.spent === 0, JSON.stringify({ refused: out.refused, spent: out.spent }));
   ok('...and the player is told why rather than the click doing nothing', out.told === true, String(out.told));
   ok('...while the SAME Zergling unloaded morphs normally and its egg develops and hatches', out.outNow === true && out.ok2 === true && out.eggAfter[0] > out.eggAt0[0] && out.banelings === 1, JSON.stringify({ outNow: out.outNow, ok2: out.ok2, eggAt0: out.eggAt0, eggAfter: out.eggAfter, banelings: out.banelings }));
+}
+
+// ============================================================================
+// 21. Siege Mode costs its forty frames going IN as well as coming out
+// ============================================================================
+// SCAN-M18 A2.13. Siege Mode sets `sieged` and `transT` in one statement, and weaponFor tested `sieged`
+// FIRST -- so on the way down the sieged branch shadowed the lockout on the next line and the tank fired
+// on frame 3 of its own forty-frame deployment (measured: 37 frames still on the clock, 143 damage
+// already done). Standing up was always right, because it clears `sieged` and leaves only the lockout to
+// match, which is why two adjacent lines could look symmetrical while only one half was paid. The scene
+// check is the third arm: a tank ALREADY dug in, given no cast, must fire almost at once, or the two
+// checks above it would pass on a tank that simply could not reach.
+{
+  const scene = (startSieged, cast) => R(ctx, `
+    const p = fresh('T', 'T'); p.tech.add('siege_tech');
+    const b = G.map.bases[0];
+    const [x, y] = freeNear((b.x + 8) * TILE, (b.y + 8) * TILE);
+    const tk = sp('siege_tank', 0, x, y);
+    const tgt = wall(1, x + 6 * TILE, y, 'marine');           // six tiles: inside SIEGE_W's 12 and past its minRange 2
+    tk.sieged = ${startSieged}; tk.transT = 0; tk.order = { type: '${startSieged ? 'hold' : 'idle'}' };
+    const hp0 = tgt.hp;
+    const issued = ${cast} ? Abilities.issue(tk, 'siege_mode') : null;
+    const armedAtCast = !!tk.weaponFor(tgt);
+    let first = null, left = null;
+    for (let f = 1; f <= 200; f++) { run(1); if (first === null && tgt.hp < hp0) { first = f; left = tk.transT; } }
+    return { issued, transT: ${cast} ? ${'MODE_TRANS'} : 0, armedAtCast, first, left, trans: MODE_TRANS };
+  `);
+  const ready = scene(true, false), going = scene(false, true), coming = scene(true, true);
+  ok('a Siege Tank already dug in, six tiles from a target, opens fire within a few frames (scene check: without this the two below would pass on a tank that could not reach)',
+    ready.first !== null && ready.first < 10, JSON.stringify(ready));
+  ok('Siege Mode is accepted both ways (scene check)', going.issued === true && coming.issued === true, JSON.stringify([going.issued, coming.issued]));
+  ok('A SIEGE TANK DOES NOT FIRE WHILE IT IS DIGGING IN -- the whole forty-frame transition, not three frames of it',
+    going.armedAtCast === false && going.first !== null && going.first >= going.trans, JSON.stringify(going));
+  ok('...nor while it is standing up, which is the half that always worked',
+    coming.armedAtCast === false && (coming.first === null || coming.first >= coming.trans), JSON.stringify(coming));
 }
 
 ok('no JS errors', ctx.errors.length === 0, ctx.errors.slice(0, 3).join(' | '));

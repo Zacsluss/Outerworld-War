@@ -716,7 +716,15 @@ class AI {
     this.scriptSkipped = this.scriptSkipped || {};
     for (let i = 0; i < this.scriptIdx; i++) if (!this.scriptSkipped[i] && !met(i)) { this.scriptIdx = i; this.stepT = G.frame; break; }
     while (this.scriptIdx < s.length && met(this.scriptIdx)) { this.scriptIdx++; this.stepT = G.frame; }
-    if (this.scriptIdx >= s.length) return;
+    // THE HEAD CLAIM GOES WITH THE ORDER. The comment on the write below says "Cleared when the script
+    // runs out" and described a line that did not exist: this return came first, so an AI that had
+    // finished its build order went on holding the LAST step's cost in budget() for the rest of the game.
+    // Measured (SCAN-M18 A2.11), a hard Terran on The Long March, seed 3: the order ran out at 14:30 and
+    // every one of the 718 thinks after it still held a head -- 112 minerals and 76 gas on average, with
+    // nothing left in the gas budget on 95% of them. The supply gate below deliberately does NOT clear it:
+    // there the head is still the next step, only not due yet, and measured over the same game it never
+    // once differed from the head already held.
+    if (this.scriptIdx >= s.length) { this.headDef = null; return; }
     if (this.stepT === undefined) this.stepT = G.frame;
     if (p.supUsed < s[this.scriptIdx][0]) { this.stepT = G.frame; return; }
     // Remember what the head of the order is, so budget() can hold money for it BEFORE economy() and

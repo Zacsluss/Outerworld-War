@@ -53,4 +53,43 @@ for (const race of Object.keys(RES)) {
   ok(wrong.length === 0, 'and the three original morphs still resolve as they did', JSON.stringify([orig.map(o => o[1]), got]));
 }
 
+// SCAN-M18 A2.11. WHEN THE ORDER RUNS OUT, THE HEAD CLAIM MUST BE RELEASED. AI.script() returned at the
+// exhausted test BEFORE the one line that writes headDef, and the comment on that line -- "Cleared when
+// the script runs out" -- described a line that did not exist. So an AI that had finished its build
+// order went on holding the LAST step's cost in budget() for the rest of the game: measured on a hard
+// Terran, The Long March seed 3, the order ran out at 14:30 and every one of the 718 thinks after it
+// still held a head, 112 minerals and 76 gas on average, with nothing left in the gas budget on 95% of
+// them. Everything above this line reads the TABLES and never runs a game, which is why it could not see
+// a bug in the code that walks them.
+{
+  const R = src => vm.runInContext('(() => {' + src + '})();', ctx);
+  const r = R(`
+    G.init({ players: [{ race: 'T', human: true }, { race: 'T', human: false, difficulty: 'normal' }], seed: 1, layout: 'temple' });
+    const ai = G.players[1].ai, out = {}, stale = DATA.buildings.barracks;
+    // 1. AN ORDER THAT HAS RUN OUT. A one-step order naming a building the AI already owns is the
+    //    shortest way into that state; WHICH steps an order holds is not what is under test here.
+    ai.styleScript = () => [[0, 'command_center']];
+    ai.scriptIdx = 0; ai.scriptSkipped = {}; ai.headDef = stale;
+    ai.script();
+    out.ranOut = ai.scriptIdx >= 1;
+    out.headAfterRanOut = (ai.headDef && ai.headDef.id) || null;
+    ai.budget();
+    out.headClaims = ai.claims.filter(c => c.src === 'head').map(c => c.id);
+    // 2. THE SUPPLY GATE IS A DIFFERENT EXIT and deliberately keeps the head: there the step is still
+    //    the next one we owe, only not due yet. Measured over the same game, the head it holds there
+    //    never once differed from the head it already held.
+    ai.styleScript = () => [[400, 'barracks']];
+    ai.scriptIdx = 0; ai.scriptSkipped = {}; ai.headDef = stale;
+    ai.script();
+    out.notDueYet = ai.scriptIdx === 0 && ai.p.supUsed < 400;
+    out.headAfterNotDue = (ai.headDef && ai.headDef.id) || null;
+    return out;
+  `);
+  ok(r.ranOut, 'the setup reaches the exhausted-order return (without this the two checks below are vacuous)', JSON.stringify(r));
+  ok(r.headAfterRanOut === null, 'a build order that has run out releases its head claim', 'still holding ' + r.headAfterRanOut);
+  ok(r.headClaims.length === 0, '...so budget() holds no money for it', r.headClaims.join(', '));
+  ok(r.notDueYet, 'the setup reaches the not-due-yet return (without this the check below is vacuous)', JSON.stringify(r));
+  ok(r.headAfterNotDue === 'barracks', 'a step that is merely not due yet KEEPS its head claim', String(r.headAfterNotDue));
+}
+
 summary();

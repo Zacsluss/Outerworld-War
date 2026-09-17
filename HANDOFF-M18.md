@@ -20,7 +20,7 @@ Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
 Branch: m10-overnight, which IS origin/main (https://github.com/Zacsluss/Outerworld-War -- PUBLIC: git push publishes).
 HEAD: <run git log -1 --format=%h>. Working tree clean, nothing unpushed, no open PRs, no other branches, no extra worktrees.
 Machine: Windows 11; PowerShell 5.1 and Git Bash; Node 24; Rust + the Tauri CLI under desktop/; no gh CLI, no Blender.
-The gate (node test/all.js) is 101 suites, about four minutes, ALL GREEN; no known reds. Build stamp c6d7084ba9f97299.
+The gate (node test/all.js) is 101 suites, about four minutes, ALL GREEN; no known reds. Build stamp 48fa8a7ee8442c14.
 test/balance.js and test/proxy.js are GATED: never start them without an explicit, double-checked instruction.
 
 STATE: THE LOOKS QUEUE is DONE (the user's four items of 2026-09-14; PLAYTEST-M18 118-122): 1. a loading screen, so a game opens on
@@ -33,9 +33,15 @@ is made from them, kept purple, and falls back to the creep made in code where t
 aggressive" and it was toned down (relief 12 -> 5, gloss 1.8 -> 0.8).
 A WHOLE-CODEBASE SCAN was run on the user's word and is written up in SCAN-M18.md: 22 defects and 11 refactor items,
 each with the file, the line, a measurement and what it does to a player. The A1 batch -- all nine player-visible
-defects -- is FIXED (PLAYTEST-M18 125, twelve negative controls red). THIRTEEN DEFECTS (A2, A3) AND ELEVEN REFACTOR
-ITEMS (B) ARE OPEN and are the queue. One of them, the stale 150/190 supply literals in js/ai.js (A2.10), moves AI
-behaviour and so waits for the gated balance run.
+defects -- is FIXED (PLAYTEST-M18 125, twelve negative controls red), and so is A2 except item 10 (PLAYTEST-M18 126,
+eleven negative controls red): the build stamp now covers static methods, the AI releases its head claim when the
+build order runs out, a Siege Tank cannot fire while it digs in, a gesture cannot reach the map through an open menu
+or manual, and the selection panel draws an enemy's own colour. EIGHT DEFECTS (A3 16-22, and A2.10) AND ELEVEN
+REFACTOR ITEMS (B) ARE OPEN and are the queue. A2.10, the stale 150/190 supply literals in js/ai.js, moves AI
+behaviour and so waits for the gated balance run AND the user's word.
+NOTE on A2.11: releasing the head claim shifts AI pacing -- measured, the AI mines ~30% more and fields ~a third more
+army, but finishes fewer techs (8-12 against 23 over 45000 frames), so test/zerg12.js section 8 was re-pointed from
+30000 frames to 40000. The tech drop is a BALANCE question and belongs to TODO-M18 7b, not to the scan.
 THE ROCK IS CLOSED GROUND and is now checked (PLAYTEST-M18 124): the user saw a Creep Colony standing on the rock in item 123's
 picture and called it a bug. It was the PICTURE: that scene was staged with G.placeBuilding, which does not ask GameMap.canPlace.
 TRAP: a screenshot script that places buildings must go through canPlace, or it will show the game doing what the game refuses.
@@ -44,12 +50,13 @@ DEFERRED by the user until they say: the AI rebalance (TODO-M18 7b); it now also
 new Lost Ruins (PLAYTEST-M18 122; test/aistyles.js runs its style games on the old ground as a fixture). SKIPPED by the user: a
 look-and-feel pass of PLAYTEST-M18 101-108.
 
-THE NEXT ACTION: work SCAN-M18.md from the top of what is open -- A2 (12: the build stamp not covering static methods;
-11: AI.headDef never cleared; 13: Siege Mode firing during its transition; 14: alt-click through an open menu; 15: the
-sprite tint cache missing the player colour), then A3 (16-22: the map generator's buried mineral patches, the patch
-drawn on the geyser on every small map, the two editor bugs, the mis-centred help panel, the Sentinel's description,
-the larva splice), then B (the refactor debt) as its own commits. A2.10 is LAST and only with the user's word: it
-changes when every AI attacks.
+THE NEXT ACTION: work SCAN-M18.md from the top of what is open -- A3 (16-22: the map generator's buried mineral
+patches, the mineral patch drawn on the geyser on every small map including the shipped Close Quarters, editor undo
+not restoring W/H after a resize, the editor template putting resources in the border while its validator passes the
+map, the mis-centred help panel and network banners, the Sentinel's description claiming it costs no supply, and
+G.kill splicing the larva array it is iterating), then B (the eleven refactor items; B6 is the one with teeth --
+three implementations of "how high does this tile present" that disagree about the blocked test) as its own commits.
+A2.10 is LAST and only with the user's word: it changes when every AI attacks.
 
 STILL WAITING ON THE USER: their playtest (the recorder on their word), and the AI rebalance (TODO-M18 7b).
 
@@ -57,7 +64,9 @@ READ, in this order, before touching anything:
   1. CLAUDE.md          -- the working agreement; every rule in it is non-negotiable.
   2. HANDOFF-M18.md     -- this top section, then the traps in the sections under it.
   3. SCAN-M18.md        -- THE QUEUE: every open defect and refactor item, ranked, with the measurement that found it
-                           and, for each, which suite should have caught it and why it did not.
+                           and, for each, which suite should have caught it and why it did not. Section C is what the
+                           suite structurally cannot see.
+  3b. PLAYTEST-M18.md 125 and 126 -- how the two finished batches were fixed, tested and written up; match that shape.
   4. TODO-M18.md        -- THE LOOKS QUEUE (all four items, measured), then THE TERRAIN QUEUE.
   5. SHIPPING.md        -- before any release: Actions -> Desktop builds -> Run workflow (it ignores js/ and assets/), and open
                            the Mac app on a real Mac (never done: there is no Mac here).
@@ -92,8 +101,11 @@ HARD RULES:
 - **THE LOOKS QUEUE IS DONE** (the user, 2026-09-14; TODO-M18's first section), each item committed and pushed: 1. a loading screen
   makes a game's first frame its finished ground (PLAYTEST-M18 118); 2. creep as a continuous mass (119; and 120, a game started in a
   background tab); 3. cliffs that look about twice as tall (121); 4. every map redesigned to StarCraft II's structure (122).
-- **The gate is 101 suites, ALL GREEN**, about four minutes (`maplayouts` is new). **Build stamp `678387e310c2c3fe`** -- item 4
-  (`js/map.js`) moved it from `ca141a3b7ffcb528`; items 1-3 were drawing only. Older saves and replays are refused.
+- **The gate is 101 suites, ALL GREEN**, about four minutes (`maplayouts` is new). **Build stamp `48fa8a7ee8442c14`** --
+  the looks queue's item 4 (`js/map.js`) moved it from `ca141a3b7ffcb528` to `678387e310c2c3fe`, the scan's A1 batch to
+  `c6d7084ba9f97299`, and its A2 batch (`js/build.js`, `js/ai.js`, `js/sim.js`) to this one. Older saves and replays are
+  refused. **A2 also widened what the stamp can see**: static members are hashed now, so a change to `GameMap.assignStarts`
+  or `GameMap.quadrantsOf` moves it where it used to slip past.
 - **By hand after item 4:** `net_many` 51/51; `aistyles` on its pinned ground 132 / 131 / 132 on seeds 1 / 5 / 11 (seed 5's red is the
   known harasser line, 7b) with every style row identical to before the item; `queens` 25/25; `eightplayer` 19/19;
   `desktop/page-check.js` 22/22 (`desktop/dist` refreshed). Seventeen negative controls for item 4, every one red

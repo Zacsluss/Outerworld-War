@@ -61,11 +61,16 @@ const BUILD = {
   },
 
   // Only the functions of an object, by name. Used for the live singletons (G, CMD,
-  // Abilities...) whose own properties are mostly running game state.
-  fns(name, o, out) {
+  // Abilities...) whose own properties are mostly running game state, and -- with `statics` set to
+  // 'Class.' -- for a class object itself, whose static members `c.prototype` cannot see.
+  fns(name, o, out, statics) {
     if (!o) return;
     out.push('#' + name);
     for (const k of Object.getOwnPropertyNames(o).sort()) {
+      // A static deliberately left out names itself Class.member in NOT_SIM, with its reason, exactly
+      // as a top-level binding does. `prototype`, `length` and `name` need no entry: they are not
+      // functions, so the test below skips them anyway.
+      if (statics && this.NOT_SIM[statics + k] !== undefined) continue;
       // ACCESSORS ARE HASHED BY SOURCE, NEVER BY READING THEM. The old code did `v = o[k]` inside a
       // try/catch and skipped anything that threw, on the grounds that "getters on a prototype can
       // throw off an instance" -- which is true, and meant every accessor was silently skipped rather
@@ -81,7 +86,9 @@ const BUILD = {
         continue;
       }
       let v; try { v = o[k]; } catch (e) { continue; }
-      if (typeof v === 'function') { out.push(k, this.src(this.unwrap(k, v))); }
+      // CMD.install wraps prototype and singleton methods, never statics, so a static that happens to
+      // share a wrapped name is hashed by its own source rather than by the wrapper's original.
+      if (typeof v === 'function') { out.push(k, this.src(statics ? v : this.unwrap(k, v))); }
     }
   },
 
@@ -134,6 +141,8 @@ const BUILD = {
     AI_STYLE_CACHE: 'a cache of AI_SCRIPTS derivations, which are stamped',
     BUILD: 'the stamp itself',
     Replay: 'save/load plumbing (download, autosave, file reading); Replay.applyPending is named in HELPERS',
+    // Statics, keyed Class.member (see fns). Everything else static is hashed.
+    'Player.assignColors': 'which colour each seat is painted, and nothing else: no simulation code reads p.color, and PLAYER_COLORS beside it is NOT_SIM for the same reason. Stamping it would refuse a save for a paint rule',
   },
 
   // Every global that can change what the simulation does. Missing ones are skipped so
@@ -152,7 +161,15 @@ const BUILD = {
     // its source, so hashing both would count every method twice for nothing.
     { const M = look('Missions'); if (M && M.list) { out.push('$Missions.list'); this.ser(M.list, out, seen, 0); } }
     for (const n of this.SINGLETONS) this.fns(n, look(n), out);
-    for (const n of this.CLASSES) { const c = look(n); this.fns(n, c && c.prototype, out); }
+    // STATIC MEMBERS TOO. Hashing `c.prototype` alone missed every one of them, and two of the three
+    // decide the whole game: GameMap.assignStarts picks every player's start, GameMap.quadrantsOf
+    // decides which corners a layout's bases and features are copied into. SCAN-M18 A2.12 measured it --
+    // editing a prototype method moved the stamp c6d7084ba9f97299 -> 3499671e739ecad5 and editing either
+    // static left it at c6d7084ba9f97299 -- so a replay from before such an edit loaded happily and
+    // re-simulated a different map in silence, the exact failure this file exists to refuse. A static IS
+    // an own property of the class object, so these enumerate: unlike the top-level lists above there is
+    // no name list here to rot, and an opt-out has to say so in NOT_SIM.
+    for (const n of this.CLASSES) { const c = look(n); this.fns(n, c && c.prototype, out); this.fns(n + ' statics', c, out, n + '.'); }
     return out;
   },
 

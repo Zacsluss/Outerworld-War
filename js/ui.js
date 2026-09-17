@@ -529,15 +529,24 @@ const UI = {
     // mining a patch still highlights as the worker -- the unit is what a click there would select.
     this.hoverRes = (!this.hover && m.y < Render.H - this.consoleH) ? this.resourceAt(m.wx, m.wy) : (this.hover ? this.resourceUnder(this.hover) : null);
   },
+  // IS A MODAL OVER THE MAP -- the manual, or any of the menus (pause, settings, mission brief, game
+  // over, spectate)? onDown asks it branch by branch because each modal wants the click for itself;
+  // onUp asks it once, because a release has nothing to give them. One answer, so the two cannot drift.
+  modalOpen() { return !!this.menu || (typeof Codex !== 'undefined' && Codex.isOpen()); },
   onDown(e) {
     if (this.loading || this.prep) return;   // a rejoin catching up, or the loading screen: see onKey
     const m = this.mouse; m.x = e.clientX; m.y = e.clientY; [m.wx, m.wy] = this.screenToWorld(m.x, m.y);
-    // Alt is the signalling modifier (M12 item 9): alt-click pings, alt-drag draws a stroke. Both go
-    // out as commands, so allies see them and a replay keeps them.
-    if (e.altKey && e.button === 0 && m.y < Render.H - this.consoleH) { e.preventDefault(); this.sketch = [m.wx, m.wy]; return; }
     if (typeof Codex !== 'undefined' && Codex.isOpen()) { Codex.click(m.x, m.y, e.button); return; }
     if (Sound.ctx && Sound.ctx.state === 'suspended') Sound.ctx.resume();
     if (this.menu) { this.menuClick(m.x, m.y); return; }
+    // Alt is the signalling modifier (M12 item 9): alt-click pings, alt-drag draws a stroke. Both go
+    // out as commands, so allies see them and a replay keeps them -- which is exactly why this branch
+    // sits BELOW the two modal guards rather than above them. It used to be the first thing onDown did,
+    // so alt-clicking through an open pause menu or an open manual pinged the map anyway; in a network
+    // game the lockstep runs on behind the pause menu, so allies watched you draw on a map you were not
+    // even looking at, and the replay kept it (SCAN-M18 A2.14, measured). A click on a modal is a click
+    // on the modal whatever modifier is held.
+    if (e.altKey && e.button === 0 && m.y < Render.H - this.consoleH) { e.preventDefault(); this.sketch = [m.wx, m.wy]; return; }
     if (this.mode === 'replay' && e.button === 0 && (this.timelineClick(m.x, m.y) || this.prodClick(m.x, m.y))) return;
     if (m.y >= Render.H - this.consoleH) { this.consoleClick(m.x, m.y, e.button); return; }
     if (e.button === 0) {
@@ -556,6 +565,14 @@ const UI = {
   },
   onUp(e) {
     const m = this.mouse; if (this.miniDrag) { this.miniDrag = false; return; }
+    // A GESTURE THAT SPANS A MODAL IS DROPPED, NOT ISSUED. onUp had no modal guard whatsoever, so a
+    // right-drag already in flight when Escape opened the pause menu still issued its line command on
+    // release, and a stroke begun through the menu still went out as a signal. Both are COMMANDS: online
+    // the simulation runs on behind the menu, so allies saw them and the replay kept them (SCAN-M18
+    // A2.14). Dropping the gesture rather than issuing it is the same answer the codex and menu branches
+    // in onDown give -- a modal takes the input -- and the minimap drag above is left alone because it
+    // only moves this client's own camera.
+    if (this.modalOpen()) { this.sketch = null; this.lineDrag = null; m.down = false; this.drag = null; this.dragging = false; return; }
     if (this.sketch) {
       const pts = this.sketch; this.sketch = null;
       // a stroke of one point is a click, and a click is a ping -- so the same gesture covers both and

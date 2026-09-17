@@ -2166,6 +2166,84 @@ Saves and replays made before this are refused with a message, as they always ar
   move balance, so they wait for the gated balance run), the build stamp not covering static methods, and the map
   generator's buried mineral patches.
 
+## 126. Five more from the scan: the stamp that could not see a map change, a tank that shot while it was digging in
+
+*(The user's queue, 2026-09-17: the A2 batch of SCAN-M18 -- "correctness, but needs a judgement call". `js/build.js`,
+`js/ai.js`, `js/sim.js`, `js/ui.js`, `js/sprites.js`. Eleven negative controls, every one red
+(`.claude/review/scan/controls-a2.log`); the gate is 101/101.)*
+
+**THE BUILD STAMP MOVES** (three stamped files changed; the new stamp is `48fa8a7ee8442c14`, from `c6d7084ba9f97299`).
+Saves and replays made before this are refused with a message, as they always are when the simulation changes.
+
+**What changed for a player:**
+1. **An old replay can no longer quietly play a different game.** The version stamp on a save is a digest of every
+   rule the simulation runs -- and it was skipping the `static` half of the code, which happens to include the
+   function that decides *where every player starts* and the one that decides *which corners a map's bases and
+   features go in*. Change either and the stamp did not move, so a replay recorded before the change loaded
+   happily and then re-simulated a different map, in silence. That is the one failure the stamp exists to refuse.
+   (Player colours are still left out of it on purpose, and now say so: a colour is paint, and refusing someone's
+   save because a colour rule was tidied would be a bug of its own.)
+2. **A computer opponent that has finished its build order stops sitting on the money.** The last building in its
+   plan kept its price reserved for the rest of the game -- about 112 minerals and 76 gas held back on every
+   decision, with nothing left in its gas budget 95% of the time. Over three long games it now mines about 30%
+   more, fields about a third more army, and ends with its bank spent instead of 1,300 gas floating.
+3. **A Siege Tank no longer fires while it is still digging in.** Deploying takes forty frames; the tank was
+   getting its shot off on frame three of them and doing 143 damage before it had finished setting up. Standing
+   back up always cost the full forty. Both halves cost the same now.
+4. **The pause menu and the manual actually stop the mouse.** Alt-clicking or alt-dragging through an open pause
+   menu still pinged and still drew on the map, and a right-drag already in progress when you pressed Escape
+   still gave the order when you let go. In a network game the game keeps running behind your pause menu, so
+   your allies watched you drawing on a map you were not even looking at -- and the replay kept it.
+5. **An enemy's units are drawn in the enemy's colour in the selection panel.** The tinted portraits in the
+   console were cached by unit, size and health colour and *not* by player colour, so after selecting your own
+   healthy Marines, Ctrl-clicking an enemy Marine at the same size and health drew theirs in your colour -- in
+   the one panel whose job is to tell you whose units you are looking at.
+
+**How to playtest each by hand:**
+1. **The stamp:** invisible from normal play -- there is nothing to click. What you *can* see: save a game
+   (F5), then load it (the menu's Load). *Working:* it loads. A save from any earlier build is refused with a
+   message naming both stamps, which is the behaviour that is being protected, not changed.
+2. **The computer's money:** Skirmish against a computer, press Enter and type `black sheep wall`, then watch
+   its base after about twenty minutes. *Working:* it keeps expanding and keeps building units. *Was:* it
+   drifted into floating a thousand or more gas while its army stopped growing. (Easier to see in the numbers:
+   `node .claude/review/scan/probe-a2-11.js 40` prints the head claim on every decision after the order runs
+   out -- it should be nothing at all.)
+3. **The Siege Tank:** Terran, build a Factory with a Machine Shop, research Siege Tech, put a tank six tiles
+   from something of the enemy's, and press the Siege Mode button. *Working:* the tank settles, and the first
+   shell goes out when it has finished settling -- not while it is still unfolding.
+4. **The menu and the mouse:** in a game, hold **Alt** and click the map -- a ping. Now press **Escape** to open
+   the pause menu and Alt-click the map behind it. *Working:* nothing is pinged; the click goes to the menu.
+   The same with the manual (F1) open. Then: hold the **right** mouse button and drag across the map, press
+   **Escape** while still holding it, and release. *Working:* no order is given.
+5. **The enemy's colour:** select some of your own units at full health, then hold **Ctrl** and click an enemy
+   unit of the same kind (or box-select one). *Working:* the portrait in the console is drawn in the enemy's
+   colour, not yours.
+
+**Invisible from normal play, and where to look instead:**
+- `test/version.js` 2c (6 checks -- including one that plants a static named like a command wrapper, because no
+  real one is), `test/aiscripts.js` (5, and the first game that suite has ever run), `test/abilities20.js` 21 (4),
+  `test/review17ui.js` 12c (5), `test/seldraw.js` 7 (3). Eleven negative controls, every one red
+  (`.claude/review/scan/controls-a2.log`).
+- **One existing suite had to be re-pointed rather than satisfied, and the reason is counter-intuitive.**
+  `test/zerg12.js` section 8 asks whether a computer Zerg finishes an M12 tech inside its run, and it went red.
+  Measured both ways on its own three seeds (`.claude/review/scan/probe-a2-11-zerg12.js`): the stale reserve was
+  not *losing* the AI money, it was *saving* it -- nothing could spend it, so it floated, and research, which
+  runs almost last, was the only caller that ever reached the pile. With the reserve gone, workers and army get
+  it first, which is what the budget's stated priority order says should happen. The tech still lands, at 22-25
+  minutes instead of 18-19, so the run was lengthened from 30000 frames to 40000. **The total tech count falls
+  with it (8-12 against 23), and that is a balance question:** it belongs to the gated AI rebalance (TODO-M18 7b),
+  not to this batch.
+- **By hand after the stamped files changed:** `net_many` 51/51; `queens` 25/25; `eightplayer` 19/19; `aistyles`
+  132 / 131 / 132 on seeds 1 / 5 / 11 -- seed 5's single red is the known harasser line (7b), exactly as before.
+- **What is deliberately different:** `Player.assignColors` is the one static left OUT of the stamp, named in
+  `NOT_SIM` with its reason, because a colour is paint and nothing in the simulation reads it. And the AI's head
+  claim is released only when the order has genuinely run out, not when the next step is merely not due yet --
+  measured over a whole game, the not-due-yet case never once held a head that differed from the one already held.
+- **What is not fixed yet:** SCAN-M18's A3 (the map generator's buried mineral patches, the patch drawn on the
+  geyser on every small map, the two editor bugs, the mis-centred help panel, the Sentinel's description, the
+  larva splice) and B (eleven refactor items). And A2.10, the AI's stale 150/190 supply literals, which moves
+  when every computer opponent commits its army and so waits for the gated balance run and the user's word.
+
 ## 124. Nothing stands on the rock -- checked, and the screenshot that said otherwise explained
 
 *(The user, 2026-09-17, looking at the creep picture in item 123: "no units or buildings should be able to go on the big rock - i see

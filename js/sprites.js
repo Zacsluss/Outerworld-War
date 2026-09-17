@@ -92,9 +92,14 @@ const Sprites = {
     c.setTransform(1, 0, 0, 1, sz / 2, sz / 2); this.light(c, sz, 0.8);
     this.cache.set(key, cv); return cv;
   },
-  // Tinted silhouette (wireframe panel)
+  // Tinted silhouette (wireframe panel). THE COLOUR IS PART OF THE KEY, like every other entry in this
+  // cache. It was the one that left it out, and the tint is 80% alpha over the icon rather than paint on
+  // top of it, so the fifth of the player colour that shows through is real: select your own healthy
+  // Marines, then Ctrl-click an enemy Marine at the same size and health, and the cache handed back YOUR
+  // red for their blue (SCAN-M18 A2.15, measured -- one cache entry, one repaint, and icon() was never
+  // asked for the second colour at all). The one panel whose job is to say whose units you have.
   tinted(defId, color, sz, tint) {
-    const key = 't|' + defId + '|' + sz + '|' + tint; let s = this.cache.get(key); if (s) return s;
+    const key = 't|' + defId + '|' + color + '|' + sz + '|' + tint; let s = this.cache.get(key); if (s) return s;
     const base = this.icon(defId, color, sz); const cv = document.createElement('canvas'); cv.width = sz; cv.height = sz; const c = cv.getContext('2d');
     c.drawImage(base, 0, 0); c.globalCompositeOperation = 'source-atop'; c.fillStyle = tint; c.fillRect(0, 0, sz, sz); c.globalCompositeOperation = 'source-over';
     this.cache.set(key, cv); return cv;

@@ -25,6 +25,7 @@
 //     tells the truth about F-keys, and three pieces of dead code are gone.
 // 12. THE FOG SHOWED WHAT IS THERE, NOT WHAT YOU SAW: G.rememberSeen kept the memory since M11 and the
 //     renderer drew live enemy buildings on explored ground (REVIEW-M17 decision 10).
+// 12c. A GESTURE DOES NOT REACH THE MAP THROUGH AN OPEN MENU OR MANUAL (SCAN-M18 A2.14).
 // 13. TWO PRESENTATION COSTS, MEASURED (task 16): a canvas filter per settled corpse per frame (119 filter
 //     sets, 1.2 ms of a 1.9 ms frame after a battle) and a fillRect per tile per frame in the editor minimap
 //     (65,537 on a 256x256 map, 8.3 ms). A settled corpse is filtered once into a cached canvas; the minimap
@@ -50,7 +51,7 @@ function makeCtx() {
   vm.runInContext(`
     Sound.init = () => {}; Sound.click = () => {}; Sound.setMuted = () => {}; Sound.alert = () => {}; Sound.attack = () => {};   // js/ui.js declares Sound; js/audio.js is not loaded
     var Voice = { announce() {}, speak() {} };
-    var Codex = { open: false, wheels: [], isOpen() { return this.open; }, wheel(dy) { this.wheels.push(dy); return true; }, key() { return false; }, toggle() { this.open = !this.open; } };
+    var Codex = { open: false, wheels: [], clicks: [], isOpen() { return this.open; }, wheel(dy) { this.wheels.push(dy); return true; }, click(x, y, b) { this.clicks.push([x, y, b]); }, move() {}, key() { return false; }, toggle() { this.open = !this.open; } };
     UI.ping = UI.ping.bind(UI); UI.onUnitDied = () => {};
     Render.setZoom = z => { Render.zoomCalls.push(z); Render.zoom = z; }; Render.zoomCalls = []; Render.zoom = 1; Render.camX = 0; Render.camY = 0; Render.W = 800; Render.H = 600;
     UI.clampCam = () => {}; UI.centerOn = (x, y) => { UI.centred = [x, y]; };
@@ -350,6 +351,58 @@ R(ctx, `G.init({ players: [{ race: 'T', human: true, name: 'H' }, { race: 'Z', h
   ok('...and FX.reset() clears the cache with everything else', out.afterReset === 0, String(out.afterReset));
   ok('the editor minimap is one blit and a handful of fills, not a fill per tile (before: ' + out.tiles + ' + 1 fillRects a frame)', out.mini1.drawImages === 1 && out.mini1.fillRects < 8, JSON.stringify(out.mini1));
   ok('...drawn again unchanged it reuses the bitmap, and a painted tile rebuilds it in place', out.mini1.builds === 1 && out.mini2.builds === 1 && out.mini3.builds === 2 && out.mini3.key !== out.mini1.key && out.mini3.sameCanvas === true, JSON.stringify([out.mini1, out.mini2, out.mini3]));
+}
+
+// ============================================================================
+// 12c. A GESTURE DOES NOT REACH THE MAP THROUGH AN OPEN MENU OR MANUAL (SCAN-M18 A2.14)
+// ============================================================================
+// Two halves of one hole. onDown put the alt branch FIRST, above both modal guards, so alt-click pinged
+// and alt-drag drew a stroke on the map with the pause menu or the manual open over it. And onUp had no
+// modal guard at all, so a right-drag already in flight when Escape opened the menu still issued its
+// command on release. Both are COMMANDS -- online the lockstep runs on behind the pause menu, so allies
+// saw the draw and the replay kept it. The negative control is the last arm: with nothing open, all
+// three gestures must still go out, or 'blocked' could be satisfied by breaking the feature.
+{
+  const out = R(ctx, `
+    const sent = [];
+    const oSig = G.signal, oSmart = UI.smartCommand, oLine = UI.lineCommand, oCurve = UI.curveCommand;
+    G.signal = (...a) => { sent.push('signal:' + a[1]); };
+    UI.smartCommand = () => sent.push('smart'); UI.lineCommand = () => sent.push('line'); UI.curveCommand = () => sent.push('curve');
+    const ev = o => Object.assign({ clientX: 200, clientY: 200, button: 0, altKey: false, shiftKey: false, ctrlKey: false, preventDefault() {} }, o);
+    const reset = () => { sent.length = 0; UI.sketch = null; UI.lineDrag = null; UI.drag = null; UI.dragging = false; UI.mouse.down = false; };
+    const r = {};
+    // A. alt-click under the pause menu
+    reset(); UI.menu = 'pause';
+    UI.onDown(ev({ altKey: true })); r.sketchUnderMenu = !!UI.sketch; UI.onUp(ev({ altKey: true }));
+    r.underMenu = sent.slice();
+    // B. alt-click under the manual
+    reset(); UI.menu = null; Codex.open = true;
+    UI.onDown(ev({ altKey: true })); r.sketchUnderCodex = !!UI.sketch; UI.onUp(ev({ altKey: true }));
+    r.underCodex = sent.slice(); Codex.open = false;
+    // C. a right-drag begun on the map, Escape pressed before the button comes up
+    reset(); UI.menu = null;
+    UI.onDown(ev({ button: 2 })); r.dragStarted = !!UI.lineDrag;
+    UI.menu = 'pause';
+    UI.onUp(ev({ button: 2 }));
+    r.spanningMenu = sent.slice(); r.dragDropped = !UI.lineDrag;
+    // C2. the same for the manual: a stroke begun on the map, the manual opened before the button is up
+    reset(); UI.menu = null; Codex.open = false;
+    UI.onDown(ev({ altKey: true })); r.strokeStarted = !!UI.sketch;
+    Codex.open = true;
+    UI.onUp(ev({ altKey: true }));
+    r.spanningCodex = sent.slice(); r.strokeDropped = !UI.sketch; Codex.open = false;
+    // D. negative control: nothing open, the same three gestures
+    reset(); UI.menu = null;
+    UI.onDown(ev({ altKey: true })); UI.onUp(ev({ altKey: true })); r.altFree = sent.slice();
+    reset(); UI.onDown(ev({ button: 2 })); UI.onUp(ev({ button: 2 })); r.rightFree = sent.slice();
+    G.signal = oSig; UI.smartCommand = oSmart; UI.lineCommand = oLine; UI.curveCommand = oCurve; UI.menu = null;
+    return r;
+  `);
+  ok('alt-click through an OPEN PAUSE MENU sends nothing (was: a ping every ally saw, kept in the replay)', out.sketchUnderMenu === false && out.underMenu.length === 0, JSON.stringify(out.underMenu));
+  ok('alt-click through the OPEN MANUAL sends nothing', out.sketchUnderCodex === false && out.underCodex.length === 0, JSON.stringify(out.underCodex));
+  ok('a right-drag in flight when the menu opens is DROPPED, not issued on release', out.dragStarted === true && out.spanningMenu.length === 0 && out.dragDropped === true, JSON.stringify(out));
+  ok('an alt-stroke in flight when the MANUAL opens is dropped too, not sent as a signal', out.strokeStarted === true && out.spanningCodex.length === 0 && out.strokeDropped === true, JSON.stringify({ started: out.strokeStarted, sent: out.spanningCodex, dropped: out.strokeDropped }));
+  ok('...and with nothing open both gestures still go out (negative control: the guard has not simply broken them)', JSON.stringify(out.altFree) === JSON.stringify(['signal:ping']) && JSON.stringify(out.rightFree) === JSON.stringify(['smart']), JSON.stringify([out.altFree, out.rightFree]));
 }
 
 ok('no JS errors', ctx.errors.length === 0, ctx.errors.slice(0, 3).join(' | '));

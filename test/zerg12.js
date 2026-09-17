@@ -643,10 +643,24 @@ run(`(() => {
   // the Zerg fields Roaches on all three seeds and Volatile Bile on one, and the AI from before item G passes as well
   // (Roaches on two, Volatile Bile on one), so the rig was not chosen to fit the change (.claude/review/aipace/zerg12-when.js).
   //
-  // AND IT RUNS TO 30000 FRAMES since the looks queue (item 4) redesigned Lost Ruins. On the new map this Zerg fields Roaches on
-  // every seed by 11:06 but finishes its first M12 tech at 18:07-18:55 (seeds 7, 5, 6); the old map had it inside 20000 frames on
-  // one seed only (11:38). At 30000 all three seeds have one, and the tumour budget still holds at 8
+  // IT RAN TO 30000 FRAMES since the looks queue (item 4) redesigned Lost Ruins. On the new map this Zerg fielded Roaches on
+  // every seed by 11:06 but finished its first M12 tech at 18:07-18:55 (seeds 7, 5, 6); the old map had it inside 20000 frames on
+  // one seed only (11:38). At 30000 all three seeds had one, and the tumour budget still held at 8
   // (.claude/review/maps/probes/zerg12-section8.js, and .claude/review/aipace/zerg12-when.js --passive --frames=30000 on both maps).
+  //
+  // AND IT RUNS TO 40000 SINCE SCAN-M18 A2.11 -- releasing the head claim when the build order runs out. THE TEST WAS THE
+  // THING THAT NEEDED CHANGING, NOT THE CODE, and the reason is worth recording because it is counter-intuitive: the stale
+  // claim held roughly 112 minerals and 76 gas on every think for the rest of the game, and that money was not lost -- it was
+  // SAVED. Nothing could spend it, so it floated, and research(), which runs second to last, was the one caller that ever
+  // reached the pile. Take the tax away and economy(), supply() and production() -- all of which run first -- spend it on
+  // workers and army instead, which is what the budget's priority order says should happen. Measured over the three seeds of
+  // this rig at 45000 frames (.claude/review/scan/probe-a2-11-zerg12.js), fixed against reverted:
+  //   minerals mined 32300/32988/31604 against 25084/26072/24640, army 451/462/446 units against 343/355/330,
+  //   float at the end [0,252]/[88,371]/[204,374] against [259,1309]/[272,1462]/[390,1034] -- the old float is the tax --
+  //   and the first M12 tech at 25.5/22.4/22.5 minutes against 18.9/18.9/18.1. Later, not gone.
+  // So the horizon moves from 30000 (20.8 min) to 40000 (27.8 min), which clears the slowest seed by 2.3 minutes. The
+  // total tech count falls with it (8-12 against 23), and THAT is a balance question, not a correctness one: it belongs
+  // to the gated AI rebalance (TODO-M18 7b), not to this suite.
   const SEEDS = [5, 6, 7];
   const games = SEEDS.map(seed => json(`(() => {
     G.init({ players: [{ race: 'Z', human: false, difficulty: 'normal', name: 'A', team: 1 }, { race: 'T', human: false, difficulty: 'normal', name: 'B', team: 2 }], seed: ${seed}, layout: 'temple' });
@@ -659,7 +673,7 @@ run(`(() => {
     // roaches all dead in the last fight would read as "the AI never fields roaches".
     const ever = {};
     const sample = () => { for (const u of G.units) if (u.owner === 0) ever[u.def.id] = 1; };
-    for (let i = 0; i < 30000; i++) { G.tick(); if ((i & 15) === 0) sample(); }
+    for (let i = 0; i < 40000; i++) { G.tick(); if ((i & 15) === 0) sample(); }
     sample();
     const seen = {};
     for (const u of G.units) if (u.alive && u.owner === 0) seen[u.def.id] = (seen[u.def.id] || 0) + 1;
