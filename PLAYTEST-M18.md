@@ -1941,3 +1941,105 @@ change in elevation?" Drawing only -- `js/terrain.js` (`CLIFF_W`, `CLIFF_EVEN`, 
   ramp's wall meets a plateau and lines where it changed from tile to tile (`.claude/review/terrain/shots/cliff-variants-3`, `cliff-sets-1`).
 - **The wider face reaches about a sixth of a tile onto the walkable ground either side of the cliff tile.** Only the picture: where units
   walk and build is unchanged.
+
+## 122. Every map laid out the way StarCraft II lays its maps out
+
+*(The looks queue, item 4 -- the user, 2026-09-14: "All of the maps are very uninspired. Look at images of actual StarCraft II maps and
+redesign the layout of all maps in the game according to the generalized structure that StarCraft II maps have." The layouts are
+`MAP_LAYOUTS` and `MAP_SIZES` in `js/map.js`, the generated ones `Archetypes`; the research and what was chosen, RESEARCH-TERRAIN.md
+8.14; `test/maplayouts.js` is new.)*
+
+**THE BUILD STAMP MOVES** (`js/map.js` is stamped; the new stamp is `678387e310c2c3fe`, from `ca141a3b7ffcb528`). Saves and replays made
+before this commit are refused, as they should be: the ground they were played on has changed.
+
+**What changed for a player** (pictures: `.claude/review/terrain/shots/looks4-*.png`, before on the left, after on the right):
+1. **Every map follows StarCraft II's skeleton.** Your main is on high ground with one ramp down; the ramp empties towards your natural,
+   the nearest base on foot, which sits behind a choke; your thirds are further out; later bases are further still and more exposed; the
+   middle is broken into lanes by rock; a back door into your side is shut by rocks you can destroy. Every base's minerals now sit on the
+   level of its town hall, clear of the map's edge.
+2. **Lost Ruins** (128, four players), after StarCraft II's Lost Temple: your ramp runs east along the top of the map to a natural beside
+   your main; a linear third below your main, with a narrow path to it from the natural under your cliff that a small rock formation
+   shuts; a ruined temple on high ground in the middle with a rich base (5000 a patch) on each corner, climbed by a wide ramp in the middle
+   of each side; broken pillars through the middle ground. Four bases a player, as before.
+3. **Blood Pit** (128, four players): close corners and a pit in the middle -- a ring of rock round the centre, open at its west and east
+   gates and shut by rocks at its north and south ones, with four rich bases on the pit's floor. Your natural is below your main's ramp,
+   your third along the top or bottom edge. Four bases a player (was three).
+4. **Twilight Valley** (128, two players) is now turned half round the centre, as StarCraft II's one-against-one maps are, instead of
+   mirrored four ways with two empty corners. Seven bases a player (was five): main, natural, a linear third down the west edge behind a
+   rock-shut back door, a triangle third along the north edge, a fourth in the far corner, a fifth on the north edge, and a rich base past
+   the western lane; a watch hill in the middle, climbed from north and south, with rock masses turning the middle into three lanes. Main
+   to main is 128 tiles on foot (was 115).
+5. **Close Quarters** (small, 96, two players): no longer a featureless duel. Your main is up a ramp (the map had no high ground at all),
+   with a natural below it and a third along the top edge -- three bases a player (the two mains used to share two); a watch hill in the
+   middle; rocks shut a back door into the natural. Turned half round, not mirrored. Main to main 92 tiles on foot (was 64).
+6. **Contested Ground** (medium, 128, four players): main, natural, a third along the top edge, and a fourth on a central plateau every
+   player can climb by a wide ramp in the middle of each side -- four bases a player (was three); back doors down the west and east edges.
+7. **Broken Expanse** (large, 192; also **Dust Bowl** and **Nightfall**): seven bases a player (was five) -- natural, a linear and a
+   triangle third, a fourth on a high pod in the broken middle, a sixth out by your neighbour, and the fifth on the central plateau.
+8. **The Long March** (huge, 256): eight bases a player (was seven), at 1300 a patch (was 1100), so a player's whole territory is still
+   worth about what large's is (66,300 against 67,500 minerals); a high pod each, long ridges across the lanes, a great central plateau.
+9. **The generated maps**: the **Open Basin**'s mains are now up a ramp like every other map's, its naturals a little further out. A
+   **two-player generated map** (any archetype on the small size) used to leave two corners empty; they now hold expansions where a main and
+   a natural would be, fairly: each corner's bases are the half turn of the opposite corner's.
+10. **Unchanged:** unit stats, the terrain's look, the size modes' patch and gas rules except The Long March's patch, how many players each
+    map takes, and every generated map's shape (river, channels, terraces, open middle).
+
+**How to see it by hand:**
+1. **Single Player -> Skirmish -> map Lost Ruins**, any race. Press **Enter**, type **black sheep wall**, **Enter** (the map is revealed; single
+   player only), and zoom out with the mouse wheel. *Working:* your main in a corner on high
+   ground, its one ramp running east to a natural along the top edge; the temple in the middle with a rich base on each corner and a ramp
+   in the middle of each side. Select a mineral patch at a temple base: *5000*.
+2. **Walk a worker** from your natural towards the base below your main (south-west). *Working:* the short path under your main's cliff is
+   shut by a rock formation; attack it (it takes a while) and the path opens.
+3. **Twilight Valley.** *Working:* the enemy main is in the opposite corner, and the other two corners hold bases (not empty plateaus); the
+   map looks the same turned upside down, not left-to-right.
+4. **Close Quarters** (map sizes -> small). *Working:* your main is on high ground with a ramp; a small hill in the middle.
+5. **Contested Ground, Broken Expanse, The Long March.** *Working:* a central plateau with bases on it and a wide ramp on each side;
+   on the large and huge maps a small plateau with a base between your side and the middle.
+6. **Play a computer opponent** on Lost Ruins, reveal the map as in step 1, and watch its corner for four or five minutes. *Working:* its
+   first expansion is the natural beside its main, not the base below its main.
+7. **Generated maps: Skirmish -> map Procedural: Open Basin**, size auto. *Working:* your main is on a small plateau with a ramp. Then
+   **Procedural: Chokepoint Valley**, size **small**: *Working:* all four corners hold bases.
+
+**Invisible from normal play, and where to look instead:**
+
+| Map | Bases a player | Minerals a player | Main to main on foot | High ground tiles |
+|---|---|---|---|---|
+| Lost Ruins | 4 -> 4 | 40,500 -> 63,000 | 120 / 102 / 106 -> 142 / 104 / 137 | 4520 -> 3668 |
+| Blood Pit | 3 -> 4 | 30,000 -> 61,500 | 110 / 100 / 101 -> 159 / 119 / 107 | 356 -> 1916 |
+| Twilight Valley | 5 -> 7 | 72,000 -> 94,500 | 115 -> 128 | 5460 -> 1994 |
+| Close Quarters | 2 -> 3 | 32,000 -> 46,000 | 64 -> 92 | 0 -> 1226 |
+| Contested Ground | 3 -> 4 | 31,500 -> 40,500 | 111 / 100 / 106 -> 134 / 119 / 107 | 3624 -> 3400 |
+| Broken Expanse | 5 -> 7 | 49,500 -> 67,500 | 198 / 164 / 170 -> 203 / 185 / 169 | 5480 -> 7332 |
+| The Long March | 7 -> 8 | 49,500 -> 66,300 | 263 / 228 / 234 -> 267 / 249 / 231 | 8392 -> 10116 |
+
+(Walking distances with every rock formation shut, from the first start to each other start: `.claude/review/maps/probes/rush.js`.)
+- **`test/maplayouts.js`** (new, 27 checks): the layout language (rot2 painting and copying, poly, line, faces); on every fixed map one ramp
+  down from each main, the natural on low ground and nearest on foot, three or more bases a player, every resource on its hall's level and
+  inside the playable ground, every rock formation in a real gap (ten tiles or more of detour saved), no mineral line in siege range of
+  high ground that is not its own, the two-player maps turned half round with bases in every corner, the computer player's first pick its
+  natural; and on the generators' two-player maps, full and fair corners. **Seventeen negative controls, every one red**
+  (`.claude/review/maps/controls-maps.js`, log `controls-maps.log`); one first stayed green and was moved closer (logged).
+- Changed checks, each measured first (`.claude/review/maps/probes/`): `verticality` (every main on all 60 maps is on high ground;
+  central plateaus; the old Twilight Valley's rich-geyser hole kept as a fixture), `mapmodes` (territory computed, every size's mains
+  high), `mapfeatures` (the fixed maps carry exactly their listed rocks), `ramps` (the two pictured ramps re-drawn; the climb re-staged
+  on the east-running ramp), `craters`, `creepspeed`, `features`, `forceattack`, `seldraw`, `saveload`, `overlap`, `zerg12` (its AI
+  game runs 30,000 frames: on the new ground the Zerg's first M12 tech comes at 18:07-18:55 on all three seeds), `terraintex` and `aistyles` (both keep the
+  ground they were calibrated on as a fixture: the approved bake's golden chunks match byte for byte, and the style games are the old
+  Lost Ruins -- see below), `terrainview`. The gate is **101 suites**.
+- **By hand:** `net_many` 51/51. `aistyles` on its pinned ground: seed 1 132/132, seed 11 132/132, seed 5 131/132 (the known harasser
+  line, TODO-M18 7b) -- every style row identical to before this item; `queens` 25/25; `eightplayer` 19/19.
+
+**Deliberately different from what was asked, or not done:**
+- **The style comparisons in `test/aistyles.js` run on the old Lost Ruins**, kept in the test. On the new one three of those loose,
+  single-game comparisons flip with no style changed (seed 1 and 5: "expander commits a bigger first wave than standard"; seed 11: both
+  of the rusher's against standard -- `.claude/review/aipace/looks4c-aistyles-*.log`). Re-calibrating them is the AI rebalance's (7b),
+  which waits for you.
+- **Lost Ruins' linear third moved five tiles south, not the AI.** The computer player picks its next base by straight line, and with the
+  third first drawn 27 tiles from the main against the natural's 30 every AI took the far third first. An AI that takes the named
+  natural first was written and measured (`.claude/review/maps/ai-natural-first.js.txt`); it did the same thing the moved third does and
+  is not in, so the AI's code is unchanged.
+- **No watchtowers, sight blockers or mineral walls** -- the engine has none; a high-ground hill is the watch post. Two heights, not three.
+- **Rich bases hold more (5000 a patch) but look like any other**; StarCraft II colours them gold.
+- **The generated maps keep their shapes** (the river, the channels, the terraces, the open middle): they gained the main up a ramp
+  (the basin) and full corners on two players, not a new layout.

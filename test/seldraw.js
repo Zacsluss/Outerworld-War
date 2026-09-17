@@ -350,7 +350,9 @@ frame();   // warm: terrain chunks and sprite canvases bake on the first frame
     const other = G.spawnUnit('scv', 0, hall.x - 40, hall.y + 90);
     // an ENEMY drone on its way to build: its plan must not draw
     const E = free(hall.tx + 14, hall.ty + 12, [A, B, C]);
-    const drone = G.spawnUnit('drone', 1, (E[0] - 2) * TILE, (E[1] - 2) * TILE);   // beside its own site, and off the depots' (it stood on site A once, and canPlace said so)
+    // at its own start, on its way: beside its site it stood on a depot site twice -- site A once, and A's corner again on the new
+    // Lost Ruins (the looks queue), where canPlace refused the SCV's own re-placement as a unit in the way
+    const drone = G.spawnUnit('drone', 1, G.players[1].startX, G.players[1].startY + 4 * TILE);
     // G.applying: an order to a unit that is not the local player's goes through the command-log wrapper otherwise, and never lands
     G.applying = true; try { drone.setOrder({ type: 'build', def: DATA.buildings.spawning_pool, tx: E[0], ty: E[1] }); } finally { G.applying = false; }
     G._plan = { A, B, C, E, scv, other, def, drone };

@@ -69,11 +69,13 @@ const facts = R(bare, `
     const cc = DATA.buildings.command_center, pl = { id: 0, race: 'T' };
     const unplaceable = m.bases.map(b => m.canPlace(cc, b.x, b.y, pl, [], null) && (b.x + ',' + b.y + ': ' + m.canPlace(cc, b.x, b.y, pl, [], null))).filter(Boolean);
     const mainBank = m.starts[0].minerals.reduce((a, r) => a + r.amount, 0);
+    const territory = m.resources.reduce((a, r) => a + (r.type === 'mineral' ? r.amount : 0), 0) / m.players;
+    const highMains = m.starts.filter(s => m.height[m.idx(s.x + 2, s.y + 1)] === 2).length;
     out[k] = { w: m.w, h: m.h, players: m.players, bases: m.bases.length, starts: m.starts.length, walk, high,
       spawnGap: m.starts.length > 1 ? Math.hypot(m.starts[0].cx - m.starts[1].cx, m.starts[0].cy - m.starts[1].cy) / TILE : 0,
       unreachable, centreOk: m.walk[cy * m.w + cx] === 1 && !!f.seen[cy * m.w + cx], unplaceable,
       patch: m.starts[0].minerals[0].amount, patches: m.starts[0].minerals.length, gas: m.starts[0].geyser.amount,
-      mainBank, size: m.size || null, hazard: !!m.hazard, name: m.name };
+      mainBank, territory, highMains, size: m.size || null, hazard: !!m.hazard, name: m.name };
   }
   return out;
 `);
@@ -97,16 +99,15 @@ asc('playable ground', SIZES.map(k => facts[k].walk));
 // out-expanding, so its mains have to hold enough to fight out of; a huge one must not let you sit.
 ok('a main base holds less as the map grows: ' + SIZES.map(k => k + ' ' + facts[k].mainBank).join(', '),
   facts.small.mainBank > facts.medium.mainBank && facts.medium.mainBank >= facts.large.mainBank && facts.large.mainBank > facts.huge.mainBank);
-ok('a whole territory is worth about the same on large and huge, spread over more bases',
-  Math.abs((facts.large.mainBank / facts.large.patches * 33) - (facts.huge.mainBank / facts.huge.patches * 45)) < 1,
-  (facts.large.patch * 33) + ' vs ' + (facts.huge.patch * 45));
+ok('a whole territory is worth about the same on large and huge, spread over more bases: ' + facts.large.territory + ' against ' + facts.huge.territory + ' minerals a player',
+  Math.abs(facts.large.territory - facts.huge.territory) <= facts.large.territory * 0.05 && facts.huge.bases / facts.huge.players > facts.large.bases / facts.large.players);
 ok('small is a two-player map and the rest are four', facts.small.players === 2 && [facts.medium, facts.large, facts.huge].every(f => f.players === 4));
-ok('small has no high ground at all, so there is no ramp to hold', facts.small.high === 0);
-ok('every other size has high ground', [facts.medium, facts.large, facts.huge].every(f => f.high > 0));
+// Small had no high ground at all until the looks queue gave every map StarCraft II's skeleton: a main up a ramp.
+ok('every size puts every main on high ground, small included', SIZES.every(k => facts[k].high > 0 && facts[k].highMains === facts[k].players), SIZES.map(k => k + ' ' + facts[k].highMains + '/' + facts[k].players).join(', '));
 ok('large and huge have a central plateau bigger than their four mains', facts.large.high > facts.medium.high && facts.huge.high > facts.large.high);
 
-// The layouts that every existing test, mission and balance log was measured on must not have moved.
-ok('temple is untouched: 128x128, 16 bases, 1500 a patch, 5000 gas, no size mode, no hazard',
+// The rules every existing test, mission and balance log was measured on must not have moved -- the ground did, in the looks queue.
+ok('temple keeps its rules: 128x128, 16 bases, 1500 a patch, 5000 gas, no size mode, no hazard',
   facts.temple.w === 128 && facts.temple.h === 128 && facts.temple.bases === 16 && facts.temple.patch === 1500
   && facts.temple.gas === 5000 && facts.temple.size === null && facts.temple.hazard === false,
   JSON.stringify({ w: facts.temple.w, bases: facts.temple.bases, patch: facts.temple.patch, gas: facts.temple.gas, hazard: facts.temple.hazard }));

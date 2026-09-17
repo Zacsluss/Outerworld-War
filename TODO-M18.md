@@ -1,18 +1,18 @@
 # TODO-M18 — the user's thirteen-item list from the first internet game
 
 Started when the fifth session paused for the night (2026-09-12) and kept since. `HANDOFF-M18.md` has the state, the
-traps and the kickoff prompt; this file is the open list. **Its first section, THE LOOKS QUEUE, is the work in hand**; the terrain queue follows it; the
+traps and the kickoff prompt; this file is the open list. **Its first section, THE LOOKS QUEUE, is done** (all four items); the terrain queue follows it; the
 user's answers and the earlier queues follow (THE TENTH SESSION'S QUEUE and THE WORK QUEUE are all done), then the sessions'
 lists (what each did, with commits), the older items with their measurements, and what is closed. There are no worktrees.
 `SHIPPING.md` is what must be done before the final build ships.
 
-The gate is **100 suites** (`node test/all.js`, about two minutes) and **ALL GREEN**. Every rule in `CLAUDE.md` applies to every
+The gate is **101 suites** (`node test/all.js`, about four minutes) and **ALL GREEN**. Every rule in `CLAUDE.md` applies to every
 item here: measure before fixing, a negative control that goes cleanly RED, `tools/patch.js` for edits, and the gate green before
 the commit.
 
 ---
 
-## THE LOOKS QUEUE -- the user's four items (2026-09-14), in this order
+## THE LOOKS QUEUE -- the user's four items (2026-09-14), in this order -- ALL FOUR DONE
 
 **The user's words:** "1. when the game first loads I see the old textures and then the new textures load in after a second and a half
 delay. This looks super unprofessional, I can't ship like this. How can we fix this so the new terrain textures are the only thing that's
@@ -49,10 +49,22 @@ for greater realism." and "can you show me the links for the textures so I can s
    Before the change: the textured bake's cliff is one drop the width of the cliff tile,
    lit with `RISE` 22 (its faces already at the shade clamps) and a cast shadow read 11 px up and 9 px left (`SHY`/`SHX`), the same
    in `paintOverviewTex`; the pinned chunks in `test/terrain-golden.json` will have to be re-pinned on purpose.
-4. **Every map redesigned to StarCraft II's structure** -- **OPEN, next.** The research brief is `.claude/review/maps/research-brief.md`
-   (opposite spawns with rotational symmetry, a main on high ground with one ramp into a natural, a linear and a triangle third, 7-8
-   bases a player, a centre of 2-3 lanes, rocks on back doors). A stamped change (`js/map.js`): the build stamp moves, and
-   `node test/net_many.js` and `node .claude/review/aipace/run-after.js <tag>` follow.
+4. **Every map redesigned to StarCraft II's structure** -- **DONE** (PLAYTEST-M18 122; RESEARCH-TERRAIN.md 8.14). The research brief is
+   `.claude/review/maps/research-brief.md` (opposite spawns with rotational symmetry, a main on high ground with one ramp into a natural,
+   a linear and a triangle third, 7-8 bases a player, a centre of 2-3 lanes, rocks on back doors). Measured before: every map was a corner
+   plateau and a few ellipses mirrored four ways, two-player maps included (their other two corners empty), Close Quarters had no high
+   ground, and no fixed map had a rock formation. All seven fixed layouts drawn again by hand in a layout language that gained `sym:
+   'rot2'`, `poly`, `line` and a base's `face` (old layouts paint tile for tile as before, 141 maps compared); the two-player maps turned
+   half round; bases a player 4/4/7/3/4/7/8 (was 4/3/5/2/3/5/7); The Long March at 1300 a patch; the open basin's mains up a ramp; a
+   two-player generated map's empty corners filled fairly. Found by looking and fixed: back-door rocks in open ground, bases on their own
+   cliffs, geysers in the border, a centre base in its own ramp; and the AI's straight-line expansion pick, which took Lost Ruins' linear
+   third before its natural -- the third was moved (an AI rule that did the same was measured and not kept). `test/maplayouts.js` new
+   (27 checks, 17 negative controls red); fifteen suites re-staged on the new ground, each measured first (the terrain golden and the AI
+   style games keep the ground they were calibrated on as a fixture). The build stamp is `678387e310c2c3fe`. By hand: `net_many` 51/51;
+   `aistyles` on its pinned ground 132 / 131 (the known harasser line) / 132 on seeds 1 / 5 / 11, rows identical to before; `queens`
+   25/25; `eightplayer` 19/19. **For 7b:** on the new Lost Ruins three loose style comparisons flip with no style changed
+   (`.claude/review/aipace/looks4c-aistyles-*.log`), and the Zerg AI's first M12 tech comes at 18:07-18:55, where the old ground had one seed at 11:38 (the zerg12 game
+   now runs 30,000 frames).
 
 ## THE USER'S PLAYTEST OF THE TERRAIN QUEUE (2026-09-13, recorded: `.claude/review/playtest/2026-09-13_21-44-02/`)
 

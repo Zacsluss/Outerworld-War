@@ -392,3 +392,39 @@ Licence: CC0, no credit needed ([polyhaven.com/license](https://polyhaven.com/li
   doubled, with ramps at the old rise and the old shadow reach (at twice both a ramp facing away from the sun went dark); a shade floor of
   0.62 so a shaded face shows its rock. Rejected: a south-facing face stretched as a northward-tilted camera would see it, whose facing,
   read from the height field's slope, drew spikes at ramp walls and lines between tiles.
+
+### 8.14 Every map laid out the way StarCraft II lays maps out *(the looks queue, item 4, 2026-09-14; PLAYTEST-M18 122)*
+
+The brief is `.claude/review/maps/research-brief.md` (a research agent reading Liquipedia's *Natural Expansion* and *Forge Fast
+Expansion*, the TeamLiquid map-making contest rules, python-sc2's ramp data, Agaton's map-making notes at urbangustavsson.com/starcraft2,
+and the StarCraft Wiki's overview images of Ever Dream, Pillars of Gold, Lightshade and 2000 Atmospheres). What it found, and what each
+map here now does with it:
+
+- **Two spawns in opposite corners, turned half round the centre** (rotational symmetry is the usual choice for two players, mirror
+  symmetry for four). Twilight Valley and Close Quarters are drawn with `sym: 'rot2'` (`GameMap.sym`, `GameMap.quadrantsOf`): each
+  shape, base and rock formation where it is written and its half turn, so the other two corners are no longer empty copies of a
+  main. The four-player maps stay mirrored four ways.
+- **A main on high ground with one standard ramp that empties into the natural; the natural behind one choke; a back door, if any,
+  gated by rocks.** Every fixed map: one ramp down from each main, the natural the nearest base on foot, a rock formation standing in a
+  real gap on each back door (`test/maplayouts.js` measures the detour it saves). The open basin's generated mains are up a ramp too.
+- **Thirds: a linear one (open, further from the enemy) and a triangle one (choked, nearer).** Twilight Valley, Broken Expanse and The
+  Long March offer both; Lost Ruins a linear third; Contested Ground and Close Quarters one along the edge.
+- **Later bases spread out and more exposed; rich bases forward.** Lost Ruins puts a rich base on each corner of its central temple,
+  Blood Pit four in the open pit, Twilight Valley one past its western lane; the large and huge maps a high pod and a central plateau.
+  A rich base here holds 5000 a patch (the engine's existing `rich`); they are not coloured differently in play.
+- **Seven or eight bases a player on a standard map; 124-148 cells for two spawns; a rush distance of 32-40 worker-seconds** (SC2's
+  worker at 3.94 cells a second: about 128-158 cells of path). Twilight Valley has seven a player on 128 cells, and its main-to-main
+  walk is 128 tiles. The size modes keep their ladder: 3, 4, 7 and 8 bases a player.
+- **A centre of two or three lanes, one closable; high-ground pods and watch hills out of siege range of any mineral line.** Rock masses
+  turn Twilight Valley's middle round a watch hill; no mineral line on any fixed map lies within the Siege Tank's 12 tiles of high ground
+  that is neither its own base's nor its own main's.
+- **Shapes a StarCraft II map has and a rectangle cannot**: the layout language gained `poly` (a polygon's inside, even-odd) and
+  `line` (a band of a width round a path), and a base's `face` (the side its mineral line is on). Old layouts paint exactly as they
+  did -- all 141 maps the suites build were compared tile for tile (`.claude/review/maps/probe-same-grids.js`).
+- **What was not taken:** Xel'Naga watchtowers and sight blockers (this engine has neither; a high-ground hill is the watch post), mineral
+  walls, pocket bases, a third level of height (the engine has two). The generated archetypes keep their own shapes -- the river, the
+  channels, the terraces, the open middle -- and gained only the home skeleton and full corners on two-player sizes.
+- **The computer player picks its next base by straight line** (`AI.pickExpansion`), so a map has to put its natural nearest that way
+  too: with Lost Ruins' linear third first drawn 27 tiles from the main against the natural's 30 -- and twice as far on foot -- every
+  race and style took the third first. The third was moved rather than the AI changed: an AI that took the named natural first was
+  written and measured, and flipped the same loose style comparisons the moved third did, so the AI stays as it was for its rebalance.

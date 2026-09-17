@@ -68,7 +68,9 @@ function hidden(units) {
 // ---------------------------------------------------------------- scene helpers, in the game's context
 run(`var OV = {
   fresh(seed) {
-    G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'Z', human: false, name: 'B' }], seed: seed || 4, layout: 'temple' });
+    // Blood Pit, whose middle is open floor: the middle of Lost Ruins has been a temple of rich bases since the looks queue, and a
+    // clump needs 25 by 13 tiles of open ground to settle in and room to walk east.
+    G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'Z', human: false, name: 'B' }], seed: seed || 4, layout: 'bloodbath' });
     for (const pl of G.players) pl.ai = null; G.human = 0;
     const m = G.map; const t = m.findFreeTile(m.w >> 1, m.h >> 1, 30, (x, y) => { for (let dy = -6; dy <= 6; dy++) for (let dx = -12; dx <= 12; dx++) if (!m.walkable(x + dx, y + dy)) return false; return true; });
     return { x: (t[0] + 0.5) * TILE, y: (t[1] + 0.5) * TILE };

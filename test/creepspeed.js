@@ -86,7 +86,9 @@ const sp = J(`(() => {
       const i = m.idx(tx, ty);
       if (m.walk[i] !== 1 || m.blocked[i] !== -1 || m.height[i] === 1) continue;   // blocked is an Int32Array: -1 means FREE
       if ((!!m.creep[i]) !== wantCreep) continue;
-      if (!wantCreep && m.creep[m.idx(tx + 1, ty)]) continue;
+      // bare means the whole 3x3 from here: a colony placed on this tile has its centre a tile right and a tile down, and on the
+      // new Lost Ruins the first bare tile had creep there (the looks queue)
+      if (!wantCreep) { let any = 0; for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) any |= m.creep[m.idx(tx + a, ty + b)]; if (any) continue; }
       return [tx, ty];
     }
     return null;

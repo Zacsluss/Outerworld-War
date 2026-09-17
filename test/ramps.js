@@ -79,8 +79,8 @@ const maps = IDS.map(id => R(`
 const withRamps = maps.filter(r => r.bareProblems > 0);
 ok(maps.every(r => r.problems.length === 0), 'no ramp on any of ' + maps.length + ' maps can be entered from a side, from low ground above its top or from high ground below its foot',
   maps.filter(r => r.problems.length).slice(0, 2).map(r => r.id + ': ' + r.problems[0]).join(' | '));
-// The exceptions are maps with no way up to wall: Close Quarters has no high ground, and a basin whose ramp rectangle lies
-// wholly inside its plateau has a dip, not a ramp.
+// The exceptions are maps with no way up to wall: a basin whose ramp rectangle lies wholly inside its plateau has a dip, not a
+// ramp. (Close Quarters was one until the looks queue gave it a main up a ramp.)
 ok(withRamps.length >= maps.length - 4, '...and without the walls ' + withRamps.length + ' of them could be: the check has something to find (not: ' + maps.filter(r => !r.bareProblems).map(r => r.id).join(', ') + ')');
 ok(maps.every(r => !r.report || r.report.fallback === 0), 'the rule never had to leave a ramp as it was (rampReport.fallback is zero everywhere)',
   maps.filter(r => r.report && r.report.fallback).map(r => r.id + ':' + r.report.fallback).join(' '));
@@ -185,25 +185,27 @@ ok(maps.every(r => r.elev === 0 && r.reseal === 0 && r.reflat === 0), 'no elevat
 // ============================================================================
 // 4. The two ramps the approved screenshots show, exactly
 // ============================================================================
-// Lost Ruins' main ramp (the approved Badlands base shot) and The Long March's plateau ramp. '/' ramp, 'H' high, '.' low,
-// '#' cliff or wall. Four wide, three long; the top row it used to have inside the plateau is plateau.
+// Lost Ruins' main ramp and The Long March's plateau ramp, both running east-west since the looks queue redesigned the maps (the
+// approved Badlands base shot was taken on the old Lost Ruins, whose main ramp ran south). '/' ramp, 'H' high, '.' low, '#' cliff or
+// wall. Four wide, three long; the column it used to have inside the plateau is plateau.
 const draw = (id, x0, y0, x1, y1) => R(`const m = new GameMap(7, ${JSON.stringify(id)}), rows = [];
   for (let y = ${y0}; y <= ${y1}; y++) { let s = ''; for (let x = ${x0}; x <= ${x1}; x++) { const i = m.idx(x, y); s += m.walk[i] !== 1 ? '#' : m.height[i] === 1 ? '/' : m.height[i] === 2 ? 'H' : '.'; } rows.push(s); }
   return rows.join('\\n');`);
-const lost = draw('temple', 28, 26, 37, 33);
-ok(lost === ['HHHHHHH#..', 'HHHHHHH#..', 'HHHHHHH#..', '###////#..', '#.#////#..', '..#////#..', '..........', '..........'].join('\n'),
-  "Lost Ruins' main ramp: the plateau row it poked into is plateau, three rows of ramp, walls down both sides, an open foot", '\n' + lost);
-const march = draw('huge', 118, 86, 127, 97);
-ok(/^(\S{10}\n){11}\S{10}$/.test(march) && march.split('\n').filter(s => s.includes('////')).length === 3 && march.split('\n').every(s => !/\/\./.test(s) && !/\.\//.test(s)),
-  "The Long March's plateau ramp is three rows of ramp and nothing beside a ramp tile is open ground", '\n' + march);
+const lost = draw('temple', 24, 9, 33, 16);
+ok(lost === ['HHH#......', 'HHH###....', 'HHH///....', 'HHH///....', 'HHH///....', 'HHH///....', 'HHH###....', 'HHH#......'].join('\n'),
+  "Lost Ruins' main ramp: the plateau column it poked into is plateau, three columns of ramp, walls along both sides, an open foot", '\n' + lost);
+// Read by columns: the ramp runs east-west, so its sides are the tiles above and below it.
+const march = draw('huge', 87, 107, 98, 116), cols = [...Array(12)].map((_, x) => march.split('\n').map(s => s[x]).join(''));
+ok(/^(\S{12}\n){9}\S{12}$/.test(march) && cols.filter(s => s.includes('////')).length === 3 && cols.every(s => !/\/\./.test(s) && !/\.\//.test(s)),
+  "The Long March's plateau ramp is three columns of ramp and nothing beside a ramp tile is open ground", '\n' + march);
 
 // ============================================================================
 // 5. A unit told to climb from beside a ramp walks round to its foot
 // ============================================================================
-// The property the user asked for, driven through the simulation: a marine standing against the west side of Lost Ruins'
-// main ramp is ordered onto the plateau. Record the tile it stands on every frame; the first ramp tile it enters must be
-// entered from below the foot or from another ramp tile. On the same map without walls it steps on from the side -- the
-// control is inside the check.
+// The property the user asked for, driven through the simulation: a marine standing against the south wall of Lost Ruins' main
+// ramp, which runs east from the main since the looks queue, is ordered onto the plateau. Record the tile it stands on every
+// frame; the first ramp tile it enters must be entered from past the foot (east of it) or from another ramp tile. On the same
+// map without walls it steps on from the side, straight up from the south -- the control is inside the check.
 const climb = walls => R(`
   const real = GameMap.prototype.wallRamps; if (!${walls}) GameMap.prototype.wallRamps = function () { return null; };
   try { G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'T', human: false, name: 'B' }], seed: 7, layout: 'temple' }); }
@@ -212,9 +214,9 @@ const climb = walls => R(`
   for (const u of [...G.units]) G.kill(u, null, true);
   G.units = G.units.filter(u => u.alive); G.checkVictory = () => {};
   const m = G.map, T = TILE;
-  const u = G.spawnUnit('marine', 0, 29.5 * T, 31.5 * T);
-  u.applyOrder({ type: 'move', x: 32.5 * T, y: 25.5 * T });
-  let prev = m.idx(29, 31), entered = null, onHigh = false;
+  const u = G.spawnUnit('marine', 0, 28.5 * T, 16.5 * T);
+  u.applyOrder({ type: 'move', x: 22.5 * T, y: 12.5 * T });
+  let prev = m.idx(28, 16), entered = null, onHigh = false;
   for (let f = 0; f < 24 * 30 && u.alive; f++) {
     G.tick();
     const i = m.idx(Math.floor(u.x / T), Math.floor(u.y / T));
@@ -224,9 +226,9 @@ const climb = walls => R(`
   return { entered, onHigh, at: [Math.floor(u.x / T), Math.floor(u.y / T)] };
 `);
 const walled = climb(true), open = climb(false);
-ok(walled.onHigh && walled.entered && (walled.entered.fromH === 1 || walled.entered.from[1] === walled.entered.to[1] + 1),
-  'with walls: the marine reaches the plateau, and its first step onto the ramp is from below the foot', JSON.stringify(walled));
-ok(open.entered && open.entered.from[1] === open.entered.to[1], 'without them the same order steps onto the ramp from its side -- so the check can tell', JSON.stringify(open));
+ok(walled.onHigh && walled.entered && (walled.entered.fromH === 1 || walled.entered.from[0] === walled.entered.to[0] + 1),
+  'with walls: the marine reaches the plateau, and its first step onto the ramp is from past the foot', JSON.stringify(walled));
+ok(open.entered && open.entered.from[0] === open.entered.to[0], 'without them the same order steps onto the ramp from its side -- so the check can tell', JSON.stringify(open));
 
 // A wide body on the map where full-length walls trapped it (Broken Expanse: the natural's mineral line under the main ramp).
 const thor = R(`

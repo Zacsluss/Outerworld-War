@@ -187,7 +187,9 @@ const walk = R(`
     out.push({ id, probs: m.elevationProblems(), leak, leakAt, reached, ramps, un: un.length, noHall,
       reseal: m.sealElevations(), reflatten: m.flattenStrandedHeight(), starts: m.starts.length, players: m.players,
       noRampPlat: plats.filter(p => !p.ramps.length).length,
-      highBases: m.bases.filter(b => m.tierAt(b.x + 2, b.y + 1) === 1).length, bases: m.bases.length });
+      highBases: m.bases.filter(b => m.tierAt(b.x + 2, b.y + 1) === 1).length, bases: m.bases.length,
+      highMains: m.starts.filter(b => m.tierAt(b.x + 2, b.y + 1) === 1).length,
+      centreBases: (plats.find(p => p.at.includes(m.idx(m.w >> 1, m.h >> 1))) || { bases: -1 }).bases });
   }
   return out;
 `);
@@ -205,16 +207,18 @@ ok('every base is reachable with every feature shut, on all ' + walk.length + ' 
 ok('every base can take a town hall, on all ' + walk.length + ' maps', walk.every(r => r.noHall === 0), bad(r => r.noHall).slice(0, 3).join(' '));
 ok('every map spawns as many players as it advertises', walk.every(r => r.starts === r.players), bad(r => r.starts !== r.players).slice(0, 3).join(' '));
 
-// High ground that holds nothing is scenery. These four are the ones that were changed to hold a base.
+// High ground that holds nothing is scenery. Since the looks queue (item 4) every main on every map is up a ramp -- StarCraft II's
+// skeleton, the open basin's included -- and these are the maps whose middle plateau holds a base for each player.
 const held = id => walk.find(r => r.id === id);
+ok('every main on all ' + walk.length + ' maps stands on high ground', walk.every(r => r.highMains === r.players), bad(r => r.highMains !== r.players).slice(0, 3).join(' '));
 ok('large, huge and Dust Bowl each put a base per player on the central plateau',
-  ['large', 'huge', 'dustbowl'].every(k => held(k).highBases === held(k).players * 2), ['large', 'huge', 'dustbowl'].map(k => k + ':' + held(k).highBases).join(' '));
-ok('open basin has no high ground at the mains and a base on the one plateau it does have',
-  walk.filter(r => r.id.startsWith('arch:basin')).every(r => r.highBases === r.players),
-  walk.filter(r => r.id.startsWith('arch:basin')).map(r => r.highBases + '/' + r.players).join(' '));
+  ['large', 'huge', 'dustbowl'].every(k => held(k).centreBases === held(k).players), ['large', 'huge', 'dustbowl'].map(k => k + ':' + held(k).centreBases).join(' '));
+ok('open basin puts at least a base a player on the plateau in its middle',
+  walk.filter(r => r.id.startsWith('arch:basin')).every(r => r.centreBases >= r.players),
+  walk.filter(r => r.id.startsWith('arch:basin')).map(r => r.centreBases + '/' + r.players).join(' '));
 ok('vertical cliffs keeps two bases a player up a cliff', walk.filter(r => r.id.startsWith('arch:cliffs')).every(r => r.highBases >= r.players * 2),
   walk.filter(r => r.id.startsWith('arch:cliffs')).map(r => r.highBases + '/' + r.players).join(' '));
-ok('close quarters still has no high ground anywhere, so there is still no ramp to hold', held('small').ramps === 0 && held('small').highBases === 0);
+ok('close quarters, which had no high ground at all, now has ramps to hold and both mains up one', held('small').ramps > 0 && held('small').highMains === 2, JSON.stringify(held('small')));
 
 // ============================================================================
 // 5. The seal repairs a real hole, and repairs it the weak way
@@ -320,15 +324,28 @@ ok('a finished map has no stranded high ground left to flatten, and flattening n
 ok('and raising ' + strand.raised + ' tiles of it back up is found and put down again',
   strand.raised > 0 && strand.found > 0 && strand.flattened === strand.raised && strand.clean === 0, JSON.stringify(strand));
 
-// The hole this found in a layout that has shipped since M1, kept as a regression: Twilight Valley's
-// rich expansion has its geyser sitting on the southern lip of the map's largest plateau.
+// The hole this found in a layout that shipped from M1 to the looks queue, kept as a regression: Twilight Valley's rich
+// expansion had its geyser sitting on the southern lip of the map's largest plateau. The looks queue redesigned the map, so
+// the layout as it shipped is kept here whole and the seal is held to the hole that found it.
 const tv = R(`
-  const m = new GameMap(1, 'valley'), g = m.resources.find(r => r.type === 'geyser' && r.x === 98 && r.y === 34);
+  MAP_LAYOUTS.__valleyM1 = { name: 'Twilight Valley (M1)', players: 2, startOrder: [0, 1],
+    high: [['rect', 4, 4, 40, 30], ['ellipse', 24, 19, 22, 17], ['rect', 4, 60, 22, 8]],
+    ramps: [[38, 32, 5, 5], [24, 60, 4, 4]],
+    rocks: [['rect', 44, 4, 4, 22], ['ellipse', 56, 40, 6, 5], ['ellipse', 64, 63, 10, 4], ['rect', 30, 50, 10, 3], ['ellipse', 80, 20, 4, 4]],
+    bases: [
+      { hall: [14, 14], minerals: [[9, 11], [9, 13], [9, 15], [9, 17], [9, 19], [12, 10], [14, 10], [16, 10], [18, 10]], geyser: [20, 9], main: true, quadrants: [0, 3] },
+      { hall: [36, 40], minerals: [[31, 38], [31, 40], [31, 42], [31, 44], [34, 47], [36, 47], [38, 47]], geyser: [41, 46], natural: true, quadrants: [0, 3] },
+      { hall: [12, 72], minerals: [[7, 69], [7, 71], [7, 73], [7, 75], [7, 77], [10, 79]], geyser: [15, 78], quadrants: [0, 3] },
+      { hall: [60, 14], minerals: [[57, 9], [59, 9], [61, 9], [63, 9], [65, 9], [67, 12]], geyser: [67, 16], quadrants: [0, 3] },
+      { hall: [94, 40], minerals: [[89, 37], [89, 39], [89, 41], [89, 43], [92, 35], [94, 35]], geyser: [98, 34], quadrants: [0, 3], rich: true },
+    ] };
+  const m = new GameMap(1, '__valleyM1'), g = m.resources.find(r => r.type === 'geyser' && r.x === 98 && r.y === 34);
+  delete MAP_LAYOUTS.__valleyM1;
   if (!g) return { missing: true };
   const hs = []; for (let x = g.x; x < g.x + g.w; x++) for (let y = g.y; y < g.y + g.h; y++) hs.push(m.height[m.idx(x, y)] + ':' + m.walk[m.idx(x, y)]);
   return { hs, probs: m.elevationProblems().length, lip: m.tierAt(98, 35), inside: m.tierAt(98, 34), below: m.tierAt(98, 36) };
 `);
-ok('Twilight Valley\'s rich geyser is no longer a four-tile undrawn ramp onto the plateau',
+ok('the old Twilight Valley\'s rich geyser is no longer a four-tile undrawn ramp onto the plateau',
   !tv.missing && tv.probs === 0 && tv.lip === 0 && tv.below === 0, JSON.stringify(tv));
 
 // ============================================================================

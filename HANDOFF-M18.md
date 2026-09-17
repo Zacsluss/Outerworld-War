@@ -1,4 +1,133 @@
-# HANDOFF — M18 (the terrain queue is DONE: detailed terrain on every map, for everyone)
+# HANDOFF — M18 (the looks queue is DONE: a finished first frame, continuous creep, taller cliffs, and every map redesigned)
+
+Written 2026-09-17, at the end of the session that did the looks queue -- the user's four items of 2026-09-14. Branch
+`m10-overnight`, which is `origin/main`. **Everything is committed and pushed; no open pull requests, no other branches, no extra
+worktrees.** Trust `git log -1` for HEAD, not a hash written here.
+
+> **The looks queue is DONE** (TODO-M18's first section; PLAYTEST-M18 118-122). Nothing is queued. The terrain queue's close, as
+> written before the looks queue, follows this section and is kept for the record; its traps still hold. `SHIPPING.md` is what must
+> be done before the final build ships.
+
+---
+
+## Kickoff prompt for a fresh chat
+
+Open the new chat with the repository folder as its working directory, so `CLAUDE.md` loads by itself. Paste everything inside the
+fence. **Replace the HEAD placeholder with `git log -1 --format=%h` first** -- committing this file moves it.
+
+```
+Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
+Branch: m10-overnight, which IS origin/main (https://github.com/Zacsluss/Outerworld-War -- PUBLIC: git push publishes).
+HEAD: <run git log -1 --format=%h>. Working tree clean, nothing unpushed, no open PRs, no other branches, no extra worktrees.
+Machine: Windows 11; PowerShell 5.1 and Git Bash; Node 24; Rust + the Tauri CLI under desktop/; no gh CLI, no Blender.
+The gate (node test/all.js) is 101 suites, about four minutes, ALL GREEN; no known reds. Build stamp 678387e310c2c3fe.
+test/balance.js and test/proxy.js are GATED: never start them without an explicit, double-checked instruction.
+
+STATE: THE LOOKS QUEUE is DONE (the user's four items of 2026-09-14; PLAYTEST-M18 118-122): 1. a loading screen, so a game opens on
+its finished ground and never shows the old textures first; 2. creep as one continuous mass with a soft edge; 3. cliffs that look about
+twice as tall; 4. every map redesigned to StarCraft II's structure -- a main up one ramp, the natural behind a choke, thirds, rich
+bases, lanes, rocks on the back doors, two-player maps turned half round, and the generated maps' mains up a ramp and two-player
+corners filled. The terrain queue before it is DONE too (PLAYTEST-M18 110-117).
+OPEN WITH THE USER: which of the creep texture links they posted they prefer, if any (TODO-M18, the looks queue, item 2) -- nothing is
+downloaded; if they pick one, name the file and its size and wait for a yes before downloading.
+DEFERRED by the user until they say: the AI rebalance (TODO-M18 7b); it now also owns three loose style comparisons that flip on the
+new Lost Ruins (PLAYTEST-M18 122; test/aistyles.js runs its style games on the old ground as a fixture). SKIPPED by the user: a
+look-and-feel pass of PLAYTEST-M18 101-108.
+
+THE NEXT ACTION: nothing is queued. Ask the user how their playtest of PLAYTEST-M18 118-122 went (and whether they pick a creep
+texture), then work what they report the way every item here was worked.
+
+READ, in this order, before touching anything:
+  1. CLAUDE.md          -- the working agreement; every rule in it is non-negotiable.
+  2. HANDOFF-M18.md     -- this top section, then the traps in the sections under it.
+  3. TODO-M18.md        -- THE LOOKS QUEUE (all four items, measured), then THE TERRAIN QUEUE.
+  4. SHIPPING.md        -- before any release: Actions -> Desktop builds -> Run workflow (it ignores js/ and assets/), and open
+                           the Mac app on a real Mac (never done: there is no Mac here).
+
+HOW TO WORK, every finding:
+  - MEASURE BEFORE CHANGING: build the probe first and make it assert its own setup.
+  - Every new behaviour gets a negative control that goes cleanly RED (tools/control.js applies one and restores the file).
+  - Judge anything visible on real screenshots (preview_start "terrain-shot", tools/terrain-shot.js, port 8897) and send the user
+    a before/after (SendUserFile) -- they judge by eye.
+  - node test/all.js before every commit; touch nothing in js/ or test/ while it runs.
+  - A PLAYTEST-M18.md entry per item saying how to see it by hand; update TODO-M18.md and HANDOFF-M18.md; commit and push.
+
+HARD RULES:
+  - Never Math.random() in simulation code (G.rand()); no native Math.sin/cos/atan2/hypot in stamped files (DMath). Anything a replay
+    or a rejoin must reproduce goes through G.init or the command log. Terrain drawing is not simulation, but props must stay a pure
+    function of the map, its seed and the tile.
+  - A change to a stamped file (js/data, map, sim, game, combat, abilities, commands, ai, missions, build) moves the build stamp: say
+    so in its PLAYTEST entry and run node test/net_many.js and node .claude/review/aipace/run-after.js <tag>.
+  - A new map is judged three ways: node .claude/review/maps/map-png.js <id> (a picture with the walking distances), node
+    test/maplayouts.js (StarCraft II's structure), and in-game screenshots.
+  - The relay (test/serve.js) stays dependency-free.
+  - Detect line endings per file. Edit with tools/patch.js; write every spec and probe with the Write tool; never sed -i.
+  - Never type, store or handle the user's passwords, certificates or API keys. Art or assets someone bought stay out of this
+    public repository. Nothing that costs money.
+  - The comments in js/ are load-bearing: they record why the obvious thing was not done. Do not delete reasoning.
+```
+
+---
+
+## The state
+
+- **THE LOOKS QUEUE IS DONE** (the user, 2026-09-14; TODO-M18's first section), each item committed and pushed: 1. a loading screen
+  makes a game's first frame its finished ground (PLAYTEST-M18 118); 2. creep as a continuous mass (119; and 120, a game started in a
+  background tab); 3. cliffs that look about twice as tall (121); 4. every map redesigned to StarCraft II's structure (122).
+- **The gate is 101 suites, ALL GREEN**, about four minutes (`maplayouts` is new). **Build stamp `678387e310c2c3fe`** -- item 4
+  (`js/map.js`) moved it from `ca141a3b7ffcb528`; items 1-3 were drawing only. Older saves and replays are refused.
+- **By hand after item 4:** `net_many` 51/51; `aistyles` on its pinned ground 132 / 131 / 132 on seeds 1 / 5 / 11 (seed 5's red is the
+  known harasser line, 7b) with every style row identical to before the item; `queens` 25/25; `eightplayer` 19/19;
+  `desktop/page-check.js` 22/22 (`desktop/dist` refreshed). Seventeen negative controls for item 4, every one red
+  (`.claude/review/maps/controls-maps.log`).
+- **The desktop app**: `desktop/window-check.js` 25/25 on a debug build at item 1. **The installers on GitHub are from `f68e8f3`,
+  before any terrain work** -- `SHIPPING.md`.
+- **Open with the user:** the creep texture pick (nothing downloaded). **Deferred by the user until they say:** the AI rebalance
+  (TODO-M18 7b). **Skipped by the user:** a look-and-feel pass of PLAYTEST-M18 101-108.
+- **The repository is PUBLIC.** **The playtest recorder is left running for the user** (`playtest` in `.claude/launch.json`,
+  `tools/playtest-listen.js`, port 8870); the screenshot servers were stopped at the close.
+
+## What changed, in a player's language
+
+1. **A game opens on its finished ground**: a loading screen with the map's name and picture, the players and a bar, while the
+   detailed ground is prepared -- no classic textures first, no chunks sharpening one by one (118).
+2. **Zerg creep is one continuous mass**: a wet, fibrous surface with a soft ragged edge, no tiles and no lines, spreading and receding
+   smoothly (119). A game started in a background tab starts with its detailed ground (120).
+3. **Cliffs look about twice as tall**: a wider rock face and a shadow twice as long below each plateau and rock formation; ramps look as
+   before (121).
+4. **Every map is laid out like a StarCraft II map** (122): your main up one ramp, your natural beside it behind a choke, thirds further
+   out, rich bases in the contested middle, lanes broken by rock, back doors shut by rocks you can destroy. Lost Ruins after Lost Temple
+   (a temple of rich bases in the middle); Blood Pit a ring-walled pit of rich bases; Twilight Valley and Close Quarters turned half round
+   with bases in every corner; Close Quarters has high ground at last; more bases a player on every map but Lost Ruins; The Long March at
+   1300 a patch. The generated Open Basin's mains are up a ramp; a two-player generated map fills all four corners.
+
+**Deliberately different from what was asked, all in the PLAYTEST entries:** a loading screen of one to two seconds was added, and a
+restart prepares the ground again (118); the creep pattern is made in code, no texture downloaded until the user picks one, and creep
+is drawn at 1x on a 150% display (119); "twice as tall" is the shadow and
+the face -- a top-down view cannot show a wall's side (121); no watchtowers, sight blockers or mineral walls, two heights not three, rich
+bases not coloured gold, the generated maps keep their own shapes, Lost Ruins' third moved rather than the AI changed, and the AI style
+comparisons run on the old Lost Ruins (122). **Unfinished: nothing.** The creep texture waits for the user's pick; the AI rebalance for
+their word.
+
+## How to playtest it by hand
+
+Every item has its steps in PLAYTEST-M18 118-122. In short:
+1. **Single Player -> Skirmish, Lost Ruins, START.** *Working:* a loading screen, then the detailed ground at once -- no flat textures
+   first (118).
+2. **Skirmish as Zerg**: look at the creep round your Hatchery, and build a Creep Colony. *Working:* one soft-edged mass, no squares or
+   lines, growing smoothly (119).
+3. **Look at your main's edge** beside its ramp. *Working:* a broad rock face and a long shadow below it (121).
+4. **Press Enter, type black sheep wall, Enter, and zoom out** on Lost Ruins, Blood Pit, Twilight Valley and the four map sizes.
+   *Working:* the layouts of PLAYTEST-M18 122 -- a main up one ramp to its natural, thirds, a rich middle, lanes, rock formations in
+   the narrow back doors; the two-player maps look the same turned upside down (122).
+5. **Procedural: Chokepoint Valley, size small.** *Working:* bases in all four corners (122).
+
+---
+---
+
+# The terrain queue's close, as written 2026-09-13 and updated during the looks queue (kept for the record; its traps still hold)
+
+## HANDOFF — M18 (the terrain queue is DONE: detailed terrain on every map, for everyone)
 
 Written 2026-09-13, at the end of the session that did the whole terrain queue -- its five items and phase 1's leftovers. Branch
 `m10-overnight`, which is `origin/main`. **Everything is committed and pushed; no open pull requests, no other branches, no extra

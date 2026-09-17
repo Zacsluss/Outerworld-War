@@ -69,7 +69,18 @@ console.log('--- 3. on your own unit, which does not fight back ---');
     // The rule itself, through G.onHit, with the shooter far outside anything the victim could acquire on its own -- so an
     // attack order on the victim can only be retaliation. The control is an enemy's idle marine, which must still answer.
     // 200 px apart: inside a Marine's sight (so the foe may target the shooter) and outside its 5-tile auto-acquisition.
-    const own = spawn('marine', 400, 100); const far = spawn('marine', 400, 300); const foe = spawn('marine', 400, 500, 1); run(8);
+    // Found, not assumed: three open spots in a column on one level, clear of every unit by eight tiles. Height gates sight, and the
+    // offsets this used to name (400 px east of the hall, 100-500 down) ran off the main's plateau once the looks queue redesigned
+    // Lost Ruins -- the foe stood below the shooter and could not see it.
+    const gm = G.map, hh = hallOf(), col = [];
+    for (let r = 10; r < 50 && !col.length; r++) for (let a = 0; a < 16 && !col.length; a++) {
+      const x = hh.x + Math.round(Math.cos(a * Math.PI / 8) * r * TILE), y = hh.y + Math.round(Math.sin(a * Math.PI / 8) * r * TILE);
+      const pts = [0, 200, 400].map(d => [x, y + d]), ts = pts.map(([px, py]) => [Math.floor(px / TILE), Math.floor(py / TILE)]);
+      const lv = gm.inb(ts[0][0], ts[0][1]) ? gm.height[gm.idx(ts[0][0], ts[0][1])] : 1;
+      const open = ([tx, ty]) => { for (let b = -1; b <= 1; b++) for (let c = -1; c <= 1; c++) if (!gm.inb(tx + c, ty + b) || !gm.walkable(tx + c, ty + b) || gm.height[gm.idx(tx + c, ty + b)] !== lv) return false; return true; };
+      if (lv !== 1 && ts.every(open) && !G.units.some(u => u.alive && pts.some(([px, py]) => Math.hypot(u.x - px, u.y - py) < 8 * TILE))) col.push(...pts);
+    }
+    const own = G.spawnUnit('marine', 0, col[0][0], col[0][1]), far = G.spawnUnit('marine', 0, col[1][0], col[1][1]), foe = G.spawnUnit('marine', 1, col[2][0], col[2][1]); run(8);
     const before = { own: own.order.type, foe: foe.order.type, foeSees: G.canSee(1, far) };
     G.onHit(own, far); G.onHit(foe, far);
     return { orders, victim, rule: { before, own: own.order.type + (own.order.target === far ? ':shooter' : ''), foe: foe.order.type + (foe.order.target === far ? ':shooter' : '') } };`);

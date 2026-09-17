@@ -13,7 +13,17 @@ const ctx = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities
 
 const SRC = `(() => {
   const out = {};
-  const init = () => G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'T', human: false, difficulty: 'easy', name: 'B' }], seed: 11, layout: 'temple' });
+  const init = layout => G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'T', human: false, difficulty: 'easy', name: 'B' }], seed: 11, layout: layout || 'temple' });
+  // Open, flat, free ground round the first main, k spots at least five tiles apart: every spot here used to be an offset from the
+  // start, and on the new Lost Ruins (the looks queue) the diagonal ones reached the main's cliff, where no hulk forms.
+  const openSpots = k => { const m = G.map, p = G.players[0], sx = Math.floor(p.startX / TL), sy = Math.floor(p.startY / TL), out = [];
+    for (let r = 6; r < 40 && out.length < k; r++) for (let dy = -r; dy <= r && out.length < k; dy++) for (let dx = -r; dx <= r && out.length < k; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+      const x = sx + dx, y = sy + dy; let fine = m.inb(x - 2, y - 2) && m.inb(x + 2, y + 2);
+      for (let b = -2; b <= 2 && fine; b++) for (let a = -2; a <= 2; a++) { const i = m.idx(x + a, y + b); if (m.walk[i] !== 1 || m.blocked[i] !== -1 || m.height[i] !== m.height[m.idx(x, y)] || m.height[i] === 1) { fine = false; break; } }
+      if (fine && out.every(([ox, oy]) => Math.hypot(ox - x, oy - y) >= 5)) out.push([x, y]);
+    }
+    return out.map(([x, y]) => [(x + 0.5) * TL, (y + 0.5) * TL]); };
   init();
   const m = G.map, TL = TILE;
 
@@ -39,11 +49,13 @@ const SRC = `(() => {
   out.speed = { groundBefore: cleanGround, groundAfter: marine.speed, airBefore: cleanAir, airAfter: wraith.speed };
 
   // ---- a razed building leaves a hulk that blocks pathing and lifts height ----
-  init();
-  // On Lost Ruins' main ramp, which is four tiles wide and three long since ramps have walls (GameMap.wallRamps): the factory
-  // covers it exactly, and a hulk on a ramp is the case paintWreck's height rule was written for. The footprint is checked
-  // first, so a later change to the ramp says so here instead of as a short hulk.
-  const FX = 31, FY = 29;
+  // On a main ramp four tiles wide and three long, which a 4x3 factory covers exactly: a hulk on a ramp is the case paintWreck's
+  // height rule was written for. Blood Pit's, found rather than named -- Lost Ruins' ramps have run east-west since the looks
+  // queue, three tiles wide in x -- and the footprint is checked first, so a later change to the ramp says so here.
+  init('bloodbath');
+  let FX = -1, FY = -1;
+  for (let y = 2; y < G.map.h - 4 && FX < 0; y++) for (let x = 2; x < G.map.w - 5 && FX < 0; x++) { let all = true; G.map.rect(x, y, 4, 3, (a, b) => { const i = G.map.idx(a, b); if (G.map.walk[i] !== 1 || G.map.blocked[i] !== -1 || G.map.height[i] !== 1) all = false; }); if (all) { FX = x; FY = y; } }
+  out.rampAt = [FX, FY];
   out.footClear = []; G.map.rect(FX, FY, 4, 3, (x, y) => { const i = G.map.idx(x, y); if (G.map.walk[i] !== 1 || G.map.blocked[i] !== -1 || G.map.height[i] !== 1) out.footClear.push(x + ',' + y); });
   const b = G.placeBuilding(DATA.buildings.factory, FX, FY, 0); G.completeBuilding(b);
   const bi = G.map.idx(FX + 1, FY + 1);
@@ -74,16 +86,17 @@ const SRC = `(() => {
   // ---- what leaves nothing behind ----
   init();
   const before = G.map.wrecks.length;
-  const wr = G.spawnUnit('wraith', 0, G.players[0].startX + 8 * TL, G.players[0].startY + 8 * TL);
+  const spots = openSpots(4);
+  const wr = G.spawnUnit('wraith', 0, spots[0][0], spots[0][1]);
   G.kill(wr, null);
   const afterFly = G.map.wrecks.length;
-  const mar = G.spawnUnit('marine', 0, G.players[0].startX + 9 * TL, G.players[0].startY + 9 * TL);
+  const mar = G.spawnUnit('marine', 0, spots[1][0], spots[1][1]);
   G.kill(mar, null);
   const afterSmall = G.map.wrecks.length;
-  const tank = G.spawnUnit('siege_tank', 0, G.players[0].startX + 10 * TL, G.players[0].startY + 10 * TL);
+  const tank = G.spawnUnit('siege_tank', 0, spots[2][0], spots[2][1]);
   tank.halluc = true; G.kill(tank, null);
   const afterHalluc = G.map.wrecks.length;
-  const tank2 = G.spawnUnit('siege_tank', 0, G.players[0].startX + 11 * TL, G.players[0].startY + 11 * TL);
+  const tank2 = G.spawnUnit('siege_tank', 0, spots[3][0], spots[3][1]);
   G.kill(tank2, null);
   out.leaves = { before, afterFly, afterSmall, afterHalluc, afterLarge: G.map.wrecks.length };
 
@@ -132,7 +145,7 @@ ok(r.speed.groundAfter < r.speed.groundBefore, 'churned ground slows a ground un
 ok(Math.abs(r.speed.groundAfter - r.speed.groundBefore * 0.75) < 1e-9, '...by exactly CHURN_SLOW at full churn', JSON.stringify(r.speed));
 ok(r.speed.airAfter === r.speed.airBefore, 'and does not slow anything flying over it', JSON.stringify(r.speed));
 
-ok(r.footClear.length === 0, 'the factory stands on twelve open ramp tiles (Lost Ruins\' main ramp)', r.footClear.join(' '));
+ok(r.rampAt[0] >= 0 && r.footClear.length === 0, 'the factory stands on twelve open ramp tiles (Blood Pit\'s main ramp, at ' + r.rampAt + ')', r.footClear.join(' '));
 ok(r.hulk.n === 1 && r.hulk.covers === 12, 'a razed 4x3 factory leaves one hulk covering its whole footprint', JSON.stringify(r.hulk));
 ok(r.hulk.walk === 0 && r.hulk.blocked === -5, 'the hulk blocks pathing', JSON.stringify(r.hulk));
 ok(r.hulk.height === 2, 'and stands at height 2, the only lever this engine has that moves vision', JSON.stringify(r.hulk));

@@ -245,7 +245,7 @@ const Net = {
     }
     const tr = (x, y, bw, bh, qd) => { const p = GameMap.prototype.mirrorPt.call({ w, h }, x, y, qd); let tx = p[0], ty = p[1]; if (qd === 1 || qd === 3) tx -= bw - 1; if (qd === 2 || qd === 3) ty -= bh - 1; return [tx + 2, ty + 1.5]; };
     const mains = [], exps = [];
-    for (let qd = 0; qd < 4; qd++) for (const bd of L.bases) {
+    for (const qd of (GameMap.quadrantsOf ? GameMap.quadrantsOf(L) : [0, 1, 2, 3])) for (const bd of L.bases) {
       if (bd.quadrants && !bd.quadrants.includes(qd)) continue;
       if (!bd.hall) continue;
       (bd.main ? mains : exps).push(tr(bd.hall[0], bd.hall[1], 4, 3, qd));

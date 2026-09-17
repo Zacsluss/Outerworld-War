@@ -249,7 +249,7 @@ const startMission = id => {
       ok('...and the restored state is byte-identical to the checkpoint', R(D, 'this.fingerprint()') === R(D, 'this.earlyFp'),
         firstDiff(R(D, 'this.earlyFp'), R(D, 'this.fingerprint()')));
       ok('...and the frame went back', R(D, 'G.frame') === earlyFrame, R(D, 'G.frame') + ' vs ' + earlyFrame);
-      ok('...and resById resolves every patch again', R(D, 'G.map.resources.every(r => G.map.resById.get(r.id) === r) && G.map.resById.size === G.map.resources.length'),
+      ok('...and resById resolves every patch again', R(D, 'G.map.resources.every(r => G.map.resById.get(r.id) === r) && G.map.features.every(f => G.map.resById.get(f.id) === f) && G.map.resById.size === G.map.resources.length + G.map.features.length'),   // features share the registry (js/map.js), and Lost Ruins has rocks since the looks queue
         'GameMap.resById is built once in generate() and Snapshot never touches it, so a restore that changes the resource list has to rebuild it (CMD.deref reads it for every gather command in a replay)');
     }
 

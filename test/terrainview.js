@@ -147,7 +147,7 @@ ok(hulk.tex === 0, 'hulk: the detailed chunk under it is byte-identical to the g
 ok(hulk.ov === 0 && hulk.pal === 0, 'hulk: so are the overview and the classic look\'s chunk', JSON.stringify(hulk));
 // ...and at the foot of a ramp, where a hulk read as high ground would be the top of the ramp as far as its levels knew
 const foot = R(`
-  const m = TT.start('temple'), W = m.w; let run = null;
+  const m = TT.start('bloodbath'), W = m.w; let run = null;   // a ramp whose foot is to the south: Lost Ruins' face east and west since the looks queue
   for (let y = 1; y < m.h - 3 && !run; y++) for (let x = 1; x < W - 5 && !run; x++) {
     const rampFoot = (xx, yy) => m.height[yy * W + xx] === 1 && m.cliff[yy * W + xx] === 0 && m.height[(yy + 1) * W + xx] === 0 && m.cliff[(yy + 1) * W + xx] === 0 && m.walk[(yy + 1) * W + xx] === 1 && m.blocked[(yy + 1) * W + xx] === -1 && m.blocked[(yy + 2) * W + xx] === -1 && m.walk[(yy + 2) * W + xx] === 1;
     if (rampFoot(x, y) && rampFoot(x + 1, y) && rampFoot(x + 2, y)) run = [x, y];

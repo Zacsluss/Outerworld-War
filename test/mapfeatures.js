@@ -379,7 +379,7 @@ const view = R(`
   const mutated = (() => { const v = m.featureView(0); v[0].hp = -12345; v[0].broken = 'nonsense'; return m.features[0].hp !== -12345 && m.features[0].broken !== 'nonsense'; })();
   return { keys, n: v0.length, rev0, revWet, wetOpen: vWet.open, wetFlag: vWet.wet, broken: vWet.broken,
     hp: dmg.hp, maxHp: dmg.maxHp, name: dmg.name, at: m.featureAt(rk.x, rk.y) === rk, atPx: m.featureAtPx(rk.cx, rk.cy) === rk,
-    off: m.featureAt(rk.x - 40, rk.y) === null, plain: new GameMap(1, 'temple').featureView(0).length, mutated };
+    off: m.featureAt(rk.x - 40, rk.y) === null, plain: (() => { MAP_LAYOUTS.__plain = Object.assign({}, MAP_LAYOUTS.temple, { features: [] }); try { return new GameMap(1, '__plain').featureView(0).length; } finally { delete MAP_LAYOUTS.__plain; } })(), mutated };   // every shipped map has rocks since the looks queue
 `);
 // The exact field list is the contract js/map.js documents to js/render.js, so it is spelled out here
 // rather than sampled: a field quietly renamed is a renderer quietly drawing nothing.
@@ -433,7 +433,8 @@ const old = R(`
   const out = {};
   for (const k of ['temple', 'bloodbath', 'valley', 'small', 'medium', 'large', 'huge', 'dustbowl']) {
     const m = new GameMap(7, k);
-    out[k] = { feats: m.features.length, featTile: m.featTile, arch: m.archetype, tick: m.tickFeatures(1000, []),
+    const L = MAP_LAYOUTS[k];
+    out[k] = { feats: m.features.length, listed: GameMap.quadrantsOf(L).length * (L.features || []).length, kinds: [...new Set(m.features.map(f => f.kind))].join(), grid: !!m.featTile, arch: m.archetype, tick: m.tickFeatures(1000, []),
       place: m.canPlace(DATA.buildings.command_center, m.starts[0].x, m.starts[0].y, { id: 0, race: 'T' }, [], null) };
   }
   out.__hash = (() => {
@@ -448,8 +449,11 @@ const old = R(`
   })();
   return out;
 `);
-ok('every layout that existed before this change still has no features and no feature grid',
-  ['temple', 'bloodbath', 'valley', 'small', 'medium', 'large', 'huge', 'dustbowl'].every(k => old[k].feats === 0 && old[k].featTile === null && old[k].arch === null && old[k].tick === 0));
+// They had none until the looks queue (item 4) gave every map StarCraft II's back doors: rock formations, in every copy of the
+// quadrant they are written for, and nothing that moves on its own.
+ok('the fixed layouts carry exactly the rock formations they list, and nothing on them ticks',
+  ['temple', 'bloodbath', 'valley', 'small', 'medium', 'large', 'huge', 'dustbowl'].every(k => old[k].feats > 0 && old[k].feats === old[k].listed && old[k].kinds === 'rocks' && old[k].grid && old[k].arch === null && old[k].tick === 0),
+  JSON.stringify(Object.fromEntries(['temple', 'bloodbath', 'valley', 'small', 'medium', 'large', 'huge', 'dustbowl'].map(k => [k, old[k].feats + '/' + old[k].listed + ' ' + old[k].kinds]))));
 ok('and still places a town hall on its own start location', ['temple', 'bloodbath', 'valley', 'small', 'medium', 'large', 'huge', 'dustbowl'].every(k => old[k].place === null),
   JSON.stringify(Object.fromEntries(Object.entries(old).filter(([k, v]) => v && v.place))));
 ok('a game on temple still re-runs bit-identically', old.__hash === old.__hash2, old.__hash + ' vs ' + old.__hash2);

@@ -452,7 +452,10 @@ run(`(() => {
     const sunk = this.put('sunken_colony', hx - 6, hy + 6); Abilities.instant(sunk, 'uproot'); this.tick(2);
     sunk.x = (X + 2) * TILE + 2; sunk.y = Y * TILE + 1; sunk.px = sunk.x; sunk.py = sunk.y;
     const [sx, sy] = sunk.tile(); const fits = (x, y) => { for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) if (!m.walkable(x + a, y + b)) return false; return true; };
-    const T = [hx - 9, hy + 1];
+    // A legal creep tile the crawler's body can reach, farthest first. It was fourteen tiles west (hx - 9, hy + 1) until the looks
+    // queue moved Lost Ruins' main into its corner, which put that tile behind the main's mineral line, where a 3x3 body cannot go.
+    const reach = c => { const w = G.pf.find(sx, sy, c[0] + 1, c[1] + 1, 5000, true), e = w[w.length - 1]; return !!e && Math.abs(e[0] - c[0] - 1) <= 1 && Math.abs(e[1] - c[1] - 1) <= 1; };
+    const T = [[-9, 1], [-6, 6], [-2, 8], [0, 9]].map(([dx, dy]) => [hx + dx, hy + dy]).find(c => !m.canPlace(DATA.buildings.sunken_colony, c[0], c[1], p, G.units, sunk) && reach(c)) || [hx - 9, hy + 1];
     const legal = !m.canPlace(DATA.buildings.sunken_colony, T[0], T[1], p, G.units, sunk);
     G.pathBudget = 100; const pathOut = G.pf.find(sx, sy, T[0] + 1, T[1] + 1, 5000, true).length;
     sunk.setOrder({ type: 'land', tx: T[0], ty: T[1] });
@@ -460,7 +463,7 @@ run(`(() => {
     G.landBuilding = lb;
     return { spore, below, wedged: !fits(sx, sy), legal, pathOut, rooted, tx: sunk.tx, ty: sunk.ty, lifted: !!sunk.lifted, maxStuck, lands, target: T };
   })()`);
-  ok('the pocket scene stands: the crawler is on a tile its body does not fit, a legal creep tile is ordered fourteen tiles west', B.spore && B.below && B.wedged && B.legal, JSON.stringify(B));
+  ok('the pocket scene stands: the crawler is on a tile its body does not fit, and a legal creep tile it can reach is ordered', B.spore && B.below && B.wedged && B.legal, JSON.stringify(B));
   ok('the wide-body pathfinder hands it a way OUT (before: an empty path, and a straight grind into the corner)', B.pathOut > 0, JSON.stringify(B));
   ok('...it walks out and roots on the ordered tile, landing from where it stands', B.rooted !== null && B.lifted === false && B.tx === B.target[0] && B.ty === B.target[1] && B.lands.length === 1 && B.lands[0].d <= TILE_PX, JSON.stringify(B));
   ok('...and its stuck counter never climbs (before: 723 -- the eight-player "nothing wedged" line)', B.maxStuck < 100, JSON.stringify(B));
@@ -632,13 +635,18 @@ run(`(() => {
   // Zerg, because zerglings are always affordable. Fixing it changes what every Zerg army is made of,
   // so it belongs to the balance run and is logged in DESIGN-M12.md, not patched here.
   //
-  // THE TERRAN IS PASSIVE AND THE GAME IS 20000 FRAMES (TODO-M18 queue item G; it was an AI Terran and 14000). On the slower
+  // THE TERRAN IS PASSIVE AND THE GAME WAS 20000 FRAMES (TODO-M18 queue item G; it was an AI Terran and 14000). On the slower
   // economy both checks below had come down to one seed each -- a Roach on seed 5 at 7:52, Volatile Bile on seed 6 at
   // 8:46 -- because the Terran AI never attacked. Once item G made it attack, it wins these games at 13:17 and 13:48 on
   // seeds 5 and 6, and in 9.7 minutes no seed fielded a Roach or finished an M12 tech: the question had become whether
   // this Zerg survives that Terran, which is the balance run's (TODO-M18 7b). Against a passive opponent for 13.9 minutes
   // the Zerg fields Roaches on all three seeds and Volatile Bile on one, and the AI from before item G passes as well
   // (Roaches on two, Volatile Bile on one), so the rig was not chosen to fit the change (.claude/review/aipace/zerg12-when.js).
+  //
+  // AND IT RUNS TO 30000 FRAMES since the looks queue (item 4) redesigned Lost Ruins. On the new map this Zerg fields Roaches on
+  // every seed by 11:06 but finishes its first M12 tech at 18:07-18:55 (seeds 7, 5, 6); the old map had it inside 20000 frames on
+  // one seed only (11:38). At 30000 all three seeds have one, and the tumour budget still holds at 8
+  // (.claude/review/maps/probes/zerg12-section8.js, and .claude/review/aipace/zerg12-when.js --passive --frames=30000 on both maps).
   const SEEDS = [5, 6, 7];
   const games = SEEDS.map(seed => json(`(() => {
     G.init({ players: [{ race: 'Z', human: false, difficulty: 'normal', name: 'A', team: 1 }, { race: 'T', human: false, difficulty: 'normal', name: 'B', team: 2 }], seed: ${seed}, layout: 'temple' });
@@ -651,7 +659,7 @@ run(`(() => {
     // roaches all dead in the last fight would read as "the AI never fields roaches".
     const ever = {};
     const sample = () => { for (const u of G.units) if (u.owner === 0) ever[u.def.id] = 1; };
-    for (let i = 0; i < 20000; i++) { G.tick(); if ((i & 15) === 0) sample(); }
+    for (let i = 0; i < 30000; i++) { G.tick(); if ((i & 15) === 0) sample(); }
     sample();
     const seen = {};
     for (const u of G.units) if (u.alive && u.owner === 0) seen[u.def.id] = (seen[u.def.id] || 0) + 1;

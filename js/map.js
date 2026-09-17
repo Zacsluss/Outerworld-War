@@ -3,37 +3,75 @@
 // Map: terrain grid, cliffs/ramps, resources, creep, psi power, placement.
 // height: 0 low ground, 1 ramp, 2 high ground. walk: 1 walkable.
 // ============================================================================
-// Map layouts. Coordinates are quadrant-0 tiles, mirrored 4-fold. Mains listed first.
+// Map layouts. Coordinates are quadrant-0 tiles, mirrored 4-fold -- or, on a layout with `sym: 'rot2'`, tiles anywhere on the map, each
+// painted where it is and turned half round the centre (a two-player map, as StarCraft II's are: GameMap.sym). Mains listed first.
+// high and rocks are shapes (GameMap.shape): ['rect', x, y, w, h], ['ellipse', cx, cy, rx, ry], ['poly', x0, y0, x1, y1, ...] or
+// ['line', x0, y0, x1, y1, ..., width]. A base either lists its minerals and geyser or gives `face` ('nw' 'ne' 'sw' 'se', the side
+// its mineral line is on) and `patches`, and is laid out by MapModes.base.
 const MAP_LAYOUTS = {
+  // THE LOOKS QUEUE, item 4, in the user's words: "All of the maps are very uninspired. Look at images of actual StarCraft II maps and
+  // redesign the layout of all maps in the game according to the generalized structure that StarCraft II maps have." Every layout here
+  // and in MAP_SIZES now follows that structure (.claude/review/maps/research-brief.md, RESEARCH-TERRAIN.md 8.14): a main on high ground
+  // with one ramp down to a natural, the natural behind one choke, a choice of thirds, later bases further out and more exposed, a middle
+  // broken into lanes by rock, and destructible rocks on the back doors. Two-player maps are turned half round the centre (sym 'rot2'), as
+  // StarCraft II's are; four-player maps are mirrored four ways. Before, every map was a corner plateau and a few ellipses mirrored four
+  // ways -- two-player maps too, whose two empty corners held nobody (.claude/review/maps/shots/valley.png and the rest).
+  //
+  // LOST RUINS, after StarCraft II's Lost Temple: the main's ramp runs east, along the top of the map, to a natural beside the main; a
+  // linear third below the main, and a narrow path to it from the natural under the main's cliff that rocks close; a ruined temple on high ground in the middle with a rich base
+  // (5000 a patch) on each of its corners, climbed by a wide ramp in the middle of each side; broken pillars through the middle ground.
   temple: { name: 'Lost Ruins', players: 4, startOrder: [0, 3, 1, 2],
-    high: [['rect', 4, 4, 32, 26], ['ellipse', 20, 17, 18, 15], ['rect', 50, 50, 14, 14], ['ellipse', 63.5, 63.5, 17, 17]],
-    ramps: [[31, 28, 4, 5], [61, 45, 3, 5], [45, 61, 5, 3]],
-    rocks: [['rect', 4, 30, 18, 4], ['ellipse', 42, 33, 4, 3], ['ellipse', 30, 58, 3, 2.5], ['ellipse', 58, 28, 2.5, 3], ['ellipse', 40, 50, 3, 3]],
+    high: [['poly', 2, 2, 28, 2, 28, 18, 22, 25, 2, 25], ['poly', 46, 51, 51, 46, 58, 44, 64, 44, 64, 64, 44, 64, 44, 58]],
+    ramps: [[26, 11, 6, 4], [40, 60, 6, 4], [60, 40, 4, 6]],
+    rocks: [['poly', 23, 26, 29, 19, 34, 18, 37, 24, 33, 31, 26, 32], ['poly', 52, 2, 58, 2, 60, 10, 55, 16, 50, 12],
+      ['poly', 2, 52, 10, 50, 18, 53, 20, 57, 12, 60, 2, 58], ['poly', 26, 40, 32, 36, 38, 38, 38, 45, 31, 47],
+      ['ellipse', 44, 30, 2.5, 3], ['ellipse', 52, 36, 2, 2.5], ['ellipse', 30, 54, 3, 2]],
+    features: [{ kind: 'rocks', x: 24, y: 22, w: 2, h: 2 }],
     bases: [
-      { hall: [12, 12], minerals: [[7, 9], [7, 11], [7, 13], [7, 15], [7, 17], [10, 8], [12, 8], [14, 8]], geyser: [17, 7], main: true },
-      { hall: [29, 38], minerals: [[24, 36], [24, 38], [24, 40], [24, 42], [27, 45], [29, 45], [31, 45]], geyser: [34, 44], natural: true },
-      { hall: [10, 52], minerals: [[5, 49], [5, 51], [5, 53], [5, 55], [5, 57], [5, 59]], geyser: [10, 58] },
-      { hall: [52, 10], minerals: [[49, 5], [51, 5], [53, 5], [55, 5], [57, 5], [59, 5]], geyser: [59, 10] },
+      { hall: [10, 9], face: 'nw', main: true },
+      { hall: [40, 8], face: 'ne', patches: 7, natural: true },
+      { hall: [8, 41], face: 'sw', patches: 7 },
+      { hall: [54, 53], face: 'sw', patches: 6, rich: true },
     ] },
+  // BLOOD PIT: close corners and a pit in the middle -- a ring of rock round the centre, open at its west and east gates and shut by rocks
+  // at its north and south ones, and inside it four rich bases on the open floor for whoever can hold them. Each corner: a main up a ramp,
+  // a natural below it behind a choke, a third along the top or bottom edge.
   bloodbath: { name: 'Blood Pit', players: 4, startOrder: [0, 3, 1, 2],
-    high: [['ellipse', 63.5, 63.5, 12, 10]],
-    ramps: [[62, 52, 3, 3], [52, 62, 3, 3]],
-    rocks: [['ellipse', 30, 30, 5, 4], ['rect', 4, 40, 10, 3], ['rect', 40, 4, 3, 10], ['ellipse', 46, 22, 3, 3], ['ellipse', 22, 46, 3, 3]],
+    high: [['poly', 2, 2, 26, 2, 26, 16, 20, 23, 2, 23]],
+    ramps: [[13, 21, 4, 6]],
+    rocks: [['line', 36, 58, 37, 50, 41, 43, 47, 38, 55, 35, 58, 35, 4],
+      ['poly', 20, 24, 26, 17, 31, 16, 34, 22, 30, 29, 24, 30], ['poly', 38, 16, 46, 14, 54, 15, 58, 20, 50, 24, 41, 23],
+      ['poly', 2, 42, 12, 40, 20, 44, 18, 50, 8, 52, 2, 51], ['ellipse', 30, 40, 2.5, 2], ['ellipse', 24, 58, 2, 3]],
+    features: [{ kind: 'rocks', x: 59, y: 33, w: 5, h: 4 }],
     bases: [
-      { hall: [12, 12], minerals: [[7, 9], [7, 11], [7, 13], [7, 15], [10, 7], [12, 7], [14, 7], [16, 7]], geyser: [19, 11], main: true },
-      { hall: [30, 12], minerals: [[27, 5], [29, 5], [31, 5], [33, 5], [35, 5], [37, 8]], geyser: [37, 12] },
-      { hall: [12, 30], minerals: [[5, 27], [5, 29], [5, 31], [5, 33], [5, 35], [8, 37]], geyser: [12, 36] },
+      { hall: [9, 9], face: 'nw', main: true },
+      { hall: [8, 31], face: 'sw', patches: 7, natural: true },
+      { hall: [38, 7], face: 'ne', patches: 6 },
+      { hall: [48, 48], face: 'nw', patches: 6, rich: true },
     ] },
-  valley: { name: 'Twilight Valley', players: 2, startOrder: [0, 1],
-    high: [['rect', 4, 4, 40, 30], ['ellipse', 24, 19, 22, 17], ['rect', 4, 60, 22, 8]],
-    ramps: [[38, 32, 5, 5], [24, 60, 4, 4]],
-    rocks: [['rect', 44, 4, 4, 22], ['ellipse', 56, 40, 6, 5], ['ellipse', 64, 63, 10, 4], ['rect', 30, 50, 10, 3], ['ellipse', 80, 20, 4, 4]],
+  // TWILIGHT VALLEY, the standard one-against-one map: mains in opposite corners; the natural under the main's ramp, walled to the east;
+  // a triangle third walled off along the north edge and a linear third down the west edge behind a back door that rocks close; a fourth in
+  // the far corner, a fifth along the north edge, a rich base past the western lane; a watch hill in the middle, climbed from north and south,
+  // and rock masses turning round it into three lanes.
+  valley: { name: 'Twilight Valley', players: 2, sym: 'rot2', startOrder: [0, 1],
+    high: [['poly', 2, 2, 41, 2, 41, 11, 36, 18, 31, 26, 2, 26], ['poly', 55, 58, 63, 54, 72, 56, 73, 66, 64, 72, 55, 69]],
+    ramps: [[19, 24, 4, 6], [61, 52, 4, 5]],
+    rocks: [['poly', 7, 51, 12, 49, 24, 52, 33, 49, 39, 55, 34, 60, 22, 62, 10, 60, 7, 62],
+      ['poly', 32, 27, 38, 19, 43, 12, 49, 9, 53, 14, 54, 23, 49, 31, 45, 37, 38, 40, 34, 35],
+      ['poly', 57, 22, 67, 19, 76, 17, 84, 20, 88, 27, 80, 31, 68, 31, 60, 32],
+      ['poly', 49, 45, 55, 40, 61, 41, 66, 46, 62, 51, 54, 53],
+      ['poly', 18, 76, 25, 71, 32, 73, 36, 81, 31, 86, 23, 85], ['poly', 41, 65, 47, 61, 52, 64, 55, 72, 50, 79, 44, 78],
+      ['poly', 59, 86, 67, 82, 76, 83, 79, 89, 72, 94, 63, 93], ['poly', 88, 39, 95, 34, 101, 38, 102, 46, 95, 50, 89, 47],
+      ['ellipse', 24, 96, 2.5, 2], ['ellipse', 50, 100, 2, 2.5], ['ellipse', 72, 44, 2, 1.5], ['ellipse', 84, 58, 2, 2]],
+    features: [{ kind: 'rocks', x: 2, y: 55, w: 5, h: 3 }],
     bases: [
-      { hall: [14, 14], minerals: [[9, 11], [9, 13], [9, 15], [9, 17], [9, 19], [12, 10], [14, 10], [16, 10], [18, 10]], geyser: [20, 9], main: true, quadrants: [0, 3] },
-      { hall: [36, 40], minerals: [[31, 38], [31, 40], [31, 42], [31, 44], [34, 47], [36, 47], [38, 47]], geyser: [41, 46], natural: true, quadrants: [0, 3] },
-      { hall: [12, 72], minerals: [[7, 69], [7, 71], [7, 73], [7, 75], [7, 77], [10, 79]], geyser: [15, 78], quadrants: [0, 3] },
-      { hall: [60, 14], minerals: [[57, 9], [59, 9], [61, 9], [63, 9], [65, 9], [67, 12]], geyser: [67, 16], quadrants: [0, 3] },
-      { hall: [94, 40], minerals: [[89, 37], [89, 39], [89, 41], [89, 43], [92, 35], [94, 35]], geyser: [98, 34], quadrants: [0, 3], rich: true },
+      { hall: [12, 10], face: 'nw', main: true },
+      { hall: [10, 38], face: 'sw', natural: true },
+      { hall: [10, 72], face: 'nw', patches: 7 },
+      { hall: [64, 8], face: 'ne', patches: 7 },
+      { hall: [10, 106], face: 'sw', patches: 7 },
+      { hall: [100, 8], face: 'ne', patches: 6 },
+      { hall: [34, 102], face: 'sw', patches: 6, rich: true },
     ] },
 };
 // Run-length codec for the editor's tile grids: "2x40,0x88,..." keeps a 128x128 map a few hundred bytes.
@@ -56,76 +94,84 @@ const TILESET_NAMES = { badlands: 'Badlands', jungle: 'Jungle', ice: 'Ice', dese
 // they move together:
 //
 //   size    tiles      players  bases/player  patch  gas   spawns apart  terrain
-//   small    96x96        2         2         2000  6000     64 tiles    no high ground at all
-//   medium  128x128       4         3         1500  5000    142 tiles    main plateau, one ramp
-//   large   192x192       4         5         1500  5000    233 tiles    plateau + a central one
-//   huge    256x256       4         7         1100  4000    323 tiles    plateau + a big central one
+//   small    96x96        2         3         2000  6000    103 tiles    a main up a ramp, a watch hill; turned half round
+//   medium  128x128       4         4         1500  5000    149 tiles    a main up a ramp, a central plateau of four bases
+//   large   192x192       4         7         1500  5000    236 tiles    ...a high pod each, and a central plateau of four
+//   huge    256x256       4         8         1300  4000    323 tiles    ...a high pod each, and a great central plateau
 //
-// "spawns apart" is the first two spawn points, which the start order puts on the diagonal on every
-// size but small -- where they are deliberately mirrored left-to-right instead.
+// "spawns apart" is the first two spawn points, straight: the start order puts them on the diagonal on every size.
 //
-// Read down the columns rather than across:
+// Read down the columns rather than across. Every size has StarCraft II's skeleton (see MAP_LAYOUTS): a main on high ground with one
+// ramp down to a natural behind a choke, thirds beyond it, the middle broken into lanes by rock, back doors shut by destructible rocks.
 //
-//   * SMALL is a duel over one bank. Two mains, mirrored left-to-right rather than diagonally, so the
-//     walk between them is a third of medium's; two contested bases on the centre line that belong to
-//     nobody. There is no high ground anywhere, so there is no defender's terrain and no ramp to hold
-//     -- the only way to be safe is for the other player to be dead. To make a one-base game last long
-//     enough to be a game, the mains are fat: nine patches at 2000 is 18,000 minerals, half again what
-//     a medium main holds.
-//   * MEDIUM is the historical feel. 128x128, four players, main + natural + one expansion, 1500 a
-//     patch -- the numbers every balance run in this repository was measured against.
-//   * LARGE gives each player five bases and a central plateau worth taking, so there is more than one
-//     front and holding all of your ground costs army. The fifth base is ON that plateau, which is what
-//     makes "worth taking" a claim about the economy rather than about the view -- see the base list.
-//   * HUGE gives seven, but each patch holds 1100 rather than 1500. A player's whole territory is worth
-//     about what large's is (49,500 minerals either way) -- it is just spread over seven bases that run
-//     dry 27% faster, so standing still is losing even when nobody is shooting at you. That, plus a
-//     323-tile diagonal -- 2.3 times medium's -- is what makes travel time a decision rather than a
-//     loading screen.
+//   * SMALL is a short duel: two mains turned half round the centre, each with a natural and one third along the north or south edge, a
+//     watch hill between them. It used to have no high ground at all and a main-to-main walk a third of medium's; the skeleton gives it a
+//     ramp to hold, and the walk is still the shortest of the four. The mains are fat -- nine patches at 2000, 18,000 minerals, half again
+//     what a medium main holds -- so a game on three bases lasts long enough to be a game.
+//   * MEDIUM is the historical rules -- four players, 1500 a patch, the numbers the balance runs in this repository were measured
+//     against -- on a new map: main, natural and a third along the edge, and a fourth on a central plateau that every player can climb to.
+//   * LARGE gives each player seven bases: two thirds to choose between, a fourth on a high pod in the broken middle ground, a sixth out by
+//     the neighbour, and the fifth ON the central plateau. That fifth was once at 66,66 on the low ground below, so the plateau was high
+//     ground that held nothing, cost nothing to give up and was worth taking only for the view; a base up there makes taking high ground an
+//     economic decision and holding it an army commitment -- the difference between terrain that is a tactical asset and scenery.
+//   * HUGE gives eight, at 1300 a patch rather than 1500: a player's whole territory is worth about what large's is (66,300 minerals
+//     against 67,500), spread over more bases that run dry sooner, so standing still is losing even when nobody is shooting at you. That,
+//     and the longest walks of the four, is what makes travel time a decision rather than a loading screen.
 //
 // The one thing that is NOT a rule difference: unit stats. Nothing here touches js/data.js.
 const MAP_SIZES = {
   small: {
-    name: 'Close Quarters', w: 96, h: 96, players: 2, tileset: 'badlands', startOrder: [0, 1],
+    name: 'Close Quarters', w: 96, h: 96, players: 2, tileset: 'badlands', startOrder: [0, 1], sym: 'rot2',
     patch: 2000, gas: 6000, patches: { main: 9, natural: 7, expo: 7 },
-    // Mains mirrored left-to-right (quadrants 0 and 1) so they are 64 tiles apart, not 90 on the
-    // diagonal. The two expansions sit on the centre line with one copy each, which is the whole
-    // point of them: they are equidistant from both mains and cannot be held quietly.
-    bases: [{ x: 14, y: 40, role: 'main', q: [0, 1] }, { x: 46, y: 12, role: 'expo', q: [0, 2] }],
-    high: [], ramps: [], rocks: [['ellipse', 32, 28, 5, 4]],
+    bases: [{ x: 11, y: 9, role: 'main', face: 'nw' }, { x: 9, y: 33, role: 'natural', face: 'sw' }, { x: 52, y: 8, role: 'expo', face: 'ne' }],
+    high: [['poly', 2, 2, 32, 2, 32, 12, 26, 22, 2, 22], ['ellipse', 47.5, 47.5, 7, 5]],
+    ramps: [[14, 20, 4, 6], [46, 41, 4, 4]],
+    rocks: [['poly', 26, 23, 34, 12, 40, 12, 42, 24, 34, 32], ['poly', 6, 44, 18, 42, 26, 46, 20, 52, 6, 52],
+      ['poly', 44, 18, 60, 16, 62, 24, 48, 28], ['poly', 30, 56, 40, 52, 44, 62, 34, 68], ['poly', 10, 66, 18, 64, 22, 72, 14, 76, 8, 72]],
+    features: [{ kind: 'rocks', x: 2, y: 46, w: 4, h: 3 }],
   },
   medium: {
     name: 'Contested Ground', w: 128, h: 128, players: 4, tileset: 'jungle', startOrder: [0, 3, 1, 2],
     patch: 1500, gas: 5000, patches: { main: 8, natural: 7, expo: 6 },
-    bases: [{ x: 12, y: 12, role: 'main' }, { x: 30, y: 38, role: 'natural' }, { x: 12, y: 50, role: 'expo' }],
-    high: [['rect', 4, 4, 32, 26], ['ellipse', 20, 17, 18, 15]],
-    ramps: [[31, 28, 4, 5]],
-    rocks: [['rect', 4, 32, 14, 3], ['ellipse', 46, 46, 5, 4]],
+    bases: [{ x: 10, y: 9, role: 'main', face: 'nw' }, { x: 9, y: 33, role: 'natural', face: 'sw' },
+      { x: 44, y: 8, role: 'expo', face: 'ne' }, { x: 52, y: 52, role: 'expo', face: 'nw' }],
+    high: [['poly', 2, 2, 30, 2, 30, 14, 24, 22, 2, 22], ['poly', 46, 46, 64, 46, 64, 64, 46, 64]],
+    ramps: [[12, 20, 4, 6], [40, 61, 7, 3], [61, 40, 3, 7]],
+    rocks: [['poly', 24, 23, 32, 12, 38, 12, 40, 26, 30, 32], ['poly', 6, 44, 16, 42, 24, 46, 18, 52, 6, 52],
+      ['poly', 40, 16, 58, 14, 60, 22, 44, 26], ['poly', 28, 38, 38, 34, 42, 42, 32, 46]],
+    features: [{ kind: 'rocks', x: 2, y: 46, w: 4, h: 3 }],
   },
   large: {
     name: 'Broken Expanse', w: 192, h: 192, players: 4, tileset: 'badlands', startOrder: [0, 3, 1, 2],
     patch: 1500, gas: 5000, patches: { main: 8, natural: 7, expo: 6 },
-    // The fifth base is ON the central plateau, not beside it. It used to sit at 66,66 on the low
-    // ground below -- so the plateau was 1,168 tiles of high ground that held nothing, cost nothing to
-    // give up, and was worth taking only for the view. A player's fifth base being up there means
-    // taking high ground is an economic decision and holding it is an army commitment, which is the
-    // difference between terrain that is a tactical asset and terrain that is scenery.
-    bases: [{ x: 12, y: 12, role: 'main' }, { x: 34, y: 40, role: 'natural' },
-      { x: 12, y: 58, role: 'expo' }, { x: 58, y: 12, role: 'expo' }, { x: 85, y: 88, role: 'expo' }],
-    high: [['rect', 4, 4, 34, 28], ['ellipse', 21, 18, 19, 16], ['ellipse', 95.5, 95.5, 22, 20]],
-    ramps: [[33, 30, 5, 6], [92, 70, 4, 10]],
-    rocks: [['rect', 4, 40, 20, 3], ['ellipse', 50, 50, 6, 5]],
+    bases: [{ x: 12, y: 10, role: 'main', face: 'nw' }, { x: 10, y: 44, role: 'natural', face: 'sw' },
+      { x: 10, y: 78, role: 'expo', face: 'nw' }, { x: 56, y: 8, role: 'expo', face: 'ne' }, { x: 52, y: 48, role: 'expo', face: 'nw' },
+      { x: 86, y: 8, role: 'expo', face: 'ne' }, { x: 82, y: 84, role: 'expo', face: 'nw' }],
+    high: [['poly', 2, 2, 36, 2, 36, 18, 29, 29, 2, 29], ['poly', 70, 80, 78, 72, 96, 72, 96, 96, 72, 96, 70, 90],
+      ['poly', 46, 42, 60, 40, 66, 44, 66, 56, 60, 60, 48, 60, 44, 54]],
+    ramps: [[18, 27, 4, 6], [64, 84, 8, 4], [51, 56, 4, 6]],
+    rocks: [['poly', 30, 30, 37, 20, 44, 18, 48, 26, 44, 38, 36, 44, 30, 40], ['poly', 7, 58, 14, 56, 26, 60, 28, 66, 16, 68, 7, 67],
+      ['poly', 50, 18, 62, 15, 76, 16, 82, 22, 70, 27, 56, 26], ['poly', 26, 82, 36, 78, 44, 82, 44, 92, 34, 95, 27, 90],
+      ['poly', 70, 40, 78, 34, 88, 38, 90, 48, 80, 52, 72, 50], ['poly', 34, 60, 40, 56, 46, 62, 42, 70, 36, 70],
+      ['poly', 80, 56, 88, 54, 94, 60, 90, 66, 82, 64],
+      ['ellipse', 60, 30, 2.5, 2], ['ellipse', 22, 74, 2, 2.5], ['ellipse', 56, 78, 3, 2], ['ellipse', 86, 30, 2, 2]],
+    features: [{ kind: 'rocks', x: 2, y: 61, w: 5, h: 3 }],
   },
   huge: {
     name: 'The Long March', w: 256, h: 256, players: 4, tileset: 'ice', startOrder: [0, 3, 1, 2],
-    patch: 1100, gas: 4000, patches: { main: 8, natural: 7, expo: 6 },
-    // ...and the same on huge: the fifth of seven is on the central plateau rather than at 70,70 below it.
-    bases: [{ x: 12, y: 12, role: 'main' }, { x: 36, y: 44, role: 'natural' },
-      { x: 12, y: 58, role: 'expo' }, { x: 58, y: 12, role: 'expo' }, { x: 112, y: 112, role: 'expo' },
-      { x: 12, y: 102, role: 'expo' }, { x: 102, y: 12, role: 'expo' }],
-    high: [['rect', 4, 4, 36, 30], ['ellipse', 22, 19, 20, 17], ['rect', 100, 100, 28, 28], ['ellipse', 127.5, 127.5, 34, 34]],
-    ramps: [[35, 32, 6, 8], [122, 88, 4, 12], [88, 122, 12, 4]],
-    rocks: [['rect', 4, 46, 24, 3], ['ellipse', 56, 56, 7, 6]],
+    patch: 1300, gas: 4000, patches: { main: 8, natural: 7, expo: 6 },
+    bases: [{ x: 13, y: 11, role: 'main', face: 'nw' }, { x: 10, y: 48, role: 'natural', face: 'sw' },
+      { x: 10, y: 84, role: 'expo', face: 'nw' }, { x: 62, y: 8, role: 'expo', face: 'ne' }, { x: 10, y: 116, role: 'expo', face: 'sw' },
+      { x: 106, y: 8, role: 'expo', face: 'ne' }, { x: 66, y: 64, role: 'expo', face: 'nw' }, { x: 110, y: 110, role: 'expo', face: 'nw' }],
+    high: [['poly', 2, 2, 40, 2, 40, 20, 32, 32, 2, 32], ['poly', 96, 106, 106, 96, 128, 96, 128, 128, 96, 128, 94, 118],
+      ['poly', 60, 58, 76, 56, 82, 62, 82, 74, 76, 78, 62, 78, 58, 70]],
+    ramps: [[20, 30, 4, 6], [88, 110, 8, 4], [66, 74, 4, 6]],
+    rocks: [['poly', 33, 33, 41, 22, 48, 20, 52, 30, 48, 42, 40, 48, 33, 44], ['poly', 7, 62, 16, 60, 30, 64, 32, 70, 18, 72, 7, 71],
+      ['poly', 54, 20, 68, 16, 84, 18, 90, 24, 78, 30, 60, 29], ['line', 30, 100, 44, 94, 56, 96, 64, 104, 5],
+      ['line', 100, 30, 94, 44, 96, 56, 104, 64, 5], ['poly', 40, 116, 50, 112, 58, 118, 54, 126, 44, 126],
+      ['poly', 84, 44, 94, 40, 104, 44, 104, 52, 92, 54], ['poly', 30, 78, 38, 74, 46, 80, 42, 88, 32, 86],
+      ['ellipse', 64, 36, 3, 2], ['ellipse', 22, 88, 2, 3], ['ellipse', 80, 86, 3, 3], ['ellipse', 112, 76, 2.5, 2], ['ellipse', 76, 112, 2, 2.5]],
+    features: [{ kind: 'rocks', x: 2, y: 65, w: 5, h: 3 }],
   },
 };
 
@@ -190,11 +236,14 @@ const MapModes = {
   // patches west of the hall, a row north of it, and the geyser off the north-east corner. Fed the
   // temple main's numbers (hall 12,12 and eight patches) this reproduces that base exactly, which is
   // the point -- a size changes how many patches a base has and what is in them, never its shape.
-  base(x, y, patches, amount, gas, role) {
-    const min = [], col = Math.min(patches, 5), row = patches - col;
-    for (let i = 0; i < col; i++) min.push([x - 5, y - 3 + i * 2]);
-    for (let i = 0; i < row; i++) min.push([x - 2 + i * 2, y - 4]);
-    const b = { hall: [x, y], minerals: min, geyser: [x + 5, y - 5], amount, gas };
+  // `face` turns it about the hall (4 x 3) so the mineral line is on that side: 'nw' is the arrangement above and the default, 'ne'
+  // mirrors it left to right, 'sw' top to bottom, 'se' both. Mirrored whole, every patch and the geyser keep their three tiles from the hall.
+  base(x, y, patches, amount, gas, role, face) {
+    const min = [], col = Math.min(patches, 5), row = patches - col, mx = !!face && face[1] === 'e', my = !!face && face[0] === 's';
+    const at = (rx, ry, w, h) => [x + (mx ? 4 - rx - w : rx), y + (my ? 3 - ry - h : ry)];   // hall-relative, mirrored about the hall
+    for (let i = 0; i < col; i++) min.push(at(-5, -3 + i * 2, 2, 1));
+    for (let i = 0; i < row; i++) min.push(at(-2 + i * 2, -4, 2, 1));
+    const b = { hall: [x, y], minerals: min, geyser: at(5, -5, 4, 2), amount, gas };
     if (role === 'main') b.main = true; else if (role === 'natural') b.natural = true;
     return b;
   },
@@ -205,11 +254,13 @@ const MapModes = {
       tileset: opts.tileset || S.tileset, startOrder: S.startOrder,
       high: S.high.map(a => a.slice()), ramps: S.ramps.map(a => a.slice()), rocks: S.rocks.map(a => a.slice()),
       bases: S.bases.map(b => {
-        const o = this.base(b.x, b.y, S.patches[b.role], S.patch, S.gas, b.role);
+        const o = this.base(b.x, b.y, S.patches[b.role], S.patch, S.gas, b.role, b.face);
         if (b.q) o.quadrants = b.q.slice();
         return o;
       }),
     };
+    if (S.sym) L.sym = S.sym;
+    if (S.features) L.features = S.features.map(f => Object.assign({}, f));
     if (opts.hazard) L.hazard = HAZARDS[opts.hazard === true ? 'sandstorm' : opts.hazard](S.w);
     // Weather of the other kind. Carried through explicitly, like `hazard`, because this composer
     // builds a layout from named fields rather than spreading opts -- an unknown key is silently
@@ -333,13 +384,18 @@ const FEATURE_SAYS = { bridge: 'A bridge has collapsed.', rocks: 'A rock formati
 //
 //   chokepoint   corner plateau per player, a rock wall across the middle with two ways through, one
 //                of them a rock formation you can open. A floodgate crosses the centre.
-//   basin        no plateau at the mains, one big contested one in the middle, four bases a player
-//                and a spire on each approach. Whoever wants to be safe has to take ground.
+//   basin        an open middle: past each main's ramp there are no walls, only one big contested
+//                plateau in the middle with a base a player on it, and a spire on each approach.
+//                Whoever wants the middle has to take ground.
 //   islands      two channels cut each quadrant into pieces. Every piece has one permanent causeway
 //                and one bridge, so dropping a bridge costs the attacker the short way, never the
 //                defender's ability to walk home.
 //   cliffs       three terraces. The main and its natural are both on high ground, the middle is not,
 //                and a rock formation half-fills the natural's ramp.
+//
+// All four have StarCraft II's home (the looks queue, item 4; RESEARCH-TERRAIN.md 8.14): a main on high ground
+// with one ramp, the natural past its foot, and a third down each edge. Until then the basin's mains stood on
+// the floor. And on a two-player size every corner holds bases -- see `layout`.
 //
 // EVERY GENERATOR IS SEEDED AND PURE. Same key, same seed, same size -> byte-identical layout, on any
 // machine and in any call order; test/mapfeatures.js compares two generations tile for tile. The RNG
@@ -395,13 +451,18 @@ const Archetypes = {
       players: S.players, w: S.w, h: S.h, tileset: this.pick(R, TILESET_IDS), startOrder: S.startOrder,
       high: [], ramps: [], rocks: [], features: [], bases: [],
     };
-    // A two-player size puts both mains on the diagonal and gives every base the same pair of
-    // quadrants, so the map stays a mirror of itself rather than half a four-player map.
-    L.quads = S.players === 2 ? [0, 3] : null;
     this[key](L, S, R);
-    for (const b of L.bases) if (L.quads) b.quadrants = L.quads.slice();
-    for (const f of L.features) if (L.quads && !f.quadrants) f.quadrants = L.quads.slice();
-    delete L.quads;
+    // A two-player size puts both mains on the diagonal, quadrants 0 and 3. The ground is mirrored four ways all the same, so
+    // until the looks queue (item 4) the other two corners were a main's plateau and a natural's ground with no base on
+    // either, and every base and feature stood in quadrants 0 and 3 only -- the flaw the fixed two-player maps had as well.
+    // Now every base and feature stands in all four, and in quadrants 1 and 2 the main's and the natural's spots are plain
+    // expansions, nobody's main and nobody's natural. A corner's bases are the half turn of the opposite corner's, so neither
+    // player is nearer more of them, and a two-player map has StarCraft II's seven or eight bases a side.
+    if (S.players === 2) {
+      const own = L.bases.filter(b => b.main || b.natural);
+      for (const b of own) b.quadrants = [0, 3];
+      for (const b of own) L.bases.push(Object.assign(MapModes.base(b.hall[0], b.hall[1], S.patches.expo, S.patch, S.gas, 'expo'), { quadrants: [1, 2] }));
+    }
     return L;
   },
   // One base in the shape every layout in this file already uses, with this size's patch counts.
@@ -495,23 +556,34 @@ const Archetypes = {
   },
 
   // ---- open basin --------------------------------------------------------
-  // No defender's terrain at home at all -- the only high ground on the map is one big plateau in the
-  // middle, and it is worth taking. FIVE bases a player, and the fifth is on top of that plateau, so
-  // "whoever wants to be safe has to take ground" is a sentence about the economy and not only about
-  // sight lines: on this map the only high ground there is, is also a base, and it is equidistant from
-  // everybody. A spire on each approach means there is somewhere an army can be that you cannot see.
+  // An open middle. Past each main's ramp there are no walls at all, and the only other high ground on
+  // the map is one big plateau in the middle, which is worth taking. FIVE bases a player, and the fifth is
+  // on top of that plateau, so "whoever wants the middle has to take ground" is a sentence about the
+  // economy and not only about sight lines: it is a base, and it is equidistant from everybody. A spire on
+  // each approach means there is somewhere an army can be that you cannot see.
+  //
+  // Until the looks queue the mains stood on the floor too ("no defender's terrain at home at all"). The
+  // main's plateau is drawn to hold its base -- the footprint runs from the hall's x-5 to x+8 and y-5 to
+  // y+5, and the plateau's inside from 3 to x+8 and y+8 -- with the ramp down its south edge two tiles in
+  // from the corner, as on islands. The natural stands further out than it did (0.25-0.29 of the map, not
+  // 0.20-0.24) so its mineral line clears that cliff on the smallest size, and the spires moved out with it
+  // (0.33-0.37, not 0.29-0.33) so a spire never lands in the natural's clearing and vanishes.
   basin(L, S, R) {
     const W = S.w, H = S.h, fx = f => Math.round(f * W), fy = f => Math.round(f * H);
     L.high.push(['ellipse', W / 2 - 0.5, H / 2 - 0.5, fx(this.rf(R, 0.13, 0.17)), fy(this.rf(R, 0.13, 0.17))]);
     L.ramps.push([fx(0.5) - fx(0.02), fy(this.rf(R, 0.32, 0.36)), Math.max(5, fx(0.045)), Math.max(6, fy(0.06))]);
-    this.base(L, S, Math.max(8, fx(0.08)), Math.max(8, fy(0.08)), 'main');
-    this.base(L, S, fx(this.rf(R, 0.20, 0.24)), fy(this.rf(R, 0.20, 0.24)), 'natural');
+    const mx = Math.max(8, fx(0.08)), my = Math.max(8, fy(0.08)), pw = mx + 8, ph = my + 8;
+    const rw = Math.max(4, fx(0.03)), rh = Math.max(5, fy(0.05));
+    L.high.push(['rect', 2, 2, pw, ph]);
+    L.ramps.push([2 + pw - rw - 2, 2 + ph - 2, rw, rh]);
+    this.base(L, S, mx, my, 'main');
+    this.base(L, S, fx(this.rf(R, 0.25, 0.29)), fy(this.rf(R, 0.25, 0.29)), 'natural');
     this.base(L, S, Math.max(8, fx(0.07)), fy(this.rf(R, 0.33, 0.39)), 'expo');
     this.base(L, S, fx(this.rf(R, 0.33, 0.39)), Math.max(8, fy(0.07)), 'expo');
     this.centreBase(L, S);
     for (let i = 0; i < 3; i++) { const e = ['ellipse', fx(this.rf(R, 0.26, 0.44)), fy(this.rf(R, 0.26, 0.44)), this.ri(R, 3, 5), this.ri(R, 3, 5)]; if (this.rockClear(L, e[1], e[2], e[3], e[4])) L.rocks.push(e); }
-    this.feat(L, 'spire', fx(this.rf(R, 0.29, 0.33)), fy(this.rf(R, 0.16, 0.20)), 4, 4);
-    this.feat(L, 'spire', fx(this.rf(R, 0.16, 0.20)), fy(this.rf(R, 0.29, 0.33)), 4, 4);
+    this.feat(L, 'spire', fx(this.rf(R, 0.33, 0.37)), fy(this.rf(R, 0.16, 0.20)), 4, 4);
+    this.feat(L, 'spire', fx(this.rf(R, 0.16, 0.20)), fy(this.rf(R, 0.33, 0.37)), 4, 4);
     this.feat(L, 'rocks', fx(0.5) - 2, fy(this.rf(R, 0.38, 0.41)), 4, 3);            // in front of the plateau ramp
   },
 
@@ -677,9 +749,41 @@ class GameMap {
   idx(x, y) { return y * this.w + x; }
   inb(x, y) { return x >= 0 && y >= 0 && x < this.w && y < this.h; }
   H(x, y) { return this.inb(x, y) ? this.height[this.idx(x, y)] : 0; }
-  // Apply painter fn(x,y) over 4-fold mirror symmetry
+  // Apply painter fn(x,y) over the layout's symmetry: 4-fold mirror, or on a 'rot2' layout the tile and its half turn about the centre.
   sym(x, y, fn) {
+    if (this.symmetry === 'rot2') { fn(x, y); fn(this.w - 1 - x, this.h - 1 - y); return; }
     fn(x, y); fn(this.w - 1 - x, y); fn(x, this.h - 1 - y); fn(this.w - 1 - x, this.h - 1 - y);
+  }
+  // The quadrant transforms (mirrorPt) a layout's bases and features are copied through: all four, or on a 'rot2' layout the tile as it
+  // is and its half turn (3). A base or feature's own `quadrants` narrows these further.
+  static quadrantsOf(L) { return L && L.sym === 'rot2' ? [0, 3] : [0, 1, 2, 3]; }
+  // One shape of a layout (see MAP_LAYOUTS), painted with fn(x, y) once per tile. poly paints the tiles whose centres fall inside the
+  // polygon, even-odd; line the tiles whose centres lie within width/2 of the path. Arithmetic only, so every client paints the same.
+  shape(sh, fn) {
+    const kind = sh[0], a = sh.slice(1);
+    if (kind === 'rect') return this.rect(a[0], a[1], a[2], a[3], fn);
+    if (kind === 'poly') {
+      const n = a.length >> 1; let x0 = this.w, y0 = this.h, x1 = -1, y1 = -1;
+      for (let k = 0; k < n; k++) { x0 = Math.min(x0, a[2 * k]); x1 = Math.max(x1, a[2 * k]); y0 = Math.min(y0, a[2 * k + 1]); y1 = Math.max(y1, a[2 * k + 1]); }
+      for (let y = Math.max(0, Math.floor(y0)); y <= Math.min(this.h - 1, Math.ceil(y1)); y++) for (let x = Math.max(0, Math.floor(x0)); x <= Math.min(this.w - 1, Math.ceil(x1)); x++) {
+        const px = x + 0.5, py = y + 0.5; let inside = false;
+        for (let i = 0, j = n - 1; i < n; j = i++) { const xi = a[2 * i], yi = a[2 * i + 1], xj = a[2 * j], yj = a[2 * j + 1]; if ((yi > py) !== (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) inside = !inside; }
+        if (inside) fn(x, y);
+      }
+      return;
+    }
+    if (kind === 'line') {
+      const r = a[a.length - 1] / 2, pts = a.slice(0, -1), done = new Uint8Array(this.w * this.h);
+      for (let k = 0; k + 3 < pts.length; k += 2) {
+        const ax = pts[k], ay = pts[k + 1], bx = pts[k + 2], by = pts[k + 3], dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1;
+        for (let y = Math.max(0, Math.floor(Math.min(ay, by) - r)); y <= Math.min(this.h - 1, Math.ceil(Math.max(ay, by) + r)); y++) for (let x = Math.max(0, Math.floor(Math.min(ax, bx) - r)); x <= Math.min(this.w - 1, Math.ceil(Math.max(ax, bx) + r)); x++) {
+          const px = x + 0.5, py = y + 0.5, t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L2)), ex = ax + t * dx - px, ey = ay + t * dy - py;
+          if (ex * ex + ey * ey <= r * r && !done[y * this.w + x]) { done[y * this.w + x] = 1; fn(x, y); }
+        }
+      }
+      return;
+    }
+    return this.ellipse(a[0], a[1], a[2], a[3], fn);   // 'ellipse', and whatever else an old layout wrote, as it always was
   }
   mirrorPt(x, y, q) { // quadrant 0..3 transform of a point
     const mx = this.w - 1 - x, my = this.h - 1 - y;
@@ -694,6 +798,7 @@ class GameMap {
     const rock = (x, y) => { this.walk[this.idx(x, y)] = 0; this.cliff[this.idx(x, y)] = 2; };
     const ramp = (x, y) => { const i = this.idx(x, y); this.walk[i] = 1; this.cliff[i] = 0; this.height[i] = 1; };
     const L = this.layoutDef();
+    this.symmetry = L.sym === 'rot2' ? 'rot2' : 'mirror4';
     this.name = L.name; this.players = L.players; this.tileset = TILESET_IDS.includes(L.tileset) ? L.tileset : 'badlands';
     this.size = L.size || null;
     this.archetype = L.archetype || null;
@@ -702,7 +807,7 @@ class GameMap {
     this.hazard = L.hazard ? Object.assign({}, L.hazard) : null;
     if (L.custom) return this.generateCustom(L);
     // --- high ground ---
-    for (const [kind, ...a] of L.high) { if (kind === 'rect') this.rect(a[0], a[1], a[2], a[3], (x, y) => this.sym(x, y, setH(2))); else this.ellipse(a[0], a[1], a[2], a[3], (x, y) => this.sym(x, y, setH(2))); }
+    for (const sh of L.high) this.shape(sh, (x, y) => this.sym(x, y, setH(2)));
     // --- cliffs: high tiles adjacent to low become unwalkable cliff ring ---
     const cliffs = [];
     for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) {
@@ -717,14 +822,17 @@ class GameMap {
     this.rect(0, 0, W, 2, (x, y) => rock(x, y)); this.rect(0, Hh - 2, W, 2, (x, y) => rock(x, y));
     this.rect(0, 0, 2, Hh, (x, y) => rock(x, y)); this.rect(W - 2, 0, 2, Hh, (x, y) => rock(x, y));
     // --- rocks / chokes ---
-    for (const [kind, ...a] of L.rocks) { if (kind === 'rect') this.rect(a[0], a[1], a[2], a[3], (x, y) => this.sym(x, y, rock)); else this.ellipse(a[0], a[1], a[2], a[3], (x, y) => this.sym(x, y, rock)); }
+    for (const sh of L.rocks) this.shape(sh, (x, y) => this.sym(x, y, rock));
     // --- causeways: gaps punched back out of a rock band, after it is painted ---
     // A generator that wants a wall with a hole in it can only describe the wall, because `rocks` is
     // additive. This is the hole. It runs before the bases so a base can still clear over it.
     for (const c of (L.causeways || [])) this.rect(c[0], c[1], c[2], c[3], (x, y) => this.sym(x, y, (px, py) => { const i = this.idx(px, py); this.walk[i] = 1; this.cliff[i] = 0; if (this.height[i] === 2) this.height[i] = 0; }));
-    // --- bases (defined in quadrant 0, mirrored) ---
-    for (let q = 0; q < 4; q++) for (const bd of L.bases) {
-      if (bd.quadrants && !bd.quadrants.includes(q)) continue;
+    // --- bases (defined in quadrant 0, mirrored; or where they stand and turned, on a 'rot2' layout) ---
+    for (const q of GameMap.quadrantsOf(L)) for (const bd0 of L.bases) {
+      if (bd0.quadrants && !bd0.quadrants.includes(q)) continue;
+      // a base that lists no minerals is laid out by the size modes' template, its mineral line on the side `face` names
+      const lay = bd0.minerals ? null : MapModes.base(bd0.hall[0], bd0.hall[1], bd0.patches || 8, bd0.amount, bd0.gas, null, bd0.face);
+      const bd = lay ? Object.assign({}, bd0, { minerals: lay.minerals, geyser: lay.geyser }) : bd0;
       const base = { minerals: [], geyser: null, main: !!bd.main, natural: !!bd.natural, quadrant: q };
       const tr = (x, y, w, h) => { let [tx, ty] = this.mirrorPt(x, y, q); if (q === 1 || q === 3) tx -= w - 1; if (q === 2 || q === 3) ty -= h - 1; return [tx, ty]; };
       const [hx, hy] = tr(bd.hall[0], bd.hall[1], 4, 3);
@@ -1067,7 +1175,7 @@ class GameMap {
       for (const r of baseRects) if (x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3]) return false;
       return true;
     };
-    for (let q = 0; q < 4; q++) for (const fd of defs) {
+    for (const q of GameMap.quadrantsOf(L)) for (const fd of defs) {
       if (fd.quadrants && !fd.quadrants.includes(q)) continue;
       const K = MAP_FEATURES[fd.kind]; if (!K) continue;
       const w = Math.max(1, fd.w | 0), h = Math.max(1, fd.h | 0);
@@ -1316,12 +1424,12 @@ class GameMap {
   //   * a causeway lowers plateau tiles to 0 and opens them;
   //   * `repairConnectivity` carves.
   //
-  // **And one of them had already done it, in a layout that has shipped since M1.** Twilight Valley's
-  // rich expansion has its geyser at 98,34, four tiles wide, sitting on the southern lip of the map's
-  // biggest plateau -- so tiles 98..101,35 are height 2, walkable, and directly north of open low
-  // ground at y 36. That is a four-tile-wide undrawn ramp onto the high ground of the map's most
-  // valuable base, in two quadrants, and it is invisible: the terrain painter draws a cliff face there
-  // because `cliff[]` says cliff, while `walk[]` says walk. Nothing had ever looked, because nothing
+  // **And one of them had already done it, in a layout that shipped from M1 to the looks queue.** The old
+  // Twilight Valley's rich expansion had its geyser at 98,34, four tiles wide, on the southern lip of the
+  // map's biggest plateau -- so tiles 98..101,35 were height 2, walkable, and directly north of open low
+  // ground at y 36. That was a four-tile-wide undrawn ramp onto the high ground of the map's most
+  // valuable base, in two quadrants, and it was invisible: the terrain painter drew a cliff face there
+  // because `cliff[]` said cliff, while `walk[]` said walk. Nothing had ever looked, because nothing
   // had ever had a reason to: while height only gated vision, a hole in a cliff cost a few tiles of
   // fog. The moment it also gates range and damage it is a free flank.
   //

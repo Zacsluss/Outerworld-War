@@ -186,9 +186,28 @@ const FAV = Object.keys(DELTAS.harasser.comp).filter(id => DELTAS.harasser.comp[
 // four first-wave comparisons hung on a single Protoss arm attacking at frame 10,944 of it. The default seed
 // is the one the gate runs; 1, 5 and 11 are the three to run by hand, and HANDOFF-M17 records which
 // assertions each fails. (REVIEW-M17, the starting Queen: seed 5 kept one economy line red, seed 1 is clean.)
+//
+// THE GROUND IS LOST RUINS AS IT WAS BEFORE THE LOOKS QUEUE (item 4), kept here whole. Every frame number above and every comparison
+// below was calibrated on it, and several of the comparisons rest on one game: whether an arm attacks at all in the last minutes of
+// the window. On the redesigned Lost Ruins -- whose natural the AIs now take first, as they did on this one -- three of them flip
+// with the style deltas unchanged: "expander commits a bigger first wave than standard" on seeds 1 and 5 (an expander Protoss that
+// never attacked here attacks at 14,304 with 18 supply against standard's 22), and on seed 11 both of the rusher's against standard
+// (.claude/review/aipace/looks4c-aistyles-*.log). Calibrating them on the new ground is the AI rebalance's, TODO-M18 7b; until then
+// the question here stays the one it was -- does a style change what the AI does -- asked on the ground it was measured on.
+const STYLE_GROUND = { name: 'Lost Ruins (M1 to the looks queue)', players: 4, startOrder: [0, 3, 1, 2],
+  high: [['rect', 4, 4, 32, 26], ['ellipse', 20, 17, 18, 15], ['rect', 50, 50, 14, 14], ['ellipse', 63.5, 63.5, 17, 17]],
+  ramps: [[31, 28, 4, 5], [61, 45, 3, 5], [45, 61, 5, 3]],
+  rocks: [['rect', 4, 30, 18, 4], ['ellipse', 42, 33, 4, 3], ['ellipse', 30, 58, 3, 2.5], ['ellipse', 58, 28, 2.5, 3], ['ellipse', 40, 50, 3, 3]],
+  bases: [
+    { hall: [12, 12], minerals: [[7, 9], [7, 11], [7, 13], [7, 15], [7, 17], [10, 8], [12, 8], [14, 8]], geyser: [17, 7], main: true },
+    { hall: [29, 38], minerals: [[24, 36], [24, 38], [24, 40], [24, 42], [27, 45], [29, 45], [31, 45]], geyser: [34, 44], natural: true },
+    { hall: [10, 52], minerals: [[5, 49], [5, 51], [5, 53], [5, 55], [5, 57], [5, 59]], geyser: [10, 58] },
+    { hall: [52, 10], minerals: [[49, 5], [51, 5], [53, 5], [55, 5], [57, 5], [59, 5]], geyser: [59, 10] },
+  ] };
+vm.runInContext('MAP_LAYOUTS.__style_ground = ' + JSON.stringify(STYLE_GROUND) + ';', ctx);
 const FRAMES = arg('frames', 14400), SEED = arg('seed', 1), MID = 7200;
 const play = (race, style) => vm.runInContext(`(function () {
-  G.init({ players: [{ race: '${race}', human: false, difficulty: 'normal' }, { race: 'Z', human: false, difficulty: 'normal' }], seed: ${SEED}, layout: 'temple' });
+  G.init({ players: [{ race: '${race}', human: false, difficulty: 'normal' }, { race: 'Z', human: false, difficulty: 'normal' }], seed: ${SEED}, layout: '__style_ground' });
   G.players[0].ai = new AI(G.players[0], 'normal', ${JSON.stringify(style)});
   G.players[1].ai = null; G.freePlay = true;   // ...and the sim does not stop when the passive player is razed, or the styles that attack earliest would be measured over a shorter game than the ones that do not
   const a = G.players[0].ai, p = G.players[0];

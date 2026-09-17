@@ -48,7 +48,9 @@ tank.hp = 50; scv.setOrder({ type: 'repair', target: tank }); run(300); T('repai
 // nuke
 const sf = place('science_facility', 0, hx - 250, hy - 200); G.queueAddon(sf, 'covert_ops'); run(610); G.kill(cs, null, true); cc.addon = null; T('silo queued', G.queueAddon(cc, 'nuclear_silo')); run(1210);
 const siloB = G.units.find(u => u.def.id === 'nuclear_silo'); T('silo', siloB && siloB.done); T('nuke build', G.queueUnit(siloB, 'nuke')); run(1810); T('nuke ready', p.nukes === 1);
-G.kill(lurk, null, true); for (const u of G.units) if (u.alive && u.owner === 1) G.kill(u, null, true); const ghost = sp('ghost', 0, hx + 100, hy + 100); const enemyHatch = place('hatchery', 1, hx + 500, hy + 500); ghost.energy = 200;
+// The sieged tank goes first: on the new Lost Ruins the hatchery below lands inside its range, and a tank that razes it ends the
+// game (the enemy has nothing else) -- the nuke check then passes without the nuke and the fog check below runs on a frozen map.
+G.kill(lurk, null, true); G.kill(tank, null, true); for (const u of G.units) if (u.alive && u.owner === 1) G.kill(u, null, true); const ghost = sp('ghost', 0, hx + 100, hy + 100); const enemyHatch = place('hatchery', 1, hx + 500, hy + 500); ghost.energy = 200;
 T('nuke issue', Abilities.issue(ghost, 'nuke', null, enemyHatch.x, enemyHatch.y)); run(700); T('nuke hits', !enemyHatch.alive || enemyHatch.hp < 800);
 // damage math: concussive vs large
 // Facing is set toward the attacker on purpose. Directional armour (M11) multiplies the result by
@@ -121,8 +123,10 @@ const tri = place('arbiter_tribunal', 0, hx + 300, hy - 250); G.queueTech(tri, '
 const tankE = sp('siege_tank', 1, arb.x + 150, arb.y); Abilities.issue(arb, 'stasis_field', null, tankE.x, tankE.y); run(30); T('stasis', tankE.fx.stasis > 0 && !G.targetable(zeal, tankE));
 arb.energy = 200; Abilities.issue(arb, 'recall', null, hx + 600, hy + 600); const far = sp('dragoon', 0, hx + 600, hy + 600); run(60); T('recall', distPt(far.x, far.y, arb.x, arb.y) < 8 * TILE);
 G.queueTech(ta, 'mind_control_tech'); run(1810); const da = sp('dark_archon', 0, hx - 300, hy + 300); da.energy = 200; const mc = sp('marine', 1, da.x + 100, da.y); Abilities.issue(da, 'mind_control', mc); run(30); T('mind control', mc.owner === 0 && da.sh < 5);
-const car = sp('carrier', 0, hx, hy - 400); G.queueUnit(car, 'interceptor'); run(310); T('interceptor built', car.interceptors === 1); car.interceptors = 4; const tgt2 = sp('marine', 1, car.x + 150, car.y); run(120); T('carrier attacks', !tgt2.alive);
-const rea = sp('reaver', 0, hx - 100, hy + 260); rea.scarabs = 1; const tgt3 = sp('marine', 1, rea.x + 200, rea.y); run(150); T('reaver scarab', !tgt3.alive && rea.scarabs === 0);
+// North of the base and on the map: the main is 10.5 tiles from the edge since the looks queue, and 400 px north was off it.
+const car = sp('carrier', 0, hx, Math.max(3 * TILE, hy - 400)); G.queueUnit(car, 'interceptor'); run(310); T('interceptor built', car.interceptors === 1); car.interceptors = 4; const tgt2 = sp('marine', 1, car.x + 150, car.y); run(120); T('carrier attacks', !tgt2.alive);
+// The archon merged above stands between the reaver and its target on the new Lost Ruins (it killed the marine first), so it goes.
+G.kill(arch, null, true); const rea = sp('reaver', 0, hx - 100, hy + 260); rea.scarabs = 1; const tgt3 = sp('marine', 1, rea.x + 200, rea.y); run(150); T('reaver scarab', !tgt3.alive && rea.scarabs === 0);
 const bat = place('shield_battery', 0, hx + 100, hy + 300); bat.energy = 200; const z2 = sp('zealot', 0, bat.x + 60, bat.y); z2.sh = 0; run(40); T('shield battery recharges', z2.sh > 30);
 const cannon = place('photon_cannon', 0, hx - 100, hy + 400); const m5 = sp('marine', 1, cannon.x + 150, cannon.y); run(100); T('cannon shoots', !m5.alive);
 const cor = sp('corsair', 0, hx, hy); const muta2 = sp('mutalisk', 1, cor.x + 100, cor.y); run(200); T('corsair damages muta', !muta2.alive || muta2.hp < 100);

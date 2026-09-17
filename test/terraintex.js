@@ -132,7 +132,14 @@ vm.runInContext(`
     },
     set(low, high, ramp, rock) { return { low: this.tex(low, 50, 1), high: this.tex(high, 20, 2), ramp: this.tex(ramp, 30, 3), rock: this.tex(rock, 20, 4) }; },
     map(tileset, seed) {
-      const id = '__tt_' + tileset; if (!MAP_LAYOUTS[id]) MAP_LAYOUTS[id] = MapModes.layout('medium', { tileset, name: 'terraintex ' + tileset });
+      // Contested Ground as it was when the look was approved, before the looks queue (item 4) redesigned every map: the
+      // fingerprints below pin the BAKE, and a new layout would move every one of them without the bake changing at all.
+      const G0 = { players: 4, w: 128, h: 128, startOrder: [0, 3, 1, 2], patch: 1500, gas: 5000, patches: { main: 8, natural: 7, expo: 6 },
+        bases: [{ x: 12, y: 12, role: 'main' }, { x: 30, y: 38, role: 'natural' }, { x: 12, y: 50, role: 'expo' }],
+        high: [['rect', 4, 4, 32, 26], ['ellipse', 20, 17, 18, 15]], ramps: [[31, 28, 4, 5]], rocks: [['rect', 4, 32, 14, 3], ['ellipse', 46, 46, 5, 4]] };
+      const id = '__tt_' + tileset;
+      if (!MAP_LAYOUTS[id]) MAP_LAYOUTS[id] = { name: 'terraintex ' + tileset, size: 'medium', players: G0.players, w: G0.w, h: G0.h, tileset, startOrder: G0.startOrder,
+        high: G0.high, ramps: G0.ramps, rocks: G0.rocks, bases: G0.bases.map(b => MapModes.base(b.x, b.y, G0.patches[b.role], G0.patch, G0.gas, b.role)) };
       G.map = new GameMap(seed || 7, id); Terrain.reset(seed || 7); return G.map;
     },
     bake(cx, cy, T) { const cv = Terrain.renderChunkTex(cx, cy, T); return cv.img.data; },
