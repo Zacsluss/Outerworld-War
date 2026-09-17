@@ -2013,7 +2013,7 @@ const DATA = (() => {
     mothership: 'One per player, warped in by an Arbiter. A detector that cloaks your fleet and warps time around your enemies.',
     carrion_grub: 'Native wildlife, buried until something disturbs it. Individually harmless; a pack of them on an expansion site is a real fight.',
     carrion_maw: 'The largest thing the native life grows into. Enormous hit points and a splashing bite -- clear it before you try to expand onto its ground.',
-    sentinel: 'An automated defence walker built by a captured Derelict Foundry. It shoots ground and air and costs no supply.',
+    sentinel: 'An automated defence walker, trained at a captured Derelict Foundry. It shoots ground and air. The Foundry is the permit, not the unit: it still costs minerals, gas and three supply.',
   };
   // Applied here rather than inside U()/B() so the table above can sit in race order and read as
   // prose. Anything in DESC that is not a def is a typo and would be silently dropped, so it throws.

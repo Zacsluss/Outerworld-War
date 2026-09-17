@@ -5,9 +5,10 @@ refactor debt, then four for defects. Every claim below was re-checked by hand, 
 **measured** were reproduced with a probe kept in `.claude/review/scan/` (local scratch, gitignored).
 
 **A1 (all nine player-visible defects) is FIXED** -- PLAYTEST-M18 125, twelve negative controls red.
-**A2 is FIXED except 10** -- 11, 12, 13, 14 and 15, PLAYTEST-M18 126, eleven negative controls red. **A2.10 is the
-one item that waits for the user's word and the gated balance run.** A3 (16-22) and B (1-11) are still open. The gate
-was green (101/101) before the scan and is green after each batch.
+**A2 is FIXED except 10** -- 11, 12, 13, 14 and 15, PLAYTEST-M18 126, eleven negative controls red. **A3 is FIXED** --
+16 to 22, PLAYTEST-M18 127, eleven negative controls red. **A2.10 is the one defect that waits for the user's word and
+the gated balance run.** B (1-11) is what is left. The gate was green (101/101) before the scan and is green after
+each batch.
 
 ---
 
@@ -83,35 +84,35 @@ was green (101/101) before the scan and is green after each batch.
     and the enemy's units are drawn in your team colour, in the one panel whose job is to say whose units
     you have.
 
-### A3. Map quality and the editor  -- OPEN, and next
+### A3. Map quality and the editor  -- ALL FIXED (PLAYTEST-M18 127)
 
-16. **Mineral patches sealed inside rock on generated maps** -- the basin generator paints its rock ellipses
+16. **FIXED.** **Mineral patches sealed inside rock on generated maps** -- the basin generator paints its rock ellipses
     before placing bases and `rockClear` (`js/map.js:498`) protects ramps only. **Measured:**
     `arch:basin:2:small` has 20 of 144 patches with no walkable tile beside them; `basin:1:small` has 4. A
     worker mines a buried patch *faster* than a reachable one -- it never walks, and cannot be attacked.
-17. **A mineral patch is drawn on top of the geyser on every small map** -- `MapModes.base` (`js/map.js:245`)
+17. **FIXED.** **A mineral patch is drawn on top of the geyser on every small map** -- `MapModes.base` (`js/map.js:245`)
     lays the ninth patch at `x+4..x+5` and the geyser at `x+5..x+8`; only `MAP_SIZES.small` asks for nine.
     **Measured:** Close Quarters, a shipped menu map, has two overlapping tiles at both starts;
     `resourceAt` returns the mineral while the grid says geyser.
-18. **Editor undo does not restore `W`/`H` after a resize** -- `js/editor.js:35`. Resize, Ctrl+Z, and the
+18. **FIXED.** **Editor undo does not restore `W`/`H` after a resize** -- `js/editor.js:35`. Resize, Ctrl+Z, and the
     dimensions stay at the new size over the old grid: reads past the end draw as low ground, writes are
     dropped, and the saved map is re-read at the wrong stride and comes out sheared.
-19. **The editor's starter template puts resources in (and past) the border below 83 tiles wide**, and
+19. **FIXED.** **The editor's starter template puts resources in (and past) the border below 83 tiles wide**, and
     `Editor.problems()` reports "valid and fully connected" -- it never checks resource bounds.
     `test/editor.js` itself builds such a map and plays 3000 frames on it.
-20. **The help panel and the network banners are mis-centred at the shipped default HUD size** --
+20. **FIXED.** **The help panel and the network banners are mis-centred at the shipped default HUD size** --
     `js/hud.js:1188` and four banner lines use `Render.W` (screen pixels) inside the HUD-scaled transform.
     At 1280x720 with HUD 1.4 the help panel's right edge lands at x 1373 on a 1280-wide window.
-21. **The Sentinel's description says it costs no supply; it costs 3** -- `js/data.js:2016` against
+21. **FIXED.** **The Sentinel's description says it costs no supply; it costs 3** -- `js/data.js:2016` against
     `js/data.js:736`. `test/neutrals.js` pins the supply cost on one line and the description's existence on
     another, and never compares them.
-22. **`G.kill` splices the larva array it is iterating**, so one larva in three outlives its hatchery.
+22. **FIXED.** **`G.kill` splices the larva array it is iterating**, so one larva in three outlives its hatchery.
     **Measured:** `[dead, ALIVE, dead]`. The survivor dies on its own next tick, so nothing is visible; the
     fix is `.slice()`, which the line above it already does for `launched`.
 
 ---
 
-## B. Refactor debt worth paying
+## B. Refactor debt worth paying  -- OPEN, and next
 
 The same failure mode keeps recurring: **a number copied out of the place that owns it**, and **a rule
 written twice because a second code path grew up beside the first**.

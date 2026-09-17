@@ -32,8 +32,15 @@ const Editor = {
   // ---------------- undo / redo ----------------
   // A whole-map snapshot is 32 KB, so 50 of them is cheaper than tracking per-tile deltas and it
   // survives base edits and template loads without any special cases.
-  snap() { return { height: this.height.slice(), rocks: this.rocks.slice(), name: this.name, bases: this.bases.map(b => ({ x: b.x, y: b.y, main: b.main, natural: b.natural, minerals: b.minerals.map(m => m.slice()), geyser: b.geyser ? b.geyser.slice() : null })) }; },
-  restore(sn) { this.height = sn.height.slice(); this.rocks = sn.rocks.slice(); this.name = sn.name; this.bases = sn.bases.map(b => ({ x: b.x, y: b.y, main: b.main, natural: b.natural, minerals: b.minerals.map(m => m.slice()), geyser: b.geyser ? b.geyser.slice() : null })); this.dirty = true; },
+  //
+  // THE SIZE IS PART OF THE SNAPSHOT. It was not, and resizeMap is an undoable gesture (both Size buttons
+  // call mark() first), so Ctrl+Z put the old GRID back under the new W and H -- and the grid is indexed
+  // by W, so that is a wrong stride, not a wrong size: every read past the end came back undefined and drew
+  // as low ground, every write past the end was dropped, and the map saved from there was re-read at the
+  // wrong stride and came out sheared. Measured (SCAN-M18 A3.18): 128x128, resize to 64x200, undo -- 64x200
+  // over a 16384-tile array that wants 128, and a tile painted before the resize read back as empty.
+  snap() { return { w: this.W, h: this.H, height: this.height.slice(), rocks: this.rocks.slice(), name: this.name, bases: this.bases.map(b => ({ x: b.x, y: b.y, main: b.main, natural: b.natural, minerals: b.minerals.map(m => m.slice()), geyser: b.geyser ? b.geyser.slice() : null })) }; },
+  restore(sn) { this.W = sn.w; this.H = sn.h; this.height = sn.height.slice(); this.rocks = sn.rocks.slice(); this.name = sn.name; this.bases = sn.bases.map(b => ({ x: b.x, y: b.y, main: b.main, natural: b.natural, minerals: b.minerals.map(m => m.slice()), geyser: b.geyser ? b.geyser.slice() : null })); this.dirty = true; },
   mark() { this.undoStack.push(this.snap()); if (this.undoStack.length > 50) this.undoStack.shift(); this.redoStack.length = 0; }, // call once per gesture, not per tile
   undo() { if (!this.undoStack.length) { this.msgSay('Nothing to undo.'); return; } this.redoStack.push(this.snap()); this.restore(this.undoStack.pop()); this.msgSay('Undo.'); },
   redo() { if (!this.redoStack.length) { this.msgSay('Nothing to redo.'); return; } this.undoStack.push(this.snap()); this.restore(this.redoStack.pop()); this.msgSay('Redo.'); },
@@ -82,7 +89,18 @@ const Editor = {
     this.msgSay('New ' + this.W + 'x' + this.H + ' 2-player template. Paint terrain, then Save.');
   },
   // A base is a hall footprint plus a ring of minerals and one geyser, laid out clear of the hall.
+  //
+  // THE ANCHOR IS PULLED IN SO THE WHOLE FOOTPRINT FITS. The footprint is much bigger than the hall: the
+  // mineral column runs to x-5 and y+7, the geyser to x+10, so an anchor that is itself comfortably on the
+  // map can still hang its resources over the outer two tiles, which every map paints as rock border
+  // (GameMap.build). The starter template did exactly that below about 80 tiles: at 64x64 six mineral tiles
+  // sat at x 1, inside the border, and problems() called the map valid and fully connected (SCAN-M18 A3.19).
+  // Clamped here rather than in template() because the user's own click goes through this too, and a base
+  // slid two tiles in is better than a base with unmineable patches.
   addBase(x, y, main) {
+    const lo = (v, a, b) => Math.max(a, Math.min(b, v));
+    x = lo(x, 8, Math.max(8, this.W - 14));     // x-5 (mineral column) .. x+10 (geyser), a tile clear of the 2-tile border
+    y = lo(y, 7, Math.max(7, this.H - 11));     // y-4 (mineral row) .. y+7 (the column's last patch)
     // the hall may not sit within 3 tiles of any resource, so the patches ring it at a safe offset
     const minerals = []; for (let i = 0; i < 8; i++) minerals.push(i < 5 ? [x - 5, y - 1 + i * 2] : [x - 2 + (i - 5) * 2, y - 4]);
     this.bases.push({ x, y, main: !!main, natural: false, minerals, geyser: [x + 7, y] });
@@ -101,6 +119,17 @@ const Editor = {
     try { MAP_LAYOUTS['__preview'] = this.toLayout(); m = new GameMap(1, '__preview'); } catch (e) { out.push('map failed to build: ' + e.message); return out; }
     const hall = DATA.buildings.command_center, p = { id: 0 };
     for (const b of m.bases) { const err = m.canPlace(hall, b.x, b.y, p, [], null); if (err) out.push('base at ' + b.x + ',' + b.y + ': ' + err); }
+    // EVERY RESOURCE IS INSIDE THE PLAYABLE AREA. The outer two tiles of every map are rock border, so a
+    // patch there is a patch nobody can mine and a patch past the edge is dropped on the way in. This
+    // validator asked about the hall and about connectivity and never about the resources, which is how it
+    // came to call a template of its OWN making valid while six of its mineral tiles sat in the border
+    // (SCAN-M18 A3.19). Checked on the editor's own coordinates, before the map is built, because past the
+    // edge they do not survive the build to be looked at.
+    const inBorder = (x, y, w, h) => x < 2 || y < 2 || x + w > this.W - 2 || y + h > this.H - 2;
+    for (const b of this.bases) {
+      for (const mr of b.minerals) if (inBorder(mr[0], mr[1], 2, 1)) out.push('base at ' + b.x + ',' + b.y + ': a mineral patch at ' + mr[0] + ',' + mr[1] + ' is in the map border');
+      if (b.geyser && inBorder(b.geyser[0], b.geyser[1], 4, 2)) out.push('base at ' + b.x + ',' + b.y + ': the geyser at ' + b.geyser[0] + ',' + b.geyser[1] + ' is in the map border');
+    }
     // every start must be able to walk to every other base
     const pf = new Pathfinder(m);
     for (const s of m.starts) for (const b of m.bases) {

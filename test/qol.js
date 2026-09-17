@@ -535,5 +535,53 @@ ok(r.bounded, '...and spamming them is bounded');
   ok(rally.every, 'EVERY SELECTED PRODUCER TAKES THE RALLY, not just the first one in the selection', JSON.stringify(rally));
 }
 
+// ---- the HUD's scale, item 5: what is drawn CENTRED must land in the centre (SCAN-M18 A3.20) ----
+// Everything in drawTop's body is written in CONSOLE UNITS and the whole body runs under scale(hudK) --
+// the resource plates above it already use UI.conW for exactly that reason. The four network banners and
+// the help panel did not: they centred on Render.W, which is SCREEN pixels, so the transform multiplied
+// an already-correct number by hudK again. At 1280x720 with the shipped HUD size of 1.4 the banners landed
+// on x 896 of a 1280-wide window and the help panel ran from 420 to 1373 -- its right edge off the screen.
+// The assertion is the invariant rather than the number: whatever is drawn centred, multiplied by the
+// scale the pass runs under, is the middle of the window.
+{
+  const centre = vm.runInContext('(() => {' + `
+    G.init({ players: [{ race: 'T', human: true, name: 'A' }, { race: 'Z', human: false, difficulty: 'easy', name: 'B' }], seed: 3, layout: 'temple' });
+    G.human = 0; UI.running = true; UI.mode = 'play'; UI.menu = null; UI.loading = null; UI.net = true; UI.showHelp = true;
+    Render.ctx = __mkCtx(); Render.dpr = 1; Render.zoom = 1; Render.camX = 0; Render.camY = 0;
+    if (typeof Net === 'undefined') globalThis.Net = {};
+    Net.active = true; Net.connected = false; Net.desynced = true; Net.desyncFrame = 240; Net.waitingSince = -1e9;
+    Net.clock = () => '0:10'; Net.ready = () => true;
+    const run = (w, h, scale) => {
+      Render.W = w; Render.H = h; Render.viewW = w; Render.viewH = h - UI.consoleH;
+      UI.hudScale = scale;
+      const k = UI.hudK;
+      __calls.length = 0;
+      let align = 'start'; const texts = [], plates = [];
+      UI.drawTop();
+      for (const c of __calls) {
+        if (c.op === '=textAlign') { align = c.a[0]; continue; }
+        if (c.op === 'fillText' && align === 'center') texts.push({ t: String(c.a[0]).slice(0, 20), x: c.a[1] });
+        if (c.op === 'fillRect' && c.a[2] === 680) plates.push({ x: c.a[0], w: c.a[2] });   // the help panel's own plate
+      }
+      // HUD.text draws five shadow copies at x+-1 and the real one LAST, so keep the last of each
+      const last = {}; for (const t of texts) last[t.t] = t;
+      const uniq = Object.values(last);
+      return { w, k: +k.toFixed(4), screenMid: w / 2, texts: uniq, plate: plates[0] || null };
+    };
+    return { big: run(1280, 720, 1.4), one: run(1280, 720, 1.0), wide: run(1920, 1080, 1.6) };
+  ` + '})()', ctx);
+  const near = (a, b) => Math.abs(a - b) <= 1.5;
+  const arms = [centre.big, centre.one, centre.wide];
+  ok(arms.every(a => a.texts.length >= 3) && centre.big.k > 1.3 && centre.one.k === 1,
+    'the three banners are drawn and the HUD really is scaled in two of the three arms (scene check: k ' + arms.map(a => a.k).join(', ') + ', ' + arms.map(a => a.texts.length).join('/') + ' banners)',
+    JSON.stringify(arms.map(a => [a.k, a.texts.map(t => t.t)])));
+  const offCentre = [];
+  for (const a of arms) for (const t of a.texts) if (!near(t.x * a.k, a.screenMid)) offCentre.push([a.w + '@' + a.k, t.t, Math.round(t.x * a.k), a.screenMid]);
+  ok(offCentre.length === 0, 'A CENTRED BANNER LANDS IN THE MIDDLE OF THE WINDOW at every HUD size', JSON.stringify(offCentre.slice(0, 4)));
+  const offPlate = arms.filter(a => !a.plate || !near((a.plate.x + a.plate.w / 2) * a.k, a.screenMid) || (a.plate.x + a.plate.w) * a.k > a.w);
+  ok(offPlate.length === 0, '...and the help panel is centred and fits inside it, right edge and all',
+    JSON.stringify(arms.map(a => a.plate ? [a.w + '@' + a.k, Math.round(a.plate.x * a.k), Math.round((a.plate.x + a.plate.w) * a.k)] : [a.w, 'no plate'])));
+}
+
 console.log((fail ? 'FAILURES ' : 'ALL PASS  ') + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

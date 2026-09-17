@@ -108,6 +108,58 @@ check(shp.ok1 && shp.sq[0] === 160 && shp.sq[1] === 160, 'a bare number makes a 
 check(shp.ok2 && shp.rect[0] === 192 && shp.rect[1] === 96, 'WxH makes a non-square map (' + shp.rect.join('x') + ')');
 check(shp.ok3 && shp.clamped[0] === 64 && shp.clamped[1] === 256, 'out-of-range sizes clamp to 64-256 (' + shp.clamped.join('x') + ')');
 check(shp.ok4 === false && shp.after[0] === 64 && shp.after[1] === 256, 'junk input is rejected and leaves the map alone');
+
+// ---------- undo after a resize, and resources inside the border (SCAN-M18 A3.18 and A3.19) ----------
+// A RESIZE IS AN UNDOABLE GESTURE -- both Size buttons call mark() before resizeMap -- and the snapshot did
+// not carry W and H. So Ctrl+Z put the old GRID back under the NEW size, and the grid is indexed by W, which
+// makes that a wrong stride rather than a wrong size: reads past the end came back undefined and drew as low
+// ground, writes past the end were dropped, and a map saved from there was re-read at the wrong stride and
+// came out sheared. The suite above unwinds ten gestures and never resized during them, which is why it
+// could not see this.
+//
+// AND THE TEMPLATE PUT RESOURCES IN THE BORDER. A base's footprint is far wider than its hall -- the mineral
+// column reaches x-5 and y+7, the geyser x+10 -- so on a small map the template's own anchors hung patches
+// over the outer two tiles, which every map paints as rock. Editor.problems() checked the hall and the
+// walking connectivity and never the resources, so it called that map 'valid and fully connected': at 64x64
+// six mineral tiles sat at x 1, and this very suite builds a template map and plays 3000 frames on one.
+const und = makeCtx(false);
+vm.runInContext(`
+  Editor.canvas = { width: 1280, height: 720 }; Editor.W = 128; Editor.H = 128;
+  Editor.undoStack = []; Editor.redoStack = []; Editor.template();
+  Editor.height[Editor.idx(70, 70)] = 2;                          // a tile only the 128-wide map has
+  Editor.mark(); this.resized = Editor.resizeMap('64x200');        // exactly what the Size... menu item does
+  this.at = [Editor.W, Editor.H, Editor.height.length];
+  Editor.undo();
+  this.back = [Editor.W, Editor.H, Editor.height.length];
+  this.readsBack = Editor.height[Editor.idx(70, 70)];
+  this.strideOk = Editor.height.length === Editor.W * Editor.H && Editor.rocks.length === Editor.W * Editor.H;
+  // ...and redo puts the resize back, so the fix is not 'ignore the resize'
+  Editor.redo(); this.again = [Editor.W, Editor.H, Editor.height.length];
+  // the template's resources, at every size, against the two-tile rock border every map paints
+  const inBorder = () => { let n = 0;
+    const bad = (x, y, w, h) => x < 2 || y < 2 || x + w > Editor.W - 2 || y + h > Editor.H - 2;
+    for (const b of Editor.bases) { for (const m of b.minerals) if (bad(m[0], m[1], 2, 1)) n++; if (b.geyser && bad(b.geyser[0], b.geyser[1], 4, 2)) n++; }
+    return n; };
+  this.sizes = [];
+  for (const s of [64, 72, 80, 96, 128, 192, 256]) { Editor.W = s; Editor.H = s; Editor.undoStack = []; Editor.redoStack = []; Editor.template();
+    this.sizes.push({ s, bases: Editor.bases.length, inBorder: inBorder(), problems: Editor.problems().length }); }
+  // a non-square one too, because the two axes clamp separately
+  Editor.W = 64; Editor.H = 256; Editor.undoStack = []; Editor.redoStack = []; Editor.template();
+  this.tall = { bases: Editor.bases.length, inBorder: inBorder(), problems: Editor.problems().length };
+  // and the validator must SEE one when there is one: put a patch in the border by hand
+  Editor.W = 128; Editor.H = 128; Editor.undoStack = []; Editor.redoStack = []; Editor.template();
+  this.cleanFirst = Editor.problems().length;
+  Editor.bases[0].minerals[0] = [1, 40];
+  this.saysBorder = Editor.problems().filter(p => /border/.test(p));
+`, und);
+check(und.resized === true && und.at[0] === 64 && und.at[1] === 200, 'the resize really happened (' + und.at.join('x') + ', ' + und.at[2] + ' tiles)');
+check(und.back[0] === 128 && und.back[1] === 128 && und.strideOk, 'UNDO AFTER A RESIZE PUTS THE SIZE BACK TOO, so the grid and the stride agree (' + und.back.join('x') + ', ' + und.back[2] + ' tiles)');
+check(und.readsBack === 2, '...and a tile painted before the resize reads back at the right index (' + und.readsBack + ')');
+check(und.again[0] === 64 && und.again[1] === 200 && und.again[2] === 64 * 200, 'redo puts the resize back (' + und.again.join('x') + ')');
+check(und.sizes.every(r => r.bases === 5), 'the template lays five bases at every size (' + und.sizes.map(r => r.s + ':' + r.bases).join(' ') + ')');
+check(und.sizes.every(r => r.inBorder === 0) && und.tall.inBorder === 0, 'THE TEMPLATE PUTS NO RESOURCE IN THE MAP BORDER, at any size (' + und.sizes.map(r => r.s + ':' + r.inBorder).join(' ') + ' 64x256:' + und.tall.inBorder + ')');
+check(und.sizes.every(r => r.problems === 0) && und.tall.problems === 0, '...and the validator agrees the templates are clean');
+check(und.cleanFirst === 0 && und.saysBorder.length > 0, 'and it SAYS SO when a patch really is in the border (negative control for the check above): ' + (und.saysBorder[0] || 'said nothing'));
 const rectPlay = makeCtx(false);
 vm.runInContext(`MAP_LAYOUTS['custom:Rect'] = ${JSON.stringify(shp.layout)};
   const m = new GameMap(1, 'custom:Rect');

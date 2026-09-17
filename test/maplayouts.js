@@ -18,6 +18,8 @@
 //     ...and the computer player expands to the natural the map names first, from every start (js/ai.js pickExpansion)
 //  3. THE GENERATORS. A two-player size has bases in all four corners, its mains in two, and the corners' bases are fair.
 //  4. THE ROCK. What the terrain paints as rock is closed ground: no tile of it can be walked on, built on, or carpeted in creep.
+//  5. THE RESOURCES, on every fixed map AND on every archetype at every size over twelve seeds: a worker can WALK UP TO every
+//     patch and every geyser, and no two resources share a tile.
 'use strict';
 const vm = require('vm'), { makeCtx, ok, summary } = require('./_harness');
 const errors = [];
@@ -280,6 +282,110 @@ ok(rock.every(r => r.walk === 0), 'no unit walks onto the rock: not one of its t
 ok(rock.every(r => r.built === 0 && r.reasons.every(s => s === 'Cannot build there' || s === 'Cannot build on a map feature')),
   'and nothing is built on it: every rock tile refuses a Barracks and a Creep Colony, and refuses them FOR the rock', J(rock.filter(r => r.built).map(r => [r.id, r.built, r.reasons])));
 ok(rock.every(r => r.creep > 100 && r.onRock === 0), 'and the creep stops at it: a Hatchery beside the rock carpets its own ground and not one rock tile', J(rock.map(r => [r.id, r.creep, r.onRock])));
+
+// ============================================================================
+// 5. THE RESOURCES: reachable, and one to a tile
+// ============================================================================
+// Section 2 asks that a base's resources are on the level of its hall. Neither it nor anything else asked the two
+// questions beside it, and both were false on maps that ship (SCAN-M18 A3.16 and A3.17):
+//
+//   * CAN A WORKER GET TO THE PATCH? A base makes its own patches walkable but clears only the hall's 6x5 ring, so
+//     rock painted before the bases -- a basin ellipse, an island channel's band -- left patches walkable and sealed
+//     inside it. Not invisible: the patch is drawn and it is minable, by a worker standing on it that never walks,
+//     so it is mined FASTER than a reachable one and cannot be attacked. Measured before the fix: 120 sealed
+//     resources over these 192 generated maps, 20 on arch:basin:2:small alone.
+//   * IS THE TILE ONE RESOURCE'S OR TWO? MapModes.base ran its mineral row east until the ninth patch reached x+4..x+5
+//     while the geyser starts at x+5. Only MAP_SIZES.small asks for nine patches, so it was both mains of the shipped
+//     Close Quarters and both mains of every generated :small map: 98 maps, two overlapping pairs each, with
+//     resourceAt returning the mineral while the grid said geyser.
+//
+// The generated half is the point of running twelve seeds here: section 3 checks one seed per size for base
+// reachability, which is exactly the weaker contract that let this through (SCAN-M18 section C).
+{
+  const res = R(`
+    // A resource is SEALED when no tile orthogonally beside its footprint is walkable: the only worker that
+    // can mine it is one standing on it already.
+    const sealedOf = m => { const bad = [];
+      for (const r of m.resources) { let open = false;
+        for (let y = r.y - 1; y <= r.y + r.h && !open; y++) for (let x = r.x - 1; x <= r.x + r.w && !open; x++) {
+          const inside = x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+          const corner = (x < r.x || x >= r.x + r.w) && (y < r.y || y >= r.y + r.h);
+          if (inside || corner || !m.inb(x, y)) continue;
+          if (m.walkable(x, y)) open = true; }
+        if (!open) bad.push(r.type + '@' + r.x + ',' + r.y); }
+      return bad; };
+    const sharedOf = m => { const bad = [];
+      const hit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+      for (let i = 0; i < m.resources.length; i++) for (let j = i + 1; j < m.resources.length; j++) {
+        const a = m.resources[i], b = m.resources[j];
+        if (hit(a, b)) bad.push(a.type + '@' + a.x + ',' + a.y + ' x ' + b.type + '@' + b.x + ',' + b.y); }
+      return bad; };
+    const rows = [];
+    const look = id => { const m = new GameMap(1, id); return { id, res: m.resources.length, sealed: sealedOf(m), shared: sharedOf(m) }; };
+    for (const id of ${J(FIXED)}) rows.push(look(id));
+    for (const arch of Archetypes.keys) for (const size of MapModes.keys) for (let s = 1; s <= 12; s++) rows.push(look(Archetypes.id(arch, s, size)));
+    return rows;
+  `);
+  const gen = res.filter(r => r.id.startsWith('arch:'));
+  const sealed = res.filter(r => r.sealed.length), shared = res.filter(r => r.shared.length);
+  const total = res.reduce((n, r) => n + r.res, 0);
+  ok(res.length >= 200 && gen.length === 192 && total > 20000,
+    'the sweep really looks at every map: ' + res.length + ' maps, ' + gen.length + ' of them generated, ' + total + ' resources (scene check -- a sweep that built nothing would pass everything below it)', J([res.length, gen.length, total]));
+  ok(sealed.length === 0, 'A WORKER CAN WALK UP TO EVERY MINERAL PATCH AND EVERY GEYSER on every map',
+    J(sealed.slice(0, 6).map(r => [r.id, r.sealed.slice(0, 4)])));
+  ok(shared.length === 0, 'and no two resources share a tile: no mineral patch is drawn on top of a geyser',
+    J(shared.slice(0, 6).map(r => [r.id, r.shared.slice(0, 2)])));
+  // The nine-patch main is the case that broke, so it is named rather than left to the sweep to happen upon.
+  const nine = R(`
+    const b = MapModes.base(20, 20, 9, 1500, 5000, 'main');
+    const eight = MapModes.base(20, 20, 8, 1500, 5000, 'main');
+    const hit = (a, aw, ah, c, cw, ch) => a[0] < c[0] + cw && a[0] + aw > c[0] && a[1] < c[1] + ch && a[1] + ah > c[1];
+    return { n: b.minerals.length, eightN: eight.minerals.length,
+      sameAsEight: JSON.stringify(b.minerals.slice(0, 8).concat([b.geyser])) === JSON.stringify(eight.minerals.concat([eight.geyser])),
+      onGeyser: b.minerals.filter(m => hit(m, 2, 1, b.geyser, 4, 2)),
+      onEachOther: b.minerals.filter((m, i) => b.minerals.some((o, j) => j !== i && hit(m, 2, 1, o, 2, 1))),
+      box: { x0: Math.min(...b.minerals.map(m => m[0])), x1: Math.max(...b.minerals.map(m => m[0] + 1), b.geyser[0] + 3),
+             y0: Math.min(...b.minerals.map(m => m[1]), b.geyser[1]), y1: Math.max(...b.minerals.map(m => m[1]), b.geyser[1] + 1) } };
+  `);
+  ok(nine.n === 9 && nine.eightN === 8 && nine.onGeyser.length === 0 && nine.onEachOther.length === 0,
+    'a nine-patch base lays its ninth patch clear of the geyser and of the other eight', J(nine));
+  ok(nine.box.x0 === 15 && nine.box.x1 === 28 && nine.box.y0 === 15 && nine.box.y1 === 25,
+    '...inside the footprint the rest of js/map.js assumes, x-5..x+8 and y-5..y+5 (see centreBase)', J(nine.box));
+  ok(nine.sameAsEight === true, '...and the first eight patches and the geyser are exactly where they were, so no eight-patch base moved', J(nine.sameAsEight));
+  // The generator's own guard, on its own. GameMap.openSealedResources is the backstop and would hide a
+  // regression here behind a one-tile repair, so the rule is asserted where it lives: a random rock blob is
+  // never dropped on a base, which is what stops the ugly map rather than merely the unreachable one.
+  const clear = R(`
+    const L = { ramps: [[10, 10, 4, 6]], rocks: [], bases: [{ hall: [40, 40], minerals: [[35, 37], [35, 39]], geyser: [45, 35] }] };
+    return { onRamp: Archetypes.rockClear(L, 12, 12, 3, 3), onHall: Archetypes.rockClear(L, 41, 41, 3, 3),
+      onPatch: Archetypes.rockClear(L, 36, 38, 3, 3), onGeyser: Archetypes.rockClear(L, 46, 36, 3, 3),
+      openGround: Archetypes.rockClear(L, 80, 80, 3, 3) };`);
+  ok(clear.openGround === true, 'a rock blob on open ground is allowed (scene check: without this the line below would pass on a rockClear that refuses everything)', J(clear));
+  ok(clear.onRamp === false && clear.onHall === false && clear.onPatch === false && clear.onGeyser === false,
+    'and the generator refuses a rock blob over a ramp, a hall, a mineral patch or a geyser', J(clear));
+  // AND THE REPAIR'S LIMIT, which matters more than the repair. A destroyed Refinery returning its geyser's
+  // ground to plain walkable was a second, undrawn way into a main (SCAN-M18 A1.9), and a pass that opens a
+  // tile to reach a patch is the same shape of mistake waiting to happen. openSealedResources therefore only
+  // ever opens a tile at the patch's OWN height. Asserted on a scene, because no shipped map happens to seal
+  // a patch with a cliff rather than with rock -- and 'no map happens to' is not a rule.
+  const guard = R(`
+    const m = new GameMap(1, 'temple');
+    const r = m.resources.find(x => x.type === 'mineral' && m.height[m.idx(x.x, x.y)] !== 2);
+    if (!r) return { noLowPatch: true };
+    const ring = [];
+    for (let y = r.y - 1; y <= r.y + r.h; y++) for (let x = r.x - 1; x <= r.x + r.w; x++) {
+      if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) continue;
+      if (!m.inb(x, y)) continue;
+      const i = m.idx(x, y); m.walk[i] = 0; m.cliff[i] = 1; m.height[i] = 2; m.blocked[i] = -1; ring.push(i);
+    }
+    const patchH = m.height[m.idx(r.x, r.y)];
+    const sealedNow = !ring.some(i => m.walk[i] === 1);
+    const opened = m.openSealedResources();
+    const stillCliff = ring.every(i => m.walk[i] === 0 && m.height[i] === 2);
+    return { patchH, sealedNow, opened, stillCliff, ring: ring.length };`);
+  ok(guard.ring > 8 && guard.sealedNow === true && guard.patchH !== 2, 'a low-ground mineral patch walled in on every side by high ground (scene check)', J(guard));
+  ok(guard.opened === 0 && guard.stillCliff === true, '...is left sealed rather than cut open: the repair never opens a tile at another height, so it cannot put a hole in a plateau', J(guard));
+}
 
 ok(errors.length === 0, 'no errors were logged', errors.slice(0, 3).join(' | '));
 summary();

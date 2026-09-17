@@ -424,4 +424,39 @@ for (const id of DERELICTS) {
   ok(draw(true) > 0, id + ' lights up once `u.captured` is set', draw(true) + ' canvas calls');
 }
 
+// ---------------------------------------------------------------- the prose against the fields
+// SCAN-M18 A3.21. The Sentinel's description said it "costs no supply" while its def says sup: 3 -- and
+// this file pinned both, on separate lines, and never compared them: line 291 above asserts that it costs
+// minerals and supply ("the derelict is the permit, not the unit"), and test/describe.js asserts that the
+// description exists and is under DESC_MAX. Neither reads the other. A description is the only thing most
+// players ever read about a unit, so a description that contradicts the def is a lie with a check either
+// side of it.
+//
+// Written as CLAIMS rather than as one assertion about the Sentinel, so the next description that says
+// "costs no supply" is caught the day it is written. Every def in DATA.all is put through every claim.
+{
+  const DESC = vm.runInContext('(() => { const o = {}; for (const [k, d] of Object.entries(DATA.all)) if (d.desc) o[k] = d.desc; return o; })()', ctx);
+  const CLAIMS = [
+    ['costs no supply', /\b(costs?|takes?|needs?) no supply\b/i, d => !d.sup],
+    ['costs no minerals', /\bcosts? no minerals\b/i, d => !d.min],
+    ['costs nothing at all', /\bcosts? nothing\b/i, d => !d.min && !d.gas && !d.sup],
+    ['takes no upgrades', /\btakes? no upgrades\b/i, d => !d.upgA && !(d.gw && d.gw.upgKey) && !(d.aw && d.aw.upgKey)],
+  ];
+  const ids = Object.keys(DESC);
+  ok(ids.length > 100, 'there are descriptions to compare against (scene check: ' + ids.length + ' of them)', String(ids.length));
+  const broken = [];
+  for (const [label, re, holds] of CLAIMS) for (const id of ids) {
+    if (!re.test(DESC[id])) continue;
+    const d = D.all[id];
+    if (!holds(d)) broken.push(id + ' says "' + label + '" but min ' + (d.min || 0) + ' gas ' + (d.gas || 0) + ' sup ' + (d.sup || 0));
+  }
+  ok(broken.length === 0, 'no description claims something its own def contradicts', broken.join('; '));
+  // and the claim table is not vacuous: the same test run against a def that DOES contradict it must fail
+  const liar = { min: 150, gas: 100, sup: 3 };
+  ok(CLAIMS[0][1].test('It shoots ground and air and costs no supply.') && !CLAIMS[0][2](liar),
+    '...and the claim table would catch one (negative control: the sentence that was there, against the def that is there)');
+  ok(/three supply/.test(DESC.sentinel || '') && D.units.sentinel.sup === 3,
+    'the Sentinel\'s description says what it actually costs in supply', (DESC.sentinel || '').slice(-60) + ' | sup ' + D.units.sentinel.sup);
+}
+
 summary({ nl: true });

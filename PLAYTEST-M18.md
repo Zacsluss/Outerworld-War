@@ -2244,6 +2244,93 @@ Saves and replays made before this are refused with a message, as they always ar
   larva splice) and B (eleven refactor items). And A2.10, the AI's stale 150/190 supply literals, which moves
   when every computer opponent commits its army and so waits for the gated balance run and the user's word.
 
+## 127. Seven more from the scan: buried minerals, a patch on the geyser, two editor bugs and a help panel off the screen
+
+*(The user's queue, 2026-09-17: the A3 batch of SCAN-M18 -- map quality and the editor. `js/map.js`,
+`js/editor.js`, `js/hud.js`, `js/data.js`, `js/game.js`. Eleven negative controls, every one red
+(`.claude/review/scan/controls-a3.log`); the gate is 101/101.)*
+
+**THE BUILD STAMP MOVES** (three stamped files changed; the new stamp is `3ef30371e649b543`, from `48fa8a7ee8442c14`).
+Saves and replays made before this are refused with a message, as they always are when the simulation changes.
+
+**What changed for a player:**
+1. **No mineral patch is sealed inside the rock any more.** On the generated maps the rock was painted before
+   the bases were placed, and a base clears only the ground its hall stands on -- so a rock blob could land on
+   a mineral line and leave the patches drawn, minable and completely surrounded. Worse than missing: a worker
+   standing on a sealed patch never walks, so it mined FASTER than a proper patch and could not be attacked
+   while it did. Measured: 120 sealed patches and geysers over 192 generated maps, twenty of them on one seed
+   of Open Basin. The generator now refuses to drop rock on a base at all, and anything that still gets sealed
+   has exactly one tile opened beside it.
+2. **The ninth mineral patch is no longer drawn on top of the geyser.** Every map with nine patches in the main
+   -- the shipped Close Quarters and every generated small map, 98 of them -- put the last patch of the row and
+   the corner of the geyser on the same tile. Clicking it gave you whichever the game happened to ask for
+   first. The ninth patch now sits at the top of the mineral column instead; every eight-patch base in the game
+   is exactly where it was.
+3. **Undo in the map editor puts the map's SIZE back too.** Resize a map, press Ctrl+Z, and the old map came
+   back under the new dimensions -- which is not a wrong size but a wrong stride: half the map read as empty
+   ground, painting in the far half did nothing, and saving from there produced a map sheared diagonally.
+4. **The editor's starter map no longer puts minerals in the border, and the validator says so if anything
+   does.** Below about eighty tiles the template hung mineral patches over the outer rock ring -- at 64x64, six
+   tiles of them -- and pressing Validate answered "valid and fully connected", because it had never looked at
+   the resources at all. Bases you place by hand are pulled in far enough for their whole mineral line to fit.
+5. **The controls panel (F1) fits on the screen.** At 1280x720 with the shipped HUD size its right edge was at
+   x 1373 of a 1280-wide window -- a third of the help text was simply off the side. The three network banners
+   (waiting for players, desync, connection lost) were off-centre in the same way, for the same reason.
+6. **The Sentinel's description tells the truth.** It said the walker "costs no supply"; it costs three, and
+   150 minerals and 100 gas besides -- the captured Foundry is the permit, not a free unit.
+7. **A destroyed hatchery takes all of its larvae with it.** It killed every other one, and the survivors died
+   a frame later on their own, which is why nobody ever saw it.
+
+**How to playtest each by hand:**
+1. **Buried minerals:** Single Player -> Skirmish -> **Procedural**, Open Basin, size **small**, a few seeds.
+   Press Enter, type `black sheep wall`, Enter, and zoom out. *Working:* every blue mineral patch on the map
+   has open ground beside it. *Was:* patches sitting in the middle of an orange rock blob with no way in.
+2. **The geyser:** Skirmish on **Close Quarters**. Look at your main's mineral line where it meets the green
+   geyser. *Working:* nine separate patches and a geyser, none of them overlapping; the ninth patch sits at
+   the top of the column on the left rather than beside the geyser.
+3. **Editor undo:** main menu -> **Map Editor** -> the **Size** button (or Size... and type `64x200`), then
+   **Ctrl+Z**. *Working:* the map comes back at its old size and the old painting is all there. *Was:* the
+   status line said the new size while the map underneath was the old one, torn in half.
+4. **Editor template:** Map Editor -> **Size...** -> `64x64`, then look at the mineral patches of the two
+   starting bases. *Working:* every patch is clear of the map's rock edge. Then drag one of your own bases
+   right up against the edge: it stops far enough in for its minerals to fit. And to see the validator: there
+   is no way to put a patch in the border by hand any more, which is the point -- `test/editor.js` plants one
+   and checks the message.
+5. **The help panel:** in a game press **F1** (or whatever Settings -> Controls has for Help). *Working:* the
+   whole panel is on screen and centred, at every HUD size (Esc -> Settings -> HUD size).
+6. **The Sentinel:** find a Derelict Foundry on a map with derelicts, capture it, select it and hover the
+   Sentinel on its command card. *Working:* the description says it costs three supply, and building one costs
+   you three supply.
+7. **Larvae:** as Zerg, let a Hatchery grow its three larvae, then destroy that Hatchery. *Working:* all three
+   larvae die with it. (This one is invisible either way -- the survivors used to die a frame later.)
+
+**Invisible from normal play, and where to look instead:**
+- `test/maplayouts.js` 5 (9 checks, over 201 maps and 26,416 resources), `test/editor.js` (7),
+  `test/qol.js` (3), `test/neutrals.js` (4), `test/review17.js` 5b (3). Eleven negative controls, every one red
+  (`.claude/review/scan/controls-a3.log`).
+- **Two mechanisms, not one, and on purpose.** The generator refuses to drop a rock blob on a base -- that is
+  what stops the map being ugly -- and the map build has a repair that opens one tile beside anything still
+  sealed, which is what makes the rule true whatever a generator does. The repair fired on 5 of 205 maps and
+  opened 20 tiles in total, so it is a backstop rather than a bulldozer. It will never open a tile at a
+  different height from the patch, so it cannot put a hole in a plateau -- that is the destroyed-Refinery
+  lesson from item 125, and `test/maplayouts.js` pins it on a scene built for it.
+- **A SMALL OPEN BASIN HAS LESS ROCK IN ITS MIDDLE NOW, and that is the visible cost of item 1.** The three
+  random rock blobs the basin generator drops are aimed at 26-44% of the map, and on a 96-tile map that is
+  almost exactly where the central plateau and its base are -- so most of them were landing on that base's
+  mineral line, which is what sealed the patches. A blob that has nowhere legal to go is skipped rather than
+  re-rolled, which is how this generator has always treated a blob that lands on a ramp, so the middle of a
+  small basin map is now open plateau. Measured over twelve seeds a size: small keeps 4 blobs of 36, medium
+  20, large 31, huge 35. Compare `.claude/review/scan/shots/basin2small-before.png` with `-after.png`: the
+  before picture is four rock blobs sitting on top of the four centre bases. The archetype's own description
+  is "an open middle... one big plateau, which is worth taking", so this reads as the map it was meant to be --
+  **but it is a look, and the user judges looks by eye.**
+- **What is deliberately different:** the ninth patch went to the top of the mineral column rather than the
+  bottom, so a nine-patch base still fits the footprint the rest of `js/map.js` assumes (x-5..x+8, y-5..y+5);
+  and a base placed near the edge of an editor map is slid inward rather than refused.
+- **What is not fixed yet:** SCAN-M18's B list -- eleven refactor items -- and A2.10, the AI's stale 150/190
+  supply literals, which moves when every computer opponent commits its army and so waits for the gated
+  balance run and the user's word.
+
 ## 124. Nothing stands on the rock -- checked, and the screenshot that said otherwise explained
 
 *(The user, 2026-09-17, looking at the creep picture in item 123: "no units or buildings should be able to go on the big rock - i see

@@ -20,7 +20,7 @@ Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
 Branch: m10-overnight, which IS origin/main (https://github.com/Zacsluss/Outerworld-War -- PUBLIC: git push publishes).
 HEAD: <run git log -1 --format=%h>. Working tree clean, nothing unpushed, no open PRs, no other branches, no extra worktrees.
 Machine: Windows 11; PowerShell 5.1 and Git Bash; Node 24; Rust + the Tauri CLI under desktop/; no gh CLI, no Blender.
-The gate (node test/all.js) is 101 suites, about four minutes, ALL GREEN; no known reds. Build stamp 48fa8a7ee8442c14.
+The gate (node test/all.js) is 101 suites, about four minutes, ALL GREEN; no known reds. Build stamp 3ef30371e649b543.
 test/balance.js and test/proxy.js are GATED: never start them without an explicit, double-checked instruction.
 
 STATE: THE LOOKS QUEUE is DONE (the user's four items of 2026-09-14; PLAYTEST-M18 118-122): 1. a loading screen, so a game opens on
@@ -33,12 +33,18 @@ is made from them, kept purple, and falls back to the creep made in code where t
 aggressive" and it was toned down (relief 12 -> 5, gloss 1.8 -> 0.8).
 A WHOLE-CODEBASE SCAN was run on the user's word and is written up in SCAN-M18.md: 22 defects and 11 refactor items,
 each with the file, the line, a measurement and what it does to a player. The A1 batch -- all nine player-visible
-defects -- is FIXED (PLAYTEST-M18 125, twelve negative controls red), and so is A2 except item 10 (PLAYTEST-M18 126,
-eleven negative controls red): the build stamp now covers static methods, the AI releases its head claim when the
-build order runs out, a Siege Tank cannot fire while it digs in, a gesture cannot reach the map through an open menu
-or manual, and the selection panel draws an enemy's own colour. EIGHT DEFECTS (A3 16-22, and A2.10) AND ELEVEN
-REFACTOR ITEMS (B) ARE OPEN and are the queue. A2.10, the stale 150/190 supply literals in js/ai.js, moves AI
-behaviour and so waits for the gated balance run AND the user's word.
+defects -- is FIXED (PLAYTEST-M18 125, twelve negative controls red); so is A2 except item 10 (PLAYTEST-M18 126,
+eleven controls red): the build stamp now covers static methods, the AI releases its head claim when the build order
+runs out, a Siege Tank cannot fire while it digs in, a gesture cannot reach the map through an open menu or manual,
+and the selection panel draws an enemy's own colour. And so is ALL of A3 (PLAYTEST-M18 127, eleven controls red): no
+mineral patch is sealed in rock on a generated map, no patch is drawn on the geyser, editor undo restores the map's
+size, the editor template keeps its resources out of the border and its validator now looks, the help panel and the
+network banners are centred at every HUD size, the Sentinel's description tells the truth, and a dead hatchery takes
+all of its larvae. ONE DEFECT (A2.10) AND ELEVEN REFACTOR ITEMS (B) ARE OPEN. A2.10, the stale 150/190 supply
+literals in js/ai.js, moves AI behaviour and so waits for the gated balance run AND the user's word.
+LOOK AT THIS BY EYE: A3 item 16 costs a small Open Basin most of the rock in its middle (4 blobs of 36 survive on
+small, 20/31/35 on medium/large/huge) because the blobs were landing on the centre base's mineral line, which is what
+sealed the patches. Before/after pictures: .claude/review/scan/shots/basin2small-before.png and -after.png.
 NOTE on A2.11: releasing the head claim shifts AI pacing -- measured, the AI mines ~30% more and fields ~a third more
 army, but finishes fewer techs (8-12 against 23 over 45000 frames), so test/zerg12.js section 8 was re-pointed from
 30000 frames to 40000. The tech drop is a BALANCE question and belongs to TODO-M18 7b, not to the scan.
@@ -50,13 +56,11 @@ DEFERRED by the user until they say: the AI rebalance (TODO-M18 7b); it now also
 new Lost Ruins (PLAYTEST-M18 122; test/aistyles.js runs its style games on the old ground as a fixture). SKIPPED by the user: a
 look-and-feel pass of PLAYTEST-M18 101-108.
 
-THE NEXT ACTION: work SCAN-M18.md from the top of what is open -- A3 (16-22: the map generator's buried mineral
-patches, the mineral patch drawn on the geyser on every small map including the shipped Close Quarters, editor undo
-not restoring W/H after a resize, the editor template putting resources in the border while its validator passes the
-map, the mis-centred help panel and network banners, the Sentinel's description claiming it costs no supply, and
-G.kill splicing the larva array it is iterating), then B (the eleven refactor items; B6 is the one with teeth --
-three implementations of "how high does this tile present" that disagree about the blocked test) as its own commits.
-A2.10 is LAST and only with the user's word: it changes when every AI attacks.
+THE NEXT ACTION: SCAN-M18.md section B, the eleven refactor items, as its own commits -- mostly "a number copied out
+of the place that owns it" and "a rule written twice because a second code path grew up beside the first". B6 is the
+one with teeth: three implementations of "how high does this tile present" (js/map.js 1458, 1617, 1827) that already
+disagree, one of them omitting the blocked test, so the seal pass counts a mineral tile as open ground and the ramp
+pass does not. A2.10 is LAST and only with the user's word: it changes when every AI attacks.
 
 STILL WAITING ON THE USER: their playtest (the recorder on their word), and the AI rebalance (TODO-M18 7b).
 
@@ -66,7 +70,7 @@ READ, in this order, before touching anything:
   3. SCAN-M18.md        -- THE QUEUE: every open defect and refactor item, ranked, with the measurement that found it
                            and, for each, which suite should have caught it and why it did not. Section C is what the
                            suite structurally cannot see.
-  3b. PLAYTEST-M18.md 125 and 126 -- how the two finished batches were fixed, tested and written up; match that shape.
+  3b. PLAYTEST-M18.md 125, 126 and 127 -- how the three finished batches were fixed, tested and written up; match that shape.
   4. TODO-M18.md        -- THE LOOKS QUEUE (all four items, measured), then THE TERRAIN QUEUE.
   5. SHIPPING.md        -- before any release: Actions -> Desktop builds -> Run workflow (it ignores js/ and assets/), and open
                            the Mac app on a real Mac (never done: there is no Mac here).
@@ -101,11 +105,12 @@ HARD RULES:
 - **THE LOOKS QUEUE IS DONE** (the user, 2026-09-14; TODO-M18's first section), each item committed and pushed: 1. a loading screen
   makes a game's first frame its finished ground (PLAYTEST-M18 118); 2. creep as a continuous mass (119; and 120, a game started in a
   background tab); 3. cliffs that look about twice as tall (121); 4. every map redesigned to StarCraft II's structure (122).
-- **The gate is 101 suites, ALL GREEN**, about four minutes (`maplayouts` is new). **Build stamp `48fa8a7ee8442c14`** --
+- **The gate is 101 suites, ALL GREEN**, about four minutes (`maplayouts` is new). **Build stamp `3ef30371e649b543`** --
   the looks queue's item 4 (`js/map.js`) moved it from `ca141a3b7ffcb528` to `678387e310c2c3fe`, the scan's A1 batch to
-  `c6d7084ba9f97299`, and its A2 batch (`js/build.js`, `js/ai.js`, `js/sim.js`) to this one. Older saves and replays are
-  refused. **A2 also widened what the stamp can see**: static members are hashed now, so a change to `GameMap.assignStarts`
-  or `GameMap.quadrantsOf` moves it where it used to slip past.
+  `c6d7084ba9f97299`, its A2 batch (`js/build.js`, `js/ai.js`, `js/sim.js`) to `48fa8a7ee8442c14`, and its A3 batch
+  (`js/map.js`, `js/data.js`, `js/game.js`) to this one. Older saves and replays are refused. **A2 also widened what the
+  stamp can see**: static members are hashed now, so a change to `GameMap.assignStarts` or `GameMap.quadrantsOf` moves it
+  where it used to slip past.
 - **By hand after item 4:** `net_many` 51/51; `aistyles` on its pinned ground 132 / 131 / 132 on seeds 1 / 5 / 11 (seed 5's red is the
   known harasser line, 7b) with every style row identical to before the item; `queens` 25/25; `eightplayer` 19/19;
   `desktop/page-check.js` 22/22 (`desktop/dist` refreshed). Seventeen negative controls for item 4, every one red

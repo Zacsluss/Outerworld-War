@@ -238,11 +238,22 @@ const MapModes = {
   // the point -- a size changes how many patches a base has and what is in them, never its shape.
   // `face` turns it about the hall (4 x 3) so the mineral line is on that side: 'nw' is the arrangement above and the default, 'ne'
   // mirrors it left to right, 'sw' top to bottom, 'se' both. Mirrored whole, every patch and the geyser keep their three tiles from the hall.
+  // THE ROW STOPS AT THREE and a ninth patch goes ABOVE the column, because the row was walking into the
+  // geyser. The row runs east from x-2 in steps of two, so its fourth patch occupies x+4..x+5 while the
+  // geyser occupies x+5..x+8 -- one shared tile, on every base that asks for nine patches. Only
+  // MAP_SIZES.small does, so it was both mains of the shipped Close Quarters and both mains of every
+  // generated :small map: 98 maps measured, two overlapping pairs each, with resourceAt returning the
+  // mineral while the grid said geyser (SCAN-M18 A3.17). The overflow goes to (x-5, y-5), which keeps the
+  // base inside the footprint the rest of this file assumes -- x-5..x+8 and y-5..y+5, see centreBase --
+  // where a sixth column patch at y+7 would not. Eight patches or fewer are laid out exactly as before,
+  // which is the point: the temple main must still come out unchanged.
   base(x, y, patches, amount, gas, role, face) {
-    const min = [], col = Math.min(patches, 5), row = patches - col, mx = !!face && face[1] === 'e', my = !!face && face[0] === 's';
+    const min = [], col = Math.min(patches, 5), row = Math.min(patches - col, 3), extra = patches - col - row;
+    const mx = !!face && face[1] === 'e', my = !!face && face[0] === 's';
     const at = (rx, ry, w, h) => [x + (mx ? 4 - rx - w : rx), y + (my ? 3 - ry - h : ry)];   // hall-relative, mirrored about the hall
     for (let i = 0; i < col; i++) min.push(at(-5, -3 + i * 2, 2, 1));
     for (let i = 0; i < row; i++) min.push(at(-2 + i * 2, -4, 2, 1));
+    for (let i = 0; i < extra; i++) min.push(at(-5, -5 - i * 2, 2, 1));
     const b = { hall: [x, y], minerals: min, geyser: at(5, -5, 4, 2), amount, gas };
     if (role === 'main') b.main = true; else if (role === 'natural') b.natural = true;
     return b;
@@ -491,13 +502,28 @@ const Archetypes = {
     return false;
   },
   feat(L, kind, x, y, w, h, quadrants) { const f = { kind, x, y, w, h }; if (quadrants) f.quadrants = quadrants.slice(); L.features.push(f); },
-  // Is a random rock ellipse clear of every ramp rectangle, with a tile to spare? A blob dropped by seed onto a ramp turns a
-  // way up into a slot through boulders that GameMap.wallRamps cannot shape into a ramp -- measured on arch:basin:5:small, the
-  // one map of 525 still side-open with every other fix in (terrain queue item 2). A blob that fails is drawn from the stream
-  // all the same and simply not placed, so nothing drawn after it moves.
+  // Is a random rock ellipse clear of every ramp rectangle AND of every base already laid down, with a tile to spare? A blob
+  // dropped by seed onto a ramp turns a way up into a slot through boulders that GameMap.wallRamps cannot shape into a ramp --
+  // measured on arch:basin:5:small, the one map of 525 still side-open with every other fix in (terrain queue item 2). A blob
+  // that fails is drawn from the stream all the same and simply not placed, so nothing drawn after it moves.
+  //
+  // AND THE BASES, since SCAN-M18 A3.16. The rocks are painted before the bases, and a base clears only the hall's own 6x5
+  // ring -- the patches are made walkable one tile at a time and the ground AROUND them is left as it was found. So a blob on
+  // a mineral line does not remove the patches, it SEALS them: they are drawn, they are minable, and the only worker that can
+  // mine one is a worker already standing on it, which mines FASTER than a reachable one (it never walks) and cannot be
+  // attacked. Measured over 192 generated maps: 100 of the 120 sealed resources were basin's three ellipses, 20 of them on
+  // arch:basin:2:small alone. GameMap.openSealedResources is the backstop for the rest; this is the half that stops the
+  // generator making an ugly map in the first place, which a repair pass cannot undo.
   rockClear(L, cx, cy, rx, ry) {
     const x0 = Math.floor(cx - rx) - 1, x1 = Math.ceil(cx + rx) + 1, y0 = Math.floor(cy - ry) - 1, y1 = Math.ceil(cy + ry) + 1;
-    return !L.ramps.some(r => x0 <= r[0] + r[2] - 1 && x1 >= r[0] && y0 <= r[1] + r[3] - 1 && y1 >= r[1]);
+    const hits = (bx, by, bw, bh) => x0 <= bx + bw - 1 && x1 >= bx && y0 <= by + bh - 1 && y1 >= by;
+    if (L.ramps.some(r => hits(r[0], r[1], r[2], r[3]))) return false;
+    for (const b of (L.bases || [])) {
+      if (b.hall && hits(b.hall[0] - 1, b.hall[1] - 1, 6, 5)) return false;
+      for (const m of (b.minerals || [])) if (hits(m[0] - 1, m[1] - 1, 4, 3)) return false;      // a 2x1 patch, a tile to spare
+      if (b.geyser && hits(b.geyser[0] - 1, b.geyser[1] - 1, 6, 4)) return false;                // a 4x2 geyser, a tile to spare
+    }
+    return true;
   },
 
   // An expansion ON the central plateau, with the plateau guaranteed to be underneath it.
@@ -861,6 +887,7 @@ class GameMap {
     // the connectivity repair so that the repair sees them.
     this.placeFeatures(L);
     if (this.archetype) { this.flattenBases(); this.repairConnectivity(); }
+    this.openSealedResources();   // after the carve, which can itself seal nothing but can leave one: see the method
     // Last, because it is the only pass that has to see what all the others did. See the block above
     // `_elevOpenH`: five earlier passes each open a tile for a good reason and any of them can leave a
     // hole in a cliff, so this cannot run until they have all had their turn. The seal comes first of
@@ -1352,6 +1379,47 @@ class GameMap {
       const h = this.height[this.idx(b.x + 1, b.y + 1)] === 1 ? 0 : this.height[this.idx(b.x + 1, b.y + 1)];
       this.rect(b.x - 1, b.y - 1, 6, 5, (x, y) => { const i = this.idx(x, y); if (this.blocked[i] !== -1) return; this.height[i] = h; this.cliff[i] = 0; this.walk[i] = 1; });
     }
+  }
+  // NO RESOURCE IS SEALED IN. repairConnectivity below answers "can a worker reach this base"; this answers
+  // the question beside it, "once it is there, can it reach the patches", which nothing asked. A base makes
+  // its own patches walkable but clears only the hall's 6x5 ring, so any rock painted before the bases -- a
+  // basin ellipse, an island channel's band -- can leave a patch walkable and surrounded. It is worse than a
+  // patch that is simply missing: it is drawn, it is minable, and a worker on it never walks, so it mines
+  // FASTER than a reachable patch and cannot be attacked while it does (SCAN-M18 A3.16; measured, 120 sealed
+  // resources over 192 generated maps before Archetypes.rockClear learned about bases and this was written).
+  //
+  // Opens ONE tile per sealed resource and mirrors it, the way repairConnectivity mirrors its carve: a repair
+  // that fixed one player's quadrant and not the others would be worse than the fault. Two hard limits, and
+  // both are the lesson of the destroyed-Refinery bug (SCAN-M18 A1.9): it never opens a tile at a DIFFERENT
+  // height from the patch, and it never writes `height` -- so it can turn rock into ground and can never turn
+  // a cliff into a way up. A patch that cannot be opened under those rules is left sealed and the
+  // maplayouts suite says so, which is the right outcome: a silent hole in a plateau is worse than a
+  // visible fault in a generator. Returns the number of tiles opened.
+  openSealedResources() {
+    let opened = 0;
+    const border = (x, y) => x < 3 || y < 3 || x >= this.w - 3 || y >= this.h - 3;
+    for (const r of this.resources) {
+      const sides = [];
+      for (let y = r.y; y < r.y + r.h; y++) sides.push([r.x - 1, y], [r.x + r.w, y]);
+      for (let x = r.x; x < r.x + r.w; x++) sides.push([x, r.y - 1], [x, r.y + r.h]);
+      if (sides.some(([x, y]) => this.inb(x, y) && this.walkable(x, y))) continue;
+      // MAY THIS TILE BE OPENED -- asked once, and asked again of the mirrored copy, because the chosen tile
+      // and its mirror have to clear the same bar. The last clause is the one that matters: the tile must
+      // already be at the patch's own height, so this turns rock into ground and can never turn a cliff into
+      // a way up.
+      const h0 = this.height[this.idx(r.x, r.y)];
+      const may = (x, y) => this.inb(x, y) && !border(x, y) && !(this.featTile && this.featTile[this.idx(x, y)] >= 0)
+        && this.blocked[this.idx(x, y)] === -1 && this.height[this.idx(x, y)] === h0;
+      const pick = sides.find(([x, y]) => may(x, y));
+      if (!pick) continue;
+      this.sym(pick[0], pick[1], (px, py) => {
+        if (!may(px, py)) return;
+        const i = this.idx(px, py);
+        if (this.walk[i] !== 1) opened++;
+        this.walk[i] = 1; this.cliff[i] = 0;
+      });
+    }
+    return opened;
   }
   // The safety net that makes a random generator legal. Floods with every feature shut and, for any
   // base it cannot reach, carves the cheapest corridor to reachable ground -- cost 0 through ground

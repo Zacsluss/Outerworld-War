@@ -1098,11 +1098,16 @@ Object.assign(UI, {
     // map without a cycle (dayPhase is null there), so the plate is only drawn when the dial is.
     // REVIEW-M17 task 1: this file replaces ui.js's drawTop, whose call to it was the only one.
     if (this.dayPhase()) { HUD.bevel(ctx, 190, 6, 122, 24, true, 'rgba(12,15,20,0.85)'); this.drawDayDial(ctx, 193, 7); }
-    if (this.mode === 'replay') HUD.text(ctx, this.net ? 'SPECTATING  ([ ] player, Ctrl+V map, O production, ' + UI.keyName(UI.key('pause')) + ' menu)' : 'REPLAY  ' + this.speedName() + '  (+/- speed, Ctrl+V perspective, ' + UI.keyName(UI.key('pause')) + ' menu)', Render.W / 2, 23, '#ffe45a', 13, true, 'center');
+    // CENTRED IN CONSOLE UNITS, NOT SCREEN PIXELS. This whole body runs under scale(hudK) (drawTop), so
+    // Render.W is the wrong ruler here by exactly that factor -- the resource plates above already use
+    // this.conW for the same reason. At 1280x720 with the shipped HUD size of 1.4 these four banners and the
+    // help panel below were centred on 896 of a 1280-wide window, and the help panel's right edge landed at
+    // 1373, off the screen (SCAN-M18 A3.20).
+    if (this.mode === 'replay') HUD.text(ctx, this.net ? 'SPECTATING  ([ ] player, Ctrl+V map, O production, ' + UI.keyName(UI.key('pause')) + ' menu)' : 'REPLAY  ' + this.speedName() + '  (+/- speed, Ctrl+V perspective, ' + UI.keyName(UI.key('pause')) + ' menu)', W / 2, 23, '#ffe45a', 13, true, 'center');
     if (G.mission && !G.mission.done) { const d = G.mission.def; const left = d.minutes ? Math.max(0, d.minutes * 60 - Math.floor((G.frame - G.mission.start) / TPS)) : 0; HUD.text(ctx, 'Objective: ' + d.objective + (d.minutes ? `   ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : ''), 16, 66, '#ffe45a', 12); }
-    if (this.net && Net.waitingSince && performance.now() - Net.waitingSince > 800) HUD.text(ctx, 'Waiting for other players...', Render.W / 2, 60, '#ffe45a', 14, true, 'center');
-    if (this.net && Net.desynced) HUD.text(ctx, 'DESYNC DETECTED at ' + Net.clock(Net.desyncFrame) + ' — command log saved to a download; the game is no longer in sync', Render.W / 2, 84, '#ff5050', 14, true, 'center');
-    if (this.net && !Net.connected && Net.active) HUD.text(ctx, 'Connection lost — leave with ' + UI.keyName(UI.key('pause')) + ' and reconnect with the same name to rejoin', Render.W / 2, 108, '#ff5050', 14, true, 'center');
+    if (this.net && Net.waitingSince && performance.now() - Net.waitingSince > 800) HUD.text(ctx, 'Waiting for other players...', W / 2, 60, '#ffe45a', 14, true, 'center');
+    if (this.net && Net.desynced) HUD.text(ctx, 'DESYNC DETECTED at ' + Net.clock(Net.desyncFrame) + ' — command log saved to a download; the game is no longer in sync', W / 2, 84, '#ff5050', 14, true, 'center');
+    if (this.net && !Net.connected && Net.active) HUD.text(ctx, 'Connection lost — leave with ' + UI.keyName(UI.key('pause')) + ' and reconnect with the same name to rejoin', W / 2, 108, '#ff5050', 14, true, 'center');
     if (this.pending) HUD.text(ctx, 'Select target: ' + (this.pending.kind === 'ability' ? DATA.abilities[this.pending.abil].name : this.pending.kind) + '  (right-click to cancel)', 16, 48, '#ffe45a', 12);
     if (this.showHelp) this.drawHelp(ctx);
   },
@@ -1191,7 +1196,9 @@ Object.assign(UI, {
       'Ctrl+0..9 assign group   0..9 select group   Shift+# add   F2 F4 F6 F7 (+Shift) camera saves   F8 load autosave', bind('pause') + ': cancel a target or a placement, otherwise the game menu    ' + bind('lastAlert') + ': jump to last alert',
       'Arrow keys or screen edge: scroll    Minimap: click to move, right-click to command', bind('speedUp') + ' / ' + bind('speedDown') + ': game speed    F9: pause    Cancel on the card: a queued unit or a building going up    ' + bind('help') + ': toggle this help',
       'Unit-specific hotkeys are the yellow letters on the command card. Every key is changed in Settings, Controls.'];
-    HUD.bevel(ctx, Render.W / 2 - 340, 60, 680, 20 * lines.length + 24, true, 'rgba(10,12,16,0.94)'); lines.forEach((l, i) => HUD.text(ctx, l, Render.W / 2 - 326, 86 + i * 20, i ? '#d0d6de' : '#ffe45a', 13, i === 0));
+    // drawTop calls this INSIDE scale(hudK), so the ruler is conW, not Render.W -- see the banners above.
+    const W = this.conW;
+    HUD.bevel(ctx, W / 2 - 340, 60, 680, 20 * lines.length + 24, true, 'rgba(10,12,16,0.94)'); lines.forEach((l, i) => HUD.text(ctx, l, W / 2 - 326, 86 + i * 20, i ? '#d0d6de' : '#ffe45a', 13, i === 0));
   },
   // THE LOADING SCREEN (Terrain.prepSteps): the map's name, its picture -- the far view itself, drawn the moment it is painted, so the
   // player looks at the ground they are about to play on -- the players in their colours, and a bar. It covers the whole canvas: the

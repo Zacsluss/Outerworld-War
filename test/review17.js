@@ -160,6 +160,29 @@ const ctx = makeCtx();
     return { scv, drone, from: DATA.units.drone.from };`);
   ok('larvaMorph refuses an SCV (was accepted: a Zerg-owned SCV)', out.scv === false, String(out.scv));
   ok('...and still accepts a Drone (negative control)', out.drone === true && out.from === 'larva', JSON.stringify(out));
+
+  // 5b. A DEAD HATCHERY TAKES ALL OF ITS LARVAE (SCAN-M18 A3.22). G.kill walked u.larvae and each larva's
+  // own kill spliced itself out of THAT array, so the walk skipped every other one: [dead, ALIVE, dead,
+  // ALIVE, dead], measured. The line directly below it in js/game.js takes a .slice() of `launched` and
+  // carries a comment about this exact failure from REVIEW-M17 task 20 -- the larva line beside it never
+  // got the same treatment. Nothing was visible from play because a survivor dies on its own next tick,
+  // which is also why nothing caught it: this asserts the frame of the kill, not the frame after.
+  const orphan = R(ctx, `
+    const p = fresh('Z', 'T');
+    const hall = G.units.find(u => u.alive && u.owner === 0 && u.isBuilding && u.def.spawnsLarva);
+    if (!hall) return { noHall: true };
+    run(600);                                                    // let it grow its natural larvae
+    const natural = hall.larvae.length;
+    while (hall.larvae.length < 5) { const l = G.spawnUnit('larva', 0, hall.x, hall.y); l.hatch = hall; hall.larvae.push(l); }
+    const before = hall.larvae.slice();
+    const setup = before.length === 5 && before.every(l => l.alive && l.hatch === hall);
+    G.kill(hall, null, true);
+    return { natural, setup, pattern: before.map(l => l.alive ? 'ALIVE' : 'dead'),
+      survivors: before.filter(l => l.alive).length, arrayLeft: hall.larvae.length };`);
+  ok('a hatchery with five living larvae, every one of them pointing at it (scene check)', orphan.setup === true, JSON.stringify(orphan));
+  ok('KILLING A HATCHERY KILLS EVERY ONE OF ITS LARVAE, not every other one (was: [dead, ALIVE, dead, ALIVE, dead])',
+    orphan.survivors === 0, JSON.stringify(orphan.pattern));
+  ok('...and the dead hatchery is left holding none of them', orphan.arrayLeft === 0, String(orphan.arrayLeft));
 }
 
 // ============================================================================
