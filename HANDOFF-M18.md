@@ -28,14 +28,15 @@ its finished ground and never shows the old textures first; 2. creep as one cont
 twice as tall; 4. every map redesigned to StarCraft II's structure -- a main up one ramp, the natural behind a choke, thirds, rich
 bases, lanes, rocks on the back doors, two-player maps turned half round, and the generated maps' mains up a ramp and two-player
 corners filled. The terrain queue before it is DONE too (PLAYTEST-M18 110-117).
-OPEN WITH THE USER: which of the creep texture links they posted they prefer, if any (TODO-M18, the looks queue, item 2) -- nothing is
-downloaded; if they pick one, name the file and its size and wait for a yes before downloading.
+THE CREEP'S TEXTURE is DONE too (PLAYTEST-M18 123): the user picked Abstract Organic 002 (CC0) and said yes to its two files; the creep
+is made from them, kept purple, and falls back to the creep made in code where they cannot load.
+THE USER WILL PLAYTEST: when they say so, restart the playtest recorder (preview_start "playtest", port 8870) and give them the link.
 DEFERRED by the user until they say: the AI rebalance (TODO-M18 7b); it now also owns three loose style comparisons that flip on the
 new Lost Ruins (PLAYTEST-M18 122; test/aistyles.js runs its style games on the old ground as a fixture). SKIPPED by the user: a
 look-and-feel pass of PLAYTEST-M18 101-108.
 
-THE NEXT ACTION: nothing is queued. Ask the user how their playtest of PLAYTEST-M18 118-122 went (and whether they pick a creep
-texture), then work what they report the way every item here was worked.
+THE NEXT ACTION: nothing is queued. When the user says they are ready to playtest, set up the recorder; then work what they report
+from PLAYTEST-M18 118-123 the way every item here was worked.
 
 READ, in this order, before touching anything:
   1. CLAUDE.md          -- the working agreement; every rule in it is non-negotiable.
@@ -82,8 +83,9 @@ HARD RULES:
   (`.claude/review/maps/controls-maps.log`).
 - **The desktop app**: `desktop/window-check.js` 25/25 on a debug build at item 1. **The installers on GitHub are from `f68e8f3`,
   before any terrain work** -- `SHIPPING.md`.
-- **Open with the user:** the creep texture pick (nothing downloaded). **Deferred by the user until they say:** the AI rebalance
-  (TODO-M18 7b). **Skipped by the user:** a look-and-feel pass of PLAYTEST-M18 101-108.
+- **The creep's texture is DONE** (PLAYTEST-M18 123): Abstract Organic 002, the user's pick; ten negative controls red. Drawing only,
+  so the build stamp did not move. **Waiting on the user:** their playtest (the recorder on their word). **Deferred by the user until
+  they say:** the AI rebalance (TODO-M18 7b). **Skipped by the user:** a look-and-feel pass of PLAYTEST-M18 101-108.
 - **The repository is PUBLIC.** **The playtest recorder is left running for the user** (`playtest` in `.claude/launch.json`,
   `tools/playtest-listen.js`, port 8870); the screenshot servers were stopped at the close.
 
@@ -91,8 +93,9 @@ HARD RULES:
 
 1. **A game opens on its finished ground**: a loading screen with the map's name and picture, the players and a bar, while the
    detailed ground is prepared -- no classic textures first, no chunks sharpening one by one (118).
-2. **Zerg creep is one continuous mass**: a wet, fibrous surface with a soft ragged edge, no tiles and no lines, spreading and receding
-   smoothly (119). A game started in a background tab starts with its detailed ground (120).
+2. **Zerg creep is one continuous mass**: a soft ragged edge, no tiles and no lines, spreading and receding smoothly (119), and made from
+   the texture the user picked, Abstract Organic 002 -- wet, folded, purple (123). A game started in a background tab starts with its
+   detailed ground (120).
 3. **Cliffs look about twice as tall**: a wider rock face and a shadow twice as long below each plateau and rock formation; ramps look as
    before (121).
 4. **Every map is laid out like a StarCraft II map** (122): your main up one ramp, your natural beside it behind a choke, thirds further
@@ -102,12 +105,11 @@ HARD RULES:
    1300 a patch. The generated Open Basin's mains are up a ramp; a two-player generated map fills all four corners.
 
 **Deliberately different from what was asked, all in the PLAYTEST entries:** a loading screen of one to two seconds was added, and a
-restart prepares the ground again (118); the creep pattern is made in code, no texture downloaded until the user picks one, and creep
-is drawn at 1x on a 150% display (119); "twice as tall" is the shadow and
+restart prepares the ground again (118); creep is drawn at 1x on a 150% display (119); the picked texture is kept purple and only its colour and
+displacement maps are used (123); "twice as tall" is the shadow and
 the face -- a top-down view cannot show a wall's side (121); no watchtowers, sight blockers or mineral walls, two heights not three, rich
 bases not coloured gold, the generated maps keep their own shapes, Lost Ruins' third moved rather than the AI changed, and the AI style
-comparisons run on the old Lost Ruins (122). **Unfinished: nothing.** The creep texture waits for the user's pick; the AI rebalance for
-their word.
+comparisons run on the old Lost Ruins (122). **Unfinished: nothing.** The AI rebalance waits for the user's word.
 
 ## How to playtest it by hand
 

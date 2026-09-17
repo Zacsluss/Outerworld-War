@@ -484,7 +484,7 @@ ok(refine.oneX.sharpened === 0 && refine.oneX.allAtOne, 'sharp: on a 1x display 
       UI.start({ players: [{ race: race || 'T', human: true, name: 'A', team: 1 }, { race: race === 'Z' ? 'T' : 'Z', human: false, name: 'B', team: 2 }], seed: 4, layout });
       UI.menu = null; G.paused = false; for (const p of G.players) p.ai = null;
       Render.W = 520; Render.H = 440; Render.viewW = 520; Render.viewH = 300; Render.dpr = 1.5;
-      TT.urls = Object.values(TERRAIN_TEX[Terrain.setId] || {});
+      TT.urls = Object.values(TERRAIN_TEX[Terrain.setId] || {}).concat(Object.values(Terrain.CREEP_SRC));   // the creep's texture is waited for too
     };
     TT.tick = () => { UI.lastT = performance.now() - 100; UI.simStep(); };
   `, ctx);
@@ -577,6 +577,23 @@ ok(refine.oneX.sharpened === 0 && refine.oneX.allAtOne, 'sharp: on a 1x display 
   const zergIn = await loopUntilDone(3000);
   const zerg = R('return Object.assign({}, TT.spy.first || {}, { prep: !!UI.prep });');
   ok(zergIn > 0 && zerg.creep >= 2 && zerg.creepDetailed === zerg.creep && zerg.creepBaked === 0, 'first frame: at a Zerg start all ' + zerg.creep + ' chunks of creep in view are baked detailed before the first frame, which bakes none', JSON.stringify(zerg));
+  // the creep's texture: waited for like the ground's, and where its file fails, the creep made in code without a wait
+  R("TT.go('temple', true, 'Z'); Terrain._creepTex = null; Terrain._creepMatJob = null; for (const u of TT.urls) if (!Object.values(Terrain.CREEP_SRC).includes(u)) Terrain.texEntry(u).img.onload();");
+  const noCreepFiles = [];
+  let waitAt = -1;
+  for (let i = 0; i < 3000 && waitAt < 0; i++) { const s = R('UI.loop(performance.now()); return UI.prep ? UI.prep.label : null;'); if (s === 'Growing the creep') waitAt = i; else if (s === null) break; await flush(); }
+  for (let i = 0; i < 40; i++) { R('UI.loop(performance.now());'); await flush(); }
+  noCreepFiles.push(R('return { prep: !!UI.prep, label: UI.prep && UI.prep.label, frames: TT.spy.frames };'));
+  noCreepFiles[0].waitAt = waitAt;
+  R('for (const u of Object.values(Terrain.CREEP_SRC)) Terrain.texEntry(u).img.onload();');
+  const creepFilesIn = await loopUntilDone(3000);
+  const withFiles = R('return Object.assign({}, TT.spy.first || {}, { prep: !!UI.prep, made: !!Terrain._creepTex, W: Terrain._creepTex && Terrain._creepTex.W, texW: Terrain.CREEP_TEXMAT.W });');
+  ok(noCreepFiles[0].prep && noCreepFiles[0].label === 'Growing the creep' && noCreepFiles[0].frames === 0 && creepFilesIn > 0 && withFiles.made && withFiles.W === withFiles.texW && withFiles.creepDetailed === withFiles.creep && withFiles.creep >= 2,
+    'first frame: with the ground\'s files in and the creep\'s not, the loading screen waits on them ("' + noCreepFiles[0].label + '"), and once they come the creep is made from them and is detailed in view before the first frame', JSON.stringify({ wait: noCreepFiles[0], after: withFiles }));
+  R("TT.go('temple', true, 'Z'); Terrain._creepTex = null; Terrain._creepMatJob = null; for (const u of TT.urls) { const e = Terrain.texEntry(u); if (Object.values(Terrain.CREEP_SRC).includes(u)) e.img.onerror(); else e.img.onload(); }");
+  const failedIn = await loopUntilDone(3000);
+  const failed = R('const s = TT.spy.first || {}; const M = Terrain._creepTex; return Object.assign({}, s, { prep: !!UI.prep, made: !!M, W: M && M.W, madeW: Terrain.CREEP_TEX_W });');
+  ok(failedIn > 0 && failed.made && failed.W === failed.madeW && failed.creepDetailed === failed.creep, 'first frame: a creep file that fails does not hold the game: the creep is the one made in code (' + failedIn + ' frames of loading screen)', JSON.stringify(failed));
 
   // ---------------------------------------------------------------------------------------------------------------------------
   // 12. Creep on screen

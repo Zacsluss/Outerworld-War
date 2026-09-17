@@ -364,6 +364,7 @@ const Terrain = {
   preloadTextures() {
     if (!this.canPrepare()) return 0;
     let n = 0; for (const set of Object.values(TERRAIN_TEX)) for (const url of Object.values(set)) { this.texEntry(url); n++; }
+    for (const url of Object.values(this.CREEP_SRC)) { this.texEntry(url); n++; }
     this.preloadCreep();
     return n;
   },
@@ -1267,6 +1268,7 @@ const Terrain = {
       const urls = Object.values(spec), t0 = performance.now();
       job.label = 'Loading terrain';
       for (const u of urls) this.texEntry(u);
+      for (const u of Object.values(this.CREEP_SRC)) this.texEntry(u);   // and the creep's, waited on after the ground (creepSrcSteps)
       // loaded, then decoded off the main thread; a texture already drawn once is decoded already
       for (;;) {
         const now = performance.now();
@@ -1302,7 +1304,7 @@ const Terrain = {
       job.progress = (T ? 0.7 : 0.3) + (T ? 0.27 : 0.65) * (++n / list.length);
     }
     // and the creep on it: in the detailed look the material first, where the menus have not finished it (preloadCreep)
-    if (T && !this._creepTex) { job.label = 'Growing the creep'; const it = this._creepMatJob || (this._creepMatJob = this.creepMatSteps(this.CREEP_TEX_N)); let r; while (!(r = it.next()).done) yield; this._creepTex = r.value; this._creepMatJob = null; }
+    if (T && !this._creepTex) { job.label = 'Growing the creep'; const it = this._creepMatJob || (this._creepMatJob = this.creepMaterial(this.CREEP_TEX_N)); let r; while (!(r = it.next()).done) yield r.value; this._creepTex = r.value; this._creepMatJob = null; }
     if (this.syncCreep()) {
       const M = this.creepTex(), nx = this.creepNx(), CK = this.creepK((typeof Render !== 'undefined' && Render.zoom) || 1);
       if (M) for (const [cx, cy] of list) { const i = cy * nx + cx; if (!this.creepAny[i]) continue; const it = this.creepBakeSteps(cx, cy, M, CK, 'now'); let r; while (!(r = it.next()).done) yield; this.creepChunks.set(cx + ',' + cy, { cv: r.value, sig: this.creepSig[i], k: CK, tex: true, next: null }); }
@@ -1513,6 +1515,20 @@ const Terrain = {
   // stainLo to stainHi; amax is the creep's opacity where it is whole (the old creep's 232/255 was 0.91); bulge the height, in world
   // pixels, the thinning edge is lit at.
   CREEP_EDGE: { lo: 0.34, hi: 0.66, fib: 0.32, n1: 0.5, n2: 0.25, stainLo: 0.06, stainHi: 0.5, stainA: 0.35, amax: 0.96, bulge: 9 },
+  // THE CREEP'S TEXTURE (the user, 2026-09-17, choosing from twelve free ones: "use abstract organic for creep - implement now"):
+  // 3dtextures.me's Abstract Organic 002, CC0 (assets/terrain/SOURCES.md). Its colour map is the flesh's pattern -- its light and dark,
+  // not its olive: the creep keeps its purple -- and its displacement map is the relief the light reads, the raised flesh that glistens
+  // and the strands that push the edge about. The creep made in code (creepMatSteps with no source) stays for a page whose files
+  // cannot load, and for the headless suites, which have no images.
+  CREEP_SRC: { color: 'assets/terrain/Abstract_Organic_002_COLOR.jpg', height: 'assets/terrain/Abstract_Organic_002_DISP.png' },
+  // The textured material's recipe (creepTexelSteps), chosen on screenshots from six (.claude/review/terrain/shots/creeptex-tune1 and
+  // -tune2): the wet, folded look of the texture's own preview wants deep relief and a strong gloss, and next to nothing painted on.
+  // Both maps are read between their pLo and pHi percentiles, as t (the colour map's luminance) and h (the height), 0 to 1. The flesh is
+  // col times base + tone t + lump h, plus a sheen of lit where both are high (from litLo of t); it glistens from wetLo to wetHi of h;
+  // its strands' strength runs fibLo to fibHi over h -- the made material's 5th and 95th percentiles, so the edge sits where it did; S
+  // is the relief and spE, spA, spB the wet highlight, as CREEP_MAT's; W the world px one repeat of the texture covers (ten tiles: at
+  // sixteen the folds were two tiles across and the relief flat, at eight busy).
+  CREEP_TEXMAT: { pLo: 0.05, pHi: 0.95, col: [49, 26, 45], base: 0.45, tone: 0.55, lump: 0.35, litLo: 0.7, lit: 4, wetLo: 0.55, wetHi: 0.9, fibLo: 29, fibHi: 193, S: 12, spE: 15, spA: 1.8, spB: 0.25, W: 320 },
   // Gradient noise, about -0.7 to 0.7, on a lattice of P cells that wraps: a texture made of it repeats with no seam. One table of
   // gradients a lattice and salt, made on first use. Drawing only.
   pgrad(x, y, P, s) {
@@ -1532,13 +1548,63 @@ const Terrain = {
   creepK(zoom) { const need = zoom * ((typeof Render !== 'undefined' && Render.dpr) || 1), ks = this.CREEP_KS; for (const k of ks) if (k * this.CREEP_SOFT >= need - 1e-6) return k; return ks[ks.length - 1]; },
   // The material, where the creep is detailed: detailed terrain on, its textures in, the material made.
   creepTex() { return this._creepTex && this.texSet() ? this._creepTex : null; },
+  // The material as the game makes it: the texture's files first (creepSrcSteps), then the material from them -- or, where they
+  // cannot be had, the one made in code.
+  *creepMaterial(N) { const src = yield* this.creepSrcSteps(N); return yield* this.creepMatSteps(N, src); },
+  // The creep's two files as N x N pixels ({ color, height }), or null where they cannot be had: no image can load here, a file failed,
+  // or PREP_WAIT_MS went by. Yields 'wait' while a file is still coming (a loading screen waits on it as on the ground's), and decodes
+  // them off the main thread first, DECODE_WAIT_MS at most once they are in, as prepSteps does. The pixels are not kept.
+  *creepSrcSteps(N) {
+    if (!this.canPrepare()) return null;
+    const urls = [this.CREEP_SRC.color, this.CREEP_SRC.height], t0 = performance.now();
+    for (;;) {
+      const now = performance.now(), es = urls.map(u => this.texEntry(u));
+      if (es.some(e => e.failed) || now - t0 > this.PREP_WAIT_MS) return null;
+      for (const e of es) if (e.ok && !e.decoded) { e.decoded = 'pending'; e.decodeAt = now; const d = e.img.decode ? e.img.decode() : null; if (d && d.then) d.then(() => { e.decoded = 'yes'; }, () => { e.decoded = 'yes'; }); else e.decoded = 'yes'; }
+      if (es.every(e => e.decoded === 'yes' || (e.ok && now - e.decodeAt >= this.DECODE_WAIT_MS))) break;
+      yield 'wait';
+    }
+    const px = u => { const cv = document.createElement('canvas'); cv.width = cv.height = N; const x = cv.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(this._tex[u].img, 0, 0, N, N); const d = x.getImageData(0, 0, N, N).data; this.releaseChunk(cv); return d; };
+    const color = px(urls[0]); yield;
+    const height = px(urls[1]); yield;
+    return { color, height };
+  },
+  // The textured material's colour, relief, gloss and strands, a row at a time, into the arrays creepMatSteps lights (CREEP_TEXMAT).
+  *creepTexelSteps(N, src, hgt, wet, fib, alb) {
+    const T = this.CREEP_TEXMAT, C = src.color, H = src.height, n = N * N, sm = (a, b, t) => { t = (t - a) / (b - a); t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); };
+    // each map's light and dark a row at a time, with a histogram of each (BINS bins) for its percentiles: a sort of every seventh
+    // texel of the two maps was one 78 ms step
+    const BINS = 1024, lum = new Float32Array(n), hl = new Uint32Array(BINS), hh = new Uint32Array(BINS);
+    for (let j = 0; j < N; j++) {
+      for (let o = j * N, e = o + N; o < e; o++) {
+        const l = (C[o * 4] * 0.2126 + C[o * 4 + 1] * 0.7152 + C[o * 4 + 2] * 0.0722) / 255, h = H[o * 4] / 255;
+        lum[o] = l; hgt[o] = h; hl[Math.min(BINS - 1, (l * BINS) | 0)]++; hh[Math.min(BINS - 1, (h * BINS) | 0)]++;
+      }
+      if ((j & 63) === 63) yield;
+    }
+    // a map's pLo and pHi percentiles, to a bin; a flat map (a stub's) reads as the middle
+    const pct = hist => { const at = p => { let k = Math.floor(p * (n - 1)), b = 0; for (; b < BINS - 1 && k >= hist[b]; b++) k -= hist[b]; return (b + 0.5) / BINS; }; const lo = at(T.pLo), hi = at(T.pHi); return [lo, hi - lo > 1e-3 ? hi - lo : 0]; };
+    const [l0, lw] = pct(hl), [h0, hw] = pct(hh);
+    yield;
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        const o = j * N + i, tv = lw ? (lum[o] - l0) / lw : 0.5, hv = hw ? (hgt[o] - h0) / hw : 0.5, t = tv < 0 ? 0 : tv > 1 ? 1 : tv, h = hv < 0 ? 0 : hv > 1 ? 1 : hv;
+        const k = T.base + T.tone * t + T.lump * h, lit = sm(T.litLo, 1, t) * h;
+        alb[o * 3] = T.col[0] * k + lit * T.lit; alb[o * 3 + 1] = T.col[1] * k + lit * T.lit * 0.53; alb[o * 3 + 2] = T.col[2] * k + lit * T.lit * 1.06;
+        hgt[o] = h; wet[o] = sm(T.wetLo, T.wetHi, h); fib[o] = (T.fibLo + (T.fibHi - T.fibLo) * h) / 255;
+      }
+      if ((j & 7) === 7) yield;
+    }
+  },
   // The material, a row at a time (the boot, a loading screen or creepWork runs it in slices): N x N texels of colour with the strands'
   // strength in the fourth channel, and levels of detail at a half, a quarter and an eighth, each the box average of the one above.
-  *creepMatSteps(N) {
+  // From src, the texture's pixels (creepTexelSteps), where given; made in code where not.
+  *creepMatSteps(N, src) {
     const P = this.CREEP_MAT, pg = (x, y, p, s) => this.pgrad(x, y, p, s), sm = (a, b, t) => { t = (t - a) / (b - a); t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); };
     const ridge = v => { const r = 1 - Math.sqrt(v * v + P.round * P.round) * 1.5; return r > 0 ? r : 0; };   // rounded on top: a strand, not a crease
     const hgt = new Float32Array(N * N), wet = new Float32Array(N * N), fib = new Float32Array(N * N), alb = new Float32Array(N * N * 3);
-    for (let j = 0; j < N; j++) {
+    if (src) yield* this.creepTexelSteps(N, src, hgt, wet, fib, alb);
+    else for (let j = 0; j < N; j++) {
       for (let i = 0; i < N; i++) {
         const x = i / N, y = j / N, o = j * N + i;
         const wx = x + pg(x * 3, y * 3, 3, 1) * P.w1 + pg(x * 8, y * 8, 8, 2) * P.w2, wy = y + pg(x * 3 + 0.5, y * 3 + 0.5, 3, 3) * P.w1 + pg(x * 8 + 0.5, y * 8 + 0.5, 8, 4) * P.w2;
@@ -1554,12 +1620,12 @@ const Terrain = {
     }
     // lit from the upper left, as the ground: its slope against the sun, and a highlight where the strands are wet
     const Ln = Math.hypot(0.5, 0.6, 0.62), lx = -0.5 / Ln, ly = -0.6 / Ln, lz = 0.62 / Ln, hn = Math.hypot(lx, ly, lz + 1), hx = lx / hn, hy = ly / hn, hz = (lz + 1) / hn;
-    const L0 = new Uint8ClampedArray(N * N * 4), S = P.S * N / 512;
+    const Q = src ? this.CREEP_TEXMAT : P, L0 = new Uint8ClampedArray(N * N * 4), S = Q.S * N / 512;   // the relief and the gloss, the texture's own where there is one
     for (let j = 0; j < N; j++) {
       const row = j * N, up = ((j + N - 1) % N) * N, dn = ((j + 1) % N) * N;
       for (let i = 0; i < N; i++) {
         const o = row + i, dx = (hgt[row + (i + 1) % N] - hgt[row + (i + N - 1) % N]) * S, dy = (hgt[dn + i] - hgt[up + i]) * S, nl = Math.sqrt(dx * dx + dy * dy + 1), nx = -dx / nl, ny = -dy / nl, nz = 1 / nl;
-        const lam = nx * lx + ny * ly + nz * lz, sh = 0.5 + 0.5 * (lam > 0 ? lam / lz : 0), dot = nx * hx + ny * hy + nz * hz, spec = dot > 0 ? Math.pow(dot, P.spE) * (P.spB + wet[o] * P.spA) : 0;
+        const lam = nx * lx + ny * ly + nz * lz, sh = 0.5 + 0.5 * (lam > 0 ? lam / lz : 0), dot = nx * hx + ny * hy + nz * hz, spec = dot > 0 ? Math.pow(dot, Q.spE) * (Q.spB + wet[o] * Q.spA) : 0;
         L0[o * 4] = alb[o * 3] * sh + spec * 110; L0[o * 4 + 1] = alb[o * 3 + 1] * sh + spec * 90; L0[o * 4 + 2] = alb[o * 3 + 2] * sh + spec * 120; L0[o * 4 + 3] = fib[o] * 255;
       }
       if ((j & 31) === 31) yield;
@@ -1570,7 +1636,7 @@ const Terrain = {
       for (let j = 0; j < h; j++) for (let i = 0; i < h; i++) { const a = (j * 2 * n + i * 2) * 4, b = a + 4, c = a + n * 4, e = c + 4, o = (j * h + i) * 4; for (let k = 0; k < 4; k++) dst[o + k] = (src[a + k] + src[b + k] + src[c + k] + src[e + k]) / 4; }
       levels.push(dst); yield;
     }
-    return { N, W: this.CREEP_TEX_W, levels };
+    return { N, W: src ? this.CREEP_TEXMAT.W : this.CREEP_TEX_W, levels };
   },
   // A detailed creep chunk at ratio K from material M, a row at a time: a canvas of the chunk and CREEP_APRON pixels round it (cv.apron),
   // transparent where there is neither creep nor its stain. ns names the scratch memory, as for the ground's bake.
@@ -1653,8 +1719,8 @@ const Terrain = {
     if (!this.textured || !this.texSet()) return false;
     const t0 = performance.now(), spent = () => performance.now() - t0 >= this.CREEP_MS;
     if (!this._creepTex) {
-      const job = this._creepMatJob || (this._creepMatJob = this.creepMatSteps(this.CREEP_TEX_N));
-      for (;;) { const r = job.next(); if (r.done) { this._creepTex = r.value; this._creepMatJob = null; break; } if (spent()) return false; }
+      const job = this._creepMatJob || (this._creepMatJob = this.creepMaterial(this.CREEP_TEX_N));
+      for (;;) { const r = job.next(); if (r.done) { this._creepTex = r.value; this._creepMatJob = null; break; } if (r.value === 'wait' || spent()) return false; }
     }
     if (!this.creepAny) return true;
     const M = this._creepTex, K = this.creepK((typeof Render !== 'undefined' && Render.zoom) || 1), nx = this.creepNx(), mx = (cx0 + cx1) / 2, my = (cy0 + cy1) / 2;
@@ -1701,9 +1767,10 @@ const Terrain = {
     const later = f => (typeof requestIdleCallback === 'function' ? requestIdleCallback(f, { timeout: 200 }) : setTimeout(f, 16));
     const step = () => {
       if (this._creepTex) return;
-      const job = this._creepMatJob || (this._creepMatJob = this.creepMatSteps(this.CREEP_TEX_N)), t0 = performance.now();
-      for (;;) { const r = job.next(); if (r.done) { this._creepTex = r.value; this._creepMatJob = null; return; } if (performance.now() - t0 >= 6) break; }
-      later(step);
+      const job = this._creepMatJob || (this._creepMatJob = this.creepMaterial(this.CREEP_TEX_N)), t0 = performance.now();
+      let waiting = false;
+      for (;;) { const r = job.next(); if (r.done) { this._creepTex = r.value; this._creepMatJob = null; return; } if (r.value === 'wait') { waiting = true; break; } if (performance.now() - t0 >= 6) break; }
+      if (waiting) setTimeout(step, 100); else later(step);   // the files are still coming: look again in a tenth of a second
     };
     later(step);
     return true;

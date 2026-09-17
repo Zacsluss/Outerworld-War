@@ -2043,3 +2043,47 @@ before this commit are refused, as they should be: the ground they were played o
 - **Rich bases hold more (5000 a patch) but look like any other**; StarCraft II colours them gold.
 - **The generated maps keep their shapes** (the river, the channels, the terraces, the open middle): they gained the main up a ramp
   (the basin) and full corners on two players, not a new layout.
+
+## 123. Creep made from the texture you picked: Abstract Organic 002
+
+*(The user, 2026-09-17, choosing from the twelve free textures shown to them after item 119: "use abstract organic for creep -
+implement now", and "yes" to downloading its two files. `js/terrain.js` (`CREEP_SRC`, `CREEP_TEXMAT`, `creepMaterial`,
+`creepSrcSteps`, `creepTexelSteps`); `assets/terrain/Abstract_Organic_002_COLOR.jpg` and `_DISP.png`, CC0, recorded in
+`assets/terrain/SOURCES.md`. Drawing only: the build stamp stays `678387e310c2c3fe`.)*
+
+**What changed for a player** (picture: `.claude/review/terrain/shots/creeptex-before-after.png`):
+1. **Zerg creep on detailed terrain is the texture you picked**: wet, folded flesh with glossy highlights, like the texture's preview.
+   Its light and dark come from the texture's colour map and its relief and gloss from its displacement map.
+2. **It stays Zerg purple.** The texture itself is olive; the creep keeps its dark purple, as agreed before the download.
+3. **One repeat of the texture covers ten tiles**, and two samples of it are mixed so no repeat shows.
+4. **The creep's edge is unchanged** (item 119): soft, ragged and continuous, now pushed about by the texture's own ridges.
+5. **A game waits for the texture on its loading screen**, as it waits for the ground's; if the files cannot load, the game starts at
+   once with the creep made in code (the look of item 119).
+6. **Unchanged:** where creep spreads; the Classic look's creep.
+
+**How to see it by hand:**
+1. **Single Player -> Skirmish**, race **Zerg**, any map, START. Look at the creep round your Hatchery. *Working:* dark purple folds that
+   look wet, with glossy highlights; no lines, no tiles, no repeating pattern.
+2. **Build a Creep Colony** (drone -> build -> Creep Colony) near the edge of the creep and wait for it to spread. *Working:* the new creep
+   is the same texture and appears without a seam against the old.
+3. **Zoom in** with the mouse wheel. *Working:* the folds get sharper, still no repeat.
+4. **Esc -> Settings -> Terrain: Classic**, then **Detailed** again. *Working:* the classic creep, then the texture again.
+
+**Invisible from normal play, and where to look instead:**
+- Made at 1024 texels in 89 ms, no slice longer than 4 ms (the creep made in code: 538 ms); its two files are 845 KB together.
+  Before a fix, one slice sorted a million texels and took 78 ms; the percentiles now come from histograms.
+- `test/terraintex.js` 1 and 8b (8 new checks): the files are in the repository and recorded; where no image can load, the creep is the
+  one made in code, byte for byte; made from a texture, the flesh follows its colour map (correlation 0.99) and its light the height
+  map's slope towards the sun (0.66, with the flesh's own height taken out); an olive texture makes purple creep; it tiles with no
+  seam; its strands push the edge as far as the made material's; the edge still thins over 37 px; a field of it one texture repeat long
+  does not repeat (0.15). `test/terrainview.js` 11 (2 new): the loading screen waits on the creep's files ("Growing the creep") and
+  then makes the creep from them; a file that fails does not hold the game. Ten negative controls, every one red
+  (`.claude/review/creep/controls-texcreep.log`).
+
+**Deliberately different from what was asked, or not done:**
+- **Purple, not the texture's olive** (said before the download).
+- **Two of the texture's five maps**: the colour and the displacement. The game lights creep from a height, as it lights the ground, so
+  the normal, occlusion and roughness maps would add nothing; the 4K version is for paying supporters only.
+- **The relief and the gloss are much stronger than the colour map alone would give**: the texture's own preview is a wet, folded ball,
+  and six variants were judged on screenshots (`.claude/review/terrain/shots/creeptex-tune1`, `-tune2`).
+- **The desktop installers do not have it yet** -- SHIPPING.md: rebuild them before shipping.

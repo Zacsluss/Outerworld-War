@@ -32,6 +32,10 @@
 //     along that contour); a chunk's apron is the very pixels of its neighbour's edge; a material repeat apart the creep does not
 //     repeat; a creep bit CREEP_REACH tiles away is in a chunk's signature; and when creep grows, the changed chunks keep their old
 //     pictures until every one has its new one, then all change together.
+//  8b. THE CREEP'S TEXTURE (the user: "use abstract organic for creep"): its two files are in the repository and recorded; where no image
+//     can load, the creep is the one made in code; made from a texture, the flesh follows the texture's light and dark and its relief the
+//     height map, it is purple whatever the texture's hue, it tiles with no seam, its strands push the edge as far as the made one's, and
+//     a field of it one texture repeat long does not repeat.
 //  9. CLIFFS THAT LOOK TWICE AS TALL (the looks queue, item 3: "Can we make them look about twice as tall"): on a plateau with a straight
 //     east-facing and a straight south-facing edge, the drop is half as wide again as before, the shadow past an east-facing cliff reaches
 //     twice as far and past a south-facing one half as far again, and a ramp is lit as it was.
@@ -62,6 +66,9 @@ for (const s of sets) {
   const lists = s.look ? [].concat(s.look.heal || [], s.look.cells || []) : null;
   ok(!!s.look && lists.every(p => PARTS.includes(p)), s.id + ': a look, whose heal and cells lists name only materials', JSON.stringify(s.look));
 }
+
+const creepFiles = R('return Object.values(Terrain.CREEP_SRC);');
+ok(creepFiles.length === 2 && creepFiles.every(f => fs.existsSync(path.join(root, f)) && sources.includes('`' + path.basename(f) + '`')), 'creep: its texture\'s two files are in the repository and recorded in assets/terrain/SOURCES.md', JSON.stringify(creepFiles));
 
 // ---------------------------------------------------------------------------------------------------------------------------
 // 1b. High ground clearly lighter than low, and cliffs neither black nor glaring -- the approved look, in numbers
@@ -440,7 +447,20 @@ vm.runInContext(`
   TT.creep = {
     mat: null,
     material() { if (!this.mat) { const it = Terrain.creepMatSteps(128); let r; do r = it.next(); while (!r.done); this.mat = r.value; } return this.mat; },
-    bake(cx, cy, K) { const it = Terrain.creepBakeSteps(cx, cy, this.material(), K, 'tt'); let r; do r = it.next(); while (!r.done); return r.value; },
+    bake(cx, cy, K, M) { const it = Terrain.creepBakeSteps(cx, cy, M || this.material(), K, 'tt'); let r; do r = it.next(); while (!r.done); return r.value; },
+    // a texture's two maps as the game reads them, N x N and periodic (a repeat is a real repeat): an olive colour map whose light and
+    // dark follow one pattern, and a height map of another; flatColour or flatHeight holds that map at one value
+    src(N, flatColour, flatHeight) {
+      const color = new Uint8ClampedArray(N * N * 4), height = new Uint8ClampedArray(N * N * 4), f = 2 * Math.PI / N;
+      for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+        const o = (y * N + x) * 4, a = flatColour ? 0 : Math.sin(x * f * 5) * Math.cos(y * f * 3) + 0.4 * Math.sin((x - y) * f * 9), b = flatHeight ? 0 : Math.cos(x * f * 2 + 1) * Math.sin(y * f * 4) + 0.3 * Math.cos((x + 2 * y) * f * 3);
+        color[o] = 90 + 40 * a; color[o + 1] = 100 + 40 * a; color[o + 2] = 40 + 20 * a; color[o + 3] = 255;
+        height[o] = height[o + 1] = height[o + 2] = 128 + 90 * b; height[o + 3] = 255;
+      }
+      return { color, height };
+    },
+    made(N, src) { const it = Terrain.creepMatSteps(N, src); let r; do r = it.next(); while (!r.done); return r.value; },
+    texMaterial() { return this.tmat || (this.tmat = this.made(128, this.src(128))); },
     fill(m, x0, y0, x1, y1, v) { for (let ty = y0; ty < y1; ty++) for (let tx = x0; tx < x1; tx++) if (m.inb(tx, ty)) m.creep[m.idx(tx, ty)] = v; },
     // a flat chunk with flat ground three chunks to its right, and the tiles round them
     spot(m) { const CH = Terrain.CH, flat = (cx, cy) => { for (let y = cy * CH - 4; y < (cy + 1) * CH + 4; y++) for (let x = cx * CH - 4; x < (cx + 1) * CH + 4; x++) { if (!m.inb(x, y)) return false; const i = m.idx(x, y); if (m.height[i] !== 0 || m.cliff[i] !== 0 || m.walk[i] !== 1) return false; } return true; };
@@ -497,6 +517,66 @@ const creepSeam = R(`
 `);
 ok(!!creepSeam.k1 && creepSeam.k1.lit > 20 && creepSeam.k1.worst <= 1 && creepSeam.k15.worst <= 1, 'creep: where two chunks meet across a creep edge, the apron of one is the very pixels of the other\'s edge, at ratio 1 and 1.5 (off by ' + creepSeam.k1.worst + ' and ' + creepSeam.k15.worst + ')', JSON.stringify(creepSeam));
 ok(Math.abs(creepSeam.repeat) < 0.5, 'creep: a field of creep a material repeat (sixteen tiles) apart does not repeat -- the two chunks correlate ' + creepSeam.repeat, JSON.stringify(creepSeam));
+// 8b. the creep's texture
+const creepTex = R(`
+  const N = 128, n = N * N, out = {};
+  // where no image can load (here), the material the game makes is the one made in code, byte for byte
+  const it = Terrain.creepMaterial(N); let r; do r = it.next(); while (!r.done);
+  const made = TT.creep.made(N, null), same = (a, b) => a.levels.length === b.levels.length && a.levels.every((l, i) => l.length === b.levels[i].length && l.every((v, k) => v === b.levels[i][k]));
+  out.fallback = same(r.value, made); out.fallbackW = r.value.W === Terrain.CREEP_TEX_W;
+  const lumOf = L => { const a = new Float64Array(n); for (let o = 0; o < n; o++) a[o] = L[o * 4] * 0.3 + L[o * 4 + 1] * 0.59 + L[o * 4 + 2] * 0.11; return a; };
+  const S = TT.creep.src(N), T = TT.creep.texMaterial(), L = T.levels[0];
+  out.W = T.W; out.differs = !same(T, made);
+  // the colour map's light and dark, with the height held flat; the height map's slope towards the sun, with the colour held flat
+  const flatH = TT.creep.made(N, TT.creep.src(N, false, true)), srcLum = new Float64Array(n); for (let o = 0; o < n; o++) srcLum[o] = S.color[o * 4] * 0.2126 + S.color[o * 4 + 1] * 0.7152 + S.color[o * 4 + 2] * 0.0722;
+  out.followsColour = +TT.corr(lumOf(flatH.levels[0]), srcLum).toFixed(3);
+  const flatC = TT.creep.made(N, TT.creep.src(N, true, false)), slope = new Float64Array(n), lx = -0.5, ly = -0.6;
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const h = (x, y) => S.height[(((y + N) % N) * N + (x + N) % N) * 4]; slope[j * N + i] = -(h(i + 1, j) - h(i - 1, j)) * lx - (h(i, j + 1) - h(i, j - 1)) * ly; }
+  // with the flesh's own height (it darkens the folds) taken out of both, as a partial correlation
+  const hN = new Float64Array(n); for (let o = 0; o < n; o++) hN[o] = S.height[o * 4];
+  const resid = (y, x) => { let mx = 0, my = 0, sxy = 0, sxx = 0; for (let o = 0; o < n; o++) { mx += x[o]; my += y[o]; } mx /= n; my /= n; for (let o = 0; o < n; o++) { sxy += (x[o] - mx) * (y[o] - my); sxx += (x[o] - mx) * (x[o] - mx); } const k = sxx ? sxy / sxx : 0, r = new Float64Array(n); for (let o = 0; o < n; o++) r[o] = y[o] - my - k * (x[o] - mx); return r; };
+  out.followsRelief = +TT.corr(resid(lumOf(flatC.levels[0]), hN), resid(slope, hN)).toFixed(3);
+  // purple whatever the texture's hue: the source is olive (green over red over blue)
+  let sr = 0, sg = 0, sb = 0, mr = 0, mg = 0, mb = 0; for (let o = 0; o < n; o++) { sr += S.color[o * 4]; sg += S.color[o * 4 + 1]; sb += S.color[o * 4 + 2]; mr += L[o * 4]; mg += L[o * 4 + 1]; mb += L[o * 4 + 2]; }
+  out.source = [sr, sg, sb].map(v => Math.round(v / n)); out.mean = [mr, mg, mb].map(v => Math.round(v / n));
+  // no seam across the wrap
+  const lum = (i, j) => { const o = (((j + N) % N) * N + (i + N) % N) * 4; return L[o] * 0.3 + L[o + 1] * 0.59 + L[o + 2] * 0.11; };
+  let wrapX = 0, inX = 0; for (let j = 0; j < N; j++) { wrapX += Math.abs(lum(0, j) - lum(N - 1, j)); for (let i = 1; i < N; i++) inX += Math.abs(lum(i, j) - lum(i - 1, j)); }
+  out.wrapX = +(wrapX / N).toFixed(2); out.inX = +(inX / (N * (N - 1))).toFixed(2);
+  // the strands' strength, as far across as the made material's
+  const q = (lv, p) => { const a = []; for (let o = 0; o < n; o++) a.push(lv[o * 4 + 3]); a.sort((x, y) => x - y); return a[Math.floor(p * (n - 1))]; };
+  out.fib = [q(L, 0.05), q(L, 0.95)]; out.fibMade = [q(made.levels[0], 0.05), q(made.levels[0], 0.95)];
+  return out;
+`);
+ok(creepTex.fallback && creepTex.fallbackW, 'creep: where no image can load, the creep the game makes is the one made in code, byte for byte, at its own sixteen-tile repeat', JSON.stringify(creepTex));
+ok(creepTex.differs && creepTex.W === R('return Terrain.CREEP_TEXMAT.W;') && creepTex.followsColour > 0.9 && creepTex.followsRelief > 0.5,
+  'creep: made from a texture, the flesh follows its colour map\'s light and dark (' + creepTex.followsColour + ') and the light its height map\'s slope towards the sun (' + creepTex.followsRelief + '), at the texture\'s own repeat', JSON.stringify(creepTex));
+ok(creepTex.source[1] > creepTex.source[0] && creepTex.mean[0] > creepTex.mean[1] && creepTex.mean[2] > creepTex.mean[1] && creepTex.mean[0] >= 25 && creepTex.mean[0] <= 70,
+  'creep: an olive texture (' + creepTex.source + ') makes purple creep (' + creepTex.mean + ')', JSON.stringify(creepTex));
+ok(creepTex.inX > 1 && creepTex.wrapX <= 1.5 * creepTex.inX, 'creep: the textured material tiles with no seam -- across its wrap a column changes by ' + creepTex.wrapX + ', inside it by ' + creepTex.inX, JSON.stringify(creepTex));
+ok(Math.abs(creepTex.fib[0] - creepTex.fibMade[0]) <= 12 && Math.abs(creepTex.fib[1] - creepTex.fibMade[1]) <= 12,
+  'creep: its strands push the edge as far as the made material\'s -- 5th and 95th percentiles ' + creepTex.fib + ' against ' + creepTex.fibMade, JSON.stringify(creepTex));
+// the edge and the repeat, baked from the textured material
+const creepTexBake = R(`
+  const m = TT.map('badlands', 7), spot = TT.creep.spot(m); if (!spot) return { spot: null };
+  const [cx, cy] = spot, CH = Terrain.CH, A = Terrain.CREEP_APRON, M = TT.creep.texMaterial(), out = { spot };
+  // an edge down the middle of a chunk
+  const bx = cx * CH + 4; m.creep.fill(0); TT.creep.fill(m, bx - 12, cy * CH - 6, bx, (cy + 1) * CH + 6, 1);
+  const cv = TT.creep.bake(cx, cy, 1, M), OW = cv.width, d = cv.img.data, W = OW - 2 * A, ox = cx * CH * TILE, top = Terrain.CREEP_EDGE.amax * 255;
+  const prof = []; for (let p = A; p < A + W; p++) { let s = 0; for (let q = A; q < A + W; q++) s += d[(q * OW + p) * 4 + 3]; prof.push({ x: ox + (p - A + 0.5), a: s / W }); }
+  const x90 = prof.filter(c => c.a >= 0.9 * top).map(c => c.x).pop(), x10 = prof.find(c => c.x > x90 && c.a <= 0.1 * top), x50 = prof.find(c => c.x > x90 && c.a <= 0.5 * top);
+  out.width = x10 && x90 !== undefined ? +(x10.x - x90).toFixed(1) : null; out.cross = x50 ? +(x50.x - bx * TILE).toFixed(1) : null;
+  // creep over three chunks: a chunk's pixels against those one texture repeat (M.W world px) to their right
+  m.creep.fill(0); TT.creep.fill(m, cx * CH - 6, cy * CH - 6, (cx + 3) * CH + 6, (cy + 1) * CH + 6, 1);
+  const strip = [0, 1, 2].map(k => TT.creep.bake(cx + k, cy, 1, M)), PX = CH * TILE, R0 = 96, a = [], b = [];
+  const at = (wx, wy) => { const k = Math.floor(wx / PX), c = strip[k], i = ((wy + A) * c.width + (wx - k * PX) + A) * 4, e = c.img.data; return e[i] * 0.3 + e[i + 1] * 0.59 + e[i + 2] * 0.11; };
+  for (let wy = 8; wy < PX - 8; wy += 2) for (let wx = 8; wx < 8 + R0; wx += 2) { a.push(at(wx, wy)); b.push(at(wx + M.W, wy)); }
+  out.repeat = +TT.corr(a, b).toFixed(3);
+  return out;
+`);
+ok(!!creepTexBake.spot && creepTexBake.width >= 12 && Math.abs(creepTexBake.cross) <= 16, 'creep: from the texture, the edge still thins over ' + creepTexBake.width + ' world px and is half there ' + creepTexBake.cross + ' px from the tile boundary the simulation drew', JSON.stringify(creepTexBake));
+ok(!!creepTexBake.spot && Math.abs(creepTexBake.repeat) < 0.5, 'creep: a field of textured creep one texture repeat apart does not repeat -- the two stretches correlate ' + creepTexBake.repeat, JSON.stringify(creepTexBake));
+
 // the reach, and the swap
 const creepSwap = R(`
   const m = TT.map('badlands', 7), spot = TT.creep.spot(m), CH = Terrain.CH, out = {}; if (!spot) return out;

@@ -27,3 +27,17 @@ commercial work. You do not need to give credit or attribution" (https://polyhav
 Chosen from Poly Haven's catalogue (read through its public API: 859 textures, no ice) by preview and then by the files
 themselves; the shortlist and the rejected candidates are in RESEARCH-TERRAIN.md 8.5. `aerial_beach_03` was fetched and
 not used: tyre tracks run across it.
+
+## Creep
+
+From **3dtextures.me** (Gendo), whose textures are all **CC0**: "All textures on this site are licensed as CC0 ... You can use the
+textures for any purpose, including commercial" (https://3dtextures.me/about/). The user picked it from twelve free candidates on
+2026-09-17; downloaded that day from the texture's free Google Drive folder, linked on its page, the 1024 x 1024 colour and
+displacement maps, unchanged (the game reads the colour map's light and dark -- not its olive -- and lights the creep from the
+displacement map: js/terrain.js, CREEP_SRC and CREEP_TEXMAT). The normal, occlusion and roughness maps in the same folder are not used,
+and the 4K version is for paying supporters only.
+
+| File | Source | Size | Used for |
+|---|---|---|---|
+| `Abstract_Organic_002_COLOR.jpg` | https://3dtextures.me/2019/03/11/abstract-organic-002/ | 219,084 bytes | the creep's pattern |
+| `Abstract_Organic_002_DISP.png` | https://3dtextures.me/2019/03/11/abstract-organic-002/ | 646,228 bytes | the creep's relief, gloss and ragged edge |

@@ -381,6 +381,11 @@ Licence: CC0, no credit needed ([polyhaven.com/license](https://polyhaven.com/li
 - **Chunks with transparency cannot use the ground's one-pixel overlap alone**: drawn over, a half-transparent pixel is laid twice. A chunk
   carries an apron of its own true pixels instead, drawn inside at zoom 1 and whole at any other zoom, so the pixel on a boundary is
   covered by the same colour from both sides.
+- **The texture the user then picked** (2026-09-17, PLAYTEST-M18 123), 3dtextures.me's Abstract Organic 002 (CC0: https://3dtextures.me/about/),
+  ships a colour, displacement, normal, occlusion and roughness map at 1024. Its preview is a wet, folded ball: the folds are the
+  displacement and the wetness a strong specular. The game lights creep from a height field, so the displacement map is that height and the
+  colour map only the flesh's light and dark (its olive is replaced by the creep's purple); judged on screenshots, the relief had to be
+  six times the made material's and the texture laid at ten tiles a repeat for the folds to read at play zoom.
 
 ### 8.13 Cliffs that look twice as tall *(the looks queue, item 3, 2026-09-14; PLAYTEST-M18 121)*
 

@@ -36,12 +36,12 @@ for greater realism." and "can you show me the links for the textures so I can s
 2. **Creep: a continuous mass, no lines or tiles** -- **DONE** (PLAYTEST-M18 119; and 120, a game started in a background tab, found while
    measuring it). The creep on detailed terrain is its own pixel bake: a made material that wraps (no seam), the creep bits blurred and
    read through a B-spline, a ragged edge a tile wide over a stain, an apron against seams, changed pieces swapped in together. No texture
-   downloaded -- the pattern is made in code; the user can still pick one of the links. Before it was measured:  the creep bake (`Terrain.renderCreepChunk`) cuts its
+   downloaded -- the pattern is made in code; the user can still pick one of the links. **PICKED AND IN** (2026-09-17, PLAYTEST-M18 123):
+   Abstract Organic 002 from 3dtextures.me, its colour and displacement maps downloaded with the user's yes; the creep keeps its purple. Before it was measured:  the creep bake (`Terrain.renderCreepChunk`) cuts its
    border with a Bayer dither and darkens a rim inside it, its material is a 192 px posterised tile (a 4 x 4 dot grid everywhere), its
-   mottles and blisters sit at tile positions, and it is baked at 1x under ground baked at the display's ratio. The user is choosing a
-   CC0 texture from the links posted in chat (ambientCG Lava001/002/003/005, Ground054, Sponge003, Moss002, Bark008; 3dtextures.me Alien
-   Flesh 001/002, Alien Muscle 001, Abstract Organic 002) -- **download nothing until they pick, and name the file and its size first**;
-   the soft continuous edge does not wait for the pick.
+   mottles and blisters sit at tile positions, and it is baked at 1x under ground baked at the display's ratio. The user chose from the
+   CC0 textures posted in chat (ambientCG Lava001/002/003/005, Ground054, Sponge003, Moss002, Bark008; 3dtextures.me Alien Flesh 001/002,
+   Alien Muscle 001, Abstract Organic 002): Abstract Organic 002, done (PLAYTEST-M18 123).
 3. **Cliffs that look about twice as tall** -- **DONE** (PLAYTEST-M18 121): the drop 1.5 times as wide (CLIFF_W 0.5 with 40% of it an even
    slope), the rise in the light doubled (a ramp keeps the old), the shadow read twice as far and 0.45 dark at most (a ramp's own at the old
    reach), a shaded face never below 0.62; the far view the same. On a straight edge: the drop 22.2 -> 33.2 px, the shadow past an
