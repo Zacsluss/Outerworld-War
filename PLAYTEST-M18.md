@@ -2094,3 +2094,39 @@ implement now", and "yes" to downloading its two files. `js/terrain.js` (`CREEP_
   (`creeptex-tone.png`: 12/1.8 as shipped, 8/1.2 whose folds still stood up hard, 5/0.8 chosen, 3/0.5 which read flat) and the creep is
   now relief 5, gloss 0.8 over a narrower highlight.
 - **The desktop installers do not have it yet** -- SHIPPING.md: rebuild them before shipping.
+- **One of this item's screenshots lied** and item 124 is the answer to it.
+
+## 124. Nothing stands on the rock -- checked, and the screenshot that said otherwise explained
+
+*(The user, 2026-09-17, looking at the creep picture in item 123: "no units or buildings should be able to go on the big rock - i see
+a creep colony in the screenshot, so i know this must be fixed". `test/maplayouts.js` section 4, four checks;
+`.claude/review/rock/`. No game code changed.)*
+
+**What was found, measured before anything was touched:**
+1. **The game already refuses it, and always did.** The big orange mass is `cliff === 2` -- the rock the terrain paints (on badlands
+   it measures rgb 74,45,25 against high ground's 94,70,60 and low ground's 61,50,42). Across all thirteen map layouts and in a live
+   game: **0** of its tiles are walkable, **0** are passable, **0** accept a building, and creep never covers one.
+2. **The screenshot was staged by the tool that made it, not by the game.** The scene in item 123 was built by a scratch script that
+   put buildings down with `G.placeBuilding` -- the map editor's door, which does not ask `GameMap.canPlace` -- so it could drop a
+   Creep Colony on rock that no player, and no computer player, can build on. The picture was wrong; the game was not.
+3. **A new picture, made through the rules** (`.claude/review/terrain/shots/creep-legal-zoom1.png`, `-zoom16.png`): the same scene
+   with every building placed only where `canPlace` allows. The creep runs up to the rock and stops at it, and nothing stands on it.
+4. **The rule is now pinned by tests**, so it cannot quietly rot: nothing walks on the rock, nothing is built on it (and the refusal
+   is FOR the rock, not for some other reason), and the creep of a Hatchery standing beside it carpets its own ground and not one
+   rock tile -- on every fixed map and every generated one. Four negative controls, every one red
+   (`.claude/review/rock/controls-rock.log`).
+
+**How to see it by hand:**
+1. **Single Player -> Skirmish**, any race, any map, START. Find the orange rock (the border of the map is all rock, and there are
+   patches inside it). Select a worker and **right-click on the rock**. *Working:* the worker walks around it, never onto it.
+2. **Try to build on it**: worker -> build -> any building -> click on the rock. *Working:* the placement box is red and the click is
+   refused with "Cannot build there".
+3. **As Zerg, watch the creep meet it.** Build a Creep Colony near the rock. *Working:* the creep stops at the rock's edge; no fold
+   of it lies on the orange.
+4. **A rock formation in a lane** (the destructible ones on the back doors) behaves the same while it stands: nothing walks through
+   it, nothing is built on it. Kill it and the lane opens.
+
+**Deliberately different from what was asked, or not done:**
+- **Nothing in the game was changed**, because nothing was broken. What changed is the screenshot, and the checks that keep the rule
+  honest.
+- **A flying unit may of course be over the rock.** An Overlord drifting over it is not standing on it.

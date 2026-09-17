@@ -17,6 +17,7 @@
 //       no mineral line lies in siege range of high ground that is neither its own base's nor its own main's
 //     ...and the computer player expands to the natural the map names first, from every start (js/ai.js pickExpansion)
 //  3. THE GENERATORS. A two-player size has bases in all four corners, its mains in two, and the corners' bases are fair.
+//  4. THE ROCK. What the terrain paints as rock is closed ground: no tile of it can be walked on, built on, or carpeted in creep.
 'use strict';
 const vm = require('vm'), { makeCtx, ok, summary } = require('./_harness');
 const errors = [];
@@ -236,6 +237,49 @@ ok(gen.every(g => g.starts === '0,3' && g.mains === 2 && g.naturals === '0,3'), 
 ok(gen.every(g => g.counts.split(',').every(n => +n > 0) && g.corners === 0 && g.pockets),
   'and bases in all four corners: the other two hold expansions where the main and the natural would be (' + gen.length + ' maps)', J(gen.filter(g => !g.counts.split(',').every(n => +n > 0) || g.corners || !g.pockets)));
 ok(gen.every(g => g.fair), '...a pair that is each other\'s half turn, so neither player is nearer more of them', J(gen.filter(g => !g.fair)));
+
+// ============================================================================
+// 4. The rock is closed ground
+// ============================================================================
+// The user, looking at a screenshot of the creep: "no units or buildings should be able to go on the big rock - i see a creep
+// colony in the screenshot, so i know this must be fixed". That screenshot was staged -- its buildings were put down with
+// G.placeBuilding, the editor's door, which does not ask GameMap.canPlace -- so it showed something no game can. This section
+// pins the rule it made the user doubt. The big orange mass IS the rock: Terrain.texBakeSteps reads `cliff === 2` into its rock
+// zone (rz) and paints the tileset's rock material there, and on badlands that mass measures rgb 74,45,25 against high ground's
+// 94,70,60 and low ground's 61,50,42 (.claude/review/rock). So cliff 2 is the tile class to hold closed, on every map at once.
+const rock = R(`
+  const out = [];
+  const ids = Object.keys(MAP_LAYOUTS).concat(Archetypes.keys.map(k => Archetypes.id(k, 3, 'medium')));
+  const T2 = DATA.buildings.barracks, Z2 = DATA.buildings.creep_colony, HALL = DATA.buildings.hatchery;
+  for (const id of ids) {
+    const m = new GameMap(7, id), N = m.w * m.h, reasons = {};
+    let rocks = 0, walk = 0, built = 0, near = null;
+    for (let i = 0; i < N; i++) {
+      if (m.cliff[i] !== 2) continue;
+      rocks++;
+      const x = i % m.w, y = (i / m.w) | 0;
+      if (m.walkable(x, y)) walk++;
+      const a = m.canPlace(T2, x, y, null, [], null), b = m.canPlace(Z2, x, y, null, [], null);
+      if (!a || !b) built++; else { reasons[a] = 1; reasons[b] = 1; }
+      // a hall standing beside the rock, for the creep below
+      if (!near) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const tx = x + dx, ty = y + dy;
+        if (m.inb(tx, ty) && m.walkable(tx, ty) && !m.canPlace(HALL, tx, ty, null, [], null)) { near = [tx, ty]; break; }
+      }
+    }
+    // the creep of that hall at its full radius: the carpet has to stop at the rock's edge
+    m.recomputeCreep([{ alive: true, def: HALL, tx: near[0], ty: near[1], done: true, creepR: HALL.creep }]);
+    let creep = 0, onRock = 0;
+    for (let i = 0; i < N; i++) if (m.creep[i]) { creep++; if (m.cliff[i] === 2) onRock++; }
+    out.push({ id, rocks, walk, built, creep, onRock, hall: near.join(','), reasons: Object.keys(reasons).sort() });
+  }
+  return out;
+`);
+ok(rock.length === 17 && rock.every(r => r.rocks >= 500), 'every map has rock to test -- the border and the formations inside it (' + rock.map(r => r.rocks).join(', ') + ' tiles)', J(rock.filter(r => r.rocks < 500).map(r => [r.id, r.rocks])));
+ok(rock.every(r => r.walk === 0), 'no unit walks onto the rock: not one of its tiles is walkable, on any map', J(rock.filter(r => r.walk).map(r => [r.id, r.walk])));
+ok(rock.every(r => r.built === 0 && r.reasons.every(s => s === 'Cannot build there' || s === 'Cannot build on a map feature')),
+  'and nothing is built on it: every rock tile refuses a Barracks and a Creep Colony, and refuses them FOR the rock', J(rock.filter(r => r.built).map(r => [r.id, r.built, r.reasons])));
+ok(rock.every(r => r.creep > 100 && r.onRock === 0), 'and the creep stops at it: a Hatchery beside the rock carpets its own ground and not one rock tile', J(rock.map(r => [r.id, r.creep, r.onRock])));
 
 ok(errors.length === 0, 'no errors were logged', errors.slice(0, 3).join(' | '));
 summary();

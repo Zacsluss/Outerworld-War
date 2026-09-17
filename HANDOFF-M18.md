@@ -31,6 +31,9 @@ corners filled. The terrain queue before it is DONE too (PLAYTEST-M18 110-117).
 THE CREEP'S TEXTURE is DONE too (PLAYTEST-M18 123): the user picked Abstract Organic 002 (CC0) and said yes to its two files; the creep
 is made from them, kept purple, and falls back to the creep made in code where they cannot load. The user then called it "a bit too
 aggressive" and it was toned down (relief 12 -> 5, gloss 1.8 -> 0.8).
+THE ROCK IS CLOSED GROUND and is now checked (PLAYTEST-M18 124): the user saw a Creep Colony standing on the rock in item 123's
+picture and called it a bug. It was the PICTURE: that scene was staged with G.placeBuilding, which does not ask GameMap.canPlace.
+TRAP: a screenshot script that places buildings must go through canPlace, or it will show the game doing what the game refuses.
 THE USER WILL PLAYTEST: when they say so, restart the playtest recorder (preview_start "playtest", port 8870) and give them the link.
 DEFERRED by the user until they say: the AI rebalance (TODO-M18 7b); it now also owns three loose style comparisons that flip on the
 new Lost Ruins (PLAYTEST-M18 122; test/aistyles.js runs its style games on the old ground as a fixture). SKIPPED by the user: a
@@ -85,7 +88,8 @@ HARD RULES:
 - **The desktop app**: `desktop/window-check.js` 25/25 on a debug build at item 1. **The installers on GitHub are from `f68e8f3`,
   before any terrain work** -- `SHIPPING.md`.
 - **The creep's texture is DONE** (PLAYTEST-M18 123): Abstract Organic 002, the user's pick, toned down afterwards on their word; ten
-  negative controls red. Drawing only, so the build stamp did not move. **Waiting on the user:** their playtest (the recorder on their word). **Deferred by the user until
+  negative controls red. Drawing only, so the build stamp did not move. **The rock is closed ground** and four checks in
+  test/maplayouts.js say so (124); four negative controls red. **Waiting on the user:** their playtest (the recorder on their word). **Deferred by the user until
   they say:** the AI rebalance (TODO-M18 7b). **Skipped by the user:** a look-and-feel pass of PLAYTEST-M18 101-108.
 - **The repository is PUBLIC.** **Nothing is left running.** The playtest recorder (`playtest` in `.claude/launch.json`,
   `tools/playtest-listen.js`, port 8870) is started when the user says they are ready to playtest.

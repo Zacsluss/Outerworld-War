@@ -381,6 +381,11 @@ Licence: CC0, no credit needed ([polyhaven.com/license](https://polyhaven.com/li
 - **Chunks with transparency cannot use the ground's one-pixel overlap alone**: drawn over, a half-transparent pixel is laid twice. A chunk
   carries an apron of its own true pixels instead, drawn inside at zoom 1 and whole at any other zoom, so the pixel on a boundary is
   covered by the same colour from both sides.
+- **What the eye reads as "the big rock" is `cliff === 2`**, and it is worth writing down because a player named it before any of this
+  did: Terrain.texBakeSteps reads `cl === 2` into its rock zone and paints the tileset's rock material there, standing it a little
+  above the high ground. Sampled at the tile centres of a badlands game, the three classes are far apart -- rock rgb 74,45,25
+  (r/g 1.64), high ground 94,70,60 (1.34), low ground 61,50,42 (1.22) -- so a screenshot alone can say which class a pixel belongs
+  to, which is how a claim about a picture was settled without guessing (PLAYTEST-M18 124).
 - **The texture the user then picked** (2026-09-17, PLAYTEST-M18 123), 3dtextures.me's Abstract Organic 002 (CC0: https://3dtextures.me/about/),
   ships a colour, displacement, normal, occlusion and roughness map at 1024. Its preview is a wet, folded ball: the folds are the
   displacement and the wetness a strong specular. The game lights creep from a height field, so the displacement map is that height and the
