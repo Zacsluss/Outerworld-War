@@ -1528,7 +1528,10 @@ const Terrain = {
   // its strands' strength runs fibLo to fibHi over h -- the made material's 5th and 95th percentiles, so the edge sits where it did; S
   // is the relief and spE, spA, spB the wet highlight, as CREEP_MAT's; W the world px one repeat of the texture covers (ten tiles: at
   // sixteen the folds were two tiles across and the relief flat, at eight busy).
-  CREEP_TEXMAT: { pLo: 0.05, pHi: 0.95, col: [49, 26, 45], base: 0.45, tone: 0.55, lump: 0.35, litLo: 0.7, lit: 4, wetLo: 0.55, wetHi: 0.9, fibLo: 29, fibHi: 193, S: 12, spE: 15, spA: 1.8, spB: 0.25, W: 320 },
+  // Toned down on the user's word once they saw it ("a bit too aggressive ... not quite as three-dimensional, but still not flat"): the
+  // relief from 12 to 5 and the gloss from 1.8 to 0.8 over a narrower highlight, judged on four strengths side by side -- at 8 the folds
+  // still stood up hard, at 3 the mass read flat (.claude/review/terrain/shots/creeptex-tone.png).
+  CREEP_TEXMAT: { pLo: 0.05, pHi: 0.95, col: [49, 26, 45], base: 0.45, tone: 0.55, lump: 0.35, litLo: 0.7, lit: 4, wetLo: 0.55, wetHi: 0.9, fibLo: 29, fibHi: 193, S: 5, spE: 18, spA: 0.8, spB: 0.12, W: 320 },
   // Gradient noise, about -0.7 to 0.7, on a lattice of P cells that wraps: a texture made of it repeats with no seam. One table of
   // gradients a lattice and salt, made on first use. Drawing only.
   pgrad(x, y, P, s) {

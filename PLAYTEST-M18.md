@@ -2051,9 +2051,12 @@ implement now", and "yes" to downloading its two files. `js/terrain.js` (`CREEP_
 `creepSrcSteps`, `creepTexelSteps`); `assets/terrain/Abstract_Organic_002_COLOR.jpg` and `_DISP.png`, CC0, recorded in
 `assets/terrain/SOURCES.md`. Drawing only: the build stamp stays `678387e310c2c3fe`.)*
 
-**What changed for a player** (picture: `.claude/review/terrain/shots/creeptex-before-after.png`):
-1. **Zerg creep on detailed terrain is the texture you picked**: wet, folded flesh with glossy highlights, like the texture's preview.
-   Its light and dark come from the texture's colour map and its relief and gloss from its displacement map.
+**What changed for a player** (pictures: `.claude/review/terrain/shots/creeptex-before-after.png` against the old creep,
+`creeptex-toned-before-after.png` for the toning down):
+1. **Zerg creep on detailed terrain is the texture you picked**: wet, folded flesh, like the texture's preview but calmer. Its light and
+   dark come from the texture's colour map and its relief and gloss from its displacement map. **Toned down on your word once you saw it**
+   ("The new texture is a bit too aggressive can we tone it down? So it doesn't look quite as three-dimensional, but still not flat"): the
+   folds are less than half as deep and the highlight narrower and dimmer, so the mass reads as flesh rather than as moulded plastic.
 2. **It stays Zerg purple.** The texture itself is olive; the creep keeps its dark purple, as agreed before the download.
 3. **One repeat of the texture covers ten tiles**, and two samples of it are mixed so no repeat shows.
 4. **The creep's edge is unchanged** (item 119): soft, ragged and continuous, now pushed about by the texture's own ridges.
@@ -2074,7 +2077,8 @@ implement now", and "yes" to downloading its two files. `js/terrain.js` (`CREEP_
   Before a fix, one slice sorted a million texels and took 78 ms; the percentiles now come from histograms.
 - `test/terraintex.js` 1 and 8b (8 new checks): the files are in the repository and recorded; where no image can load, the creep is the
   one made in code, byte for byte; made from a texture, the flesh follows its colour map (correlation 0.99) and its light the height
-  map's slope towards the sun (0.66, with the flesh's own height taken out); an olive texture makes purple creep; it tiles with no
+  map's slope towards the sun (0.75 toned down, 0.66 as first shipped, with the flesh's own height taken out); an olive texture makes
+  purple creep; it tiles with no
   seam; its strands push the edge as far as the made material's; the edge still thins over 37 px; a field of it one texture repeat long
   does not repeat (0.15). `test/terrainview.js` 11 (2 new): the loading screen waits on the creep's files ("Growing the creep") and
   then makes the creep from them; a file that fails does not hold the game. Ten negative controls, every one red
@@ -2084,6 +2088,9 @@ implement now", and "yes" to downloading its two files. `js/terrain.js` (`CREEP_
 - **Purple, not the texture's olive** (said before the download).
 - **Two of the texture's five maps**: the colour and the displacement. The game lights creep from a height, as it lights the ground, so
   the normal, occlusion and roughness maps would add nothing; the 4K version is for paying supporters only.
-- **The relief and the gloss are much stronger than the colour map alone would give**: the texture's own preview is a wet, folded ball,
-  and six variants were judged on screenshots (`.claude/review/terrain/shots/creeptex-tune1`, `-tune2`).
+- **The relief and the gloss are stronger than the colour map alone would give, but half what shipped first**: the texture's own preview
+  is a wet, folded ball, so six variants were judged on screenshots (`.claude/review/terrain/shots/creeptex-tune1`, `-tune2`) and relief
+  12 with gloss 1.8 went out. On the user's word that it was too aggressive, four strengths were put side by side
+  (`creeptex-tone.png`: 12/1.8 as shipped, 8/1.2 whose folds still stood up hard, 5/0.8 chosen, 3/0.5 which read flat) and the creep is
+  now relief 5, gloss 0.8 over a narrower highlight.
 - **The desktop installers do not have it yet** -- SHIPPING.md: rebuild them before shipping.

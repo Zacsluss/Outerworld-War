@@ -386,6 +386,11 @@ Licence: CC0, no credit needed ([polyhaven.com/license](https://polyhaven.com/li
   displacement and the wetness a strong specular. The game lights creep from a height field, so the displacement map is that height and the
   colour map only the flesh's light and dark (its olive is replaced by the creep's purple); judged on screenshots, the relief had to be
   six times the made material's and the texture laid at ten tiles a repeat for the folds to read at play zoom.
+- **A displacement map judged on a still reads much stronger in play than it should.** Six times the made material's relief was picked from
+  screenshots of a static field and shipped; seen in a game the user called it "a bit too aggressive ... not quite as three-dimensional".
+  Four strengths side by side settled it at two and a half times (relief 5), with the wet highlight cut to a narrower, dimmer band (gloss
+  1.8 -> 0.8, exponent 15 -> 18, ambient 0.25 -> 0.12): below that -- relief 3 -- the mass reads flat. The lesson for the next map: pick the
+  relief on a moving game at play zoom, not on a still, and expect roughly half what the still suggests.
 
 ### 8.13 Cliffs that look twice as tall *(the looks queue, item 3, 2026-09-14; PLAYTEST-M18 121)*
 

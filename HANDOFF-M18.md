@@ -29,7 +29,8 @@ twice as tall; 4. every map redesigned to StarCraft II's structure -- a main up 
 bases, lanes, rocks on the back doors, two-player maps turned half round, and the generated maps' mains up a ramp and two-player
 corners filled. The terrain queue before it is DONE too (PLAYTEST-M18 110-117).
 THE CREEP'S TEXTURE is DONE too (PLAYTEST-M18 123): the user picked Abstract Organic 002 (CC0) and said yes to its two files; the creep
-is made from them, kept purple, and falls back to the creep made in code where they cannot load.
+is made from them, kept purple, and falls back to the creep made in code where they cannot load. The user then called it "a bit too
+aggressive" and it was toned down (relief 12 -> 5, gloss 1.8 -> 0.8).
 THE USER WILL PLAYTEST: when they say so, restart the playtest recorder (preview_start "playtest", port 8870) and give them the link.
 DEFERRED by the user until they say: the AI rebalance (TODO-M18 7b); it now also owns three loose style comparisons that flip on the
 new Lost Ruins (PLAYTEST-M18 122; test/aistyles.js runs its style games on the old ground as a fixture). SKIPPED by the user: a
@@ -83,8 +84,8 @@ HARD RULES:
   (`.claude/review/maps/controls-maps.log`).
 - **The desktop app**: `desktop/window-check.js` 25/25 on a debug build at item 1. **The installers on GitHub are from `f68e8f3`,
   before any terrain work** -- `SHIPPING.md`.
-- **The creep's texture is DONE** (PLAYTEST-M18 123): Abstract Organic 002, the user's pick; ten negative controls red. Drawing only,
-  so the build stamp did not move. **Waiting on the user:** their playtest (the recorder on their word). **Deferred by the user until
+- **The creep's texture is DONE** (PLAYTEST-M18 123): Abstract Organic 002, the user's pick, toned down afterwards on their word; ten
+  negative controls red. Drawing only, so the build stamp did not move. **Waiting on the user:** their playtest (the recorder on their word). **Deferred by the user until
   they say:** the AI rebalance (TODO-M18 7b). **Skipped by the user:** a look-and-feel pass of PLAYTEST-M18 101-108.
 - **The repository is PUBLIC.** **Nothing is left running.** The playtest recorder (`playtest` in `.claude/launch.json`,
   `tools/playtest-listen.js`, port 8870) is started when the user says they are ready to playtest.
