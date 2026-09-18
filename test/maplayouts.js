@@ -387,5 +387,97 @@ ok(rock.every(r => r.creep > 100 && r.onRock === 0), 'and the creep stops at it:
   ok(guard.opened === 0 && guard.stillCliff === true, '...is left sealed rather than cut open: the repair never opens a tile at another height, so it cannot put a hole in a plateau', J(guard));
 }
 
+// ============================================================================
+// 6. THE ROCK IN AN OPEN BASIN: a blob that lands on a base is moved, not dropped
+// ============================================================================
+// Section 5's fix (SCAN-M18 A3.16) made Archetypes.basin skip a rock blob that landed on a base, because the blob sealed the
+// patches. On the small map that left 4 blobs of 36 -- the blobs' square is where the natural and the centre base stand --
+// and the user, shown the before and after, asked for the rock back. A blob that fails rockClear now moves to the nearest
+// legal spot in its own square (Archetypes.rockSpot), and is skipped only when there is none. Pinned here:
+//   * the rock is back, size by size, against the 4 / 20 / 31 / 35 of 36 that the skip left
+//   * every blob stands where rockClear allows, and no spire stands in rock: a spire paints its tiles walkable when it
+//     falls, so a spire over rock is a hole in the rock waiting to open -- and the first version of the move made one
+//   * a moved blob stays inside the square it was drawn in, in the middle of the map where the archetype wants it
+//   * the move is a SEARCH, NOT A DRAW: every basin map takes the same number of draws from its seed, which is what keeps a
+//     map whose blobs all landed clear the map it always was
+//   * and NO MOVED BLOB COSTS ANY UNIT ITS WAY: a move is kept only if the finished map is no harder to cross without it
+//     (Archetypes.vetRocks) -- the first version of the move closed the only road a 3x3 body had on 13 small maps of 200
+{
+  const res = R(`
+    const rng0 = Archetypes.rng, spot0 = Archetypes.rockSpot, pf0 = GameMap.prototype.placeFeatures;
+    let draws = 0, moves = [], rock = null;
+    Archetypes.rng = function (seed) { const f = rng0.call(this, seed); return () => { draws++; return f(); }; };
+    Archetypes.rockSpot = function (L, e, x0, y0, x1, y1) { const at = spot0.apply(this, arguments); moves.push({ at, box: [x0, y0, x1, y1] }); return at; };
+    GameMap.prototype.placeFeatures = function (L) { rock = Uint8Array.from(this.cliff, c => c === 2 ? 1 : 0); return pf0.call(this, L); };
+    const rows = [];
+    try {
+      for (const size of MapModes.keys) for (let s = 1; s <= 12; s++) {
+        draws = 0; moves = [];
+        const L = Archetypes.layout('basin', s, size), n = draws, mv = moves.slice();   // before the GameMap below, which may generate it again
+        const illegal = L.rocks.filter(e => !Archetypes.rockClear(L, e[1], e[2], e[3], e[4])).length;
+        // the square Archetypes.basin draws a blob in, 26% to 44% of the map each way -- from the map's own size, not from the call
+        const sq = [Math.round(0.26 * L.w), Math.round(0.26 * L.h), Math.round(0.44 * L.w), Math.round(0.44 * L.h)];
+        const strayed = mv.filter(m => m.at && (m.at[0] < sq[0] || m.at[0] > sq[2] || m.at[1] < sq[1] || m.at[1] > sq[3])).length;
+        rock = null;
+        const m = new GameMap(1, Archetypes.id('basin', s, size));
+        const spiresInRock = rock ? m.features.filter(f => f.kind === 'spire' && f.tiles.some(i => rock[i])).length : -1;
+        rows.push({ size, s, blobs: L.rocks.length, moved: mv.filter(x => x.at).length, draws: n, illegal, strayed, spiresInRock,
+          spires: m.features.filter(f => f.kind === 'spire').length });
+      }
+    } finally { Archetypes.rng = rng0; Archetypes.rockSpot = spot0; GameMap.prototype.placeFeatures = pf0; }
+    return rows;`);
+  const SIZES = [...new Set(res.map(r => r.size))], by = sz => res.filter(r => r.size === sz), sum = (rs, k) => rs.reduce((n, r) => n + r[k], 0);
+  ok(res.length === 48 && res[0].draws > 20 && res.every(r => r.draws === res[0].draws),
+    'the move is a search, not a draw: all 48 basin maps take the same ' + res[0].draws + ' draws from their seed, however many of their blobs moved', J([...new Set(res.map(r => r.draws))]));
+  ok(sum(by('small'), 'blobs') >= 30 && ['medium', 'large', 'huge'].every(k => sum(by(k), 'blobs') === 36),
+    'THE ROCK IS BACK: ' + SIZES.map(k => k + ' ' + sum(by(k), 'blobs')).join(', ') + ' blobs of 36 (the skip left 4, 20, 31 and 35)', J(SIZES.map(k => [k, sum(by(k), 'blobs'), sum(by(k), 'moved')])));
+  ok(sum(res, 'moved') > 40, '...' + sum(res, 'moved') + ' of them moved rather than dropped (scene check: a sweep in which nothing moved would pass everything below it)', String(sum(res, 'moved')));
+  ok(sum(res, 'illegal') === 0, 'every blob stands where rockClear allows: clear of every ramp, hall, patch and geyser', J(res.filter(r => r.illegal)));
+  ok(sum(res, 'strayed') === 0, 'a moved blob stays inside the square it was drawn in', J(res.filter(r => r.strayed)));
+  ok(res.every(r => r.spiresInRock === 0) && sum(res, 'spires') > 100, 'and no spire stands in the rock, where its fall would open a hole (' + sum(res, 'spires') + ' spires looked at)', J(res.filter(r => r.spiresInRock)));
+  // rockSpot's own contract, on a scene built so every answer is known in advance: a hall at (40, 40) and a 3x3 blob drawn on
+  // top of it. rockClear keeps the blob's box and a tile of spare off the hall's ring, so the legal spots nearest the drawn
+  // one are seven tiles away, straight up, left and down; the scan runs top to bottom, so up is the one it meets first.
+  const spot = R(`
+    const base = { hall: [40, 40], minerals: [], geyser: null }, e = ['ellipse', 41, 41, 3, 3];
+    const L = f => ({ ramps: [], bases: [base], features: f || [] });
+    return { drawnLegal: Archetypes.rockClear(L(), 41, 41, 3, 3),
+      nearest: Archetypes.rockSpot(L(), e, 20, 20, 60, 60, []),
+      apart: Archetypes.rockSpot(L(), e, 20, 20, 60, 60, [['ellipse', 41, 34, 3, 3]]),
+      feature: Archetypes.rockSpot(L([{ kind: 'spire', x: 39, y: 30, w: 4, h: 4 }]), e, 20, 20, 60, 60, []),
+      crowded: Archetypes.rockSpot(L(), e, 20, 20, 60, 60, [['ellipse', 40, 40, 30, 30]]),
+      noRoom: Archetypes.rockSpot(L(), e, 41, 41, 41, 41, []) };`);
+  ok(spot.drawnLegal === false && J(spot.nearest) === '[41,34]', 'a blob drawn on a hall moves to the NEAREST legal spot, seven tiles up (scene check: the drawn spot really is refused)', J(spot));
+  ok(J(spot.apart) === '[41,48]', '...and when another blob already stands there, to the nearest spot clear of it -- three rocks stay three rocks', J(spot.apart));
+  ok(J(spot.feature) === '[34,41]', '...and never onto a map feature: with a spire over the first choice, it goes left instead', J(spot.feature));
+  ok(J(spot.crowded) === '[41,34]', '...but where every legal spot touches another blob, it still goes to the nearest rather than being dropped', J(spot.crowded));
+  ok(spot.noRoom === null, 'and where its square has no legal spot at all, there is nowhere to go and it is skipped, as before', J(spot.noRoom));
+  // AND NO MOVED BLOB COSTS ANY UNIT ITS WAY (Archetypes.vetRocks): every base and resource is reached as well as with the
+  // moved blobs left out -- by a unit with the features shut, and by a 3x3 body with them shut and with them open. The
+  // sweep's twelve seeds hold no map where a move would have closed a road, so the two measured ones are named: on small
+  // seeds 23 and 40 a moved blob shut the road a 3x3 body had to half the bases while the spires stood.
+  const vet = R(`
+    const spot0 = Archetypes.rockSpot, out = [], ids = [];
+    for (const size of MapModes.keys) for (let s = 1; s <= 12; s++) ids.push([s, size]);
+    ids.push([23, 'small'], [40, 'small']);
+    try {
+      for (const [s, size] of ids) {
+        let proposed = 0;
+        Archetypes.rockSpot = function () { const at = spot0.apply(this, arguments); if (at) proposed++; return at; };
+        const L = Archetypes.layout('basin', s, size);
+        Archetypes.rockSpot = () => null;
+        const skip = Archetypes.layout('basin', s, size);
+        out.push({ id: size + ':' + s, proposed, kept: L.rocks.length - skip.rocks.length,
+          lost: GameMap.reachLost(new GameMap(1, skip).reachSignature(), new GameMap(1, L).reachSignature()) });
+      }
+    } finally { Archetypes.rockSpot = spot0; }
+    return out;`);
+  ok(vet.length === 50 && vet.every(r => r.lost === false),
+    'NO MOVED BLOB COSTS ANY UNIT ITS WAY: on all 50 maps every base and resource is reached as well as with the moved blobs left out, by a unit and by a 3x3 body, features shut and open', J(vet.filter(r => r.lost !== false)));
+  const named = vet.filter(r => r.id === 'small:23' || r.id === 'small:40');
+  ok(named.length === 2 && named.every(r => r.kept < r.proposed),
+    '...because on the two small maps where a move would have closed a road, the move was refused (scene check: without them the line above could pass with nothing to refuse)', J(named));
+}
+
 ok(errors.length === 0, 'no errors were logged', errors.slice(0, 3).join(' | '));
 summary();

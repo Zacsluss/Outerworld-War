@@ -24,6 +24,7 @@
 //  B10 EQUIV restated in AI.scriptHave, two identical URL normalisers, the composition score copied,
 //      three write-only AI fields, and a 14-key upgrade block rewriting what L3 had just set
 //  B11 dead code: an unreachable `&& false`, an `if` with five conditions and an empty body
+//  A2.10 (section A, but the same fault) the AI's attack gate compared supply with 150 and 190, the old cap copied twice
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path');
 const { makeCtx, ok, summary } = require('./_harness');
@@ -296,6 +297,33 @@ const R = s => vm.runInContext('(() => {' + s + '})();', ctx);
     for (let i = 0; i < m.w * m.h; i++) if (p.vis[i] === 2) { seen++; if (m.height[i] === 2) high++; }
     return { seen, high };`);
   ok(live.seen > 100, 'B11: a player still sees the ground around their base (scene check: ' + live.seen + ' tiles)', J(live));
+}
+
+// ============================================================================
+// A2.10. a supply count is compared with SUPPLY_CAP, never with a number written out
+// ============================================================================
+// The AI's attack gate compared the supply count with 150 and 190 -- the old 200 cap less fifty and less ten -- for three
+// milestones after M11 made the cap 500, and AI.supply() had the same fault with a bare 200 a milestone before that. The
+// live half is in test/aistyles.js ("when the army commits"), which drives the gate on a built scene; this half stops the
+// next copy of the cap being written into the game at all. Comments are left out: several say "200/150" about a cost.
+//
+// THE RULE IS THE LINE, NOT THE COMPARISON. A first version matched `supUsed > 150` and its mirror image, and its own
+// negative control walked straight past it by writing the old threshold as arithmetic, `200 - 50 < p.supUsed`. No pattern
+// can list every way to spell a number, so the rule is blunter and holds today with nothing to spare: a line of the game
+// that reads a supply count holds no number of three digits or more. A line that trips it for an innocent reason (a cost
+// on the same line as a supply test) splits in two; a line that trips it for the real reason reads SUPPLY_CAP.
+{
+  const SUP = /\bsup(?:Used|Max)\b/, BIG = /(^|[^\w.])\d{3,}(?![\w.])/;
+  const flagged = l => { const c = l.replace(/\/\/.*$/, ''); return SUP.test(c) && BIG.test(c); };
+  const hits = [];
+  for (const f of fs.readdirSync(path.join(root, 'js')).filter(n => n.endsWith('.js'))) {
+    src(f.slice(0, -3)).split(/\r?\n/).forEach((l, i) => { if (flagged(l)) hits.push(f + ':' + (i + 1) + ' ' + l.trim().slice(0, 120)); });
+  }
+  ok(hits.length === 0, 'A2.10: no line in js/ that reads a supply count holds a number of three digits -- the cap is SUPPLY_CAP', J(hits));
+  const caught = ['if (p.supUsed > 150) x();', 'p.supUsed >= 190', 'if (200 <= p.supMax) y();', '(200 - 50 < p.supUsed ? -20 : 0)',
+    'p.supMax - p.supUsed < 4', 'p.supUsed >= SUPPLY_CAP - 10', 'this.seenSup * 0.995; p.supUsed > 12', '// p.supUsed > 150 in a comment'].map(flagged);
+  ok(J(caught) === J([true, true, true, true, false, false, false, false]),
+    'A2.10: ...and the rule catches the four ways the old cap has been or could be written, and passes the four that are fine (scene check)', J(caught));
 }
 
 ok(errors.length === 0, 'no errors were logged', errors.slice(0, 3).join(' | '));

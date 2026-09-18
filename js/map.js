@@ -459,6 +459,12 @@ const Archetypes = {
   },
 
   layout(key, seed, size) {
+    const L = this.draft(key, seed, size);
+    if (L.rocksMoved) this.vetRocks(L);   // last, because it judges the finished map: see vetRocks
+    return L;
+  },
+  // Everything `layout` does but the vet: what the seed draws, before any moved rock blob is judged on a finished map.
+  draft(key, seed, size) {
     if (!this.keys.includes(key)) throw new Error('unknown map archetype ' + key);
     const sk = MAP_SIZES[size] ? size : this.sizes[key], S = MAP_SIZES[sk];
     const R = this.rng((Math.imul(seed >>> 0, 2654435761) ^ this.salt[key]) >>> 0);
@@ -511,7 +517,7 @@ const Archetypes = {
   // Is a random rock ellipse clear of every ramp rectangle AND of every base already laid down, with a tile to spare? A blob
   // dropped by seed onto a ramp turns a way up into a slot through boulders that GameMap.wallRamps cannot shape into a ramp --
   // measured on arch:basin:5:small, the one map of 525 still side-open with every other fix in (terrain queue item 2). A blob
-  // that fails is drawn from the stream all the same and simply not placed, so nothing drawn after it moves.
+  // that fails is drawn from the stream all the same, so nothing drawn after it moves, and then goes where rockSpot says.
   //
   // AND THE BASES, since SCAN-M18 A3.16. The rocks are painted before the bases, and a base clears only the hall's own 6x5
   // ring -- the patches are made walkable one tile at a time and the ground AROUND them is left as it was found. So a blob on
@@ -530,6 +536,45 @@ const Archetypes = {
       if (b.geyser && hits(b.geyser[0] - 1, b.geyser[1] - 1, 6, 4)) return false;                // a 4x2 geyser, a tile to spare
     }
     return true;
+  },
+  // Where a basin rock blob goes when rockClear refuses the spot it was drawn at. SCAN-M18 A3.16 SKIPPED such a blob, and on
+  // the small map that was 32 of every 36: the blobs' square, 26-44% of the map, is where the natural and the centre base
+  // stand, so the middle of a small Open Basin came out bare. The user saw it and asked for the rock back (2026-09-17). So the
+  // blob now moves to the legal spot NEAREST where it was drawn, inside the same square: clear of every ramp and base as
+  // rockClear asks, clear of every map feature with a tile to spare -- a spire standing in rock opens a hole in it when it
+  // falls, and the first version of this made one on a small map -- and, where there is room, clear of the other blobs, so
+  // three rocks stay three rocks. A SEARCH, NOT A DRAW: the stream the rest of the map is made from is drawn exactly as it
+  // was, so a map whose blobs all landed clear is byte for byte the map it was. null when nowhere in the square will do, and
+  // the blob is skipped as before -- measured over twelve seeds a size, 6 of 36 on the small map and none on the others.
+  // And the spot is only a proposal: vetRocks decides, on the finished map, whether the blob may stand there at all.
+  rockSpot(L, e, x0, y0, x1, y1, placed) {
+    const meets = (a, b) => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
+    const feats = (L.features || []).map(f => [f.x - 1, f.y - 1, f.x + f.w, f.y + f.h]);
+    const others = placed.map(o => [Math.floor(o[1] - o[3]), Math.floor(o[2] - o[4]), Math.ceil(o[1] + o[3]), Math.ceil(o[2] + o[4])]);
+    let near = null, nearD = Infinity, apart = null, apartD = Infinity;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      if (!this.rockClear(L, x, y, e[3], e[4])) continue;
+      const box = [Math.floor(x - e[3]) - 1, Math.floor(y - e[4]) - 1, Math.ceil(x + e[3]) + 1, Math.ceil(y + e[4]) + 1];
+      if (feats.some(f => meets(box, f))) continue;
+      const d = (x - e[1]) * (x - e[1]) + (y - e[2]) * (y - e[2]);
+      if (d < nearD) { nearD = d; near = [x, y]; }
+      if (d < apartD && !others.some(o => meets(box, o))) { apartD = d; apart = [x, y]; }
+    }
+    return apart || near;
+  },
+  // AND A MOVED BLOB MAY NOT COST ANY UNIT ITS WAY. rockSpot keeps a blob off the bases, the ramps and the features, but a
+  // blob is an obstacle in its own right, and moved into the crowded middle of a small map it can close the only road a 3x3
+  // body -- a Thor, an Ultralisk, a Siege Tank -- had while the spires stand: measured, 13 small maps of 200 and none of the
+  // larger sizes (.claude/review/scan/probe-basin-vet.js); on arch:basin:23:small and :40:small it cut half the bases off
+  // for them. A layout cannot see that; only the finished map can. So each moved blob is tried on the finished map, in the
+  // order it was drawn, and kept only if no base and no resource is any harder to reach than with every moved blob left
+  // out -- for a unit with the features shut, and for a 3x3 body with them shut and open: GameMap.reachSignature, the test
+  // wallRamps may never fail either. A blob that lands clear where it was drawn is never judged, so no map that had no
+  // moved blob changes. Last in `layout`, after the two-player bases, so the map it judges is the map that will be played.
+  vetRocks(L) {
+    const moved = L.rocksMoved; delete L.rocksMoved;
+    const reach = () => new GameMap(1, L).reachSignature(), before = reach();
+    for (const e of moved) { L.rocks.push(e); if (GameMap.reachLost(before, reach())) L.rocks.pop(); }
   },
 
   // An expansion ON the central plateau, with the plateau guaranteed to be underneath it.
@@ -613,10 +658,20 @@ const Archetypes = {
     this.base(L, S, Math.max(8, fx(0.07)), fy(this.rf(R, 0.33, 0.39)), 'expo');
     this.base(L, S, fx(this.rf(R, 0.33, 0.39)), Math.max(8, fy(0.07)), 'expo');
     this.centreBase(L, S);
-    for (let i = 0; i < 3; i++) { const e = ['ellipse', fx(this.rf(R, 0.26, 0.44)), fy(this.rf(R, 0.26, 0.44)), this.ri(R, 3, 5), this.ri(R, 3, 5)]; if (this.rockClear(L, e[1], e[2], e[3], e[4])) L.rocks.push(e); }
+    // The three rock blobs are DRAWN here, where they always were in the stream, and PLACED once the features below are
+    // down, so that a blob which has to move can keep off them (rockSpot). A blob that lands clear stays exactly where it fell;
+    // one that moves waits for `layout` to judge it on the finished map (vetRocks).
+    const blobs = [];
+    for (let i = 0; i < 3; i++) blobs.push(['ellipse', fx(this.rf(R, 0.26, 0.44)), fy(this.rf(R, 0.26, 0.44)), this.ri(R, 3, 5), this.ri(R, 3, 5)]);
     this.feat(L, 'spire', fx(this.rf(R, 0.33, 0.37)), fy(this.rf(R, 0.16, 0.20)), 4, 4);
     this.feat(L, 'spire', fx(this.rf(R, 0.16, 0.20)), fy(this.rf(R, 0.33, 0.37)), 4, 4);
     this.feat(L, 'rocks', fx(0.5) - 2, fy(this.rf(R, 0.38, 0.41)), 4, 3);            // in front of the plateau ramp
+    const clear = blobs.map(e => this.rockClear(L, e[1], e[2], e[3], e[4])), placed = blobs.filter((e, i) => clear[i]);
+    blobs.forEach((e, i) => {
+      if (clear[i]) { L.rocks.push(e); return; }
+      const at = this.rockSpot(L, e, fx(0.26), fy(0.26), fx(0.44), fy(0.44), placed);
+      if (at) { const moved = ['ellipse', at[0], at[1], e[3], e[4]]; (L.rocksMoved || (L.rocksMoved = [])).push(moved); placed.push(moved); }
+    });
   },
 
   // ---- island chain ------------------------------------------------------
@@ -689,13 +744,16 @@ const Archetypes = {
 
   // A digest of eight seeds of every generator, folded into the sample layouts below so that
   // js/build.js's hash of MAP_LAYOUTS covers what these functions DO and not merely that they exist.
+  // It digests the DRAFT, moved rock blobs and all, not the vetted layout: vetRocks builds finished maps, and doing that
+  // at load cost every page and every test context 57 ms against 1.3. The vet is covered all the same -- vetRocks and
+  // every GameMap method it runs are hashed as source -- so this still moves whenever what a seed makes moves.
   digest() {
     let a = 0x811c9dc5 | 0;
     const eat = s => { for (let i = 0; i < s.length; i++) a = Math.imul(a ^ s.charCodeAt(i), 16777619); };
     for (const k of this.keys) for (let seed = 1; seed <= 8; seed++) {
-      const L = this.layout(k, seed);
+      const L = this.draft(k, seed);
       eat(k + '|' + L.w + 'x' + L.h + '|' + L.tileset + '|');
-      for (const arr of [L.high, L.ramps, L.rocks]) eat(JSON.stringify(arr));
+      for (const arr of [L.high, L.ramps, L.rocks, L.rocksMoved || []]) eat(JSON.stringify(arr));
       eat(JSON.stringify(L.features));
       eat(L.bases.map(b => b.hall.join(',') + ';' + b.minerals.length + ';' + b.amount + ';' + b.gas).join('|'));
       eat(JSON.stringify(L.causeways || null));
@@ -703,16 +761,7 @@ const Archetypes = {
     return (a >>> 0).toString(16).padStart(8, '0');
   },
 };
-// One fixed-seed sample of every archetype, registered at load like the size modes are, so each shape
-// is reachable from a menu without composing anything and so the stamp covers the generators.
-{
-  const stamp = Archetypes.digest();
-  for (const k of Archetypes.keys) {
-    const L = Archetypes.layout(k, 1);
-    L.name = Archetypes.names[k]; L.archStamp = stamp;
-    MAP_LAYOUTS['arch_' + k] = L;
-  }
-}
+// The fixed-seed sample of every archetype is registered at the END of this file, after class GameMap: see there.
 
 // Built on first use by GameMap.heightBonusTable(), which is where the numbers are written and where
 // the build stamp can see them. Nothing else may assign it.
@@ -777,7 +826,8 @@ class GameMap {
   // id is generated on the spot instead of being registered, because there are four billion of them
   // per archetype and MAP_LAYOUTS is hashed into the build stamp. Both clients hold the generator, so
   // the id is enough for both to build the same ground -- which is the point of putting the seed in it.
-  layoutDef() { return Archetypes.resolve(this.layout) || MAP_LAYOUTS[this.layout] || MAP_LAYOUTS.temple; }
+  // A layout OBJECT is taken as it is: a map built to be measured rather than played, which only Archetypes.vetRocks makes.
+  layoutDef() { return this.layout && typeof this.layout === 'object' ? this.layout : Archetypes.resolve(this.layout) || MAP_LAYOUTS[this.layout] || MAP_LAYOUTS.temple; }
   idx(x, y) { return y * this.w + x; }
   inb(x, y) { return x >= 0 && y >= 0 && x < this.w && y < this.h; }
   H(x, y) { return this.inb(x, y) ? this.height[this.idx(x, y)] : 0; }
@@ -1706,8 +1756,7 @@ class GameMap {
     const keep = new Uint8Array(N);   // base clearings: a wall or a height change there takes the town hall away
     for (const b of this.bases) this.rect(b.x - 1, b.y - 1, 6, 5, (x, y) => { keep[this.idx(x, y)] = 1; });
     // A feature tile's height when open, kept beside the grids because the pass can move a feature's remembered ground.
-    const openH = new Int8Array(N).fill(-1);
-    for (const f of this.features) { const K = MAP_FEATURES[f.kind]; f.tiles.forEach((t, k) => { openH[t] = K.openHeight === null ? f.baseH[k] : K.openHeight; }); }
+    const openH = this.featureOpenHeights();
     const at = (i, d) => { if (i < 0) return -1; const x = i % W + DX[d], y = ((i / W) | 0) + DY[d]; return x < 0 || y < 0 || x >= W || y >= H ? -1 : y * W + x; };
     // -1 never walkable (cliff, rock, a resource, off the map), else the height the tile has in its most walkable state.
     // `false`: a resource is not a way onto a ramp -- see GameMap.openHeightAt. `openH` is the snapshot this pass took
@@ -1858,7 +1907,7 @@ class GameMap {
     };
     const snap = () => ({ h: this.height.slice(), w: this.walk.slice(), c: this.cliff.slice(), f: this.features.map(f => f.baseH.slice()), o: openH.slice() });
     const restore = S => { this.height.set(S.h); this.walk.set(S.w); this.cliff.set(S.c); openH.set(S.o); this.features.forEach((f, k) => { f.baseH.set(S.f[k]); this.syncFeature(f); }); };
-    const worse = (a, b) => { if (!a) return false; for (let i = 0; i < a.length; i++) if (a[i] && !b[i]) return true; return false; };
+    const worse = GameMap.reachLost;
     const before = this._rampReach(openH), S0 = snap(), all = [];
     for (const g of groups) for (const c of g.comps) all.push(c);
     apply(all, RAMP_LEN);
@@ -1878,6 +1927,18 @@ class GameMap {
     for (let i = 0; i < N; i++) if (S0.w[i] === 1 && this.walk[i] === 0) report.walls++;
     return report;
   }
+  // Each feature tile's height when the feature is open, -1 on every other tile: what wallRamps snapshots before it works,
+  // and what reachSignature judges by.
+  featureOpenHeights() {
+    const openH = new Int8Array(this.w * this.h).fill(-1);
+    for (const f of this.features) { const K = MAP_FEATURES[f.kind]; f.tiles.forEach((t, k) => { openH[t] = K.openHeight === null ? f.baseH[k] : K.openHeight; }); }
+    return openH;
+  }
+  // The map's reach as it stands (_rampReach below): the signature wallRamps may never make worse, and the one
+  // Archetypes.vetRocks holds a moved rock blob to.
+  reachSignature() { return this._rampReach(this.featureOpenHeights()); }
+  // True when `after` has lost anything `before` had -- a base, a 3x3 route or a resource that was reached and is not.
+  static reachLost(before, after) { if (!before) return false; for (let i = 0; i < before.length; i++) if (before[i] && !after[i]) return true; return false; }
   // What wallRamps must never make worse, as one flat array of 0/1: per base, a unit reaches its anchor with every feature
   // shut, a 3x3 body reaches its surroundings with features shut, and with them open; per resource, a unit reaches a tile
   // beside it. Flooded from the first start, which on a connected map reaches everything any start does. A 3x3 body is
@@ -2448,5 +2509,18 @@ class Pathfinder {
       out.push(path[j]); cx = path[j][0]; cy = path[j][1]; i = j + 1;
     }
     return out;
+  }
+}
+
+// One fixed-seed sample of every archetype, registered at load like the size modes are, so each shape
+// is reachable from a menu without composing anything and so the stamp covers the generators. HERE, at the end of the
+// file and not beside Archetypes: a basin layout with a moved rock blob is judged on a finished map (Archetypes.vetRocks),
+// and a class cannot be used above the line that declares it.
+{
+  const stamp = Archetypes.digest();
+  for (const k of Archetypes.keys) {
+    const L = Archetypes.layout(k, 1);
+    L.name = Archetypes.names[k]; L.archStamp = stamp;
+    MAP_LAYOUTS['arch_' + k] = L;
   }
 }

@@ -1,14 +1,35 @@
 # TODO-M18 — the user's thirteen-item list from the first internet game
 
 Started when the fifth session paused for the night (2026-09-12) and kept since. `HANDOFF-M18.md` has the state, the
-traps and the kickoff prompt; this file is the open list. **Its first section, THE LOOKS QUEUE, is done** (all four items); the terrain queue follows it; the
+traps and the kickoff prompt; this file is the open list. **Nothing in it is queued.** Its first section is the codebase scan's close (done); then
+**THE LOOKS QUEUE, done** (all four items); the terrain queue follows it; the
 user's answers and the earlier queues follow (THE TENTH SESSION'S QUEUE and THE WORK QUEUE are all done), then the sessions'
 lists (what each did, with commits), the older items with their measurements, and what is closed. There are no worktrees.
 `SHIPPING.md` is what must be done before the final build ships.
 
-The gate is **101 suites** (`node test/all.js`, about four minutes) and **ALL GREEN**. Every rule in `CLAUDE.md` applies to every
-item here: measure before fixing, a negative control that goes cleanly RED, `tools/patch.js` for edits, and the gate green before
-the commit.
+The gate is **102 suites** (`node test/all.js`, about four minutes) and **ALL GREEN** -- with one hidden red it cannot see: see the
+section below. Every rule in `CLAUDE.md` applies to every item here: measure before fixing, a negative control that goes cleanly
+RED, `tools/patch.js` for edits, and the gate green before the commit.
+
+---
+
+## THE CODEBASE SCAN (SCAN-M18) -- FINISHED, and the user's two decisions at its close (2026-09-17)
+
+Every defect and refactor item in `SCAN-M18.md` is fixed (PLAYTEST-M18 125-130). Asked what next, the user answered two questions:
+
+1. **"Fix A2.10 only"** -- the AI's attack gate compared the supply count with 150 and 190, the old 200 cap less fifty and less
+   ten; SUPPLY_CAP is 500. **DONE** (PLAYTEST-M18 129): both read the cap now. Measured with the tools that are not gated
+   (`.claude/review/scan/probe-a2-10.js`, nine Hard 1v1 games of 31 minutes): nothing changes before 150 supply; 816 of 886 wave
+   launches had been the supply count alone, every one of them going nowhere; two late games of nine end differently. The
+   balance run was NOT started. What it leaves for 7b is recorded under 7b.
+2. **"Bring the rock back"** on the small Open Basin, which A3.16 had left bare. **DONE** (PLAYTEST-M18 130): a blob that lands on
+   a base moves to the nearest legal spot in its square, clear of the spires, and is kept only if the finished map is no harder
+   to cross for any unit. Over forty seeds a size the small map keeps 100 blobs of 120 (was 11). **The walk from main to main on
+   a small basin is longer on 22 maps of 40, by 8 tiles typically and 15 at most** -- the user judges that by eye.
+
+**Found on the way, NOT fixed, flagged as its own task:** `test/features.js` prints "FAIL: interceptor built" and exits 0, so the
+gate has shown it green ("86 passed, 1 failed") since at least the scan's A1 batch. In a clean context the interceptor IS built
+(one in 310 frames, cap 4), so the fault is in the suite's own scene -- and the suite must learn to fail the gate.
 
 ---
 
@@ -871,7 +892,11 @@ two together, or ship 7a knowing the computer opponents are passive for the firs
 threshold (above) -- so every style of Terran and Protoss computer attacks again. **What is left, first:** the Zerg
 computer (no Zerg style attacks inside ten minutes; a normal Zerg computer loses to a normal Terran one at 13-14
 minutes), the stale head claim and the Queen's Nest claim item G found and left, and the cheap-unit ratchet zerg12's
-comment records. The old text:
+comment records. **And from SCAN-M18 A2.10 (PLAYTEST-M18 129):** every wave raises the next one's threshold by `waveGrow`
+(8 supply for a standard computer) with no ceiling. Past 190 supply the stale clause used to override it; now only a computer
+within ten of the 500 cap does. Over thirty minutes it never mattered (21 waves at most, a threshold of 188, a longest wait of
+4:01), but a computer that has sent many waves in a long game can end up waiting for an army it cannot build. Two late games of
+nine in `.claude/review/scan/probe-a2-10.js` end differently after A2.10 (seed 1 PvT no longer a Terran win at 29:13). The old text:
 
 This is what 7a breaks, and it is the balance work this project has kept gated throughout. The AI's build orders
 and its attack threshold are tuned for 100 minerals per worker per minute; at 50 it never fields a first wave

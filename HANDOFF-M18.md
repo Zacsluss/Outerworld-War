@@ -1,4 +1,162 @@
-# HANDOFF — M18 (the looks queue is DONE: a finished first frame, continuous creep, taller cliffs, and every map redesigned)
+# HANDOFF — M18 (SCAN-M18 is FINISHED, the Open Basin's rock is back, and nothing is queued)
+
+Written 2026-09-17, at the end of the session that closed the codebase scan -- the user's two answers when asked what next:
+"Fix A2.10 only" and "Bring the rock back". Branch `m10-overnight`, which is `origin/main`. **Everything is committed and pushed;
+no open pull requests, no other branches, no extra worktrees.** Trust `git log -1` for HEAD, not a hash written here.
+
+> **SCAN-M18 is finished** (PLAYTEST-M18 125-130). The section this one replaced -- the looks queue's close, updated through the
+> scan's batches -- follows it, kept for the record; its traps still hold. `SHIPPING.md` is what must be done before the final
+> build ships.
+
+---
+
+## Kickoff prompt for a fresh chat
+
+Open the new chat with the repository folder as its working directory, so `CLAUDE.md` loads by itself. Paste everything inside the
+fence. **Replace the HEAD placeholder with `git log -1 --format=%h` first** -- committing this file moves it.
+
+```
+Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
+Branch: m10-overnight, which IS origin/main (https://github.com/Zacsluss/Outerworld-War -- PUBLIC: git push publishes).
+HEAD: <run git log -1 --format=%h>. Working tree clean, nothing unpushed, no open PRs, no other branches, no extra worktrees.
+Machine: Windows 11; PowerShell 5.1 and Git Bash; Node 24; Rust + the Tauri CLI under desktop/; no gh CLI, no Blender.
+The gate (node test/all.js) is 102 suites, about four minutes, ALL GREEN -- but it has one hidden red it cannot see:
+test/features.js prints "FAIL: interceptor built" and exits 0 (TODO-M18's first section). Build stamp a4f21ff739dd0f36.
+test/balance.js and test/proxy.js are GATED: never start them without an explicit, double-checked instruction.
+
+STATE: SCAN-M18, the whole-codebase scan, IS FINISHED -- every defect and refactor item fixed (PLAYTEST-M18 125-130). The last
+session did the final two things, on the user's word:
+  - A2.10 (PLAYTEST-M18 129): the AI's attack gate read 150 and 190, the old 200 supply cap; it reads SUPPLY_CAP now. Measured
+    without the gated balance run: nothing changes before 150 supply; 816 of 886 wave launches in nine 31-minute Hard games had
+    been the supply count alone, every one going nowhere; two late games of nine end differently.
+  - The Open Basin's rock is back (PLAYTEST-M18 130): a blob that lands on a base moves to the nearest legal spot and is kept
+    only if the finished map is no harder to cross for any unit (Archetypes.rockSpot and Archetypes.vetRocks in js/map.js).
+    Small maps keep 100 blobs of 120 (was 11) over forty seeds; the main-to-main walk on a small basin is longer on 22 of 40
+    maps, by 8 tiles typically and 15 at most. The user was sent pictures and has NOT given a verdict.
+
+THE NEXT ACTION: ASK THE USER what they want next. Nothing in the repository is queued. Waiting on them:
+  - Their verdict on the returned rock, the longer walk included (PLAYTEST-M18 130; in-game before/after pictures at
+    .claude/review/terrain/shots/basin2small-ingame.png and basin9small-ingame.png).
+  - The hidden red in test/features.js: it was offered as a task chip; if nobody took it, it is TODO-M18's first section.
+  - Their playtest: when they say so, start the recorder (preview_start "playtest", port 8870) and give them the link.
+  - The AI rebalance (TODO-M18 7b), deferred by them. It now also owns A2.10's leftover: `waveGrow` raises every next
+    wave's threshold with no ceiling, and only a computer within ten of the cap ignores it.
+
+READ, in this order, before touching anything:
+  1. CLAUDE.md          -- the working agreement; every rule in it is non-negotiable.
+  2. HANDOFF-M18.md     -- this top section (and its traps), then the traps in the sections under it.
+  3. PLAYTEST-M18.md 129-130 -- what the last session did and how each item was tested; match that shape.
+  4. TODO-M18.md        -- the first section (the scan's close and the hidden red), then 7b.
+  5. SHIPPING.md        -- before any release: Actions -> Desktop builds -> Run workflow (it ignores js/ and assets/), and open
+                           the Mac app on a real Mac (never done: there is no Mac here).
+
+HOW TO WORK, every item:
+  - MEASURE BEFORE CHANGING: build the probe first (.claude/review/ is gitignored scratch) and make it assert its own setup.
+  - Every fix gets a check in the suite that should have caught it -- run it against the OLD code first and see it red -- plus a
+    negative control that goes cleanly RED (tools/control.js applies one edit and restores byte-identically). A control that
+    stays green means the CHECK is wrong; it happened twice last session.
+  - Expect to correct existing tests, not just satisfy them, and say in the commit which was wrong, the test or the code.
+  - node test/all.js is the gate before every commit; touch nothing in js/ or test/ while it runs. Anything touching a stamped
+    file (js/data, map, sim, game, combat, abilities, commands, ai, missions, build) moves the build stamp: recompute it (node
+    test/version.js prints it), update this file and the playtest item, and run node test/net_many.js and node
+    .claude/review/aipace/run-after.js <tag>.
+  - A generated-map change is judged three ways: node .claude/review/maps/map-png.js <id>, node test/maplayouts.js, and in-game
+    screenshots (preview_start "terrain-shot", port 8897) -- and for any new obstacle, whether a 3x3 body still gets everywhere
+    it did (GameMap.reachSignature). Send the user a before/after; they judge by eye.
+  - Use tools/patch.js for anchored edits (it detects each file's line endings and refuses on a zero anchor count). DO NOT use
+    heredocs for code containing backslashes. To look at HEAD, git show HEAD:<file> into scratch -- not git stash, whose
+    round trip rewrote a working copy's line endings last session.
+  - Write each item up as a new PLAYTEST-M18 item in the user's language, commit and push; the repo is public.
+
+HARD RULES:
+  - Never Math.random() in simulation code (G.rand()); no native Math.sin/cos/atan2/hypot in stamped files (DMath). Anything a replay
+    or a rejoin must reproduce goes through G.init or the command log. A map generator must stay a pure function of its seed, and
+    must not draw more from its stream than it did, or every map after the change moves.
+  - The relay (test/serve.js) stays dependency-free.
+  - Never type, store or handle the user's passwords, certificates or API keys. Art or assets someone bought stay out of this
+    public repository. Nothing that costs money.
+  - The comments in js/ are load-bearing: they record why the obvious thing was not done. Do not delete reasoning.
+```
+
+---
+
+## The state
+
+- **SCAN-M18 IS FINISHED** (`SCAN-M18.md`: "nothing in this file is open"). This session, on the user's two answers:
+  **A2.10** (PLAYTEST-M18 129, six negative controls red) and **the Open Basin's rock** (PLAYTEST-M18 130, eight negative
+  controls red). One commit for both, because they were gated together.
+- **The gate is 102 suites, ALL GREEN**, about three and three-quarter minutes -- **with one hidden red**: `test/features.js`
+  prints "FAIL: interceptor built" and exits 0, and `test/all.js` judges a suite by its exit code. Pre-existing (it is in the scan's
+  A1 gate log); flagged as a task; TODO-M18's first section.
+- **Build stamp `a4f21ff739dd0f36`**, from `b99d85676e68ff36` (`js/ai.js` and `js/map.js`). Older saves and replays are refused.
+- **By hand after the stamped files changed:** `net_many` 51/51; `queens` 25/25; `eightplayer` 19/19; `aistyles` 138 / 137 / 138 on
+  seeds 1 / 5 / 11 -- seed 5's red is the known harasser line (7b) -- with every game row on all three seeds identical to before.
+- **Waiting on the user:** their verdict on the rock (pictures sent), their playtest (the recorder on their word), the AI rebalance
+  (TODO-M18 7b, deferred by them). **The repository is PUBLIC. Nothing is left running** (the terrain-shot preview was stopped).
+
+## What changed, in a player's language
+
+1. **A computer past 190 supply attacks when its army is ready, not on its supply count.** The decision still had the old 200 cap's
+   numbers in it, so at 190 of 500 a computer behaved as if it were maxed out and walked out whatever its style said and whatever
+   army it had seen you with. Nothing changes before 150 supply (sixteen minutes in at the earliest in the measured games) (129).
+2. **The Open Basin has its rock back.** A rock blob that would land on a base moves to the nearest clear spot in the middle of the
+   map instead of disappearing; on a small map that puts the rock around the centre plateau. A move that would close a road a big
+   unit needs is refused. The walk between mains on a small basin is a little longer on about half the seeds (130).
+
+**Deliberately different from what was asked:** a moved blob can still be refused -- 20 of 120 on the small map have nowhere legal
+to go, or would have closed a road -- and the walk gets longer, which the user was told and has not yet judged. **Unfinished:**
+nothing in the two items; the hidden red in `test/features.js` is flagged, not fixed.
+
+## How to playtest it by hand
+
+Every item has its steps in PLAYTEST-M18 129-130. In short:
+1. **Skirmish -> Procedural -> Open Basin, size small, seed 2** (then 9 and a few others); Enter, `black sheep wall`, Enter; zoom out.
+   *Working:* rock outcrops around the raised centre, every mineral patch open, no spire standing in rock (130).
+2. **Break a spire beside the rock:** it becomes floor; the rock stays rock (130).
+3. **A Siege Tank, Thor or Ultralisk across the middle of seed 2 small:** it gets through around the rock (130).
+4. **A 25-minute game against one Hard computer on a big map** (`black sheep wall`, and `power overwhelming` to just watch). *Working:*
+   past 190 supply its army waits until it is ready, and waits for a bigger one when it has seen yours (129). Easier to see in the
+   suite: `test/aistyles.js`, "when the army commits".
+
+## Traps found this session
+
+- **A negative control that stays green means the check is wrong -- twice.** The supply lint matched `supUsed > 150` and walked past
+  `200 - 50 < p.supUsed`; the rule is now the whole line. "A moved blob stays in its square" compared the spot with the box the
+  search was handed, so a caller handing it the whole quarter passed; it now computes the square itself.
+- **An obstacle that clears every local rule can still cut the map.** The first rock move kept off bases, ramps and spires, and
+  still shut the only road a 3x3 body had on 13 small maps of 200 -- a pinch between a blob and a spire, or a wall of merged blobs.
+  No local spacing rule can see that; the finished map can: `GameMap.reachSignature()` (the same test `wallRamps` may never fail)
+  and `GameMap.reachLost(before, after)`.
+- **A layout vetted on a finished map must not be vetted at load.** `Archetypes.digest()` runs when js/map.js loads; making it build
+  GameMaps cost every page and every test context 57 ms against 1.3. It digests `Archetypes.draft` now; the vet is covered because
+  its code is hashed. And the archetype samples are registered at the END of js/map.js, because `vetRocks` uses class GameMap and a
+  class cannot be used above its declaration.
+- **`new GameMap(seed, layoutObject)` works now** (a map built to be measured rather than played); only `vetRocks` uses it. The
+  map's own `rand` only makes noise, so the seed does not change what is measured.
+- **A suite can print FAIL and pass the gate** (`test/features.js`). Read a suite's summary, not only its status column.
+- **In-page screenshots at a display scale above 1:** the canvas is in device pixels and `Render.viewH` in CSS pixels. Scale the
+  capture height by `canvas.width / Render.W`, or the bottom third of the view is cut off -- `.claude/review/terrain/helper-T.js` has
+  that bug at 1.5x.
+- **Do not `git stash` to look at HEAD.** The round trip rewrote `test/onecopy.js` from LF to CRLF in the working copy (harmless,
+  and invisible to git). `git show HEAD:<file>` into scratch does the same job with no side effect.
+
+## Diagnostics added this session
+
+All in `.claude/review/scan/` (gitignored):
+- `probe-a2-10.js` -- four versions of the AI's attack gate, patched in memory, over nine 31-minute Hard games in parallel; per
+  computer: peak supply, when it crossed 150 and 190, ladder and supply-count launches, longest wait. `probe-a2-10b.js` -- what a
+  supply-count launch actually did (state and target after the decision).
+- `probe-basin-rock.js` (where a skipped blob could legally go), `basin-candidate.js` + `var-*.js` (candidate rules, loaded after
+  js/map.js by the probes and by map-png.js through LAYOUT_FILE), `probe-basin-variants.js`, `probe-basin-feat.js` (features on
+  rock), `probe-feat-rock-all.js`, `probe-basin-walk.js`, `probe-basin-wide.js` (per-base reach for a 3x3 body, HEAD against now),
+  `probe-basin-vet.js` (moves that cost any unit its way, over 200 seeds a size), `probe-basin-apart.js`.
+- `controls-a2-10.js` / `.log`, `controls-basin-rock.js` / `controls-basin-rock-final.log` -- the negative controls.
+- `map-HEAD.js` -- js/map.js as it was, for the HEAD comparisons.
+
+---
+---
+
+# The looks queue's close, updated through the scan's batches, as written 2026-09-17 before the scan's last session (kept for the record; its traps still hold)
 
 Written 2026-09-17, at the end of the session that did the looks queue -- the user's four items of 2026-09-14. Branch
 `m10-overnight`, which is `origin/main`. **Everything is committed and pushed; no open pull requests, no other branches, no extra
@@ -10,7 +168,7 @@ worktrees.** Trust `git log -1` for HEAD, not a hash written here.
 
 ---
 
-## Kickoff prompt for a fresh chat
+## The kickoff prompt it handed over (SUPERSEDED by the one at the top of this file)
 
 Open the new chat with the repository folder as its working directory, so `CLAUDE.md` loads by itself. Paste everything inside the
 fence. **Replace the HEAD placeholder with `git log -1 --format=%h` first** -- committing this file moves it.

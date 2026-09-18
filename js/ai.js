@@ -1399,10 +1399,17 @@ class AI {
       // enemy who is massing has the opposite, and walking into it on schedule is how an army dies.
       const readNow = this.readEnemy();
       const readAdj = readNow === 'teching' ? -10 : readNow === 'massing' ? 8 : 0;
-      const threshold = Math.max(this.attackThreshold + readAdj + this.waves * (st.waveGrow || 8) + (p.supUsed > 150 ? -20 : 0), this.seenEnemyArmy() * 1.25); // waveGrow is what makes a harasser come back with a small wave and a turtle come back with a bigger one
+      // NEAR THE CAP AND AT IT ARE MEASURED FROM SUPPLY_CAP. These two were written as 150 and 190 against the old cap of
+      // 200 -- fifty and ten below it -- and stayed there when M11 raised the cap to 500 (SCAN-M18 A2.10). So from 190
+      // supply on, every think "launched a wave" over the style ladder and the scouted-army floor alike, and with no target
+      // in sight it was back to gathering inside the same call: measured, 816 such launches in one thirty-minute game
+      // against 14 real ones, and the counter they ran up fed `waveGrow` until the threshold stood at 6,632. Read from the
+      // cap, the same game makes 21 waves, every one of them because the army met its threshold. The rule itself is kept
+      // because it is right: an army within ten of the cap cannot grow any more, so waiting gains it nothing.
+      const threshold = Math.max(this.attackThreshold + readAdj + this.waves * (st.waveGrow || 8) + (p.supUsed > SUPPLY_CAP - 50 ? -20 : 0), this.seenEnemyArmy() * 1.25); // waveGrow is what makes a harasser come back with a small wave and a turtle come back with a bigger one
       // After a retreat, rebuild before walking back into the same fight. Without this the AI turned
       // straight round and fed the survivors in one at a time.
-      if ((sup >= threshold || p.supUsed >= 190) && G.frame >= (this.regroupUntil || 0)) {
+      if ((sup >= threshold || p.supUsed >= SUPPLY_CAP - 10) && G.frame >= (this.regroupUntil || 0)) {
         this.state = 'attack'; this.waves++; this.startedAttack = G.frame;
         const wave = army.filter(u => distPt(u.x, u.y, rally.x, rally.y) < 14 * TILE || this.waves > 1);
         for (const u of wave) u.wave = this.waves;

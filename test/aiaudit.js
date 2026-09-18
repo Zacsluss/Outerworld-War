@@ -70,7 +70,7 @@ const AUDIT = `
       // money piling up unspent
       if (p.minerals > 700) S.floatMin++;
       if (p.gas > 700) S.floatGas++;
-      if (p.supUsed >= p.supMax && p.supMax < 200) S.supplyBlocked++;
+      if (p.supUsed >= p.supMax && p.supMax < SUPPLY_CAP) S.supplyBlocked++;   // the cap, not 200: 250/250 is blocked too (SCAN-M18 A2.10)
       // spellcasters sitting on a full energy bar
       // count casters too, so "full energy" can be read as a share rather than a raw rate: more casters
       // alive is not the same thing as casters being wasted

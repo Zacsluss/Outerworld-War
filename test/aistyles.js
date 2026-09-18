@@ -167,6 +167,42 @@ const argWins = vm.runInContext(`(function () {
 })()`, ctx);
 ok(argWins === 'turtle', 'an explicit style argument beats the one on the player options');
 
+// ---------------------------------------------------------------- when the army commits: the ladder, not the supply count
+// SCAN-M18 A2.10. The gate in AI.army that commits a wave carried two numbers from the old 200 supply cap: past 150 the
+// threshold dropped by 20, and past 190 the army went whatever the threshold said. SUPPLY_CAP has been 500 since M11, so
+// from 190 supply on every think launched a "wave" -- over the ladder pinned above and over the scouted-army floor -- and
+// with no target in sight each was back to gathering inside the same call: 816 of them in one thirty-minute game
+// (.claude/review/scan/probe-a2-10.js and probe-a2-10b.js). Driven here on a built scene, because no suite plays long
+// enough to reach 190 supply (SCAN-M18 section C), which is how it outlived the cap by three milestones.
+const commits = (used, own, foes) => vm.runInContext(`(function () {
+  G.init({ players: [{ race: 'T', human: false, difficulty: 'hard', name: 'A', team: 1 },
+                     { race: 'Z', human: false, difficulty: 'hard', name: 'B', team: 2 }], seed: 3, layout: 'temple' });
+  const p = G.players[0], ai = p.ai, at = ai.rallyPoint();
+  for (let i = 0; i < ${own}; i++) G.spawnUnit('marine', 0, at.x + (i % 5) * 16, at.y + Math.floor(i / 5) * 16);
+  for (let i = 0; i < ${foes}; i++) G.spawnUnit('marine', 1, at.x + 160 + (i % 5) * 16, at.y + Math.floor(i / 5) * 16);
+  p.vis.fill(2);                                   // what it has scouted is exactly what stands in front of it
+  ai.state = 'gather'; ai.waves = 0; ai.regroupUntil = 0;
+  p.supUsed = ${used};                             // the count the gate reads; nothing ticks between here and the call
+  const army = ai.armyUnits().reduce((s, u) => s + u.def.sup, 0), floor = ai.seenEnemyArmy() * 1.25;
+  ai.army();
+  return { used: p.supUsed, army, floor, ladder: ai.attackThreshold, committed: ai.waves > 0 };
+})()`, ctx);
+{
+  const CAP = vm.runInContext('SUPPLY_CAP', ctx), LAD = commits(100, 0, 0).ladder, UNDER = LAD - 10, FOES = 20;
+  const go = commits(100, LAD + 5, 0), wait = commits(100, UNDER, 0);
+  ok(CAP === 500 && LAD >= 20 && go.army === LAD + 5 && go.floor === 0 && go.committed === true,
+    'an army over its ladder commits at 100 supply (scene check: without it every line below would pass on an AI that never attacks)', JSON.stringify({ CAP, go }));
+  ok(wait.committed === false, '...and one ' + (LAD - UNDER) + ' under it waits', JSON.stringify(wait));
+  const mid = commits(170, UNDER, 0);
+  ok(mid.committed === false, 'at 170 supply -- past the old 150 -- the same army still waits: the threshold is not lowered ' + (CAP - 170) + ' short of the cap', JSON.stringify(mid));
+  const seen = commits(200, UNDER, FOES);
+  ok(seen.floor > seen.army && seen.committed === false, 'at 200 supply -- past the old 190 -- an army that has seen a bigger one does not walk into it: the scouted-army floor holds', JSON.stringify(seen));
+  const nearNo = commits(CAP - 50, UNDER, 0), nearGo = commits(CAP - 49, UNDER, 0);
+  ok(nearNo.committed === false && nearGo.committed === true, 'within fifty of the cap the threshold drops by twenty, and not a supply sooner (' + (CAP - 50) + ' waits, ' + (CAP - 49) + ' goes)', JSON.stringify([nearNo, nearGo]));
+  const capNo = commits(CAP - 11, UNDER, FOES), capGo = commits(CAP - 10, UNDER, FOES);
+  ok(capNo.committed === false && capGo.committed === true, 'within ten of the cap the army goes whatever it has seen, because it cannot grow any more (' + (CAP - 11) + ' waits, ' + (CAP - 10) + ' goes)', JSON.stringify([capNo, capGo]));
+}
+
 // ---------------------------------------------------------------- and now play games
 // Ten minutes each, one seed, three races per style. Every number is a measurement of player 0 only.
 //

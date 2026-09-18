@@ -5,11 +5,12 @@ refactor debt, then four for defects. Every claim below was re-checked by hand, 
 **measured** were reproduced with a probe kept in `.claude/review/scan/` (local scratch, gitignored).
 
 **A1 (all nine player-visible defects) is FIXED** -- PLAYTEST-M18 125, twelve negative controls red.
-**A2 is FIXED except 10** -- 11, 12, 13, 14 and 15, PLAYTEST-M18 126, eleven negative controls red. **A3 is FIXED** --
-16 to 22, PLAYTEST-M18 127, eleven negative controls red. **B is FIXED** -- all eleven, PLAYTEST-M18 128, eighteen
-negative controls red, and a new gate suite (`test/onecopy.js`) whose job is to keep each rule a single copy.
-**A2.10 IS THE ONLY THING LEFT IN THIS FILE**, and it waits for the user's word and the gated balance run. The gate
-was green (101/101) before the scan and is green after every batch (102/102 now).
+**A2 is FIXED** -- 11, 12, 13, 14 and 15, PLAYTEST-M18 126, eleven negative controls red; and 10, PLAYTEST-M18 129, six
+negative controls red, on the user's word and without the gated balance run. **A3 is FIXED** -- 16 to 22, PLAYTEST-M18
+127, eleven negative controls red; and on the user's word the rock A3.16 cost the small Open Basin is back, PLAYTEST-M18
+130. **B is FIXED** -- all eleven, PLAYTEST-M18 128, eighteen negative controls red, and a new gate suite
+(`test/onecopy.js`) whose job is to keep each rule a single copy. **THE SCAN IS FINISHED: nothing in this file is
+open.** The gate was green (101/101) before the scan and is green after every batch (102/102 now).
 
 ---
 
@@ -54,14 +55,17 @@ was green (101/101) before the scan and is green after every batch (102/102 now)
 9. **"Set Rally" on the command card rallies only the first selected building** -- `js/ui.js:1154`
    (`sel[0]`), while the right-click path deliberately fans out over every producer (`js/ui.js:1112`).
 
-### A2. Correctness, but needs a judgement call  -- 11, 12, 13, 14, 15 FIXED (PLAYTEST-M18 126); 10 still open
+### A2. Correctness, but needs a judgement call  -- ALL FIXED (10: PLAYTEST-M18 129; 11 to 15: PLAYTEST-M18 126)
 
-10. **The AI's attack gate still reads the old 200 supply cap** -- `js/ai.js:1374` (`supUsed > 150`) and
+10. **FIXED** (PLAYTEST-M18 129: both read SUPPLY_CAP now, fifty and ten below it). **The AI's attack gate still reads the old 200 supply cap** -- `js/ai.js:1374` (`supUsed > 150`) and
     `js/ai.js:1377` (`supUsed >= 190`); `SUPPLY_CAP` has been 500 since M11 and `AI.supply()` was fixed for
     exactly this at `js/ai.js:670`. Past 190 the AI attacks on the supply count alone, bypassing the style
     ladder and the scouted-army floor. Measured by the scan: 611 of 611 launches after that point had
     `sup < threshold`, and `waves` ran to 623 against 21 with the clause removed -- same seed, same kills,
-    same winner. **Fixing it changes AI behaviour, so it belongs with the gated balance run.**
+    same winner. **Fixing it changes AI behaviour, so it belongs with the gated balance run.** -- The user said to fix
+    it on its own (2026-09-17). Measured over nine thirty-minute Hard games: 816 of 886 launches were the supply clause
+    alone, every one of them back to gathering in the same decision with no target; after the fix, 77 launches, all of
+    them the ladder. Nothing changes before 150 supply, and two late games of nine play out differently.
 11. **FIXED.** **`AI.headDef` is never cleared when the build script runs out** -- `js/ai.js:719` returns before the
     only line that writes it, and the comment three lines down says "Cleared when the script runs out",
     describing a line that does not exist. Measured: for the last 11 minutes of a 30-minute game the head
@@ -91,6 +95,9 @@ was green (101/101) before the scan and is green after every batch (102/102 now)
     before placing bases and `rockClear` (`js/map.js:498`) protects ramps only. **Measured:**
     `arch:basin:2:small` has 20 of 144 patches with no walkable tile beside them; `basin:1:small` has 4. A
     worker mines a buried patch *faster* than a reachable one -- it never walks, and cannot be attacked.
+    **Its cost, and then its reversal:** skipping a blob that landed on a base left a small Open Basin 4 blobs of 36; the
+    user asked for the rock back, and a blob that lands on a base now MOVES to the nearest legal spot and is kept only if
+    the finished map is no harder to cross for any unit (PLAYTEST-M18 130).
 17. **FIXED.** **A mineral patch is drawn on top of the geyser on every small map** -- `MapModes.base` (`js/map.js:245`)
     lays the ninth patch at `x+4..x+5` and the geyser at `x+5..x+8`; only `MAP_SIZES.small` asks for nine.
     **Measured:** Close Quarters, a shipped menu map, has two overlapping tiles at both starts;
@@ -152,7 +159,12 @@ Worth stating plainly, because it is the reason 22 defects survived 101 green su
 
 - **Nothing runs long enough.** Defects 10 and 11 need 19+ minutes of game time or 190+ supply; the
   non-gated suites stop well short. This is the same blind spot that hid the `AI.supply()` 200-vs-500 bug a
-  milestone ago.
+  milestone ago. (Defect 10 is now driven on a built scene in `test/aistyles.js`, at the supply counts a game
+  would take half an hour to reach, and `test/onecopy.js` refuses a three-digit number on any line of the game
+  that reads a supply count.)
+- **A suite that prints FAIL can still pass the gate.** Found after the scan, while gating A2.10: `test/features.js`
+  prints "FAIL: interceptor built" and exits 0, and `test/all.js` judges a suite by its exit code, so the gate has
+  shown it green ("86 passed, 1 failed") since at least the A1 batch. Flagged as its own task; not fixed here.
 - **"Ally" is spelled `owner ===` in the tests too.** `test/line.js` asserts "AN ALLY IS NOT" hit, with an
   ally spawned under the same owner -- so only the half that works is tested (defect 3).
 - **The generated maps are held to a weaker contract than the shipped ones.** `test/maplayouts.js` asserts

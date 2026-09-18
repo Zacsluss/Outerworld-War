@@ -2454,3 +2454,134 @@ a creep colony in the screenshot, so i know this must be fixed". `test/maplayout
 - **Nothing in the game was changed**, because nothing was broken. What changed is the screenshot, and the checks that keep the rule
   honest.
 - **A flying unit may of course be over the rock.** An Overlord drifting over it is not standing on it.
+
+## 129. A computer opponent past 190 supply attacks when its army is ready -- the last item of the codebase scan (SCAN-M18 A2.10)
+
+*(The user, 2026-09-17, asked what next: "Fix A2.10 only" -- the gated balance run left off, and the change measured with the
+tools that are not gated. `js/ai.js`. Six negative controls, every one red (`.claude/review/scan/controls-a2-10.log`); the gate
+is 102/102. **SCAN-M18 is finished with this.**)*
+
+**THE BUILD STAMP MOVES** (with item 130; the new stamp is `a4f21ff739dd0f36`, from `b99d85676e68ff36`). Saves and replays made
+before this are refused with a message, as they always are when the simulation changes.
+
+**What changed for a player:**
+1. **A computer past 190 supply no longer attacks on its supply count alone.** The rule that decides when a computer's army walks
+   out had two numbers in it from the days of the 200 supply cap: past 150 supply it lowered its bar by 20, and past 190 it went
+   whatever its bar said -- over its play style, and over the size of any army it had seen you with. The cap has been 500 since
+   M11, so a computer at 190 of 500 was treated as if it were maxed out. Measured over nine thirty-minute Hard games: the one
+   computer that crossed 190 without knowing where its enemy was "launched a wave" 816 times -- on every decision for eleven
+   minutes -- and every one of them was back home in the same decision because there was nothing to walk at; meanwhile each one
+   raised the bar for the next real wave, until it stood at 6,632 supply. With your base in sight, the same rule would have sent
+   its army at you every time it regrouped, however big an army it had seen you with.
+2. **Both rules are still there, at the real cap.** Within 50 supply of the 500 cap the bar drops by 20, and within 10 of it the
+   army goes whatever it has seen -- an army that cannot grow any more gains nothing by waiting.
+
+**What it does to a game** (`.claude/review/scan/probe-a2-10.js`: nine Hard 1v1 games of 31 minutes on Lost Ruins, seeds 1, 5
+and 11, TvZ, PvT and ZvP, the file as it was against the fix, patched in memory):
+- **Nothing changes before a computer reaches 150 supply** -- sixteen minutes in, at the earliest, in these games -- so first
+  waves, early pressure and every style comparison are untouched: `aistyles` plays every one of its games identically on seeds
+  1, 5 and 11.
+- 6 of the 18 computers crossed 150 and 4 crossed 190; the highest reached 296. None came near 450.
+- Waves launched across the nine games: 886 before, 816 of them from the supply count alone; 77 after, every one because the
+  army met its bar. The longest wait between waves past 150 supply is 4:01 before and after, so no computer sits on its army.
+- **Two late games play out differently.** Seed 1 PvT: the Terran won at 29:13, attacking from 20:55 on with a bar 20 lower; now
+  it has not won by 31:15. Seed 5 PvT: the Protoss sends 10 waves instead of 12. The other seven are the same game.
+- Reading "near the cap" as 75% and 95% of it instead of 50 and 10 below it, or removing both rules outright, played every
+  game identically to the fix: nothing reaches either line in thirty minutes.
+
+**How to playtest it by hand:**
+- **It is invisible in an ordinary game**: it only acts once a computer passes 150 supply, which takes a long one. To see it:
+  **Skirmish, 1v1 against one Hard computer on a big map (The Long March, or a Procedural map at size huge)**, press Enter and type
+  `black sheep wall`, Enter, and hold your ground for 25 minutes or more -- `power overwhelming` if you only want to watch. Once
+  its army is huge, watch what it does with it. *Working:* it gathers at its rally and walks out in waves, and when it has seen a
+  bigger army of yours it waits for one of its own. *Was:* past 190 supply it walked out every time it had regrouped, whatever it
+  had seen.
+- The proof that does not need a long game is in the suite: `test/aistyles.js`, "when the army commits", drives the decision on
+  a built scene at 100, 170, 200, 450/451 and 489/490 supply.
+
+**Invisible from normal play, and where to look instead:**
+- `test/aistyles.js` (6 checks: the scene commits at all; an army under its bar waits at 100 and at 170 supply; an army that has
+  seen a bigger one waits at 200; and the two rules at the real cap, boundary by boundary). `test/onecopy.js` A2.10 (2 checks: no
+  line of the game that reads a supply count holds a three-digit number). All eight were written first and run against the old
+  code: exactly the five that should were red.
+- **The lint was made blunter after its own negative control walked past it.** The first version matched `supUsed > 150` and its
+  mirror image; the control wrote the old bar as arithmetic, `200 - 50 < p.supUsed`, and stayed green. No pattern can list every
+  way to spell a number, so the rule is now the line itself -- and it holds today with nothing to spare.
+- `test/aiaudit.js` (a diagnostic, not in the gate) counted "supply blocked" only below 200 supply; it reads SUPPLY_CAP now.
+- **By hand after the stamped files changed:** `net_many` 51/51; `queens` 25/25; `eightplayer` 19/19; `aistyles` 138 / 137 / 138
+  on seeds 1 / 5 / 11 -- seed 5's single red is the known harasser line (7b), and every game row on all three seeds is identical to
+  before.
+- **Left for the AI rebalance (TODO-M18 7b), not done here:** every wave raises the next one's bar by `waveGrow` (8 supply for a
+  standard computer), with no ceiling. Past 190 supply the old rule used to override it; now only a computer within ten of the cap
+  does. Over thirty minutes that never mattered (21 waves at most, a bar of 188, and the 4:01 longest wait above); in a much longer
+  game a computer that has sent many waves could end up waiting for an army it cannot build. That is a balance question.
+
+## 130. The rock is back in the middle of the Open Basin
+
+*(The user, 2026-09-17, shown item 127's before and after of a small Open Basin: "Bring the rock back". `js/map.js`. Eight
+negative controls, every one red (`.claude/review/scan/controls-basin-rock-final.log`); the gate is 102/102.)*
+
+**THE BUILD STAMP MOVES** (with item 129; `a4f21ff739dd0f36`). Every generated map that changed is a different map, so a replay
+of one of them from before this is refused -- which is the stamp doing its job.
+
+**What changed for a player:**
+1. **The Open Basin's rock blobs come back.** Item 127 stopped the generator dropping rock on a base's minerals -- it had been
+   sealing the patches -- by skipping any blob that landed on a base. On the small map that was nearly all of them: the blobs are
+   drawn from the middle of the map, which is exactly where the natural and the centre bases stand. Now a blob that lands on a
+   base **moves to the nearest spot in the same part of the map** where it clears every base, ramp and spire -- and, where there is
+   room, the other blobs -- instead of disappearing. Over forty seeds a size: **small 100 blobs of 120 (was 11), medium 120 (was
+   56), large 120 (was 101), huge 120 (was 113).**
+2. **On a small map the rock stands around the centre plateau**, on the ground below its walls, because the plateau itself is
+   full of the four centre bases -- the way the rock already stood on the medium map.
+3. **A moved blob is kept only if the finished map is no harder to cross for any unit.** Moved into the crowded middle, a blob
+   can close the only road a big unit has -- a Thor, an Ultralisk, a Siege Tank, anything with a 3x3 body -- while the spires
+   stand. The first version did exactly that on 13 small maps of 200 (on seeds 23 and 40, half the bases were cut off for big
+   units while the spires and rock formations stood). So every moved blob is now tried on the finished map and dropped if any base or mineral
+   patch is harder to reach, for a small unit or a big one, with the spires and rock formations standing or broken. That refuses
+   13 moves in 200 small maps and none on the larger sizes.
+4. **Every other generated map is exactly as it was**: 480 of 480 Chokepoint Valley, Island Chain and Vertical Cliffs maps, the 62
+   Open Basin maps of 160 whose blobs all landed clear, and the four generated maps in the menus are byte for byte the same. The
+   move is a search, not another roll of the dice, so nothing the seed draws after the rock moves.
+
+**What it does to the walk -- the thing to judge by eye:** the rock is back on the ground around the plateau, so the walk from main
+to main on a small Open Basin is longer on 22 maps of 40 -- by 8 tiles typically, 15 at most, which is about a tenth; the average
+over all forty goes from 112 tiles to 116. Medium: longer on 19 of 40 by 4 typically, 10 at most. Large: one map, by 2. Huge: none.
+No base and no mineral patch is any harder to reach, for any unit, than it was; no patch is sealed; no ramp is touched.
+
+**Not all of it came back:** 20 of the 120 small-map blobs still have nowhere to go that clears the bases, ramps and spires -- or
+their move was refused because it would have closed a road -- and they are skipped, as before.
+
+**How to playtest it by hand:**
+1. **Single Player -> Skirmish -> Procedural, Open Basin, size small**, seed 2, then seed 9 and a few others. Press Enter, type
+   `black sheep wall`, Enter, and zoom right out. *Working:* rock outcrops around the raised centre (seed 2 has eight of them, seed 9
+   four); every blue mineral patch has open ground beside it; no spire -- the tall pillars on the approaches -- stands in rock.
+   *Was:* a bare centre.
+2. **Break a spire that stands near a rock outcrop** (any units, attack it). *Working:* it collapses into floor and the rock beside
+   it stays rock.
+3. **Take a big unit across the middle** -- a Siege Tank, a Thor or an Ultralisk (`show me the money` and `operation cwal` get you
+   one quickly) -- from your main to the far side on seed 2 small. *Working:* it gets there around the rock without breaking
+   anything.
+4. **Size medium, seed 2:** the medium map, for comparison -- the same look, which it already had.
+
+**Invisible from normal play, and where to look instead:**
+- `test/maplayouts.js` section 6 (13 checks): the rock is back size by size; every blob stands where the generator's rules allow;
+  a moved blob stays in the middle square it was drawn in; no spire stands in rock; every basin map takes the same 33 draws from
+  its seed (the proof that the move is a search); no moved blob costs any unit its way on 50 maps, including the two named ones
+  where a move had to be refused; and the move's own contract on a hand-built scene -- nearest, clear of another blob, clear of a
+  spire, still placed when every spot is crowded, skipped when there is no spot at all.
+- **Eight negative controls, every one red.** One was green at first and **the check was wrong, not the code**: "a moved blob
+  stays inside its square" compared the spot with the box the search was handed, so a call handing it the whole quarter of the
+  map passed. It measures against the generator's own square now.
+- **Two problems the first version had, found by measuring and fixed before this was written:** a blob moved without looking at
+  the spires landed under four of them on one small map -- a spire paints its ground walkable when it falls, which would have
+  opened a hole in the rock -- so blobs are placed after the spires are drawn and keep a tile clear of them; and the closed roads
+  above, which is why a move is judged on the finished map.
+- **What that judging costs:** a map with a moved blob is built two to four times over when it is first made -- 8 ms a time on a
+  small map, 42 ms on a huge one -- and loading the game's map code at startup went from 1.5 ms to 4.3 ms. (The first version of
+  the judge ran it at startup too, at 57 ms, so the build stamp's digest now hashes the map as drawn and not as judged; the judge is
+  covered by the stamp all the same, because its code is hashed.)
+- Pictures: `.claude/review/terrain/shots/basin2small-ingame.png` and `basin9small-ingame.png` (in the game, before above, after
+  below); `.claude/review/scan/shots/basin2small-final.png`, `basin9small-final.png` (the map as a plan).
+- **By hand:** `net_many` 51/51, `queens` 25/25, `eightplayer` 19/19, `aistyles` as in item 129.
+- **Found on the way and NOT fixed here:** `test/features.js` prints "FAIL: interceptor built" but exits 0, so the gate has been
+  counting it as green (it was already so in the A1 batch's gate). Flagged as its own task.
