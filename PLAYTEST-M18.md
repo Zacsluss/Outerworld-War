@@ -2585,3 +2585,55 @@ their move was refused because it would have closed a road -- and they are skipp
 - **By hand:** `net_many` 51/51, `queens` 25/25, `eightplayer` 19/19, `aistyles` as in item 129.
 - **Found on the way and NOT fixed here:** `test/features.js` prints "FAIL: interceptor built" but exits 0, so the gate has been
   counting it as green (it was already so in the A1 batch's gate). Flagged as its own task.
+
+## 131. Interceptors, Scarabs and Nukes are built over the supply cap again -- and the test that saw it can fail the gate now
+
+*(The finding flagged at the end of item 130, taken up as its own task, 2026-09-17. `js/game.js`, `js/sim.js`, `js/ui.js`,
+`test/features.js`, `test/review17.js`. Five negative controls, every one red (`.claude/review/features/controls.log`); the
+gate is 102/102.)*
+
+**THE BUILD STAMP MOVES** (the new stamp is `d01c68a16ee7ba65`, from `a4f21ff739dd0f36`). Saves and replays made before this are
+refused with a message, as they always are when the simulation changes.
+
+**What changed for a player:**
+1. **A Carrier makes Interceptors, a Reaver Scarabs and a Nuclear Silo its Nuke even when you are over the supply cap.** Lose a
+   Pylon or a Supply Depot and you can be using more supply than you have. Units that cost supply rightly wait until you build
+   more -- but since the codebase scan's first batch (item 125), EVERYTHING in a production queue waited, including these three,
+   none of which costs a point of supply. Measured: all three stuck at 0% for 400 frames. They build again; a Zealot or a Marine
+   queued before the loss still waits until the supply comes back, exactly as before.
+2. **Nothing else changes.** The game asks "does this item cost supply?" before holding it, which is the question it asked before
+   item 125, and item 125's own fix stands: the last unit under the cap is built, not paid for and frozen.
+
+**The test that saw it, and why nobody knew:** `test/features.js` has checked "interceptor built" since the first commit, and it
+failed the day item 125 landed. But that suite counted its own failures and **exited 0 whatever the count**, and the gate judges a
+suite by its exit code -- so for three batches the gate printed `features ok ... 86 passed, 1 failed` and called it green. The
+suite now runs on the shared test harness like every other: each check prints PASS or FAIL, and any FAIL turns the gate red. Put
+the bug back and the gate's own line reads `FAIL features`.
+
+**Every other suite was checked for the same blind spot.** All 102 gate suites were run with their raw output kept
+(`.claude/review/features/audit-suites.js`): `features` was the only one printing a failure while exiting 0, and a read of every
+suite's code found it the only one with no way to exit non-zero at all. Two print no count the gate can read -- `determinism`
+("exit code only") and `techtree` ("343 checks") -- and both do exit 1 on a failure.
+
+**How to playtest it by hand:**
+1. **Skirmish as Protoss**; press Enter and type `show me the money`, then `operation cwal` (everything builds fast). Build a
+   Stargate and a Fleet Beacon and make a **Carrier**; build a Gateway too.
+2. **Queue a Zealot in the Gateway**, then **go over the cap**: attack one of your own Pylons until it falls (select units, press
+   **A**, click the Pylon). The supply counter now shows more used than you have.
+3. **Queue an Interceptor on the Carrier.** *Working:* its bar fills and it comes out while you are over the cap; the Zealot waits
+   at 0%. *Was:* the Interceptor sat at 0% too, for as long as you stayed over.
+4. **Build a new Pylon.** *Working:* the Zealot comes out.
+(The same goes for a Reaver's Scarab, and for a Nuke in a Terran Nuclear Silo.)
+
+**Invisible from normal play, and where to look instead:**
+- `test/review17.js` 18d (5 checks): a player over the cap gets an Interceptor, a Scarab and a Nuke; a Zealot and two Marines --
+  one of them in a Reactor's own slot -- wait at 0%; they come out when the supply comes back; and every call to the production
+  gate names the item it is asking about. `test/features.js`: 87 checks, now through the harness.
+- **Written first and run against the old code:** 18d's two checks for this went red (the three items at 0%, and four calls asking
+  about the player alone), and `features.js` exited 1. **Five negative controls, every one red** -- one of them runs the gate
+  itself and gets `FAIL features`.
+- **By hand after the stamped files changed:** `net_many` 51/51; `queens` 25/25; `eightplayer` 19/19; `aistyles` 138 / 137 / 138 on
+  seeds 1 / 5 / 11 (seed 5's red is the known harasser line, 7b), with every game row identical to before.
+- **Also made one copy:** what a unit costs in supply was written three times in `js/game.js` -- the refusal, and twice in the
+  booking of a queued unit. It is `G.supplyNeed(def)` now, once, and the production gate reads it too.
+- **Which was wrong: the code.** The test was right from the first commit; item 125's gate asked about the player and not the item.

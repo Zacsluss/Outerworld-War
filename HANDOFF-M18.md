@@ -1,8 +1,9 @@
-# HANDOFF — M18 (SCAN-M18 is FINISHED, the Open Basin's rock is back, and nothing is queued)
+# HANDOFF — M18 (SCAN-M18 is FINISHED, the Open Basin's rock is back, the gate's one hidden red is fixed, and nothing is queued)
 
 Written 2026-09-17, at the end of the session that closed the codebase scan -- the user's two answers when asked what next:
-"Fix A2.10 only" and "Bring the rock back". Branch `m10-overnight`, which is `origin/main`. **Everything is committed and pushed;
-no open pull requests, no other branches, no extra worktrees.** Trust `git log -1` for HEAD, not a hash written here.
+"Fix A2.10 only" and "Bring the rock back" -- and updated after the task that session flagged: the gate's one hidden red, fixed
+(PLAYTEST-M18 131). Branch `m10-overnight`, which is `origin/main`. **Everything is committed and pushed; no open pull requests,
+no other branches, no extra worktrees.** Trust `git log -1` for HEAD, not a hash written here.
 
 > **SCAN-M18 is finished** (PLAYTEST-M18 125-130). The section this one replaced -- the looks queue's close, updated through the
 > scan's batches -- follows it, kept for the record; its traps still hold. `SHIPPING.md` is what must be done before the final
@@ -20,8 +21,8 @@ Repo: C:\Users\zacsl\OneDrive\Documents\Default Project\broodwar
 Branch: m10-overnight, which IS origin/main (https://github.com/Zacsluss/Outerworld-War -- PUBLIC: git push publishes).
 HEAD: <run git log -1 --format=%h>. Working tree clean, nothing unpushed, no open PRs, no other branches, no extra worktrees.
 Machine: Windows 11; PowerShell 5.1 and Git Bash; Node 24; Rust + the Tauri CLI under desktop/; no gh CLI, no Blender.
-The gate (node test/all.js) is 102 suites, about four minutes, ALL GREEN -- but it has one hidden red it cannot see:
-test/features.js prints "FAIL: interceptor built" and exits 0 (TODO-M18's first section). Build stamp a4f21ff739dd0f36.
+The gate (node test/all.js) is 102 suites, about four minutes, ALL GREEN, and every suite in it now exits non-zero on a failure
+(PLAYTEST-M18 131 found and fixed the one that did not). Build stamp d01c68a16ee7ba65.
 test/balance.js and test/proxy.js are GATED: never start them without an explicit, double-checked instruction.
 
 STATE: SCAN-M18, the whole-codebase scan, IS FINISHED -- every defect and refactor item fixed (PLAYTEST-M18 125-130). The last
@@ -33,11 +34,15 @@ session did the final two things, on the user's word:
     only if the finished map is no harder to cross for any unit (Archetypes.rockSpot and Archetypes.vetRocks in js/map.js).
     Small maps keep 100 blobs of 120 (was 11) over forty seeds; the main-to-main walk on a small basin is longer on 22 of 40
     maps, by 8 tiles typically and 15 at most. The user was sent pictures and has NOT given a verdict.
+  - Then the task it flagged (PLAYTEST-M18 131): test/features.js printed "FAIL: interceptor built" and exited 0, so the gate
+    called it green. The failure was real -- SCAN-M18 A1.2's production gate held EVERY queued item when a player was over the
+    supply cap, Interceptors, Scarabs and Nukes included, though none costs supply. The gate asks about the item now
+    (G.supplyOver(p, def), G.supplyNeed), features.js is on the shared harness, and all 102 suites were audited: no other one
+    hides a failure.
 
 THE NEXT ACTION: ASK THE USER what they want next. Nothing in the repository is queued. Waiting on them:
   - Their verdict on the returned rock, the longer walk included (PLAYTEST-M18 130; in-game before/after pictures at
     .claude/review/terrain/shots/basin2small-ingame.png and basin9small-ingame.png).
-  - The hidden red in test/features.js: it was offered as a task chip; if nobody took it, it is TODO-M18's first section.
   - Their playtest: when they say so, start the recorder (preview_start "playtest", port 8870) and give them the link.
   - The AI rebalance (TODO-M18 7b), deferred by them. It now also owns A2.10's leftover: `waveGrow` raises every next
     wave's threshold with no ceiling, and only a computer within ten of the cap ignores it.
@@ -45,8 +50,8 @@ THE NEXT ACTION: ASK THE USER what they want next. Nothing in the repository is 
 READ, in this order, before touching anything:
   1. CLAUDE.md          -- the working agreement; every rule in it is non-negotiable.
   2. HANDOFF-M18.md     -- this top section (and its traps), then the traps in the sections under it.
-  3. PLAYTEST-M18.md 129-130 -- what the last session did and how each item was tested; match that shape.
-  4. TODO-M18.md        -- the first section (the scan's close and the hidden red), then 7b.
+  3. PLAYTEST-M18.md 129-131 -- what the last sessions did and how each item was tested; match that shape.
+  4. TODO-M18.md        -- the first section (the scan's close), then 7b.
   5. SHIPPING.md        -- before any release: Actions -> Desktop builds -> Run workflow (it ignores js/ and assets/), and open
                            the Mac app on a real Mac (never done: there is no Mac here).
 
@@ -85,10 +90,12 @@ HARD RULES:
 - **SCAN-M18 IS FINISHED** (`SCAN-M18.md`: "nothing in this file is open"). This session, on the user's two answers:
   **A2.10** (PLAYTEST-M18 129, six negative controls red) and **the Open Basin's rock** (PLAYTEST-M18 130, eight negative
   controls red). One commit for both, because they were gated together.
-- **The gate is 102 suites, ALL GREEN**, about three and three-quarter minutes -- **with one hidden red**: `test/features.js`
-  prints "FAIL: interceptor built" and exits 0, and `test/all.js` judges a suite by its exit code. Pre-existing (it is in the scan's
-  A1 gate log); flagged as a task; TODO-M18's first section.
-- **Build stamp `a4f21ff739dd0f36`**, from `b99d85676e68ff36` (`js/ai.js` and `js/map.js`). Older saves and replays are refused.
+- **The gate is 102 suites, ALL GREEN**, about three and three-quarter minutes -- **and it has no hidden red any more.**
+  `test/features.js` printed "FAIL: interceptor built" and exited 0 from the scan's A1 batch on; the failure was a real bug
+  in A1.2's production gate, fixed in PLAYTEST-M18 131, and the suite is on the shared harness now. An audit of all 102 gate
+  suites (`.claude/review/features/audit-suites.js`, raw output kept) found no other suite printing a failure while exiting 0.
+- **Build stamp `d01c68a16ee7ba65`**, from `a4f21ff739dd0f36` (item 131: `js/game.js`, `js/sim.js`), which moved it from
+  `b99d85676e68ff36` (items 129-130: `js/ai.js`, `js/map.js`). Older saves and replays are refused.
 - **By hand after the stamped files changed:** `net_many` 51/51; `queens` 25/25; `eightplayer` 19/19; `aistyles` 138 / 137 / 138 on
   seeds 1 / 5 / 11 -- seed 5's red is the known harasser line (7b) -- with every game row on all three seeds identical to before.
 - **Waiting on the user:** their verdict on the rock (pictures sent), their playtest (the recorder on their word), the AI rebalance
@@ -102,14 +109,17 @@ HARD RULES:
 2. **The Open Basin has its rock back.** A rock blob that would land on a base moves to the nearest clear spot in the middle of the
    map instead of disappearing; on a small map that puts the rock around the centre plateau. A move that would close a road a big
    unit needs is refused. The walk between mains on a small basin is a little longer on about half the seeds (130).
+3. **A Carrier makes Interceptors, a Reaver Scarabs and a silo its Nuke while you are over the supply cap** -- after losing a
+   Pylon or a Depot. Since the scan's A1 batch they had waited with everything else, though none costs supply; units that do
+   cost supply still wait until you build more (131).
 
 **Deliberately different from what was asked:** a moved blob can still be refused -- 20 of 120 on the small map have nowhere legal
 to go, or would have closed a road -- and the walk gets longer, which the user was told and has not yet judged. **Unfinished:**
-nothing in the two items; the hidden red in `test/features.js` is flagged, not fixed.
+nothing.
 
 ## How to playtest it by hand
 
-Every item has its steps in PLAYTEST-M18 129-130. In short:
+Every item has its steps in PLAYTEST-M18 129-131. In short:
 1. **Skirmish -> Procedural -> Open Basin, size small, seed 2** (then 9 and a few others); Enter, `black sheep wall`, Enter; zoom out.
    *Working:* rock outcrops around the raised centre, every mineral patch open, no spire standing in rock (130).
 2. **Break a spire beside the rock:** it becomes floor; the rock stays rock (130).
@@ -117,6 +127,8 @@ Every item has its steps in PLAYTEST-M18 129-130. In short:
 4. **A 25-minute game against one Hard computer on a big map** (`black sheep wall`, and `power overwhelming` to just watch). *Working:*
    past 190 supply its army waits until it is ready, and waits for a bigger one when it has seen yours (129). Easier to see in the
    suite: `test/aistyles.js`, "when the army commits".
+5. **Protoss, over the cap:** queue a Zealot, destroy one of your own Pylons (Attack, click it), then queue an Interceptor on a
+   Carrier. *Working:* the Interceptor builds; the Zealot waits until a new Pylon is up (131).
 
 ## Traps found this session
 
@@ -133,7 +145,12 @@ Every item has its steps in PLAYTEST-M18 129-130. In short:
   class cannot be used above its declaration.
 - **`new GameMap(seed, layoutObject)` works now** (a map built to be measured rather than played); only `vetRocks` uses it. The
   map's own `rand` only makes noise, so the seed does not change what is measured.
-- **A suite can print FAIL and pass the gate** (`test/features.js`). Read a suite's summary, not only its status column.
+- **A suite can print FAIL and pass the gate** -- `test/features.js` did, for three batches, and the failure it printed was a real
+  bug (131). The gate judges exit codes; a suite must exit non-zero on a failure, which `_harness.summary()` does. Read a suite's
+  summary, not only its status column: `features ok ... 86 passed, 1 failed` was on screen the whole time.
+- **A fix can have its own regression, and the fix's own test cannot see it.** A1.2 fixed the unit that was paid for and never
+  started, and its check asserted exactly that; the gate it wrote asked about the player and not the item, so zero-supply items
+  froze. Test the neighbour of the case a fix is about -- here, an item the rule should never touch (review17 18d).
 - **In-page screenshots at a display scale above 1:** the canvas is in device pixels and `Render.viewH` in CSS pixels. Scale the
   capture height by `canvas.width / Render.W`, or the bottom third of the view is cut off -- `.claude/review/terrain/helper-T.js` has
   that bug at 1.5x.
@@ -152,6 +169,9 @@ All in `.claude/review/scan/` (gitignored):
   `probe-basin-vet.js` (moves that cost any unit its way, over 200 seeds a size), `probe-basin-apart.js`.
 - `controls-a2-10.js` / `.log`, `controls-basin-rock.js` / `controls-basin-rock-final.log` -- the negative controls.
 - `map-HEAD.js` -- js/map.js as it was, for the HEAD comparisons.
+And in `.claude/review/features/` (item 131): `probe-interceptor.js` (the suite's own script, instrumented around the failing
+check), `probe-oversupply.js` (the production gate over the cap, per item), `audit-suites.js` (every gate suite, raw output kept,
+HIDDEN and OPAQUE flagged), `controls.js` / `controls.log`.
 
 ---
 ---

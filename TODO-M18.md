@@ -7,9 +7,9 @@ user's answers and the earlier queues follow (THE TENTH SESSION'S QUEUE and THE 
 lists (what each did, with commits), the older items with their measurements, and what is closed. There are no worktrees.
 `SHIPPING.md` is what must be done before the final build ships.
 
-The gate is **102 suites** (`node test/all.js`, about four minutes) and **ALL GREEN** -- with one hidden red it cannot see: see the
-section below. Every rule in `CLAUDE.md` applies to every item here: measure before fixing, a negative control that goes cleanly
-RED, `tools/patch.js` for edits, and the gate green before the commit.
+The gate is **102 suites** (`node test/all.js`, about four minutes) and **ALL GREEN**, and every suite in it exits non-zero on a
+failure (PLAYTEST-M18 131 fixed the one that did not). Every rule in `CLAUDE.md` applies to every item here: measure before
+fixing, a negative control that goes cleanly RED, `tools/patch.js` for edits, and the gate green before the commit.
 
 ---
 
@@ -27,9 +27,11 @@ Every defect and refactor item in `SCAN-M18.md` is fixed (PLAYTEST-M18 125-130).
    to cross for any unit. Over forty seeds a size the small map keeps 100 blobs of 120 (was 11). **The walk from main to main on
    a small basin is longer on 22 maps of 40, by 8 tiles typically and 15 at most** -- the user judges that by eye.
 
-**Found on the way, NOT fixed, flagged as its own task:** `test/features.js` prints "FAIL: interceptor built" and exits 0, so the
-gate has shown it green ("86 passed, 1 failed") since at least the scan's A1 batch. In a clean context the interceptor IS built
-(one in 310 frames, cap 4), so the fault is in the suite's own scene -- and the suite must learn to fail the gate.
+**Found on the way and then FIXED as its own task (PLAYTEST-M18 131):** `test/features.js` printed "FAIL: interceptor built" and
+exited 0, so the gate showed it green ("86 passed, 1 failed") from the scan's A1 batch on. The failure was real: A1.2's production
+gate held every queued item while a player was over the supply cap, and the suite's Protoss scene is over the cap (22/18) when
+it builds its Interceptor. The gate asks about the item now; `features.js` is on the shared harness; `test/review17.js` 18d pins
+both halves; an audit of all 102 gate suites found no other one printing a failure while exiting 0.
 
 ---
 

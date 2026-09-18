@@ -509,6 +509,66 @@ function DATA_NAME(c, id) { return R(c, 'return DATA.units[' + JSON.stringify(id
 }
 
 // ============================================================================
+// 18d. ...AND AN ITEM THAT COSTS NO SUPPLY IS NEVER HELD BY THE CAP (18c's own regression)
+// ============================================================================
+// 18c's fix made the production gate ask whether the PLAYER is over the cap -- and asked it of every item, so a player
+// who went over it (a depot destroyed, a pylon unpowered) stopped getting Interceptors, Scarabs and Nukes, none of which
+// costs a point of supply. Measured: all three at progress 0 for 400 frames, beside a booked Zealot and Marine that were
+// right to wait (.claude/review/features/probe-oversupply.js). test/features.js failed on it the day it landed and the
+// gate never said so, because that suite exited 0 on a failure. Both halves are asserted, and the held units are then
+// given their supply back and must come out -- so the hold is the supply gate and nothing else.
+{
+  const J = JSON.stringify;
+  const scene = race => R(ctx, `
+    const p = this.fresh('${race}', 'Z'); p.minerals = 9000; p.gas = 9000; G.recording = false;
+    const hall = G.units.find(u => u.alive && u.owner === 0 && u.def.depot);
+    const put = (id, dx, dy) => { const b = G.placeBuilding(DATA.buildings[id], hall.tx + dx, hall.ty + dy, 0); b.done = true; b.progress = b.def.time; b.hp = b.maxHp; b.sh = b.maxSh || 0; return b; };
+    const at = (dx, dy) => [hall.x + dx * TILE, hall.y + dy * TILE];
+    const free = [], held = [];
+    if ('${race}' === 'P') {
+      put('pylon', 8, 0); const gw = put('gateway', 12, 0); G.map.recomputePsi(0, G.units);
+      free.push(['interceptor', this.sp('carrier', 0, ...at(0, -6))], ['scarab', this.sp('reaver', 0, ...at(4, -6))]);
+      held.push(['zealot', gw]);
+    } else {
+      const rax = put('barracks', 8, 0);
+      G.cheats.noreq = true; const siloQ = G.queueAddon(hall, 'nuclear_silo'), reQ = G.queueAddon(rax, 'reactor');
+      for (let i = 0; i < 2000 && !(hall.addon && hall.addon.done && rax.addon && rax.addon.done); i++) G.tick(); G.cheats.noreq = false;
+      if (!siloQ || !reQ || !hall.addon || !hall.addon.done || !rax.addon || !rax.addon.done) return { error: 'no nuclear silo or reactor' };
+      free.push(['nuke', hall.addon]); held.push(['marine', rax], ['marine', rax]);   // two: the Reactor's second slot is gated in reactorTick
+    }
+    G.recomputeSupply();
+    const E = free.concat(held).map(([id, b]) => { const q = G.queueUnit(b, id); return { id, b, q, it: q ? b.prod[b.prod.length - 1] : null }; });   // queued while there is room...
+    const queued = E.map(e => e.q), F = E.slice(0, free.length), H = E.slice(free.length);
+    let guard = 0; while (p.supUsed <= p.supMax + 3 && guard++ < 80) { this.sp('${race === 'P' ? 'probe' : 'scv'}', 0, ...at(-6, 6)); G.recomputeSupply(); }
+    const over = { used: p.supUsed, max: p.supMax };                               // ...then over the cap, as a lost depot leaves a player
+    this.run(400);
+    const where = e => e.b.prod.includes(e.it) ? e.it.progress : 'done';
+    const out = { over, queued, free: F.map(e => [e.id, where(e), e.id === 'interceptor' ? e.b.interceptors : e.id === 'scarab' ? e.b.scarabs : null]), held: H.map(e => [e.id, where(e)]) };
+    // and the supply comes back: a depot or a pylon, done, and the booked unit must come out
+    put('${race === 'P' ? 'pylon' : 'supply_depot'}', -10, -2); if ('${race}' === 'P') G.map.recomputePsi(0, G.units); G.recomputeSupply();
+    out.back = { used: p.supUsed, max: p.supMax };
+    this.run(Math.max(...held.map(([id]) => DATA.units[id].time)) + 30);
+    out.released = H.map(e => [e.id, where(e)]);
+    return out;`);
+  const P = scene('P'), T = scene('T');
+  ok('the scenes stand: each player went OVER the cap after its items were accepted, and the supply-costing ones were booked first',
+    !P.error && !T.error && P.over.used > P.over.max && T.over.used > T.over.max && P.queued.every(Boolean) && T.queued.every(Boolean), JSON.stringify({ P, T }));
+  ok('AN INTERCEPTOR, A SCARAB AND A NUKE ARE BUILT OVER THE CAP: none of them costs supply (all three sat at progress 0 for 400 frames)',
+    J(P.free) === J([['interceptor', 'done', 1], ['scarab', 'done', 1]]) && T.free[0][0] === 'nuke' && T.free[0][1] >= 390, JSON.stringify([P.free, T.free]));
+  ok('...while a Zealot and two Marines that DO cost supply wait at progress 0, exactly as 18c says they must -- the second in a Reactor\'s own slot', J(P.held) === J([['zealot', 0]]) && J(T.held) === J([['marine', 0], ['marine', 0]]), JSON.stringify([P.held, T.held]));
+  ok('...and come out when the supply comes back, so what held them was the supply gate and nothing else',
+    P.back.used <= P.back.max && T.back.used <= T.back.max && J(P.released) === J([['zealot', 'done']]) && J(T.released) === J([['marine', 'done'], ['marine', 'done']]), JSON.stringify([P.back, P.released, T.back, T.released]));
+  // The gate is asked in three places -- a building's first slot, a Reactor's second, and the stall watcher's excuse -- and
+  // every one must name the item, or that place is back to asking about the player alone.
+  const calls = [];
+  for (const f of ['game', 'sim', 'ui', 'abilities', 'ai', 'hud']) {
+    const s = fs.readFileSync(path.join(root, 'js', f + '.js'), 'utf8');
+    for (const m of s.matchAll(/supplyOver\(([^()]*(?:\([^()]*\)[^()]*)*)\)/g)) if (!/^\s*p\s*,\s*def\s*$/.test(m[1])) calls.push(f + ': ' + m[1].split(',').length + ' ' + m[0]);
+  }
+  ok('every call to the production gate names the item it is asking about (' + calls.length + ' calls)', calls.length >= 3 && calls.every(c => / 2 /.test(c)), J(calls));
+}
+
+// ============================================================================
 // 19. three AI faults: the Hive's techs, the Raven and the Disruptor, the morph and add-on claims
 // ============================================================================
 // Measured before the fix (.claude/review/ai578-probe.js): a Zerg AI with a Hive and no Lair, 5000/5000,

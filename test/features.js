@@ -1,9 +1,15 @@
 // Headless feature tests: node test/features.js
-const vm = require('vm'), { makeCtx } = require('./_harness');
-const ctx = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'render', 'ui'], ext: false, el: 'bare', console });
+//
+// ON THE SHARED HARNESS, AND THAT IS THE POINT. This suite counted its own failures and printed "PASS n  FAIL m" -- and
+// exited 0 whatever m was, and test/all.js judges a suite by its exit code. So from SCAN-M18 A1 (2026-09-17) the gate
+// read `features ok ... 86 passed, 1 failed`: "interceptor built" was failing, rightly -- the A1.2 production gate held
+// every item in a queue when the player was over the supply cap, Interceptors included -- and nothing went red. Each
+// check now goes through _harness.ok, and summary() exits non-zero on any failure, like every other gate suite.
+const vm = require('vm'), { makeCtx, ok, summary } = require('./_harness');
+const ctx = makeCtx({ files: ['data', 'map', 'sim', 'game', 'combat', 'abilities', 'commands', 'ai', 'render', 'ui'], ext: false, el: 'bare', console, globals: { __ok: ok } });
 vm.runInContext(`
 UI.ping = () => {}; UI.onUnitDied = () => {};
-let pass = 0, fail = 0; const T = (name, cond) => { if (cond) pass++; else { fail++; console.log('FAIL: ' + name); } };
+const T = (name, cond) => __ok(!!cond, name);   // _harness.ok: prints PASS or FAIL and counts; summary() below exits non-zero on a failure
 function fresh(r0, r1) { G.init({ players: [{ race: r0, human: true }, { race: r1, human: false }], seed: 1 }); G.players[1].ai = null; for (const p of G.players) { p.minerals = 5000; p.gas = 5000; } return G.players[0]; }
 function run(n) { for (let i = 0; i < n; i++) G.tick(); }
 function sp(id, o, x, y) { return G.spawnUnit(id, o, x, y); }
@@ -131,5 +137,5 @@ const bat = place('shield_battery', 0, hx + 100, hy + 300); bat.energy = 200; co
 const cannon = place('photon_cannon', 0, hx - 100, hy + 400); const m5 = sp('marine', 1, cannon.x + 150, cannon.y); run(100); T('cannon shoots', !m5.alive);
 const cor = sp('corsair', 0, hx, hy); const muta2 = sp('mutalisk', 1, cor.x + 100, cor.y); run(200); T('corsair damages muta', !muta2.alive || muta2.hp < 100);
 const zealD = sp('zealot', 0, hx, hy); zealD.sh = 60; const dmgd = G.damage(zealD, 10, 'normal', null); T('shields absorb first', zealD.sh === 50 && zealD.hp === 100);
-console.log('PASS ' + pass + '  FAIL ' + fail);
 `, ctx);
+summary();

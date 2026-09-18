@@ -28,6 +28,8 @@ open.** The gate was green (101/101) before the scan and is green after every ba
    unit's supply, then `tickProduction` asks `supplyBlocked` again, which counts the same supply on top of
    the reservation. **Measured:** at 9/10 supply the Barracks accepts a Marine, charges 50 minerals, and 400
    frames later `started: false, progress: 0`. The HUD says "supply blocked", repeating the error.
+   **Its fix had a regression of its own** (PLAYTEST-M18 131): the new gate asked whether the PLAYER was over the cap and
+   held every queued item when so -- Interceptors, Scarabs and Nukes too, which cost no supply. It asks about the item now.
 3. **Allied splash, line and bounce weapons do full damage** -- `js/combat.js:16`, `:48`, `:67` test
    `o.owner === a.owner` where the rest of the engine uses `G.allied`. **Measured** in a 2v2: the ally's
    Firebat takes my Marine 40 -> 24 while his own identical Marine at the same distance stays at 40.
@@ -163,8 +165,9 @@ Worth stating plainly, because it is the reason 22 defects survived 101 green su
   would take half an hour to reach, and `test/onecopy.js` refuses a three-digit number on any line of the game
   that reads a supply count.)
 - **A suite that prints FAIL can still pass the gate.** Found after the scan, while gating A2.10: `test/features.js`
-  prints "FAIL: interceptor built" and exits 0, and `test/all.js` judges a suite by its exit code, so the gate has
-  shown it green ("86 passed, 1 failed") since at least the A1 batch. Flagged as its own task; not fixed here.
+  printed "FAIL: interceptor built" and exited 0, and `test/all.js` judges a suite by its exit code, so the gate
+  showed it green ("86 passed, 1 failed") from the A1 batch on -- and the failure was A1.2's own regression (below).
+  FIXED in PLAYTEST-M18 131: the suite is on the shared harness, and an audit of all 102 gate suites found no other.
 - **"Ally" is spelled `owner ===` in the tests too.** `test/line.js` asserts "AN ALLY IS NOT" hit, with an
   ally spawned under the same owner -- so only the half that works is tested (defect 3).
 - **The generated maps are held to a weaker contract than the shipped ones.** `test/maplayouts.js` asserts

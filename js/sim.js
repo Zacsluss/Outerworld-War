@@ -383,7 +383,7 @@ class Unit {
   tickProduction() {
     if (!this.prod.length) return;
     const it = this.prod[0]; const d = this.def;
-    if (it.kind === 'unit' && !d.egg && !it.started) { if (!it.reserved && G.supplyOver(this.player)) return; /* G.tickAlerts says this once on its own cooldown, rather than every 72 frames until a depot goes up */ it.started = true; }
+    if (it.kind === 'unit' && !d.egg && !it.started) { if (!it.reserved && G.supplyOver(this.player, DATA.units[it.id])) return; /* G.tickAlerts says this once on its own cooldown, rather than every 72 frames until a depot goes up */ it.started = true; }
     it.progress += (G.cheats.cwal && this.player.human) ? 10 : 1;
     if (it.progress >= it.total) { this.prod.shift(); G.finishProduction(this, it); }
   }
@@ -402,7 +402,7 @@ class Unit {
     if (this.prod[0].kind !== 'unit' || this.prod[1].kind !== 'unit') return;
     const it = this.prod[1], p = this.player, ud = DATA.units[it.id];
     if (!it.started) {
-      if (!it.reserved && G.supplyOver(p)) return;   // the reactor's second item, gated exactly as the first (G.supplyOver)
+      if (!it.reserved && G.supplyOver(p, ud)) return;   // the reactor's second item, gated exactly as the first (G.supplyOver)
       it.started = true;
     }
     it.progress += (G.cheats.cwal && p.human) ? 10 : 1;

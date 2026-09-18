@@ -1673,7 +1673,7 @@ const UI = {
     if (u.inside) return 'inside';
     if (u.addon && !u.addon.done) return 'addon';
     if (u.fx && (u.fx.stasis || u.fx.lockdown || u.fx.maelstrom)) return 'disabled';
-    if (it.kind === 'unit' && !it.started && !it.reserved && G.supplyOver(u.player)) return 'supply';
+    if (it.kind === 'unit' && !it.started && !it.reserved && G.supplyOver(u.player, DATA.units[it.id])) return 'supply';
     return '';
   },
   explainPause(u, it, why) {

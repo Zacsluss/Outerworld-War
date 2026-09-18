@@ -695,8 +695,8 @@ const G = {
       if (!u.alive) continue; const p = this.players[u.owner];
       if (u.def.notUnit) continue;
       if (!u.isBuilding) p.supUsed += u.def.sup || 0;
-      for (const it of u.prod) if (it.kind === 'unit' && !it.reserved) { const ud = DATA.units[it.id]; if (!ud.notUnit) p.supUsed += (ud.sup || 0) * (ud.pair ? 2 : 1); }
-      if (u.def.egg && u.prod[0]) { const ud = DATA.units[u.prod[0].id]; p.supUsed += (ud.sup || 0) * (ud.pair ? 2 : 1); }
+      for (const it of u.prod) if (it.kind === 'unit' && !it.reserved) p.supUsed += this.supplyNeed(DATA.units[it.id]);
+      if (u.def.egg && u.prod[0]) p.supUsed += this.supplyNeed(DATA.units[u.prod[0].id]);
       if (u.done && !u.lifted && !u.unpowered && u.def.sup && u.isBuilding) p.supMax += u.def.sup;
       if (u.def.supGive && !u.isBuilding) p.supMax += u.def.supGive;
     }
@@ -1352,11 +1352,15 @@ const G = {
   // 0/1800 under "Additional supply depots required." `need` overrides the def's cost for a unit morph,
   // which pays only the difference. The food cheat is a human's exemption, as at every site before.
   supplyBlocked(p, def, need) {
-    if (need === undefined) need = def.notUnit ? 0 : (def.sup || 0) * (def.pair ? 2 : 1);
+    if (need === undefined) need = this.supplyNeed(def);
     if (need <= 0) return false;
     if (this.cheats.food && p.human) return false;
     return p.supUsed + need > p.supMax;
   },
+  // What a def costs in supply: nothing for a notUnit -- a Nuke, an Interceptor and a Scarab are the ammunition of what
+  // builds them, not army -- and otherwise its sup, twice over for a pair. The one copy of the rule: supplyBlocked,
+  // recomputeSupply's booking of a queued item and the production gate, supplyOver, all read it.
+  supplyNeed(def) { return def.notUnit ? 0 : (def.sup || 0) * (def.pair ? 2 : 1); },
   // WHAT THE PRODUCTION GATE MUST ASK, and it is not supplyBlocked (SCAN-M18 A1.2). recomputeSupply books a queued
   // unit's supply the moment it is queued -- every `prod` item that is not `reserved` is counted -- so asking
   // supplyBlocked about that same item again adds its supply on top of its own reservation. Measured at 9/10 supply:
@@ -1364,7 +1368,13 @@ const G = {
   // 10 + 1 > 10 and never set `started`, so 400 frames later the item sat at progress 0 with the money gone. The
   // question for an item already booked is only whether the booking still fits -- which is false unless supMax has
   // since FALLEN (a depot destroyed, a pylon unpowered), and that is exactly when production should hold.
-  supplyOver(p) { if (this.cheats.food && p.human) return false; return p.supUsed > p.supMax; },
+  // AND ONLY FOR AN ITEM THAT COSTS SUPPLY. The first version asked it of every item in a queue, so the moment a player
+  // went over the cap -- a depot destroyed, a pylon unpowered -- a Carrier stopped making Interceptors, a Reaver Scarabs
+  // and a silo its Nuke, though none of them costs a point of supply and the supplyBlocked this replaced had always let
+  // them through: measured, all three sat at progress 0 for 400 frames. test/features.js failed on it the day it landed
+  // and the gate never said so, because that suite exited 0 on a failure. So the item is part of the question: `def` is
+  // the def of the item in the queue, and every caller passes it.
+  supplyOver(p, def) { if (this.supplyNeed(def) <= 0) return false; if (this.cheats.food && p.human) return false; return p.supUsed > p.supMax; },
   supplyRefused(p) {
     const A = p.alertAt || (p.alertAt = {});
     if (this.frame - (A.supply || -9999) < ALERTS.supply.cool) return false;
